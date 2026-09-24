@@ -1,5 +1,5 @@
 name: autonomous-worker
-run-name: autonomy \${{ inputs.task_id }} \${{ inputs.attempt_id || 'manual' }}
+run-name: autonomy ${{ inputs.task_id }} ${{ inputs.attempt_id || 'manual' }}
 on:
   workflow_dispatch:
     inputs:
@@ -60,29 +60,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 135
     env:
-      GH_REPO: \${{ github.repository }}
-      TASK_ID: \${{ inputs.task_id }}
-      TASK_PATH: \${{ inputs.task_path }}
-      ATTEMPT_ID: \${{ inputs.attempt_id }}
-      WORK_MODE: \${{ inputs.mode }}
-      REVIEW_ID: \${{ inputs.review_id }}
-      EXPECTED_HEAD: \${{ inputs.expected_head }}
+      GH_REPO: ${{ github.repository }}
+      TASK_ID: ${{ inputs.task_id }}
+      TASK_PATH: ${{ inputs.task_path }}
+      ATTEMPT_ID: ${{ inputs.attempt_id }}
+      WORK_MODE: ${{ inputs.mode }}
+      REVIEW_ID: ${{ inputs.review_id }}
+      EXPECTED_HEAD: ${{ inputs.expected_head }}
     steps:
       - name: Validate dispatch inputs before checkout
         shell: bash
         env:
-          CONTROL_REPO: \${{ inputs.control_repo }}
-          CONTROL_COMMIT: \${{ inputs.control_commit }}
+          CONTROL_REPO: ${{ inputs.control_repo }}
+          CONTROL_COMMIT: ${{ inputs.control_commit }}
         run: |
           set -euo pipefail
-          if [[ "\${CONTROL_REPO:-}" != 'AlexBDevCorner/AutonomousWork' ]]; then echo 'Unapproved control repository' >&2; exit 1; fi
-          if [[ ! "\${TASK_ID:-}" =~ ^MSS-[0-9]+$ ]]; then echo 'Invalid task ID' >&2; exit 1; fi
-          if [[ "\${TASK_PATH:-}" != "projects/mtgsolosports/tasks/\${TASK_ID}.md" ]]; then echo 'Invalid task path' >&2; exit 1; fi
-          if [[ -n "\${CONTROL_COMMIT:-}" && ! "\${CONTROL_COMMIT}" =~ ^[a-f0-9]{40}$ ]]; then echo 'Expected full control SHA' >&2; exit 1; fi
-          if [[ -n "\${ATTEMPT_ID:-}" && ( ! "\${ATTEMPT_ID}" =~ ^[a-f0-9-]{36}$ || -z "\${CONTROL_COMMIT:-}" ) ]]; then echo 'Invalid claim' >&2; exit 1; fi
-          if [[ "\${WORK_MODE:-}" != 'implementation' && "\${WORK_MODE:-}" != 'correction' ]]; then echo 'Invalid mode' >&2; exit 1; fi
-          if [[ -n "\${EXPECTED_HEAD:-}" && ! "\${EXPECTED_HEAD:-}" =~ ^[a-f0-9]{40}$ ]]; then echo 'Invalid expected head' >&2; exit 1; fi
-          if [[ "\${WORK_MODE:-}" == 'correction' && ( -z "\${ATTEMPT_ID:-}" || ! "\${REVIEW_ID:-}" =~ ^[0-9]+$ || -z "\${EXPECTED_HEAD:-}" ) ]]; then echo 'Invalid review claim' >&2; exit 1; fi
+          if [[ "${CONTROL_REPO:-}" != 'AlexBDevCorner/AutonomousWork' ]]; then echo 'Unapproved control repository' >&2; exit 1; fi
+          if [[ ! "${TASK_ID:-}" =~ ^MSS-[0-9]+$ ]]; then echo 'Invalid task ID' >&2; exit 1; fi
+          if [[ "${TASK_PATH:-}" != "projects/mtgsolosports/tasks/${TASK_ID}.md" ]]; then echo 'Invalid task path' >&2; exit 1; fi
+          if [[ -n "${CONTROL_COMMIT:-}" && ! "${CONTROL_COMMIT}" =~ ^[a-f0-9]{40}$ ]]; then echo 'Expected full control SHA' >&2; exit 1; fi
+          if [[ -n "${ATTEMPT_ID:-}" && ( ! "${ATTEMPT_ID}" =~ ^[a-f0-9-]{36}$ || -z "${CONTROL_COMMIT:-}" ) ]]; then echo 'Invalid claim' >&2; exit 1; fi
+          if [[ "${WORK_MODE:-}" != 'implementation' && "${WORK_MODE:-}" != 'correction' ]]; then echo 'Invalid mode' >&2; exit 1; fi
+          if [[ -n "${EXPECTED_HEAD:-}" && ! "${EXPECTED_HEAD:-}" =~ ^[a-f0-9]{40}$ ]]; then echo 'Invalid expected head' >&2; exit 1; fi
+          if [[ "${WORK_MODE:-}" == 'correction' && ( -z "${ATTEMPT_ID:-}" || ! "${REVIEW_ID:-}" =~ ^[0-9]+$ || -z "${EXPECTED_HEAD:-}" ) ]]; then echo 'Invalid review claim' >&2; exit 1; fi
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -90,8 +90,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: AlexBDevCorner/AutonomousWork
-          ref: \${{ inputs.control_commit || 'master' }}
-          token: \${{ secrets.CONTROL_REPO_TOKEN }}
+          ref: ${{ inputs.control_commit || 'master' }}
+          token: ${{ secrets.CONTROL_REPO_TOKEN }}
           path: control
           persist-credentials: false
       - uses: actions/setup-dotnet@v4
@@ -108,18 +108,18 @@ jobs:
           set -euo pipefail
           dotnet build control/tools/AutonomousWork.Cli -c Release --nologo
           controlSha="$(git -C control rev-parse HEAD)"
-          echo "CONTROL_SHA=\${controlSha}" >> "\${GITHUB_ENV}"
+          echo "CONTROL_SHA=${controlSha}" >> "${GITHUB_ENV}"
       - name: Verify authorization and bounded execution
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          CONTROL_READ_TOKEN: \${{ secrets.CONTROL_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTROL_READ_TOKEN: ${{ secrets.CONTROL_REPO_TOKEN }}
         run: node control/tools/autonomy/worker.mjs guard
       - name: Mint worker GitHub App token
         id: worker-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: \${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
-          private-key: \${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
           owner: AlexBDevCorner
           repositories: MtgSoloSports
           permission-contents: write
@@ -131,15 +131,15 @@ jobs:
       - name: Verify worker GitHub authentication
         shell: bash
         env:
-          GH_TOKEN: \${{ steps.worker-token.outputs.token }}
+          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
         run: |
           set -euo pipefail
-          repo="$(gh api "repos/\${GH_REPO}" --jq '.full_name')" || { echo 'GitHub CLI authentication failed' >&2; exit 1; }
-          if [[ "\${repo}" != "\${GH_REPO}" ]]; then echo "GitHub CLI authenticated against unexpected repository: \${repo}" >&2; exit 1; fi
+          repo="$(gh api "repos/${GH_REPO}" --jq '.full_name')" || { echo 'GitHub CLI authentication failed' >&2; exit 1; }
+          if [[ "${repo}" != "${GH_REPO}" ]]; then echo "GitHub CLI authenticated against unexpected repository: ${repo}" >&2; exit 1; fi
       - name: Wire App token into git
         shell: bash
         env:
-          GH_TOKEN: \${{ steps.worker-token.outputs.token }}
+          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
         run: |
           set -euo pipefail
           gh auth setup-git --hostname github.com --force || { echo 'gh auth setup-git failed' >&2; exit 1; }
@@ -147,33 +147,33 @@ jobs:
         timeout-minutes: 120
         uses: anomalyco/opencode/github@83abc64a5c4e0e0a5157f2c4435d34131009a404 # pinned 2026-09-19
         env:
-          OPENCODE_API_KEY: \${{ secrets.OPENCODE_API_KEY }}
-          GITHUB_TOKEN: \${{ steps.worker-token.outputs.token }}
-          GH_TOKEN: \${{ steps.worker-token.outputs.token }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ steps.worker-token.outputs.token }}
+          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
           OPENCODE_CONFIG_CONTENT: '{"permission":{"external_directory":{"*":"deny","**/Temp/**":"allow","**/_temp/**":"allow","**/tmp/**":"allow"},"edit":{"**/Temp/**":"deny","**/_temp/**":"deny","**/tmp/**":"deny"},"bash":{"*":"allow","*GITHUB_ENV*":"deny","*GITHUB_PATH*":"deny","*GITHUB_OUTPUT*":"deny","*GITHUB_STATE*":"deny","*GH_TOKEN*":"deny","*GITHUB_TOKEN*":"deny","*gh auth token*":"deny","*extraheader*":"deny","*AUTHORIZATION*":"deny"},"doom_loop":"deny","question":"deny"}}'
         with:
-          model: \${{ inputs.model }}
-          variant: \${{ inputs.variant }}
+          model: ${{ inputs.model }}
+          variant: ${{ inputs.variant }}
           share: false
           use_github_token: true
           prompt: |
-            Implement only task \${{ inputs.task_id }}. Follow AGENTS.md.
-            Read the authoritative specification at control/\${{ inputs.task_path }}.
+            Implement only task ${{ inputs.task_id }}. Follow AGENTS.md.
+            Read the authoritative specification at control/${{ inputs.task_path }}.
             The control checkout is read-only. Never change it, requirements, priorities, or future tasks.
             Do not access GITHUB_EVENT_PATH or other files outside the repository and control checkout.
             GitHub authentication is already provided by the workflow. Use gh normally.
             Never inspect, extract, decode, print, or persist GitHub credentials. Never run `gh auth token`.
             If authentication fails, stop rather than attempting credential recovery.
-            Execution mode: \${{ inputs.mode }}.
-            Expected existing PR head: \${{ inputs.expected_head }}.
+            Execution mode: ${{ inputs.mode }}.
+            Expected existing PR head: ${{ inputs.expected_head }}.
             If mode is implementation and expected_head is non-empty, perform only the bounded CI repair for the existing task PR.
-            For normal implementation use branch autonomous/\${{ inputs.task_id }} from main, push it immediately, and reuse any existing branch/PR on retry.
+            For normal implementation use branch autonomous/${{ inputs.task_id }} from main, push it immediately, and reuse any existing branch/PR on retry.
             Preserve progress with meaningful checkpoint commits/pushes during long work.
             Open one draft PR after the first pushed diff, then keep updating that same PR.
             A successful run MUST leave the PR ready for review, never draft.
             For correction, evaluate the trusted blocking review and fix valid blocking findings only. If you genuinely disagree technically, leave the reviewed head unchanged and post the machine-readable disagreement comment required by the AutonomousWork protocol.
             Required repository verification is defined by AGENTS.md and the task. Record real commands/results; never invent evidence.
             Keep the vertical-slice architecture. Do not add MediatR, generic repositories, horizontal Domain/Application/Infrastructure projects, message buses or unrelated architectural frameworks.
-            Open/update the same PR to main titled [\${{ inputs.task_id }}] <description>.
+            Open/update the same PR to main titled [${{ inputs.task_id }}] <description>.
             Never merge, force-push, or commit secrets.
             You are running on Ubuntu. Use bash/POSIX syntax.
