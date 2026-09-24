@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore backend
+        run: dotnet restore MtgSoloSports.slnx
+      - name: Build backend
+        run: dotnet build MtgSoloSports.slnx --configuration Release --no-restore
+      - name: Test backend
+        run: dotnet test MtgSoloSports.slnx --configuration Release --no-build --no-restore
+      - name: Install frontend dependencies
+        run: npm install --prefix src/MtgSoloSports.Web
+      - name: Typecheck frontend
+        run: npm run typecheck --prefix src/MtgSoloSports.Web
+      - name: Build frontend
+        run: npm run build --prefix src/MtgSoloSports.Web
