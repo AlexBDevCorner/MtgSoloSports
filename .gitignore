@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Frontend
+node_modules/
+dist/
+
+# Built frontend copied into ASP.NET Core host
+src/MtgSoloSports/wwwroot/*
+!src/MtgSoloSports/wwwroot/.gitkeep
+
+# Runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE / OS
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Autonomous control checkout
+control/
