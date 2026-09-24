@@ -6,7 +6,7 @@ The user does not manage a team. The application simulates leagues, promotion/re
 
 ## Current status
 
-Repository seed only. Autonomous implementation is intentionally paused until the GitHub repository and required secrets/app permissions are ready.
+Repository skeleton and design documentation are initialized. Autonomous implementation remains intentionally paused until the required secrets, GitHub App permissions, and control-repo activation are ready.
 
 ## Architecture
 
