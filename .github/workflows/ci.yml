@@ -20,13 +20,15 @@ jobs:
         with:
           node-version: '22'
       - name: Restore backend
-        run: dotnet restore MtgSoloSports.slnx
+        run: dotnet restore MtgSoloSports.slnx --locked-mode
       - name: Build backend
         run: dotnet build MtgSoloSports.slnx --configuration Release --no-restore
       - name: Test backend
         run: dotnet test MtgSoloSports.slnx --configuration Release --no-build --no-restore
+      - name: Verify formatting
+        run: dotnet format MtgSoloSports.slnx --verify-no-changes --no-restore
       - name: Install frontend dependencies
-        run: npm install --prefix src/MtgSoloSports.Web
+        run: npm ci --prefix src/MtgSoloSports.Web
       - name: Typecheck frontend
         run: npm run typecheck --prefix src/MtgSoloSports.Web
       - name: Build frontend
