@@ -119,6 +119,40 @@ public sealed class Pcg32V1Tests
     }
 
     [Fact]
+    public void RejectionThreshold_Uses32BitDomain_NonPowerOfTwoBound7()
+    {
+        // 2^32 % 7 == 4. A 64-bit threshold (2^64 % 7 == 2) would leave an
+        // accepted range that is not a multiple of 7 and bias shuffles.
+        Pcg32V1.ComputeRejectionThreshold(7U).ShouldBe(4U);
+
+        const ulong fullRange = 1UL << 32;
+        ulong accepted = fullRange - Pcg32V1.ComputeRejectionThreshold(7U);
+        (accepted % 7UL).ShouldBe(0UL);
+    }
+
+    [Fact]
+    public void RejectionThreshold_PowerOfTwoBound_HasZeroThreshold()
+    {
+        Pcg32V1.ComputeRejectionThreshold(1U).ShouldBe(0U);
+        Pcg32V1.ComputeRejectionThreshold(32U).ShouldBe(0U);
+    }
+
+    [Fact]
+    public void NextBounded_NonPowerOfTwoBound7_StaysWithinBound_AndIsDeterministic()
+    {
+        var first = new Pcg32V1(2024UL, 99UL);
+        var second = new Pcg32V1(2024UL, 99UL);
+
+        for (int i = 0; i < 64; i++)
+        {
+            uint a = first.NextBounded(7U);
+            uint b = second.NextBounded(7U);
+            a.ShouldBe(b);
+            a.ShouldBeLessThan(7U);
+        }
+    }
+
+    [Fact]
     public void AlgorithmIdentity_IsVersioned()
     {
         Pcg32V1.AlgorithmName.ShouldBe("Pcg32V1");

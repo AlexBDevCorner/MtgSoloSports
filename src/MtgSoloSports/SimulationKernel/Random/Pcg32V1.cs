@@ -84,6 +84,8 @@ public sealed class Pcg32V1
 
     /// <summary>
     /// Returns a value in [0, bound) with equal probability, using rejection sampling.
+    /// The rejection threshold is computed in the 32-bit output domain so the
+    /// accepted range stays an exact multiple of <paramref name="bound"/>.
     /// </summary>
     public uint NextBounded(uint bound)
     {
@@ -92,7 +94,7 @@ public sealed class Pcg32V1
             throw new ArgumentOutOfRangeException(nameof(bound), "Bound must be positive.");
         }
 
-        uint threshold = (uint)((0UL - bound) % bound);
+        uint threshold = ComputeRejectionThreshold(bound);
         while (true)
         {
             uint value = NextUInt32();
@@ -100,6 +102,23 @@ public sealed class Pcg32V1
             {
                 return value % bound;
             }
+        }
+    }
+
+    /// <summary>
+    /// Computes the rejection threshold for <see cref="NextBounded"/> in the 32-bit output domain.
+    /// The accepted raw range [threshold, 2^32) is always an exact multiple of <paramref name="bound"/>.
+    /// </summary>
+    public static uint ComputeRejectionThreshold(uint bound)
+    {
+        if (bound == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(bound), "Bound must be positive.");
+        }
+
+        unchecked
+        {
+            return (0u - bound) % bound;
         }
     }
 
