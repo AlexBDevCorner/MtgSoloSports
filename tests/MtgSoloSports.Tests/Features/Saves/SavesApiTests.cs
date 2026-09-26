@@ -1,9 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -18,6 +21,7 @@ public sealed class SavesApiTests
         try
         {
             using HttpClient client = factory.CreateClient();
+            await SeedCatalogAsync(client);
 
             using HttpResponseMessage created = await client.PostAsJsonAsync(
                 "/api/saves",
@@ -30,6 +34,14 @@ public sealed class SavesApiTests
             createdPayload.CurrentSeason.ShouldBe(1);
             createdPayload.Phase.ShouldBe("SeasonInProgress");
             createdPayload.RulesVersion.ShouldBe(1);
+            createdPayload.TotalAthletes.ShouldBe(2048);
+            createdPayload.AthletesPerColor.Count.ShouldBe(8);
+            foreach (int count in createdPayload.AthletesPerColor.Values)
+            {
+                count.ShouldBe(256);
+            }
+
+            createdPayload.UniverseChecksum.Length.ShouldBe(64);
             created.Headers.Location.ShouldNotBeNull();
 
             using HttpResponseMessage opened = await client.GetAsync($"/api/saves/{createdPayload.SaveId:D}");
@@ -51,7 +63,28 @@ public sealed class SavesApiTests
 
             using HttpResponseMessage reopened = await client.GetAsync($"/api/saves/{createdPayload.SaveId:D}");
             reopened.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-            Directory.GetFiles(root, "*.db").Length.ShouldBe(0);
+            Directory.GetFiles(Path.Combine(root, "saves"), "*.db").Length.ShouldBe(0);
+        }
+        finally
+        {
+            factory.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateSave_WithoutCatalog_ReturnsBadRequest()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.PostAsJsonAsync(
+                "/api/saves",
+                new { name = "No Catalog", seed = 1UL, stream = 2UL });
+            response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            string body = await response.Content.ReadAsStringAsync();
+            body.ShouldContain("256");
         }
         finally
         {
@@ -106,12 +139,14 @@ public sealed class SavesApiTests
         try
         {
             using HttpClient client = factory.CreateClient();
+            await SeedCatalogAsync(client);
+
             using HttpResponseMessage first = await client.PostAsJsonAsync("/api/saves", new { name = "One" });
             first.StatusCode.ShouldBe(HttpStatusCode.Created);
             using HttpResponseMessage second = await client.PostAsJsonAsync("/api/saves", new { name = "Two" });
             second.StatusCode.ShouldBe(HttpStatusCode.Created);
 
-            Directory.GetFiles(root, "*.db").Length.ShouldBe(2);
+            Directory.GetFiles(Path.Combine(root, "saves"), "*.db").Length.ShouldBe(2);
 
             using HttpResponseMessage listed = await client.GetAsync("/api/saves");
             ListPayload? listPayload = await listed.Content.ReadFromJsonAsync<ListPayload>();
@@ -125,12 +160,24 @@ public sealed class SavesApiTests
         }
     }
 
+    private static async Task SeedCatalogAsync(HttpClient client)
+    {
+        string bulkJson = UniverseTestCatalog.BuildBulkJson();
+        using StringContent content = new(bulkJson, Encoding.UTF8, "application/json");
+        using HttpResponseMessage imported = await client.PostAsync("/api/catalog/import", content).ConfigureAwait(false);
+        imported.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     private static (WebApplicationFactory<Program> Factory, string Root) CreateFactory()
     {
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-api-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         WebApplicationFactory<Program> factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            builder.ConfigureTestServices(services => services.Configure<SaveStorageOptions>(o => o.SavesRoot = root)));
+            builder.ConfigureTestServices(services =>
+            {
+                services.Configure<SaveStorageOptions>(o => o.SavesRoot = Path.Combine(root, "saves"));
+                services.Configure<CatalogStorageOptions>(o => o.CatalogPath = Path.Combine(root, "catalog.db"));
+            }));
         return (factory, root);
     }
 
@@ -145,7 +192,10 @@ public sealed class SavesApiTests
         int RngVersion,
         string RngState,
         string RngStream,
-        int RulesVersion);
+        int RulesVersion,
+        int TotalAthletes,
+        Dictionary<string, int> AthletesPerColor,
+        string UniverseChecksum);
 
     private sealed record ListPayload(IReadOnlyList<SavePayload> Saves);
 }

@@ -137,6 +137,36 @@ public sealed class CatalogStoreTests
         }
     }
 
+    [Fact]
+    public async Task ListAthletes_RoundTripsCandidatesForUniverseSelection()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            ImportCatalogHandler handler = new(store);
+            string json = """
+                [
+                  {"name": "White One", "layout": "normal", "type_line": "Creature — Human Wizard", "mana_cost": "{W}", "colors": ["W"], "keywords": [], "oracle_text": "", "set": "tst", "image_uris": {"normal": "https://img/white.jpg"}},
+                  {"name": "Blue One", "layout": "normal", "type_line": "Creature — Merfolk", "mana_cost": "{U}", "colors": ["U"], "keywords": [], "oracle_text": "", "set": "tst", "image_uris": null}
+                ]
+                """;
+            _ = await handler.HandleAsync(new ImportCatalogRequest(json));
+
+            IReadOnlyList<CatalogAthlete> athletes = await store.ListAthletesAsync();
+            athletes.Count.ShouldBe(2);
+
+            CatalogAthlete white = athletes.Single(a => string.Equals(a.Name, "White One", StringComparison.Ordinal));
+            white.SportingColor.ShouldBe(SportingColor.White);
+            white.CreatureTypes.ShouldBe(["Human", "Wizard"]);
+            white.ImageUrl.ShouldBe("https://img/white.jpg");
+            white.ManaCost.ShouldBe("{W}");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static (CatalogStore Store, string Root) CreateStore()
     {
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-catalog-" + Guid.NewGuid().ToString("N"));

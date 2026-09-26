@@ -122,6 +122,29 @@ public sealed class CatalogStore
     }
 
     /// <summary>
+    /// Lists every persisted catalog candidate for save-universe selection.
+    /// The selector re-sorts by name, so database row order is never trusted
+    /// as sporting input.
+    /// </summary>
+    public async Task<IReadOnlyList<CatalogAthlete>> ListAthletesAsync(CancellationToken cancellationToken = default)
+    {
+        using CatalogDbContext context = OpenDbContext();
+        _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
+        List<CatalogAthleteEntity> entities = await context.Athletes
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        List<CatalogAthlete> athletes = new(entities.Count);
+        foreach (CatalogAthleteEntity entity in entities)
+        {
+            athletes.Add(entity.ToAthlete());
+        }
+
+        return athletes;
+    }
+
+    /// <summary>
     /// Save-creation gate: throws when any sporting color has fewer than
     /// 256 unique athletes. MSS-006 calls this before universe selection.
     /// </summary>

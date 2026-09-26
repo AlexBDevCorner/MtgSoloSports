@@ -3,9 +3,12 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Universe.CreateUniverse;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
+using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -14,36 +17,53 @@ namespace MtgSoloSports.Tests.Features.Saves;
 public sealed class SaveStoreTests
 {
     [Fact]
-    public async Task CreateAsync_PersistsMetadataRulesAndRng()
+    public async Task CreateAsync_PersistsMetadataRulesRngAndUniverse()
     {
         var (store, root) = CreateStore();
         try
         {
             DateTimeOffset before = DateTimeOffset.UtcNow;
-            SaveStore.SaveDetailRecord created = await store.CreateAsync("First Save", 123UL, 456UL);
+            SaveStore.CreationRecord created = await store.CreateAsync("First Save", 123UL, 456UL, UniverseTestCatalog.Build());
             DateTimeOffset after = DateTimeOffset.UtcNow;
 
-            created.SaveId.ShouldNotBe(Guid.Empty);
-            created.Name.ShouldBe("First Save");
-            created.SchemaVersion.ShouldBe(SaveSchemaVersion.Current);
-            created.CurrentSeason.ShouldBe(1);
-            created.Phase.ShouldBe("SeasonInProgress");
-            created.RngAlgorithm.ShouldBe(Pcg32V1.AlgorithmName);
-            created.RngVersion.ShouldBe(Pcg32V1.AlgorithmVersion);
-            created.RulesVersion.ShouldBe(RulesV1.RulesVersion);
-            created.CreatedUtc.ShouldBeInRange(before.AddSeconds(-1), after.AddSeconds(1));
+            SaveStore.SaveDetailRecord detail = created.Detail;
+            detail.SaveId.ShouldNotBe(Guid.Empty);
+            detail.Name.ShouldBe("First Save");
+            detail.SchemaVersion.ShouldBe(SaveSchemaVersion.Current);
+            detail.CurrentSeason.ShouldBe(1);
+            detail.Phase.ShouldBe("SeasonInProgress");
+            detail.RngAlgorithm.ShouldBe(Pcg32V1.AlgorithmName);
+            detail.RngVersion.ShouldBe(Pcg32V1.AlgorithmVersion);
+            detail.RulesVersion.ShouldBe(RulesV1.RulesVersion);
+            detail.CreatedUtc.ShouldBeInRange(before.AddSeconds(-1), after.AddSeconds(1));
 
-            Pcg32State expected = new Pcg32V1(123UL, 456UL).Snapshot();
-            created.RngState.ShouldBe(expected.State);
-            created.RngStream.ShouldBe(expected.Stream);
+            // Persisted RNG state is the post-selection state, not the initial seed state.
+            Pcg32V1 fresh = new(123UL, 456UL);
+            UniverseSelection expected = UniverseSelector.Select(
+                UniverseTestCatalog.Build(),
+                fresh,
+                RulesV1.CreateDefault());
+            Pcg32State advanced = fresh.Snapshot();
+            advanced.State.ShouldNotBe(new Pcg32V1(123UL, 456UL).Snapshot().State);
+            detail.RngState.ShouldBe(advanced.State);
+            detail.RngStream.ShouldBe(advanced.Stream);
 
-            File.Exists(store.GetSaveFilePath(created.SaveId)).ShouldBeTrue();
+            created.Universe.TotalAthletes.ShouldBe(2048);
+            created.Universe.Checksum.ShouldBe(expected.Summary.Checksum);
+            foreach (SportingColor color in Enum.GetValues<SportingColor>())
+            {
+                created.Universe.AthletesPerColor[color].ShouldBe(256);
+            }
+
+            File.Exists(store.GetSaveFilePath(detail.SaveId)).ShouldBeTrue();
 
             string expectedRulesJson = RulesSnapshotDocument.FromRules(RulesV1.CreateDefault()).ToJson();
-            created.RulesJson.ShouldBe(expectedRulesJson);
-            RulesV1 rules = RulesSnapshotDocument.FromJson(created.RulesJson).ToRules();
+            detail.RulesJson.ShouldBe(expectedRulesJson);
+            RulesV1 rules = RulesSnapshotDocument.FromJson(detail.RulesJson).ToRules();
             rules.LeagueSize.ShouldBe(32);
             rules.RoundsPerStage.ShouldBe(16);
+
+            await AssertSavedUniverseAsync(store, detail.SaveId);
         }
         finally
         {
@@ -57,19 +77,19 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord first = await store.CreateAsync("Alpha", 1UL, 2UL);
-            SaveStore.SaveDetailRecord second = await store.CreateAsync("Beta", 3UL, 4UL);
+            SaveStore.CreationRecord first = await store.CreateAsync("Alpha", 1UL, 2UL, UniverseTestCatalog.Build());
+            SaveStore.CreationRecord second = await store.CreateAsync("Beta", 3UL, 4UL, UniverseTestCatalog.Build());
 
             IReadOnlyList<SaveStore.SaveRecord> listed = await store.ListAsync();
             listed.Count.ShouldBe(2);
             listed.Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal).ShouldBe(["Alpha", "Beta"]);
 
-            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(first.SaveId);
-            reopened.SaveId.ShouldBe(first.SaveId);
+            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(first.Detail.SaveId);
+            reopened.SaveId.ShouldBe(first.Detail.SaveId);
             reopened.Name.ShouldBe("Alpha");
-            reopened.RngState.ShouldBe(new Pcg32V1(1UL, 2UL).Snapshot().State);
+            reopened.RngState.ShouldBe(first.Detail.RngState);
 
-            SaveStore.SaveDetailRecord reopenedSecond = await store.OpenAsync(second.SaveId);
+            SaveStore.SaveDetailRecord reopenedSecond = await store.OpenAsync(second.Detail.SaveId);
             reopenedSecond.Name.ShouldBe("Beta");
         }
         finally
@@ -84,22 +104,22 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord first = await store.CreateAsync("One", 11UL, 12UL);
-            SaveStore.SaveDetailRecord second = await store.CreateAsync("Two", 13UL, 14UL);
+            SaveStore.CreationRecord first = await store.CreateAsync("One", 11UL, 12UL, UniverseTestCatalog.Build());
+            SaveStore.CreationRecord second = await store.CreateAsync("Two", 13UL, 14UL, UniverseTestCatalog.Build());
 
-            string firstPath = store.GetSaveFilePath(first.SaveId);
-            string secondPath = store.GetSaveFilePath(second.SaveId);
+            string firstPath = store.GetSaveFilePath(first.Detail.SaveId);
+            string secondPath = store.GetSaveFilePath(second.Detail.SaveId);
             firstPath.Equals(secondPath, StringComparison.Ordinal).ShouldBeFalse();
             File.Exists(firstPath).ShouldBeTrue();
             File.Exists(secondPath).ShouldBeTrue();
             Directory.GetFiles(root, "*.db").Length.ShouldBe(2);
 
-            string journalMode = await ReadJournalModeAsync(store, first.SaveId);
+            string journalMode = await ReadJournalModeAsync(store, first.Detail.SaveId);
             journalMode.ShouldBe("wal", StringCompareShould.IgnoreCase);
 
-            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(first.SaveId);
+            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(first.Detail.SaveId);
             reopened.Name.ShouldBe("One");
-            reopened.SaveId.ShouldNotBe(second.SaveId);
+            reopened.SaveId.ShouldNotBe(second.Detail.SaveId);
         }
         finally
         {
@@ -113,10 +133,10 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord created = await store.CreateAsync("Atomic", 7UL, 9UL);
-            Pcg32State expected = AdvanceOnce(7UL, 9UL);
+            SaveStore.CreationRecord created = await store.CreateAsync("Atomic", 7UL, 9UL, UniverseTestCatalog.Build());
+            Pcg32State expected = AdvanceFrom(created.Detail.RngState, created.Detail.RngStream);
 
-            using (SaveDbContext context = store.OpenDbContext(created.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
             {
                 using var transaction = await context.Database.BeginTransactionAsync();
                 SaveMetadataEntity metadata = await context.SaveMetadata.SingleAsync(e => e.Id == 1);
@@ -128,7 +148,7 @@ public sealed class SaveStoreTests
                 await transaction.CommitAsync();
             }
 
-            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.SaveId);
+            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.Detail.SaveId);
             reopened.CurrentSeason.ShouldBe(2);
             reopened.RngState.ShouldBe(expected.State);
             reopened.RngStream.ShouldBe(expected.Stream);
@@ -145,12 +165,12 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord created = await store.CreateAsync("Rollback", 21UL, 22UL);
-            Pcg32State original = new Pcg32V1(21UL, 22UL).Snapshot();
-            Pcg32State discarded = AdvanceOnce(21UL, 22UL);
+            SaveStore.CreationRecord created = await store.CreateAsync("Rollback", 21UL, 22UL, UniverseTestCatalog.Build());
+            Pcg32State original = new(created.Detail.RngState, created.Detail.RngStream);
+            Pcg32State discarded = AdvanceFrom(created.Detail.RngState, created.Detail.RngStream);
             discarded.State.ShouldNotBe(original.State);
 
-            using (SaveDbContext context = store.OpenDbContext(created.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
             {
                 using var transaction = await context.Database.BeginTransactionAsync();
                 SaveMetadataEntity metadata = await context.SaveMetadata.SingleAsync(e => e.Id == 1);
@@ -161,7 +181,7 @@ public sealed class SaveStoreTests
                 await transaction.RollbackAsync();
             }
 
-            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.SaveId);
+            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.Detail.SaveId);
             reopened.CurrentSeason.ShouldBe(1);
             reopened.RngState.ShouldBe(original.State);
             reopened.RngStream.ShouldBe(original.Stream);
@@ -178,10 +198,10 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord created = await store.CreateAsync("Edges", 5UL, 6UL);
+            SaveStore.CreationRecord created = await store.CreateAsync("Edges", 5UL, 6UL, UniverseTestCatalog.Build());
             Pcg32State edge = new(ulong.MaxValue, 0UL);
 
-            using (SaveDbContext context = store.OpenDbContext(created.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
             {
                 RngStateEntity rng = await context.RngStates.SingleAsync(e => e.Id == 1);
                 rng.State = unchecked((long)edge.State);
@@ -189,7 +209,7 @@ public sealed class SaveStoreTests
                 _ = await context.SaveChangesAsync();
             }
 
-            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.SaveId);
+            SaveStore.SaveDetailRecord reopened = await store.OpenAsync(created.Detail.SaveId);
             reopened.RngState.ShouldBe(ulong.MaxValue);
             reopened.RngStream.ShouldBe(0UL);
 
@@ -208,19 +228,19 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            SaveStore.SaveDetailRecord created = await store.CreateAsync("Doomed", 31UL, 32UL);
+            SaveStore.CreationRecord created = await store.CreateAsync("Doomed", 31UL, 32UL, UniverseTestCatalog.Build());
             string sentinel = Path.Combine(root, "keep.txt");
             await File.WriteAllTextAsync(sentinel, "keep");
             string foreign = Path.Combine(root, "11111111111111111111111111111111.db");
             await File.WriteAllTextAsync(foreign, "not a save");
 
-            await store.DeleteAsync(created.SaveId);
+            await store.DeleteAsync(created.Detail.SaveId);
 
-            File.Exists(store.GetSaveFilePath(created.SaveId)).ShouldBeFalse();
+            File.Exists(store.GetSaveFilePath(created.Detail.SaveId)).ShouldBeFalse();
             File.Exists(sentinel).ShouldBeTrue();
             File.Exists(foreign).ShouldBeTrue();
             (await store.ListAsync()).Count.ShouldBe(0);
-            await Should.ThrowAsync<SaveNotFoundException>(() => store.OpenAsync(created.SaveId));
+            await Should.ThrowAsync<SaveNotFoundException>(() => store.OpenAsync(created.Detail.SaveId));
         }
         finally
         {
@@ -251,7 +271,7 @@ public sealed class SaveStoreTests
         var (store, root) = CreateStore();
         try
         {
-            await Should.ThrowAsync<ArgumentException>(() => store.CreateAsync(name, 1UL, 2UL));
+            await Should.ThrowAsync<ArgumentException>(() => store.CreateAsync(name, 1UL, 2UL, []));
         }
         finally
         {
@@ -266,7 +286,7 @@ public sealed class SaveStoreTests
         try
         {
             string longName = new('N', SaveStore.MaxNameLength + 1);
-            await Should.ThrowAsync<ArgumentException>(() => store.CreateAsync(longName, 1UL, 2UL));
+            await Should.ThrowAsync<ArgumentException>(() => store.CreateAsync(longName, 1UL, 2UL, []));
         }
         finally
         {
@@ -322,9 +342,23 @@ public sealed class SaveStoreTests
         return (store, root);
     }
 
-    private static Pcg32State AdvanceOnce(ulong seed, ulong stream)
+    private static async Task AssertSavedUniverseAsync(SaveStore store, Guid saveId)
     {
-        Pcg32V1 rng = new(seed, stream);
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        (await context.SaveAthletes.CountAsync().ConfigureAwait(false)).ShouldBe(2048);
+        foreach (SportingColor color in Enum.GetValues<SportingColor>())
+        {
+            int count = await context.SaveAthletes.CountAsync(e => e.SportingColor == (int)color).ConfigureAwait(false);
+            count.ShouldBe(256);
+        }
+
+        int pooled = await context.SaveAthletes.CountAsync(e => e.Status == (int)SaveAthleteStatus.CommonPool).ConfigureAwait(false);
+        pooled.ShouldBe(2048);
+    }
+
+    private static Pcg32State AdvanceFrom(ulong state, ulong stream)
+    {
+        Pcg32V1 rng = Pcg32V1.Restore(state, stream);
         _ = rng.NextUInt32();
         return rng.Snapshot();
     }
