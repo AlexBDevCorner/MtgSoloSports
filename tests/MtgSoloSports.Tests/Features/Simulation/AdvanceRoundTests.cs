@@ -245,13 +245,15 @@ public sealed class AdvanceRoundTests
             }
 
             // Simulate a save file created before MSS-008: remove the Stages/Rounds
-            // schema and its EF migration history entry so the file matches the
-            // pre-round-simulation schema.
+            // and StageStandings schema plus their EF migration history entries so
+            // the file matches the pre-round-simulation schema.
             using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 await context.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"Rounds\";");
+                await context.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"StageStandings\";");
                 await context.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"Stages\";");
                 await context.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20260926130000_AddRoundSimulation';");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20260926140000_AddStageCompletion';");
             }
 
             AdvanceRoundHandler handler = new(store);

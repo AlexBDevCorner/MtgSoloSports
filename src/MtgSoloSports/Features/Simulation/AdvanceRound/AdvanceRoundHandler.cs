@@ -71,6 +71,12 @@ public sealed class AdvanceRoundHandler
         List<MemberRow> roster = await LoadRosterAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
 
         StageEntity stage = await LoadOrCreateStageAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
+        if (stage.IsComplete)
+        {
+            throw new AdvanceRoundConflictException(
+                $"Stage {stage.StageNumber} for league '{league.Name}' is already complete; stage completion is handled by the stage slice.");
+        }
+
         int roundNumber = checked(stage.CompletedRounds + 1);
         if (roundNumber > rules.RoundsPerStage)
         {
@@ -81,7 +87,7 @@ public sealed class AdvanceRoundHandler
         await EnsureRoundAbsentAsync(context, season, league, stage.StageNumber, roundNumber, cancellationToken).ConfigureAwait(false);
 
         Dictionary<int, Points> cumulativeBefore = await LoadCumulativeBeforeAsync(context, season, league, stage, roundNumber, rules, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, Bonus> activeBonuses = LoadStageStartActiveBonuses(roster, season, stage);
+        Dictionary<int, Bonus> activeBonuses = await LoadStageStartActiveBonusesAsync(context, roster, season, stage, rules, cancellationToken).ConfigureAwait(false);
 
         RoundSimulationResult simulation = SimulateRound(roster, cumulativeBefore, activeBonuses, rngBefore, rules);
         RoundPayloadDocument payload = BuildPayload(season, league, stage, roundNumber, rules, rngBefore, simulation);
@@ -408,23 +414,114 @@ public sealed class AdvanceRoundHandler
         return before;
     }
 
-    internal static Dictionary<int, Bonus> LoadStageStartActiveBonuses(
+    internal static async Task<Dictionary<int, Bonus>> LoadStageStartActiveBonusesAsync(
+        SaveDbContext context,
         List<MemberRow> roster,
         SeasonEntity season,
-        StageEntity stage)
+        StageEntity stage,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(season);
         ArgumentNullException.ThrowIfNull(stage);
+        ArgumentNullException.ThrowIfNull(rules);
 
-        // MSS-008 scope: Season 1 Stage 1 has no prior stages or seasons, so the
-        // stage-start active bonus is zero for every athlete. Bonus earned during
-        // the current stage stays pending and never affects the current stage;
-        // persistent bonus activation arrives with the stage slice (MSS-009).
+        Dictionary<int, int> seasonNumbers = await LoadSeasonNumbersAsync(context, season, cancellationToken).ConfigureAwait(false);
+        int currentSeasonNumber = seasonNumbers[season.Id];
+        List<StageStandingEntity> standings = await LoadBonusStandingsAsync(context, roster, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, List<BonusContribution>> contributions = GroupBonusContributions(roster, standings, seasonNumbers, currentSeasonNumber);
+        return ComputeStageStartBonuses(roster, contributions, currentSeasonNumber, stage.StageNumber, rules);
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadSeasonNumbersAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, int> seasonNumbers = await context.Seasons
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        if (!seasonNumbers.TryGetValue(season.Id, out int current))
+        {
+            throw new InvalidOperationException($"Save has no season row for season {season.SeasonNumber}.");
+        }
+
+        return seasonNumbers;
+    }
+
+    internal static async Task<List<StageStandingEntity>> LoadBonusStandingsAsync(
+        SaveDbContext context,
+        List<MemberRow> roster,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> rosterIds = new(roster.Select(r => r.AthleteId));
+        return await context.StageStandings
+            .AsNoTracking()
+            .Where(e => rosterIds.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static Dictionary<int, List<BonusContribution>> GroupBonusContributions(
+        List<MemberRow> roster,
+        List<StageStandingEntity> standings,
+        Dictionary<int, int> seasonNumbers,
+        int currentSeasonNumber)
+    {
+        HashSet<int> rosterIds = new(roster.Select(r => r.AthleteId));
+        Dictionary<int, List<BonusContribution>> contributionsByAthlete = new(roster.Count);
+        foreach (MemberRow row in roster)
+        {
+            contributionsByAthlete[row.AthleteId] = [];
+        }
+
+        foreach (StageStandingEntity standing in standings)
+        {
+            if (!rosterIds.Contains(standing.SaveAthleteId))
+            {
+                continue;
+            }
+
+            if (!seasonNumbers.TryGetValue(standing.SeasonId, out int earnedSeason))
+            {
+                throw new InvalidOperationException(
+                    $"Stage standing {standing.Id} references unknown season {standing.SeasonId}.");
+            }
+
+            // Only the most recent five seasons contribute; older bonus decays to zero.
+            // Current-stage pending bonus is excluded by EffectiveBonus (earned stage >= current stage).
+            if (earnedSeason > currentSeasonNumber || currentSeasonNumber - earnedSeason > 5)
+            {
+                continue;
+            }
+
+            contributionsByAthlete[standing.SaveAthleteId].Add(new BonusContribution(
+                earnedSeason,
+                standing.StageNumber,
+                Bonus.FromThousandths(standing.EarnedBonusThousandths)));
+        }
+
+        return contributionsByAthlete;
+    }
+
+    internal static Dictionary<int, Bonus> ComputeStageStartBonuses(
+        List<MemberRow> roster,
+        Dictionary<int, List<BonusContribution>> contributions,
+        int currentSeasonNumber,
+        int currentStageNumber,
+        RulesV1 rules)
+    {
         Dictionary<int, Bonus> bonuses = new(roster.Count);
         foreach (MemberRow row in roster)
         {
-            bonuses[row.AthleteId] = Bonus.Zero;
+            bonuses[row.AthleteId] = BonusCalculator.EffectiveBonus(
+                contributions[row.AthleteId],
+                currentSeasonNumber,
+                currentStageNumber,
+                rules);
         }
 
         return bonuses;

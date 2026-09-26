@@ -33,6 +33,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<RoundEntity> Rounds => Set<RoundEntity>();
 
+    public DbSet<StageStandingEntity> StageStandings => Set<StageStandingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -155,6 +157,13 @@ public sealed class SaveDbContext : DbContext
 
     private static void ConfigureSimulationTables(ModelBuilder modelBuilder)
     {
+        ConfigureStages(modelBuilder);
+        ConfigureStageStandings(modelBuilder);
+        ConfigureRounds(modelBuilder);
+    }
+
+    private static void ConfigureStages(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<StageEntity>(entity =>
         {
             entity.ToTable("Stages");
@@ -166,8 +175,37 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.LeagueId).IsRequired();
             entity.Property(e => e.StageNumber).IsRequired();
             entity.Property(e => e.CompletedRounds).IsRequired();
+            entity.Property(e => e.IsComplete).IsRequired();
         });
+    }
 
+    private static void ConfigureStageStandings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<StageStandingEntity>(entity =>
+        {
+            entity.ToTable("StageStandings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber });
+            entity.HasIndex(e => e.StageId);
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.LeagueId).IsRequired();
+            entity.Property(e => e.StageId).IsRequired();
+            entity.Property(e => e.StageNumber).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.StageRank).IsRequired();
+            entity.Property(e => e.StageScoreThousandths).IsRequired();
+            entity.Property(e => e.BaseScoreThousandths).IsRequired();
+            entity.Property(e => e.ChampionshipPointsThousandths).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
+            entity.Property(e => e.EarnedBonusThousandths).IsRequired();
+        });
+    }
+
+    private static void ConfigureRounds(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<RoundEntity>(entity =>
         {
             entity.ToTable("Rounds");
