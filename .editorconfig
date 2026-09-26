@@ -33,3 +33,7 @@ csharp_style_pattern_matching_over_is_with_cast_check = true:suggestion
 [*.{json,jsonc,yml,yaml,md,ts,tsx,css,html}]
 indent_style = space
 indent_size = 2
+
+# EF Core migrations are scaffolded tool output; analyzers/formatters skip them.
+[src/MtgSoloSports/Persistence/Saves/Migrations/*.cs]
+generated_code = true
