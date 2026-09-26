@@ -41,6 +41,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<AthleteSeasonSummaryEntity> AthleteSeasonSummaries => Set<AthleteSeasonSummaryEntity>();
 
+    public DbSet<MovementEntity> Movements => Set<MovementEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -49,6 +51,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureSeasonTables(modelBuilder);
         ConfigureSimulationTables(modelBuilder);
         ConfigureAthleteProjections(modelBuilder);
+        ConfigureMovements(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -308,6 +311,27 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.RngAfterStream).IsRequired();
             entity.Property(e => e.PayloadJson).IsRequired();
             entity.Property(e => e.PayloadChecksum).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureMovements(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MovementEntity>(entity =>
+        {
+            entity.ToTable("Movements");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.ToSeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.FromLeagueId });
+            entity.HasIndex(e => new { e.ToSeasonId, e.ToLeagueId });
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.FromSeasonId).IsRequired();
+            entity.Property(e => e.ToSeasonId).IsRequired();
+            entity.Property(e => e.FromLeagueId).IsRequired();
+            entity.Property(e => e.ToLeagueId).IsRequired();
+            entity.Property(e => e.Kind).IsRequired();
+            entity.Property(e => e.FromSeasonRank).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
         });
     }
 
