@@ -424,6 +424,16 @@ input {
   font-size: 1rem;
 }
 
+select {
+  background: #0e1420;
+  border: 1px solid var(--line);
+  color: inherit;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 1rem;
+  max-width: 100%;
+}
+
 input:focus-visible,
 button:focus-visible {
   outline: 2px solid var(--accent);
@@ -499,6 +509,96 @@ button:focus-visible {
   font-weight: 700;
   font-size: 1.05rem;
   margin: 0;
+}
+
+.live-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.live-controls .field {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.live-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.round-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.card-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.card-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  background: #0e1420;
+}
+
+.card-thumb-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.card-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-sub {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.move-up {
+  color: var(--ok);
+}
+
+.move-down {
+  color: var(--bad);
+}
+
+.move-flat {
+  color: var(--text-dim);
 }
 
 code {

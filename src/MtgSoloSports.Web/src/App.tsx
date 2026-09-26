@@ -3,6 +3,7 @@ import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
+import { LivePage } from './features/live/LivePage';
 import { AppShell, type View } from './features/shell/AppShell';
 import { SavesPage } from './features/saves/SavesPage';
 import { useSaves } from './features/saves/useSaves';
@@ -80,6 +81,17 @@ export default function App() {
           onSelect={(saveId) => {
             setSelectedSaveId(saveId);
             setView('dashboard');
+          }}
+        />
+      ) : view === 'live' ? (
+        <LivePage
+          saveId={selectedSaveId}
+          progress={dashboard.data?.progress ?? null}
+          progressLoading={dashboard.loading}
+          hasSelection={selectedSaveId !== null}
+          onMutated={dashboard.refresh}
+          onGoToSaves={() => {
+            setView('saves');
           }}
         />
       ) : (
