@@ -21,6 +21,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<RngStateEntity> RngStates => Set<RngStateEntity>();
 
+    public DbSet<SaveAthleteEntity> SaveAthletes => Set<SaveAthleteEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -56,6 +58,24 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.AlgorithmVersion).IsRequired();
             entity.Property(e => e.State).IsRequired();
             entity.Property(e => e.Stream).IsRequired();
+        });
+
+        modelBuilder.Entity<SaveAthleteEntity>(entity =>
+        {
+            entity.ToTable("SaveAthletes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.HasIndex(e => e.SportingColor);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.CreatureTypesJson).IsRequired();
+            entity.Property(e => e.FrontColors).IsRequired().HasMaxLength(8);
+            entity.Property(e => e.ManaCost).IsRequired();
+            entity.Property(e => e.TypeLine).IsRequired();
+            entity.Property(e => e.ImageUrl).HasMaxLength(1024);
+            entity.Property(e => e.SetCode).HasMaxLength(16);
+            entity.Property(e => e.Status).IsRequired();
         });
     }
 
