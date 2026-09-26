@@ -1,21 +1,29 @@
+using MtgSoloSports.Features.Catalog.GetCatalogStats;
+using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
 using MtgSoloSports.Features.Saves.ListSaves;
 using MtgSoloSports.Features.Saves.OpenSave;
+using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 builder.Services.Configure<SaveStorageOptions>(builder.Configuration.GetSection(SaveStorageOptions.SectionName));
+builder.Services.Configure<CatalogStorageOptions>(builder.Configuration.GetSection(CatalogStorageOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<SaveSqliteConnectionInterceptor>();
 builder.Services.AddSingleton<SaveDbContextFactory>();
 builder.Services.AddSingleton<SaveStore>();
+builder.Services.AddSingleton<CatalogDbContextFactory>();
+builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddScoped<CreateSaveHandler>();
 builder.Services.AddScoped<ListSavesHandler>();
 builder.Services.AddScoped<OpenSaveHandler>();
 builder.Services.AddScoped<DeleteSaveHandler>();
+builder.Services.AddScoped<ImportCatalogHandler>();
+builder.Services.AddScoped<GetCatalogStatsHandler>();
 
 var app = builder.Build();
 
@@ -29,6 +37,8 @@ CreateSaveEndpoint.Map(app);
 ListSavesEndpoint.Map(app);
 OpenSaveEndpoint.Map(app);
 DeleteSaveEndpoint.Map(app);
+ImportCatalogEndpoint.Map(app);
+GetCatalogStatsEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
