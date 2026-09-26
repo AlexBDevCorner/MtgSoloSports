@@ -59,6 +59,8 @@ public static class SeasonFinalizer
         context.ApplyRngState(rngAfter);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await VerifyFinalizedAsync(context, season, leagues, rules, cancellationToken).ConfigureAwait(false);
+        await Features.Athletes.Projections.AthleteProjectionUpdater.RefreshAfterSeasonAsync(
+            context, rules, cancellationToken).ConfigureAwait(false);
         return (true, rngAfter);
     }
 

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import {
+  fetchCurrentStandings,
+  type CurrentStandings,
+} from '../athletes/athleteApi';
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
@@ -60,6 +64,7 @@ export function LivePage({
   hasSelection,
   onMutated,
   onGoToSaves,
+  onSelectAthlete,
 }: {
   saveId: string | null;
   progress: SeasonProgress | null;
@@ -67,6 +72,7 @@ export function LivePage({
   hasSelection: boolean;
   onMutated: () => void;
   onGoToSaves: () => void;
+  onSelectAthlete: (athleteId: number) => void;
 }) {
   const [leagueId, setLeagueId] = useState<number | null>(null);
   const [mode, setMode] = useState<LiveMode>(() =>
@@ -106,6 +112,43 @@ export function LivePage({
   const completedRounds = stageRounds.rounds?.completedRounds ?? 0;
   const roundsPerStage = stageRounds.rounds?.roundsPerStage ?? 16;
   const isStageComplete = stageRounds.rounds?.isStageComplete ?? false;
+
+  const [standings, setStandings] = useState<CurrentStandings | null>(null);
+  const [standingsLoading, setStandingsLoading] = useState(false);
+  const [standingsError, setStandingsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!saveId || leagueId === null) {
+      setStandings(null);
+      setStandingsLoading(false);
+      setStandingsError(null);
+      return;
+    }
+    const controller = new AbortController();
+    const { signal } = controller;
+    setStandingsLoading(true);
+    setStandingsError(null);
+    fetchCurrentStandings(saveId, leagueId, signal)
+      .then((loaded) => {
+        setStandings(loaded);
+        setStandingsLoading(false);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        if (failure instanceof ApiError && failure.status === 404) {
+          setStandings(null);
+          setStandingsError(null);
+        } else {
+          setStandingsError(apiErrorMessage(failure));
+        }
+        setStandingsLoading(false);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [saveId, leagueId, completedRounds, isStageComplete]);
 
   const visibleRound: StageRound | null = useMemo(() => {
     const rounds = stageRounds.rounds?.rounds ?? [];
@@ -247,6 +290,10 @@ export function LivePage({
     } finally {
       setCompleting(false);
     }
+  }
+
+  function openAthlete(athleteId: number): void {
+    onSelectAthlete(athleteId);
   }
 
   return (
@@ -458,7 +505,16 @@ export function LivePage({
                             </span>
                           )}
                           <span className="card-identity">
-                            <span className="card-name">{placement.name}</span>
+                            <button
+                              type="button"
+                              className="card-name card-link"
+                              title={`Open career profile for ${placement.name}`}
+                              onClick={() => {
+                                openAthlete(placement.athleteId);
+                              }}
+                            >
+                              {placement.name}
+                            </button>
                             {caption ? <span className="card-sub">{caption}</span> : null}
                           </span>
                         </div>
@@ -497,6 +553,68 @@ export function LivePage({
           ) : null}
         </Card>
       ) : null}
+
+      <Card
+        eyebrow="Standings"
+        title={
+          standings
+            ? `${standings.leagueName} — ${standings.completedStages} stage(s)${standings.isFinal ? ' · final' : ''}`
+            : 'Current standings'
+        }
+      >
+        {standingsLoading && !standings ? (
+          <Loading label="Loading standings…" />
+        ) : standingsError ? (
+          <Notice tone="error" title="Standings unavailable">
+            <p>{standingsError}</p>
+          </Notice>
+        ) : !standings || standings.standings.length === 0 ? (
+          <Notice tone="empty" title="No standings yet">
+            <p>Complete a stage on the backend to populate championship standings.</p>
+          </Notice>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Card</th>
+                  <th scope="col">Champ pts</th>
+                  <th scope="col">Stage W</th>
+                  <th scope="col">Round W</th>
+                </tr>
+              </thead>
+              <tbody>
+                {standings.standings.map((row) => (
+                  <tr key={row.athleteId}>
+                    <td className="numeric">{row.seasonRank}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="card-name card-link"
+                        title={`Open career profile for ${row.name}`}
+                        onClick={() => {
+                          openAthlete(row.athleteId);
+                        }}
+                      >
+                        {row.name}
+                      </button>
+                      {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
+                    </td>
+                    <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
+                    <td className="numeric">{row.stageWins}</td>
+                    <td className="numeric">{row.roundWins}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted small">
+          Standings accumulate persisted stage championship points and link each card row
+          to its career profile.
+        </p>
+      </Card>
     </div>
   );
 }

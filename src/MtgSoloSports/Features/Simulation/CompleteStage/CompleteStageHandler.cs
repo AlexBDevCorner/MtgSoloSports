@@ -457,6 +457,9 @@ public sealed class CompleteStageHandler
 
         await VerifyStandingsAsync(context, completion, ranked, cancellationToken).ConfigureAwait(false);
 
+        await Features.Athletes.Projections.AthleteProjectionUpdater.RefreshAfterStageAsync(
+            context, completion.Season, completion.League, completion.Rules, cancellationToken).ConfigureAwait(false);
+
         int? nextStageNumber = CreateNextStage(context, completion);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return nextStageNumber;
