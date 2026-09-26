@@ -1,12 +1,16 @@
 using MtgSoloSports.Features.Catalog.GetCatalogStats;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Leagues.GetSeason1Leagues;
+using MtgSoloSports.Features.Leagues.SeasonProgress;
+using MtgSoloSports.Features.Leagues.SeasonTable;
 using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
 using MtgSoloSports.Features.Saves.ListSaves;
 using MtgSoloSports.Features.Saves.OpenSave;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
+using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
 
@@ -30,6 +34,10 @@ builder.Services.AddScoped<GetCatalogStatsHandler>();
 builder.Services.AddScoped<GetSeason1LeaguesHandler>();
 builder.Services.AddScoped<AdvanceRoundHandler>();
 builder.Services.AddScoped<CompleteStageHandler>();
+builder.Services.AddScoped<CompleteStageForAllLeaguesHandler>();
+builder.Services.AddScoped<GetCurrentStandingsHandler>();
+builder.Services.AddScoped<GetSeasonTableHandler>();
+builder.Services.AddScoped<GetSeasonProgressHandler>();
 
 var app = builder.Build();
 
@@ -48,6 +56,10 @@ GetCatalogStatsEndpoint.Map(app);
 GetSeason1LeaguesEndpoint.Map(app);
 AdvanceRoundEndpoint.Map(app);
 CompleteStageEndpoint.Map(app);
+CompleteStageForAllLeaguesEndpoint.Map(app);
+GetCurrentStandingsEndpoint.Map(app);
+GetSeasonTableEndpoint.Map(app);
+GetSeasonProgressEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 

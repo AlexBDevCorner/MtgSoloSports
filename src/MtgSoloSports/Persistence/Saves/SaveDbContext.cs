@@ -35,6 +35,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<StageStandingEntity> StageStandings => Set<StageStandingEntity>();
 
+    public DbSet<SeasonStandingEntity> SeasonStandings => Set<SeasonStandingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -118,6 +120,7 @@ public sealed class SaveDbContext : DbContext
             entity.HasIndex(e => e.SeasonNumber).IsUnique();
             entity.Property(e => e.SeasonNumber).IsRequired();
             entity.Property(e => e.HasSuperleague).IsRequired();
+            entity.Property(e => e.IsComplete).IsRequired();
         });
     }
 
@@ -159,6 +162,7 @@ public sealed class SaveDbContext : DbContext
     {
         ConfigureStages(modelBuilder);
         ConfigureStageStandings(modelBuilder);
+        ConfigureSeasonStandings(modelBuilder);
         ConfigureRounds(modelBuilder);
     }
 
@@ -201,6 +205,31 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.RoundWins).IsRequired();
             entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
             entity.Property(e => e.EarnedBonusThousandths).IsRequired();
+        });
+    }
+
+    private static void ConfigureSeasonStandings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SeasonStandingEntity>(entity =>
+        {
+            entity.ToTable("SeasonStandings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.SeasonRank }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.LeagueId).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SeasonRank).IsRequired();
+            entity.Property(e => e.TotalChampionshipPointsThousandths).IsRequired();
+            entity.Property(e => e.TotalStageScoreThousandths).IsRequired();
+            entity.Property(e => e.TotalBaseScoreThousandths).IsRequired();
+            entity.Property(e => e.StageWins).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.StagePlaceCountsJson).IsRequired();
+            entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
+            entity.Property(e => e.IsChampion).IsRequired();
         });
     }
 

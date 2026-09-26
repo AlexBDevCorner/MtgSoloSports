@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -76,6 +77,8 @@ public sealed class AdvanceRoundHandler
             throw new AdvanceRoundConflictException(
                 $"Stage {stage.StageNumber} for league '{league.Name}' is already complete; stage completion is handled by the stage slice.");
         }
+
+        await EnsureGlobalStageLegalAsync(context, season, league, stage, rules, cancellationToken).ConfigureAwait(false);
 
         int roundNumber = checked(stage.CompletedRounds + 1);
         if (roundNumber > rules.RoundsPerStage)
@@ -345,6 +348,35 @@ public sealed class AdvanceRoundHandler
         }
 
         return current;
+    }
+
+    /// <summary>
+    /// Enforces synchronous global progression: a league may only advance
+    /// rounds for the current global stage. Stage N+1 cannot begin until
+    /// Stage N is complete for every active league.
+    /// </summary>
+    internal static async Task EnsureGlobalStageLegalAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        LeagueEntity league,
+        StageEntity stage,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(season);
+        ArgumentNullException.ThrowIfNull(league);
+        ArgumentNullException.ThrowIfNull(stage);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        GlobalStageGate.GlobalStageView global = await GlobalStageGate
+            .LoadGlobalStageAsync(context, season, rules, cancellationToken)
+            .ConfigureAwait(false);
+        if (!GlobalStageGate.IsStageLegal(stage.StageNumber, global))
+        {
+            throw new AdvanceRoundConflictException(
+                GlobalStageGate.BuildBlockedMessage(league.Name, stage.StageNumber, global));
+        }
     }
 
     internal static async Task EnsureRoundAbsentAsync(
