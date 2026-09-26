@@ -23,10 +23,22 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<SaveAthleteEntity> SaveAthletes => Set<SaveAthleteEntity>();
 
+    public DbSet<SeasonEntity> Seasons => Set<SeasonEntity>();
+
+    public DbSet<LeagueEntity> Leagues => Set<LeagueEntity>();
+
+    public DbSet<SeasonMembershipEntity> SeasonMemberships => Set<SeasonMembershipEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
+        ConfigureSingleRowTables(modelBuilder);
+        ConfigureAthletes(modelBuilder);
+        ConfigureSeasonTables(modelBuilder);
+    }
 
+    private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<SaveMetadataEntity>(entity =>
         {
             entity.ToTable("SaveMetadata", table => table.HasCheckConstraint("CK_SaveMetadata_SingleRow", "\"Id\" = 1"));
@@ -59,7 +71,10 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.State).IsRequired();
             entity.Property(e => e.Stream).IsRequired();
         });
+    }
 
+    private static void ConfigureAthletes(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<SaveAthleteEntity>(entity =>
         {
             entity.ToTable("SaveAthletes");
@@ -76,6 +91,60 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.ImageUrl).HasMaxLength(1024);
             entity.Property(e => e.SetCode).HasMaxLength(16);
             entity.Property(e => e.Status).IsRequired();
+        });
+    }
+
+    private static void ConfigureSeasonTables(ModelBuilder modelBuilder)
+    {
+        ConfigureSeasons(modelBuilder);
+        ConfigureLeagues(modelBuilder);
+        ConfigureMemberships(modelBuilder);
+    }
+
+    private static void ConfigureSeasons(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SeasonEntity>(entity =>
+        {
+            entity.ToTable("Seasons");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => e.SeasonNumber).IsUnique();
+            entity.Property(e => e.SeasonNumber).IsRequired();
+            entity.Property(e => e.HasSuperleague).IsRequired();
+        });
+    }
+
+    private static void ConfigureLeagues(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<LeagueEntity>(entity =>
+        {
+            entity.ToTable("Leagues");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.Kind, e.SportingColor }).IsUnique();
+            entity.HasIndex(e => e.SeasonId);
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.Kind).IsRequired();
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureMemberships(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<SeasonMembershipEntity>(entity =>
+        {
+            entity.ToTable("SeasonMemberships");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
+            entity.HasIndex(e => new { e.SeasonId, e.SportingColor });
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.DrawIndex });
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.DrawIndex).IsRequired();
         });
     }
 

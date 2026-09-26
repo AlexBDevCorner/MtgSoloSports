@@ -37,10 +37,15 @@ public sealed class SaveStoreTests
             detail.RulesVersion.ShouldBe(RulesV1.RulesVersion);
             detail.CreatedUtc.ShouldBeInRange(before.AddSeconds(-1), after.AddSeconds(1));
 
-            // Persisted RNG state is the post-selection state, not the initial seed state.
+            // Persisted RNG state is the post-draw state (universe selection plus
+            // inaugural Season 1 draw), not the initial seed state.
             Pcg32V1 fresh = new(123UL, 456UL);
             UniverseSelection expected = UniverseSelector.Select(
                 UniverseTestCatalog.Build(),
+                fresh,
+                RulesV1.CreateDefault());
+            _ = MtgSoloSports.Features.Leagues.InauguralDraw.InauguralDrawSelector.Select(
+                expected.Selected,
                 fresh,
                 RulesV1.CreateDefault());
             Pcg32State advanced = fresh.Snapshot();

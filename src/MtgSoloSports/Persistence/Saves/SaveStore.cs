@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Features.Leagues.InauguralDraw;
 using MtgSoloSports.Features.Universe.CreateUniverse;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
@@ -104,12 +105,15 @@ public sealed class SaveStore
     /// <summary>
     /// Creates one independent save universe: metadata, immutable Rules v1
     /// snapshot, the deterministic 2,048-athlete universe selected from
-    /// <paramref name="catalogAthletes"/> with the save RNG, and the
-    /// post-selection RNG state, all committed in a single transaction.
-    /// Selection consumes only the save RNG in sporting-color enum order from
-    /// name-sorted pools, so an equivalent seed plus catalog reproduces the
-    /// equivalent universe. Any failure deletes the save file so no partially
-    /// initialized save is left behind.
+    /// <paramref name="catalogAthletes"/> with the save RNG, Season 1 with eight
+    /// 32-athlete feeder leagues (no Superleague) drawn from the save population
+    /// with the same RNG, and the post-draw RNG state, all committed in a single
+    /// transaction. Selection and the inaugural draw consume only the save RNG in
+    /// sporting-color enum order from name-sorted pools, so an equivalent seed
+    /// plus catalog reproduces the equivalent universe and leagues. Any failure
+    /// deletes the save file so no partially initialized save is left behind.
+    /// League membership lives in Season/Membership rows, never in
+    /// <see cref="SaveAthleteEntity"/> card metadata.
     /// </summary>
     public async Task<CreationRecord> CreateAsync(
         string name,
@@ -167,6 +171,7 @@ public sealed class SaveStore
     private sealed record UniversePreparation(
         RulesV1 Rules,
         UniverseSelection Selection,
+        InauguralDrawResult Draw,
         Pcg32State AdvancedRng,
         string RulesJson);
 
@@ -178,7 +183,8 @@ public sealed class SaveStore
         RulesV1 rules = RulesV1.CreateDefault();
         Pcg32V1 rng = new(seed, stream);
         UniverseSelection selection = UniverseSelector.Select(catalogAthletes, rng, rules);
-        return new UniversePreparation(rules, selection, rng.Snapshot(), RulesSnapshotDocument.FromRules(rules).ToJson());
+        InauguralDrawResult draw = InauguralDrawSelector.Select(selection.Selected, rng, rules);
+        return new UniversePreparation(rules, selection, draw, rng.Snapshot(), RulesSnapshotDocument.FromRules(rules).ToJson());
     }
 
     private async Task PersistNewSaveAsync(
@@ -204,6 +210,8 @@ public sealed class SaveStore
             throw new InvalidOperationException(
                 $"Save universe must contain exactly {preparation.Rules.TotalAthletesInSave} athletes, was {persisted}.");
         }
+
+        await InsertSeason1RowsAsync(context, preparation, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -239,6 +247,131 @@ public sealed class SaveStore
         {
             context.SaveAthletes.Add(SaveAthleteEntity.FromCatalog(athlete));
         }
+    }
+
+    /// <summary>
+    /// Inserts Season 1 (no Superleague), its eight feeder leagues and all 2,048
+    /// Season 1 memberships from the already-validated inaugural draw. Runs inside
+    /// the save-creation transaction so RNG state and memberships commit together.
+    /// Membership is the sporting source of truth; <see cref="SaveAthleteEntity"/>
+    /// card rows are left untouched.
+    /// </summary>
+    private static async Task InsertSeason1RowsAsync(
+        SaveDbContext context,
+        UniversePreparation preparation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(preparation);
+        RulesV1 rules = preparation.Rules;
+
+        Dictionary<string, int> athleteIds = CollectAthleteIds(context, rules);
+        SeasonEntity season = await CreateSeason1Async(context, cancellationToken).ConfigureAwait(false);
+        List<LeagueEntity> leagues = await CreateFeederLeaguesAsync(context, season.Id, cancellationToken).ConfigureAwait(false);
+        List<SeasonMembershipEntity> memberships = BuildMemberships(preparation.Draw, athleteIds, season.Id, leagues, rules);
+        foreach (SeasonMembershipEntity membership in memberships)
+        {
+            context.SeasonMemberships.Add(membership);
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        ValidateSeason1Rows(season, leagues, memberships, rules);
+    }
+
+    private static Dictionary<string, int> CollectAthleteIds(SaveDbContext context, RulesV1 rules)
+    {
+        Dictionary<string, int> ids = new(StringComparer.Ordinal);
+        foreach (SaveAthleteEntity entity in context.SaveAthletes.Local)
+        {
+            ids[entity.Name] = entity.Id;
+        }
+
+        if (ids.Count != rules.TotalAthletesInSave)
+        {
+            throw new InvalidOperationException(
+                $"Save universe must contain exactly {rules.TotalAthletesInSave} athletes before Season 1 leagues, was {ids.Count}.");
+        }
+
+        return ids;
+    }
+
+    private static async Task<SeasonEntity> CreateSeason1Async(SaveDbContext context, CancellationToken cancellationToken)
+    {
+        SeasonEntity season = new() { SeasonNumber = 1, HasSuperleague = false };
+        context.Seasons.Add(season);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return season;
+    }
+
+    private static async Task<List<LeagueEntity>> CreateFeederLeaguesAsync(
+        SaveDbContext context,
+        int seasonId,
+        CancellationToken cancellationToken)
+    {
+        List<LeagueEntity> leagues = [];
+        foreach (SportingColor color in Enum.GetValues<SportingColor>())
+        {
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = seasonId,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                Name = $"{color} League",
+            });
+        }
+
+        foreach (LeagueEntity league in leagues)
+        {
+            context.Leagues.Add(league);
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return leagues;
+    }
+
+    private static List<SeasonMembershipEntity> BuildMemberships(
+        InauguralDrawResult draw,
+        Dictionary<string, int> athleteIds,
+        int seasonId,
+        IReadOnlyList<LeagueEntity> leagues,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(draw);
+        Dictionary<SportingColor, int> leagueIds = leagues.ToDictionary(l => (SportingColor)l.SportingColor, l => l.Id);
+        List<SeasonMembershipEntity> memberships = new(rules.TotalAthletesInSave);
+        foreach (InauguralDrawEntry entry in draw.Entries)
+        {
+            if (!athleteIds.TryGetValue(entry.Name, out int athleteId))
+            {
+                throw new InvalidOperationException($"Season 1 draw references unknown athlete '{entry.Name}'.");
+            }
+
+            memberships.Add(new SeasonMembershipEntity
+            {
+                SeasonId = seasonId,
+                LeagueId = entry.IsLeagueMember ? leagueIds[entry.SportingColor] : null,
+                SaveAthleteId = athleteId,
+                SportingColor = (int)entry.SportingColor,
+                DrawIndex = entry.DrawIndex,
+            });
+        }
+
+        return memberships;
+    }
+
+    private static void ValidateSeason1Rows(
+        SeasonEntity season,
+        IReadOnlyList<LeagueEntity> leagues,
+        IReadOnlyList<SeasonMembershipEntity> memberships,
+        RulesV1 rules)
+    {
+        Season1PersistedInvariants.ValidatePersistedSeason1(
+            season.SeasonNumber,
+            season.HasSuperleague,
+            leagues.Select(l => new PersistedLeague(l.Id, (SportingColor)l.SportingColor, l.Kind, l.Name)).ToList(),
+            memberships.Select(m => new PersistedMembership(m.SaveAthleteId, (SportingColor)m.SportingColor, m.LeagueId, m.DrawIndex)).ToList(),
+            rules.TotalAthletesInSave,
+            rules);
     }
 
     public async Task<IReadOnlyList<SaveRecord>> ListAsync(CancellationToken cancellationToken = default)
