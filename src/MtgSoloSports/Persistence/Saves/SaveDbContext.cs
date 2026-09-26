@@ -29,12 +29,17 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<SeasonMembershipEntity> SeasonMemberships => Set<SeasonMembershipEntity>();
 
+    public DbSet<StageEntity> Stages => Set<StageEntity>();
+
+    public DbSet<RoundEntity> Rounds => Set<RoundEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
         ConfigureSingleRowTables(modelBuilder);
         ConfigureAthletes(modelBuilder);
         ConfigureSeasonTables(modelBuilder);
+        ConfigureSimulationTables(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -145,6 +150,44 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.SportingColor).IsRequired();
             entity.Property(e => e.DrawIndex).IsRequired();
+        });
+    }
+
+    private static void ConfigureSimulationTables(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<StageEntity>(entity =>
+        {
+            entity.ToTable("Stages");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.LeagueId).IsRequired();
+            entity.Property(e => e.StageNumber).IsRequired();
+            entity.Property(e => e.CompletedRounds).IsRequired();
+        });
+
+        modelBuilder.Entity<RoundEntity>(entity =>
+        {
+            entity.ToTable("Rounds");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber });
+            entity.HasIndex(e => e.StageId);
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.LeagueId).IsRequired();
+            entity.Property(e => e.StageId).IsRequired();
+            entity.Property(e => e.StageNumber).IsRequired();
+            entity.Property(e => e.RoundNumber).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.PayloadJson).IsRequired();
+            entity.Property(e => e.PayloadChecksum).IsRequired().HasMaxLength(64);
         });
     }
 

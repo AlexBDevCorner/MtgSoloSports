@@ -5,6 +5,7 @@ using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
 using MtgSoloSports.Features.Saves.ListSaves;
 using MtgSoloSports.Features.Saves.OpenSave;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
 
@@ -26,6 +27,7 @@ builder.Services.AddScoped<DeleteSaveHandler>();
 builder.Services.AddScoped<ImportCatalogHandler>();
 builder.Services.AddScoped<GetCatalogStatsHandler>();
 builder.Services.AddScoped<GetSeason1LeaguesHandler>();
+builder.Services.AddScoped<AdvanceRoundHandler>();
 
 var app = builder.Build();
 
@@ -42,6 +44,7 @@ DeleteSaveEndpoint.Map(app);
 ImportCatalogEndpoint.Map(app);
 GetCatalogStatsEndpoint.Map(app);
 GetSeason1LeaguesEndpoint.Map(app);
+AdvanceRoundEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
