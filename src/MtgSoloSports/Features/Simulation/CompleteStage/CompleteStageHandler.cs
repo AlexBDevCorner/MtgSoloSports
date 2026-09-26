@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
+using MtgSoloSports.Features.Simulation.GlobalStage;
+using MtgSoloSports.Features.Simulation.SeasonCompletion;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -65,6 +67,7 @@ public sealed class CompleteStageHandler
 
         StageCompletionContext completion = await LoadCompletionContextAsync(context, saveId, leagueId, cancellationToken).ConfigureAwait(false);
         await EnsureStageIncompleteAsync(context, completion, cancellationToken).ConfigureAwait(false);
+        await EnsureGlobalStageLegalAsync(context, completion, cancellationToken).ConfigureAwait(false);
 
         List<RoundEntity> existingRounds = await LoadExistingRoundsAsync(context, completion, cancellationToken).ConfigureAwait(false);
         ValidateStageCursor(completion.Stage, existingRounds, completion.Rules, completion.League);
@@ -79,13 +82,65 @@ public sealed class CompleteStageHandler
         IReadOnlyList<StageRankedAthlete> ranked = RankCompletedStage(completion, stageRounds, tieBreakRng);
         StageInvariants.ValidateCompletedStage(ranked, stageRounds.Totals, completion.Rules, completion.IsSuperleague);
 
-        Pcg32State rngAfter = tieBreakRng.Snapshot();
+        Pcg32State rngAfterStage = tieBreakRng.Snapshot();
         int? nextStageNumber = await PersistCompletionAsync(
-            context, completion, stageRounds, ranked, rngAfter, cancellationToken).ConfigureAwait(false);
+            context, completion, stageRounds, ranked, rngAfterStage, cancellationToken).ConfigureAwait(false);
+
+        Pcg32State rngAfter = await MaybeFinalizeSeasonAsync(
+            context, completion, rngAfterStage, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return BuildResponse(completion, ranked, nextStageNumber, rngAfter);
+    }
+
+    /// <summary>
+    /// Enforces synchronous global progression: a league may only complete the
+    /// current global stage. Leagues within the stage complete one by one;
+    /// Stage N+1 cannot begin until Stage N is complete for every active league.
+    /// </summary>
+    internal static async Task EnsureGlobalStageLegalAsync(
+        SaveDbContext context,
+        StageCompletionContext completion,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(completion);
+
+        GlobalStageGate.GlobalStageView global = await GlobalStageGate
+            .LoadGlobalStageAsync(context, completion.Season, completion.Rules, cancellationToken)
+            .ConfigureAwait(false);
+        if (!GlobalStageGate.IsStageLegal(completion.Stage.StageNumber, global))
+        {
+            throw new CompleteStageConflictException(
+                GlobalStageGate.BuildBlockedMessage(completion.League.Name, completion.Stage.StageNumber, global));
+        }
+    }
+
+    /// <summary>
+    /// Finalizes the season when the completed stage is Stage 32 and every
+    /// active league has now completed it. Season standings (including each
+    /// feeder champion) plus the season-complete flag and RNG-after state
+    /// commit in the same transaction as the stage result.
+    /// </summary>
+    internal static async Task<Pcg32State> MaybeFinalizeSeasonAsync(
+        SaveDbContext context,
+        StageCompletionContext completion,
+        Pcg32State rngAfterStage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(completion);
+        if (completion.Stage.StageNumber != completion.Rules.StagesPerSeason)
+        {
+            return rngAfterStage;
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngAfterStage);
+        (bool finalized, Pcg32State rngAfter) = await SeasonFinalizer
+            .TryFinalizeSeasonAsync(context, completion.Season, completion.Rules, rng, cancellationToken)
+            .ConfigureAwait(false);
+        return finalized ? rngAfter : rngAfterStage;
     }
 
     internal sealed record StageCompletionContext(

@@ -145,6 +145,9 @@ public sealed class CompleteStageTests
             CompleteStageResponse completed = await completer.HandleAsync(created.Detail.SaveId, leagueId);
             Dictionary<int, int> earnedByAthlete = completed.Standings.ToDictionary(s => s.AthleteId, s => s.EarnedBonusThousandths);
 
+            // Global sync: Stage 2 cannot begin until Stage 1 is complete everywhere.
+            await CompleteStageOneForAllOtherLeaguesAsync(store, created.Detail.SaveId, leagueId, completer);
+
             // Stage 2's first round must run with exactly Stage 1's earned bonus active.
             AdvanceRoundHandler advancer = new(store);
             AdvanceRoundResponse next = await advancer.HandleAsync(created.Detail.SaveId, leagueId);
@@ -283,15 +286,45 @@ public sealed class CompleteStageTests
     private static async Task<CompleteStageResponse> CompleteAllStagesAsync(
         SaveStore store, Guid saveId, int leagueId, CompleteStageHandler completer)
     {
+        // Global sync: stages progress synchronously across all active leagues.
+        List<int> allLeagues = await AllLeagueIdsAsync(store, saveId).ConfigureAwait(false);
         CompleteStageResponse last = null!;
         for (int stage = 1; stage <= 32; stage++)
         {
-            last = await completer.HandleAsync(saveId, leagueId).ConfigureAwait(false);
-            last.StageNumber.ShouldBe(stage);
-            last.CompletedRounds.ShouldBe(16);
+            foreach (int otherLeagueId in allLeagues)
+            {
+                CompleteStageResponse completed = await completer.HandleAsync(saveId, otherLeagueId).ConfigureAwait(false);
+                completed.StageNumber.ShouldBe(stage);
+                completed.CompletedRounds.ShouldBe(16);
+                if (otherLeagueId == leagueId)
+                {
+                    last = completed;
+                }
+            }
         }
 
         return last;
+    }
+
+    private static async Task CompleteStageOneForAllOtherLeaguesAsync(
+        SaveStore store, Guid saveId, int exceptLeagueId, CompleteStageHandler completer)
+    {
+        List<int> allLeagues = await AllLeagueIdsAsync(store, saveId).ConfigureAwait(false);
+        foreach (int otherLeagueId in allLeagues)
+        {
+            if (otherLeagueId == exceptLeagueId)
+            {
+                continue;
+            }
+
+            await completer.HandleAsync(saveId, otherLeagueId).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<List<int>> AllLeagueIdsAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        return await context.Leagues.AsNoTracking().OrderBy(e => e.Id).Select(e => e.Id).ToListAsync().ConfigureAwait(false);
     }
 
     private static async Task AssertSeasonCompleteAsync(SaveDbContext context, int leagueId)

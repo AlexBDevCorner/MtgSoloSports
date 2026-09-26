@@ -40,6 +40,9 @@ public sealed class CompleteStageApiTests
             StandingPayload winner = payload.Standings.Single(s => s.StageRank == 1);
             winner.ChampionshipPointsThousandths.ShouldBe(77_000);
 
+            // Global sync: the next stage is legal only after Stage 1 is complete everywhere.
+            await CompleteStageOneForAllOtherLeaguesAsync(client, saveId, leagueId);
+
             // The next stage is now legal for round advancement.
             using HttpResponseMessage advanced = await client.PostAsync(
                 $"/api/saves/{saveId:D}/leagues/{leagueId}/rounds/advance", null);
@@ -95,6 +98,25 @@ public sealed class CompleteStageApiTests
         LeaguesPayload? payload = await leagues.Content.ReadFromJsonAsync<LeaguesPayload>().ConfigureAwait(false);
         payload.ShouldNotBeNull();
         return payload.Leagues[0].LeagueId;
+    }
+
+    private static async Task CompleteStageOneForAllOtherLeaguesAsync(HttpClient client, Guid saveId, int exceptLeagueId)
+    {
+        using HttpResponseMessage leagues = await client.GetAsync($"/api/saves/{saveId:D}/seasons/1/leagues").ConfigureAwait(false);
+        leagues.StatusCode.ShouldBe(HttpStatusCode.OK);
+        LeaguesPayload? payload = await leagues.Content.ReadFromJsonAsync<LeaguesPayload>().ConfigureAwait(false);
+        payload.ShouldNotBeNull();
+        foreach (LeaguePayload league in payload.Leagues)
+        {
+            if (league.LeagueId == exceptLeagueId)
+            {
+                continue;
+            }
+
+            using HttpResponseMessage completed = await client.PostAsync(
+                $"/api/saves/{saveId:D}/leagues/{league.LeagueId}/stages/complete", null).ConfigureAwait(false);
+            completed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
     }
 
     private static async Task SeedCatalogAsync(HttpClient client)
