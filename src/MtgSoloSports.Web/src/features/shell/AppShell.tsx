@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type View = 'saves' | 'dashboard' | 'live';
+export type View = 'saves' | 'dashboard' | 'live' | 'athlete';
 
 export function AppShell({
   view,

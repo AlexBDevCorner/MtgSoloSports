@@ -230,6 +230,9 @@ public sealed class SaveStore
         }
 
         await InsertSeason1RowsAsync(context, preparation, cancellationToken).ConfigureAwait(false);
+        await Features.Athletes.Projections.AthleteProjectionUpdater.SeedForNewSaveAsync(
+            context, await context.Seasons.SingleAsync(e => e.SeasonNumber == InitialSeason, cancellationToken).ConfigureAwait(false),
+            preparation.Rules, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }

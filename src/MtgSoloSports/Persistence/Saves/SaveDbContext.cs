@@ -37,6 +37,10 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<SeasonStandingEntity> SeasonStandings => Set<SeasonStandingEntity>();
 
+    public DbSet<AthleteCareerEntity> AthleteCareers => Set<AthleteCareerEntity>();
+
+    public DbSet<AthleteSeasonSummaryEntity> AthleteSeasonSummaries => Set<AthleteSeasonSummaryEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -44,6 +48,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureAthletes(modelBuilder);
         ConfigureSeasonTables(modelBuilder);
         ConfigureSimulationTables(modelBuilder);
+        ConfigureAthleteProjections(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -230,6 +235,54 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.StagePlaceCountsJson).IsRequired();
             entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
             entity.Property(e => e.IsChampion).IsRequired();
+        });
+    }
+
+    private static void ConfigureAthleteProjections(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AthleteCareerEntity>(entity =>
+        {
+            entity.ToTable("AthleteCareers");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => e.SaveAthleteId).IsUnique();
+            entity.HasIndex(e => e.IsActive);
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SeasonsActive).IsRequired();
+            entity.Property(e => e.CurrentLeagueName).HasMaxLength(64);
+            entity.Property(e => e.IsActive).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.StageWins).IsRequired();
+            entity.Property(e => e.StageSeconds).IsRequired();
+            entity.Property(e => e.StageThirds).IsRequired();
+            entity.Property(e => e.LifetimeEarnedBonusThousandths).IsRequired();
+            entity.Property(e => e.CurrentEffectiveBonusThousandths).IsRequired();
+            entity.Property(e => e.LastSeasonNumber).IsRequired();
+            entity.Property(e => e.LastStageNumber).IsRequired();
+        });
+
+        modelBuilder.Entity<AthleteSeasonSummaryEntity>(entity =>
+        {
+            entity.ToTable("AthleteSeasonSummaries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SaveAthleteId, e.SeasonNumber });
+            entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
+            entity.Property(e => e.SeasonId).IsRequired();
+            entity.Property(e => e.SeasonNumber).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.LeagueName).HasMaxLength(64);
+            entity.Property(e => e.WasActive).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.StageWins).IsRequired();
+            entity.Property(e => e.StageSeconds).IsRequired();
+            entity.Property(e => e.StageThirds).IsRequired();
+            entity.Property(e => e.IsChampion).IsRequired();
+            entity.Property(e => e.EarnedBonusThousandths).IsRequired();
+            entity.Property(e => e.TotalChampionshipPointsThousandths).IsRequired();
+            entity.Property(e => e.TotalStageScoreThousandths).IsRequired();
+            entity.Property(e => e.TotalBaseScoreThousandths).IsRequired();
         });
     }
 

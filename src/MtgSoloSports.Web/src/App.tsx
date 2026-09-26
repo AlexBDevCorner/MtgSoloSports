@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AthleteProfilePage } from './features/athletes/AthleteProfilePage';
+import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -22,9 +24,14 @@ function readSelected(): string | null {
 export default function App() {
   const [view, setView] = useState<View>('saves');
   const [selectedSaveId, setSelectedSaveId] = useState<string | null>(() => readSelected());
+  const [selectedAthleteId, setSelectedAthleteId] = useState<number | null>(null);
   const saves = useSaves();
   const catalog = useCatalogStats();
   const dashboard = useDashboard(view === 'dashboard' ? selectedSaveId : selectedSaveId);
+  const athlete = useAthleteProfile(
+    view === 'athlete' ? selectedSaveId : null,
+    view === 'athlete' ? selectedAthleteId : null,
+  );
 
   useEffect(() => {
     try {
@@ -90,6 +97,23 @@ export default function App() {
           progressLoading={dashboard.loading}
           hasSelection={selectedSaveId !== null}
           onMutated={dashboard.refresh}
+          onGoToSaves={() => {
+            setView('saves');
+          }}
+          onSelectAthlete={(athleteId) => {
+            setSelectedAthleteId(athleteId);
+            setView('athlete');
+          }}
+        />
+      ) : view === 'athlete' ? (
+        <AthleteProfilePage
+          saveId={selectedSaveId}
+          athleteId={selectedAthleteId}
+          state={athlete}
+          hasSelection={selectedSaveId !== null}
+          onBackToLive={() => {
+            setView('live');
+          }}
           onGoToSaves={() => {
             setView('saves');
           }}

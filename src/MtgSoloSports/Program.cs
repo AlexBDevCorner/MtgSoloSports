@@ -1,3 +1,4 @@
+using MtgSoloSports.Features.Athletes.GetProfile;
 using MtgSoloSports.Features.Catalog.GetCatalogStats;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
@@ -40,6 +41,7 @@ builder.Services.AddScoped<GetStageRoundsHandler>();
 builder.Services.AddScoped<GetCurrentStandingsHandler>();
 builder.Services.AddScoped<GetSeasonTableHandler>();
 builder.Services.AddScoped<GetSeasonProgressHandler>();
+builder.Services.AddScoped<GetAthleteProfileHandler>();
 
 var app = builder.Build();
 
@@ -63,6 +65,7 @@ GetStageRoundsEndpoint.Map(app);
 GetCurrentStandingsEndpoint.Map(app);
 GetSeasonTableEndpoint.Map(app);
 GetSeasonProgressEndpoint.Map(app);
+GetAthleteProfileEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
