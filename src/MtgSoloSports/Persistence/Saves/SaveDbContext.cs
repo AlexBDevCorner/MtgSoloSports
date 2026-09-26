@@ -43,6 +43,10 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<MovementEntity> Movements => Set<MovementEntity>();
 
+    public DbSet<QualifierRoundEntity> QualifierRounds => Set<QualifierRoundEntity>();
+
+    public DbSet<QualifierStandingEntity> QualifierStandings => Set<QualifierStandingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -52,6 +56,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureSimulationTables(modelBuilder);
         ConfigureAthleteProjections(modelBuilder);
         ConfigureMovements(modelBuilder);
+        ConfigureQualifier(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -330,6 +335,51 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.FromLeagueId).IsRequired();
             entity.Property(e => e.ToLeagueId).IsRequired();
             entity.Property(e => e.Kind).IsRequired();
+            entity.Property(e => e.FromSeasonRank).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+        });
+    }
+
+    private static void ConfigureQualifier(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<QualifierRoundEntity>(entity =>
+        {
+            entity.ToTable("QualifierRounds");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId });
+            entity.Property(e => e.FromSeasonId).IsRequired();
+            entity.Property(e => e.ToSeasonId).IsRequired();
+            entity.Property(e => e.RoundNumber).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.PayloadJson).IsRequired();
+            entity.Property(e => e.PayloadChecksum).IsRequired().HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<QualifierStandingEntity>(entity =>
+        {
+            entity.ToTable("QualifierStandings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierRank }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId });
+            entity.Property(e => e.FromSeasonId).IsRequired();
+            entity.Property(e => e.ToSeasonId).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.QualifierRank).IsRequired();
+            entity.Property(e => e.QualifierScoreThousandths).IsRequired();
+            entity.Property(e => e.BaseScoreThousandths).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
+            entity.Property(e => e.IsQualified).IsRequired();
+            entity.Property(e => e.Role).IsRequired();
+            entity.Property(e => e.FromLeagueId).IsRequired();
             entity.Property(e => e.FromSeasonRank).IsRequired();
             entity.Property(e => e.SportingColor).IsRequired();
         });
