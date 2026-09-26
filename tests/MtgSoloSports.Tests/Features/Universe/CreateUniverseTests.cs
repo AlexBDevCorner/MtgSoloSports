@@ -31,10 +31,15 @@ public sealed class CreateUniverseTests
             second.Detail.RngState.ShouldBe(first.Detail.RngState);
             second.Detail.RngStream.ShouldBe(first.Detail.RngStream);
 
-            // Same seed reproduces the selector output exactly.
+            // Same seed reproduces the selector plus inaugural-draw output exactly.
+            // Persisted RNG is post-draw (universe selection plus Season 1 draw).
             Pcg32V1 fresh = new(9001UL, 7002UL);
             UniverseSelection recomputed = UniverseSelector.Select(catalog, fresh, RulesV1.CreateDefault());
             recomputed.Summary.Checksum.ShouldBe(first.Universe.Checksum);
+            _ = MtgSoloSports.Features.Leagues.InauguralDraw.InauguralDrawSelector.Select(
+                recomputed.Selected,
+                fresh,
+                RulesV1.CreateDefault());
             fresh.Snapshot().State.ShouldBe(first.Detail.RngState);
 
             IReadOnlyList<string> firstNames = await SavedNamesAsync(store, first.Detail.SaveId);

@@ -1,5 +1,6 @@
 using MtgSoloSports.Features.Catalog.GetCatalogStats;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Features.Leagues.GetSeason1Leagues;
 using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
 using MtgSoloSports.Features.Saves.ListSaves;
@@ -24,6 +25,7 @@ builder.Services.AddScoped<OpenSaveHandler>();
 builder.Services.AddScoped<DeleteSaveHandler>();
 builder.Services.AddScoped<ImportCatalogHandler>();
 builder.Services.AddScoped<GetCatalogStatsHandler>();
+builder.Services.AddScoped<GetSeason1LeaguesHandler>();
 
 var app = builder.Build();
 
@@ -39,6 +41,7 @@ OpenSaveEndpoint.Map(app);
 DeleteSaveEndpoint.Map(app);
 ImportCatalogEndpoint.Map(app);
 GetCatalogStatsEndpoint.Map(app);
+GetSeason1LeaguesEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
