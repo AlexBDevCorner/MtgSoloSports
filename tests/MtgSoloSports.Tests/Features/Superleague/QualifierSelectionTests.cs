@@ -1,6 +1,6 @@
+using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Rules;
-using MtgSoloSports.Features.Superleague.RunQualifier;
 using Shouldly;
 using Xunit;
 
