@@ -53,6 +53,11 @@ public sealed class AdvanceRoundHandler
 
     internal async Task<AdvanceRoundResponse> AdvanceUnderLockAsync(Guid saveId, int leagueId, CancellationToken cancellationToken)
     {
+        // Existing saves created before MSS-008 have no Stages/Rounds tables.
+        // Apply pending save-schema migrations before touching sporting state;
+        // the per-save lock held by HandleAsync serializes concurrent upgrades.
+        await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 

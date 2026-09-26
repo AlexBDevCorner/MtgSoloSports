@@ -230,6 +230,50 @@ public sealed class AdvanceRoundTests
     }
 
     [Fact]
+    public async Task UpgradePreRoundSimulationSave_MigratesSchemaAndSimulatesRound()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Round Upgrade", 61UL, 62UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+
+            int leagueId;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                leagueId = await context.Leagues.AsNoTracking().OrderBy(e => e.Id).Select(e => e.Id).FirstAsync();
+            }
+
+            // Simulate a save file created before MSS-008: remove the Stages/Rounds
+            // schema and its EF migration history entry so the file matches the
+            // pre-round-simulation schema.
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                await context.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"Rounds\";");
+                await context.Database.ExecuteSqlRawAsync("DROP TABLE IF EXISTS \"Stages\";");
+                await context.Database.ExecuteSqlRawAsync("DELETE FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20260926130000_AddRoundSimulation';");
+            }
+
+            AdvanceRoundHandler handler = new(store);
+            AdvanceRoundResponse response = await handler.HandleAsync(saveId, leagueId);
+
+            response.StageNumber.ShouldBe(1);
+            response.RoundNumber.ShouldBe(1);
+            response.Placements.Count.ShouldBe(32);
+            response.RngBeforeState.ShouldBe(created.Detail.RngState);
+            response.RngAfterState.ShouldNotBe(response.RngBeforeState);
+
+            using SaveDbContext verify = store.OpenDbContext(saveId);
+            (await verify.Stages.CountAsync(e => e.LeagueId == leagueId)).ShouldBe(1);
+            (await verify.Rounds.CountAsync(e => e.LeagueId == leagueId)).ShouldBe(1);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Invariants_RejectCorruptedPayload()
     {
         RulesV1 rules = RulesV1.CreateDefault();

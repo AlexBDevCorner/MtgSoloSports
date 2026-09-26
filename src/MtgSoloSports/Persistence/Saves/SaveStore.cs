@@ -103,6 +103,24 @@ public sealed class SaveStore
     }
 
     /// <summary>
+    /// Applies pending save-schema (EF) migrations to one existing save file.
+    /// Database-schema migration is separate from game-rule migration: this
+    /// only ensures tables such as Stages/Rounds exist and never changes the
+    /// persisted rules snapshot or sporting results.
+    /// </summary>
+    public async Task EnsureMigratedAsync(Guid saveId, CancellationToken cancellationToken = default)
+    {
+        string path = GetSaveFilePath(saveId);
+        if (!File.Exists(path))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        using SaveDbContext context = _factory.Create(path);
+        await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Creates one independent save universe: metadata, immutable Rules v1
     /// snapshot, the deterministic 2,048-athlete universe selected from
     /// <paramref name="catalogAthletes"/> with the save RNG, Season 1 with eight
