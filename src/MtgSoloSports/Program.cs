@@ -13,6 +13,8 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Simulation.GetStageRounds;
+using MtgSoloSports.Features.Superleague.CreateInaugural;
+using MtgSoloSports.Features.Superleague.GetInauguralRoster;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
 
@@ -42,6 +44,8 @@ builder.Services.AddScoped<GetCurrentStandingsHandler>();
 builder.Services.AddScoped<GetSeasonTableHandler>();
 builder.Services.AddScoped<GetSeasonProgressHandler>();
 builder.Services.AddScoped<GetAthleteProfileHandler>();
+builder.Services.AddScoped<CreateInauguralSuperleagueHandler>();
+builder.Services.AddScoped<GetInauguralRosterHandler>();
 
 var app = builder.Build();
 
@@ -66,6 +70,8 @@ GetCurrentStandingsEndpoint.Map(app);
 GetSeasonTableEndpoint.Map(app);
 GetSeasonProgressEndpoint.Map(app);
 GetAthleteProfileEndpoint.Map(app);
+CreateInauguralSuperleagueEndpoint.Map(app);
+GetInauguralRosterEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
