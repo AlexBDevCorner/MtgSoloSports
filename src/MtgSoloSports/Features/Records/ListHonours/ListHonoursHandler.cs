@@ -108,10 +108,9 @@ public sealed class ListHonoursHandler
     {
         List<SeasonEntity> seasons = await context.Seasons
             .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, cancellationToken)
-            .ConfigureAwait(false) is Dictionary<int, SeasonEntity> byId
-            ? byId.Values.OrderBy(s => s.SeasonNumber).ToList()
-            : [];
+            .OrderBy(e => e.SeasonNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
