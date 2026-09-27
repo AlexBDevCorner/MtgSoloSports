@@ -9,6 +9,9 @@ using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
 using MtgSoloSports.Features.Saves.ListSaves;
 using MtgSoloSports.Features.Saves.OpenSave;
+using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
+using MtgSoloSports.Features.Seasons.GetSeasonStatus;
+using MtgSoloSports.Features.Seasons.StartNextSeason;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
@@ -58,6 +61,9 @@ builder.Services.AddScoped<RunQualifierHandler>();
 builder.Services.AddScoped<GetQualifierResultHandler>();
 builder.Services.AddScoped<RebalanceFeedersHandler>();
 builder.Services.AddScoped<GetRebalanceResultHandler>();
+builder.Services.AddScoped<GetSeasonStatusHandler>();
+builder.Services.AddScoped<StartNextSeasonHandler>();
+builder.Services.AddScoped<AdvanceToNextEventHandler>();
 
 var app = builder.Build();
 
@@ -90,6 +96,9 @@ RunQualifierEndpoint.Map(app);
 GetQualifierResultEndpoint.Map(app);
 RebalanceFeedersEndpoint.Map(app);
 GetRebalanceResultEndpoint.Map(app);
+GetSeasonStatusEndpoint.Map(app);
+StartNextSeasonEndpoint.Map(app);
+AdvanceToNextEventEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 

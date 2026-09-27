@@ -61,10 +61,11 @@ public sealed class ResolveAutomaticMovementHandler
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        var metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         ResolutionInputs inputs = await LoadResolutionInputsAsync(context, rules, cancellationToken).ConfigureAwait(false);
         ResolutionOutput output = await PersistResolutionAsync(context, inputs, rules, cancellationToken).ConfigureAwait(false);
 
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.AutomaticMovementResolved);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 

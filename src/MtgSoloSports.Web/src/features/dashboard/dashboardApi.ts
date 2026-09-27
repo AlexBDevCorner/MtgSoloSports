@@ -17,6 +17,42 @@ export interface SeasonProgress {
   leagues: SeasonProgressLeague[];
 }
 
+export interface SeasonStatus {
+  saveId: string;
+  currentSeasonNumber: number;
+  persistedPhase: string;
+  computedPhase: string;
+  sourceSeasonNumber: number | null;
+  nextSeasonNumber: number | null;
+  isInauguralTransition: boolean;
+  globalStage: number;
+  isCurrentSeasonComplete: boolean;
+  seasonComplete: boolean;
+  movementResolved: boolean;
+  qualifierResolved: boolean;
+  rebalanced: boolean;
+  readyToStartNextSeason: boolean;
+  expectedCup: string;
+  legalNextActions: string[];
+  nextActionDetail: string;
+}
+
+export interface AdvanceNextEventResult {
+  saveId: string;
+  executedAction: string;
+  executedDetail: string;
+  currentSeasonNumber: number;
+  computedPhase: string;
+  persistedPhase: string;
+  sourceSeasonNumber: number | null;
+  nextSeasonNumber: number | null;
+  isInauguralTransition: boolean;
+  globalStage: number;
+  isCurrentSeasonComplete: boolean;
+  legalNextActions: string[];
+  nextActionDetail: string;
+}
+
 export interface Season1RosterAthlete {
   name: string;
   drawIndex: number;
@@ -64,4 +100,31 @@ export async function fetchSeason1Leagues(
   signal?: AbortSignal,
 ): Promise<Season1Leagues> {
   return fetchJson<Season1Leagues>(`/api/saves/${saveId}/seasons/1/leagues`, { signal });
+}
+
+export async function fetchSeasonStatus(
+  saveId: string,
+  signal?: AbortSignal,
+): Promise<SeasonStatus> {
+  return fetchJson<SeasonStatus>(`/api/saves/${saveId}/season-status`, { signal });
+}
+
+export async function advanceToNextEvent(
+  saveId: string,
+  signal?: AbortSignal,
+): Promise<AdvanceNextEventResult> {
+  return fetchJson<AdvanceNextEventResult>(`/api/saves/${saveId}/advance-next-event`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+export async function startNextSeason(
+  saveId: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchJson<unknown>(`/api/saves/${saveId}/seasons/start-next`, {
+    method: 'POST',
+    signal,
+  });
 }

@@ -62,7 +62,7 @@ public sealed class RebalanceFeedersHandler
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        var metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
         Pcg32State rngBefore = rngRow.ToState();
 
@@ -102,6 +102,7 @@ public sealed class RebalanceFeedersHandler
         }
 
         context.ApplyRngState(rngAfter);
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.Rebalanced);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);

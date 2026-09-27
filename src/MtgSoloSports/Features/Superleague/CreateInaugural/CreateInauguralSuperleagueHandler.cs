@@ -105,6 +105,7 @@ public sealed class CreateInauguralSuperleagueHandler
         InauguralSuperleagueInvariants.ValidateCreated(
             seasonOne, seasonTwo, superleague, feedersTwo, membershipsOne, persistedTwo, persistedMovements, rules);
 
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.InauguralMovementResolved);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
