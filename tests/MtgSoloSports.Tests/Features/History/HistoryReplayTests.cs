@@ -118,6 +118,52 @@ public sealed class HistoryReplayTests
     }
 
     [Fact]
+    public async Task PersistedRoundPayload_IsCompressed_AndChainsAcrossRounds()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("History Compressed", 111UL, 222UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            int leagueId = await FirstLeagueIdAsync(store, saveId);
+
+            AdvanceRoundHandler advance = new(store);
+            AdvanceRoundResponse first = await advance.HandleAsync(saveId, leagueId);
+
+            RoundEntity storedFirst;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                storedFirst = await context.Rounds.AsNoTracking().SingleAsync(e => e.LeagueId == leagueId && e.RoundNumber == 1);
+            }
+
+            storedFirst.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
+            RoundPayloadDocument decoded = RoundPayloadCodec.DecodeRound(storedFirst.PayloadJson);
+            decoded.Checksum.ShouldBe(first.PayloadChecksum);
+            decoded.Placements.Count.ShouldBe(32);
+
+            // Second round must chain cumulative totals from the compressed first payload.
+            AdvanceRoundResponse second = await advance.HandleAsync(saveId, leagueId);
+            second.RoundNumber.ShouldBe(2);
+
+            RoundEntity storedSecond;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                storedSecond = await context.Rounds.AsNoTracking().SingleAsync(e => e.LeagueId == leagueId && e.RoundNumber == 2);
+            }
+
+            storedSecond.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
+
+            GetHistoryRoundReplayHandler replay = new(store);
+            GetHistoryRoundReplayResponse replayed = await replay.HandleAsync(saveId, 1, leagueId, 1, 1);
+            replayed.PayloadChecksum.ShouldBe(first.PayloadChecksum);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task HistoryNavigation_ResolvesSeasonCompetitionStageRoundChain()
     {
         var (store, root) = CreateStore();

@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -162,7 +163,7 @@ public sealed class AdvanceRoundTests
             row.PayloadChecksum.ShouldBe(response.PayloadChecksum);
             row.PayloadChecksum.Length.ShouldBe(64);
 
-            RoundPayloadDocument payload = RoundPayloadDocument.FromJson(row.PayloadJson);
+            RoundPayloadDocument payload = RoundPayloadCodec.DecodeRound(row.PayloadJson);
             payload.Checksum.ShouldBe(response.PayloadChecksum);
             payload.Placements.Count.ShouldBe(32);
             payload.StageNumber.ShouldBe(1);

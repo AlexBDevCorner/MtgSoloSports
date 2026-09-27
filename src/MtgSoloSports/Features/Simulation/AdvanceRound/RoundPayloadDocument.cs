@@ -6,8 +6,9 @@ namespace MtgSoloSports.Features.Simulation.AdvanceRound;
 /// <summary>
 /// Compact immutable payload for one persisted round. One <c>Round</c> row
 /// holds exactly one payload; detailed replay consumes this payload and never
-/// resimulates. Stored as compact (non-indented) JSON in
-/// <c>RoundEntity.PayloadJson</c>.
+/// resimulates. Stored Brotli-compressed (<c>br1:</c> Base64) in
+/// <c>RoundEntity.PayloadJson</c> via <c>RoundPayloadCodec</c>; readers must
+/// decode through that codec so old plain-JSON rows stay readable.
 /// </summary>
 public sealed record RoundPayloadDocument(
     [property: JsonPropertyName("version")] int Version,

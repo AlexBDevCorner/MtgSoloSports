@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Persistence.Saves;
@@ -98,7 +99,7 @@ public sealed class CompleteStageTests
         List<RoundEntity> rounds = await context.Rounds.Where(e => e.LeagueId == leagueId).ToListAsync().ConfigureAwait(false);
         foreach (RoundEntity round in rounds)
         {
-            RoundPayloadDocument payload = RoundPayloadDocument.FromJson(round.PayloadJson);
+            RoundPayloadDocument payload = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             foreach (RoundPayloadEntry entry in payload.Placements)
             {
                 entry.ActiveBonusThousandths.ShouldBe(0);
@@ -343,7 +344,7 @@ public sealed class CompleteStageTests
             .OrderBy(e => e.RoundNumber)
             .ToListAsync().ConfigureAwait(false);
         stage32Rounds.Count.ShouldBe(16);
-        RoundPayloadDocument firstRound = RoundPayloadDocument.FromJson(stage32Rounds[0].PayloadJson);
+        RoundPayloadDocument firstRound = RoundPayloadCodec.DecodeRound(stage32Rounds[0].PayloadJson);
         foreach (RoundPayloadEntry entry in firstRound.Placements)
         {
             entry.ActiveBonusThousandths.ShouldBe(earnedThrough31[entry.AthleteId]);
@@ -416,7 +417,7 @@ public sealed class CompleteStageTests
         Dictionary<int, int> sums = new(32);
         foreach (RoundEntity round in rounds)
         {
-            RoundPayloadDocument payload = RoundPayloadDocument.FromJson(round.PayloadJson);
+            RoundPayloadDocument payload = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             foreach (RoundPayloadEntry entry in payload.Placements)
             {
                 sums.TryGetValue(entry.AthleteId, out int current);
