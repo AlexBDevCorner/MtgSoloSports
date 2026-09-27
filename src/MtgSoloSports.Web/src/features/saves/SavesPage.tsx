@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { createSave, type SaveSummary } from './savesApi';
+import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
 import type { SavesState } from './useSaves';
 
 function toSaveSummary(result: {
@@ -39,6 +39,12 @@ export function SavesPage({
   const [stream, setStream] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [overwrite, setOverwrite] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedName, setImportedName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
@@ -67,6 +73,31 @@ export function SavesPage({
       setCreateError(apiErrorMessage(failure));
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleImport(event: React.FormEvent) {
+    event.preventDefault();
+    if (!importFile || importing) {
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    setImportedName(null);
+    try {
+      const imported: SaveDetail = await importSave(importFile, overwrite);
+      saves.addCreated(toSaveSummary(imported));
+      setImportedName(imported.name);
+      setImportFile(null);
+      setOverwrite(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      onSelect(imported.saveId);
+    } catch (failure) {
+      setImportError(apiErrorMessage(failure));
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -110,6 +141,9 @@ export function SavesPage({
                   </button>
                   <span className="save-row-actions">
                     {active ? <span className="badge">Open</span> : null}
+                    <a className="ghost-button" href={exportSaveUrl(save.saveId)} download>
+                      Export
+                    </a>
                     <button
                       type="button"
                       className="danger-link"
@@ -184,6 +218,47 @@ export function SavesPage({
             disabled={creating || name.trim() === '' || !catalogSufficient}
           >
             {creating ? 'Creating…' : 'Create save'}
+          </button>
+        </form>
+      </Card>
+
+      <Card eyebrow="Portability" title="Import a save">
+        <form className="form" onSubmit={(event) => void handleImport(event)}>
+          <label className="field">
+            <span>Save bundle (.mtgsave.zip)</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip,application/zip"
+              onChange={(event) => {
+                setImportFile(event.target.files?.[0] ?? null);
+                setImportedName(null);
+              }}
+              required
+            />
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={overwrite}
+              onChange={(event) => {
+                setOverwrite(event.target.checked);
+              }}
+            />
+            <span>Replace the existing save with the same id (creates a verified recovery checkpoint first)</span>
+          </label>
+          {importError ? (
+            <Notice tone="error" title="Could not import save">
+              <p>{importError}</p>
+            </Notice>
+          ) : null}
+          {importedName ? (
+            <Notice tone="empty" title="Import complete">
+              <p>Imported “{importedName}”. Incompatible or corrupt bundles are rejected without touching existing saves.</p>
+            </Notice>
+          ) : null}
+          <button type="submit" className="primary-button" disabled={importing || !importFile}>
+            {importing ? 'Importing…' : 'Import save'}
           </button>
         </form>
       </Card>

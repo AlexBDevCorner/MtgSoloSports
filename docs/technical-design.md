@@ -157,6 +157,13 @@ Every mutating command records a `SimulationOperation` with operation type, stat
 
 SQLite transactions protect against crash partial writes. A technical checkpoint may be added for large operations/migrations; normal gameplay does not rewind sporting results.
 
+Save portability and technical checkpoints (MSS-030):
+
+- A save exports as a portable ZIP artifact containing the SQLite save database (`save.db`) plus `manifest.json` version metadata (save id, schema/rules versions, RNG algorithm/version, checksum). The artwork cache is not embedded.
+- Import validates archive shape, checksum, identity, and schema/rules compatibility in staging before touching live files, migrates older database schemas forward on the staged copy, and never silently overwrites another save (an existing save id requires explicit overwrite, which first creates a verified checkpoint).
+- Technical recovery checkpoints (`{savesRoot}/checkpoints/{saveId}/{checkpointId}.db` plus a checksum/identity sidecar) are created and verified before destructive schema migrations, import overwrites, and for large operations; restore re-verifies the checkpoint, backs up current state first, and is technical crash/migration recovery, not gameplay rewind. The normal UI exposes export/import only and never checkpoint restore.
+- Database-schema migration (EF Core tables, `SaveSchemaMigrator`) and game-rule migration (sporting mathematics, `SaveRulesCompatibility`) are separate: schema migration proves the rules snapshot is byte-identical before/after and rolls back to the verified checkpoint on failure.
+
 ## 14. Invariants
 
 Cheap structural invariants run before mutation commit, including league sizes, no duplicate active athlete, no active athlete in pool, qualifier counts, valid season phase and valid color/nationality rules.
