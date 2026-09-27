@@ -24,7 +24,10 @@ namespace MtgSoloSports.Features.Superleague.RunQualifier;
 /// career bonus is generated and no league <c>StageStanding</c>,
 /// <c>SeasonStanding</c> or <c>Round</c> rows are created, so normal league
 /// season championship totals are untouched. Persists 16 immutable qualifier
-/// round payloads plus 32 qualifier standings (exactly 8 qualified) and the
+/// round payloads plus 32 qualifier standings (exactly 8 qualified), applies
+/// the eight winners to the next-season roster (winners to the next
+/// Superleague, the 24 losers to their returning-color feeders, so the final
+/// next Superleague is 16 safe + 8 promoted + 8 qualifier winners) and the
 /// RNG-after state in one transaction. Holds one per-save lock; read-only
 /// qualifier queries never lock. No Superleague color quota.
 /// </summary>
@@ -99,10 +102,11 @@ public sealed class RunQualifierHandler
         QualifierSimulation simulation = SimulateQualifier(field, roster, activeBonuses, rngBefore, source, next, rules);
 
         await PersistQualifierAsync(context, source, next, simulation, rules, cancellationToken).ConfigureAwait(false);
+        await ApplyQualifierToNextRosterAsync(context, next, simulation, rules, cancellationToken).ConfigureAwait(false);
         context.ApplyRngState(simulation.RngAfter);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await ValidatePersistedAsync(context, source, next, rules, stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken).ConfigureAwait(false);
+        await ValidatePersistedAsync(context, source, next, simulation, rules, stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, simulation, cancellationToken).ConfigureAwait(false);
@@ -337,10 +341,171 @@ public sealed class RunQualifierHandler
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Applies the eight qualifier winners to the next-season roster inside the
+    /// caller's transaction (no save here). Winners move to (or remain in) the
+    /// next Superleague; the 24 losers move to (or remain in) their
+    /// returning-color feeder. Automatic-movement <c>Movement</c> rows are
+    /// provisional markers and are never rewritten; the final occupancy is
+    /// determined by these membership rows plus the qualifier standings.
+    /// Sporting color and pool membership are preserved; only the 32 qualifier
+    /// participants can change leagues.
+    /// </summary>
+    internal static async Task ApplyQualifierToNextRosterAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        QualifierSimulation simulation,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(simulation);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        (LeagueEntity superleague, Dictionary<int, int> feederByColor) =
+            await LoadNextLeagueTargetsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
+        HashSet<int> fieldIds = ResolveFieldIds(simulation, rules);
+        HashSet<int> qualifiedIds = ResolveQualifiedIds(simulation, fieldIds, rules);
+        List<SeasonMembershipEntity> nextMemberships = await LoadNextQualifierMembershipsAsync(
+            context, next, fieldIds, rules, cancellationToken).ConfigureAwait(false);
+        AssignQualifierLeagues(nextMemberships, qualifiedIds, superleague.Id, feederByColor);
+    }
+
+    internal static async Task<(LeagueEntity Superleague, Dictionary<int, int> FeederByColor)> LoadNextLeagueTargetsAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        LeagueEntity superleague = await context.Leagues.AsNoTracking().SingleOrDefaultAsync(
+            e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Season {next.SeasonNumber} has no next Superleague.");
+        List<LeagueEntity> feeders = await context.Leagues.AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (feeders.Count != rules.RegularLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {feeders.Count}.");
+        }
+
+        return (superleague, feeders.ToDictionary(l => l.SportingColor, l => l.Id));
+    }
+
+    internal static HashSet<int> ResolveFieldIds(QualifierSimulation simulation, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(simulation);
+        ArgumentNullException.ThrowIfNull(rules);
+        HashSet<int> fieldIds = simulation.Field.All.Select(p => p.SaveAthleteId).ToHashSet();
+        if (fieldIds.Count != rules.QualifierSize)
+        {
+            throw new InvalidOperationException(
+                $"Qualifier field must hold exactly {rules.QualifierSize} athletes, was {fieldIds.Count}.");
+        }
+
+        return fieldIds;
+    }
+
+    internal static HashSet<int> ResolveQualifiedIds(
+        QualifierSimulation simulation,
+        HashSet<int> fieldIds,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(simulation);
+        ArgumentNullException.ThrowIfNull(fieldIds);
+        ArgumentNullException.ThrowIfNull(rules);
+        HashSet<int> qualifiedIds = simulation.Ranked
+            .Where(r => r.StageRank <= rules.QualifierWinners)
+            .Select(r => r.AthleteId)
+            .ToHashSet();
+        if (qualifiedIds.Count != rules.QualifierWinners)
+        {
+            throw new InvalidOperationException(
+                $"Qualifier must hold exactly {rules.QualifierWinners} successful qualifiers, was {qualifiedIds.Count}.");
+        }
+
+        foreach (int athleteId in qualifiedIds)
+        {
+            if (!fieldIds.Contains(athleteId))
+            {
+                throw new InvalidOperationException($"Qualifier winner {athleteId} is outside the qualifier field.");
+            }
+        }
+
+        return qualifiedIds;
+    }
+
+    internal static async Task<List<SeasonMembershipEntity>> LoadNextQualifierMembershipsAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        HashSet<int> fieldIds,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
+            .Where(e => e.SeasonId == next.Id && fieldIds.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (memberships.Count != rules.QualifierSize)
+        {
+            throw new InvalidOperationException(
+                $"Next season must hold exactly {rules.QualifierSize} qualifier memberships, was {memberships.Count}.");
+        }
+
+        return memberships;
+    }
+
+    internal static void AssignQualifierLeagues(
+        List<SeasonMembershipEntity> memberships,
+        HashSet<int> qualifiedIds,
+        int superleagueId,
+        Dictionary<int, int> feederByColor)
+    {
+        ArgumentNullException.ThrowIfNull(memberships);
+        ArgumentNullException.ThrowIfNull(qualifiedIds);
+        ArgumentNullException.ThrowIfNull(feederByColor);
+        foreach (SeasonMembershipEntity membership in memberships)
+        {
+            AssignSingleQualifierLeague(membership, qualifiedIds, superleagueId, feederByColor);
+        }
+    }
+
+    internal static void AssignSingleQualifierLeague(
+        SeasonMembershipEntity membership,
+        HashSet<int> qualifiedIds,
+        int superleagueId,
+        Dictionary<int, int> feederByColor)
+    {
+        ArgumentNullException.ThrowIfNull(membership);
+        ArgumentNullException.ThrowIfNull(qualifiedIds);
+        ArgumentNullException.ThrowIfNull(feederByColor);
+        if (membership.LeagueId is null)
+        {
+            throw new InvalidOperationException(
+                $"Qualifier athlete {membership.SaveAthleteId} has no provisional next-season league.");
+        }
+
+        if (qualifiedIds.Contains(membership.SaveAthleteId))
+        {
+            membership.LeagueId = superleagueId;
+            return;
+        }
+
+        if (!feederByColor.TryGetValue(membership.SportingColor, out int feederId))
+        {
+            throw new InvalidOperationException($"Unknown sporting color {membership.SportingColor}.");
+        }
+
+        membership.LeagueId = feederId;
+    }
+
     internal static async Task ValidatePersistedAsync(
         SaveDbContext context,
         SeasonEntity source,
         SeasonEntity next,
+        QualifierSimulation simulation,
         RulesV1 rules,
         int stageCountBefore,
         int seasonCountBefore,
@@ -356,7 +521,141 @@ public sealed class RunQualifierHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         QualifierInvariants.ValidatePersisted(source, next, rounds, standings, rules);
+        await ValidateNextRosterAsync(context, next, simulation, standings, rules, cancellationToken).ConfigureAwait(false);
         await VerifyPreservationAsync(context, stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates that the persisted next-season roster reflects the qualifier
+    /// result: the next Superleague holds exactly 32 athletes, every qualified
+    /// athlete occupies the next Superleague and every failed qualifier
+    /// occupies its returning-color feeder. Pool athletes and non-participants
+    /// are untouched here; feeder rebalancing (MSS-017) restores 32 per feeder.
+    /// </summary>
+    internal static async Task ValidateNextRosterAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        QualifierSimulation simulation,
+        List<QualifierStandingEntity> standings,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(simulation);
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        (LeagueEntity superleague, Dictionary<int, int> feederByColor) =
+            await LoadNextLeagueTargetsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, QualifierStandingEntity> standingByAthlete = ResolveStandingMap(standings, rules);
+        HashSet<int> fieldIds = ResolveFieldIds(simulation, rules);
+        if (!fieldIds.SetEquals(standingByAthlete.Keys))
+        {
+            throw new InvalidOperationException("Qualifier standings do not match the qualifier field.");
+        }
+
+        List<SeasonMembershipEntity> qualifierMemberships = await context.SeasonMemberships.AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && fieldIds.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (qualifierMemberships.Count != rules.QualifierSize)
+        {
+            throw new InvalidOperationException(
+                $"Next season must hold exactly {rules.QualifierSize} qualifier memberships, was {qualifierMemberships.Count}.");
+        }
+
+        CheckQualifierPlacements(qualifierMemberships, standingByAthlete, superleague.Id, feederByColor);
+        await CheckFinalSuperleagueCountAsync(context, next, superleague, rules, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static Dictionary<int, QualifierStandingEntity> ResolveStandingMap(
+        List<QualifierStandingEntity> standings,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(rules);
+        Dictionary<int, QualifierStandingEntity> map = standings.ToDictionary(s => s.SaveAthleteId);
+        if (map.Count != rules.QualifierSize)
+        {
+            throw new InvalidOperationException(
+                $"Qualifier must hold exactly {rules.QualifierSize} standings, was {map.Count}.");
+        }
+
+        return map;
+    }
+
+    internal static void CheckQualifierPlacements(
+        List<SeasonMembershipEntity> memberships,
+        Dictionary<int, QualifierStandingEntity> standingByAthlete,
+        int superleagueId,
+        Dictionary<int, int> feederByColor)
+    {
+        ArgumentNullException.ThrowIfNull(memberships);
+        ArgumentNullException.ThrowIfNull(standingByAthlete);
+        ArgumentNullException.ThrowIfNull(feederByColor);
+        foreach (SeasonMembershipEntity membership in memberships)
+        {
+            CheckSingleQualifierPlacement(membership, standingByAthlete, superleagueId, feederByColor);
+        }
+    }
+
+    internal static void CheckSingleQualifierPlacement(
+        SeasonMembershipEntity membership,
+        Dictionary<int, QualifierStandingEntity> standingByAthlete,
+        int superleagueId,
+        Dictionary<int, int> feederByColor)
+    {
+        ArgumentNullException.ThrowIfNull(membership);
+        ArgumentNullException.ThrowIfNull(standingByAthlete);
+        ArgumentNullException.ThrowIfNull(feederByColor);
+        if (!standingByAthlete.TryGetValue(membership.SaveAthleteId, out QualifierStandingEntity? standing))
+        {
+            throw new InvalidOperationException($"Qualifier athlete {membership.SaveAthleteId} has no standing.");
+        }
+
+        if (membership.LeagueId is null)
+        {
+            throw new InvalidOperationException($"Qualifier athlete {membership.SaveAthleteId} is in the common pool.");
+        }
+
+        if (standing.IsQualified)
+        {
+            if (membership.LeagueId != superleagueId)
+            {
+                throw new InvalidOperationException(
+                    $"Qualified athlete {membership.SaveAthleteId} must occupy the next Superleague.");
+            }
+
+            return;
+        }
+
+        if (!feederByColor.TryGetValue(membership.SportingColor, out int expectedFeeder))
+        {
+            throw new InvalidOperationException($"Unknown sporting color {membership.SportingColor}.");
+        }
+
+        if (membership.LeagueId != expectedFeeder)
+        {
+            throw new InvalidOperationException(
+                $"Failed qualifier {membership.SaveAthleteId} must occupy its returning-color feeder.");
+        }
+    }
+
+    internal static async Task CheckFinalSuperleagueCountAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        LeagueEntity superleague,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        int superCount = await context.SeasonMemberships.CountAsync(
+            e => e.SeasonId == next.Id && e.LeagueId == superleague.Id, cancellationToken).ConfigureAwait(false);
+        if (superCount != rules.SuperleagueSize)
+        {
+            throw new InvalidOperationException(
+                $"Next Superleague must contain exactly {rules.SuperleagueSize} athletes (16 safe + 8 promoted + 8 qualifier winners), was {superCount}.");
+        }
     }
 
     internal static async Task<(int StageCount, int SeasonCount, int RoundCount, int QualifierRounds, int QualifierStandings)> CapturePreservationAsync(
