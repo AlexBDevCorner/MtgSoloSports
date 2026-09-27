@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   buildRevealOrder,
   clampRevealed,
@@ -108,7 +108,6 @@ export function useRoundReveal(
   const [speed, setSpeedState] = useState<RevealSpeed>(() => readInitialSpeed());
   const [revealedCount, setRevealedCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const revealKeyRef = useRef(revealKey);
 
   const revealOrder = useMemo(() => buildRevealOrder(placements), [placements]);
   const byAthlete = useMemo(() => indexPlacementsByAthlete(placements), [placements]);
@@ -141,13 +140,9 @@ export function useRoundReveal(
   }, []);
 
   // A new round payload restarts the presentation from the beginning. Instant
-  // mode shows everything; animated mode starts paused on the first card so
-  // screen readers and keyboard users choose when the show begins, unless
-  // reduced motion forces the instant alternative.
+  // mode shows everything; animated mode starts playing from the first card
+  // unless reduced motion forces the instant alternative.
   useEffect(() => {
-    if (revealKeyRef.current !== revealKey) {
-      revealKeyRef.current = revealKey;
-    }
     if (mode === 'instant' || prefersReducedMotion) {
       setRevealedCount(total);
       setIsPlaying(false);
@@ -224,19 +219,16 @@ export function useRoundReveal(
   }, []);
 
   const play = useCallback(() => {
-    if (prefersReducedMotion) {
+    if (prefersReducedMotion || total === 0) {
       return;
     }
-    setModeState((current) => {
-      if (current === 'instant') {
-        writeStored(MODE_KEY, 'animated');
-        return 'animated';
-      }
-      return current;
-    });
+    if (mode === 'instant') {
+      setModeState('animated');
+      writeStored(MODE_KEY, 'animated');
+    }
     setRevealedCount((value) => (value >= total ? 0 : value));
     setIsPlaying(true);
-  }, [prefersReducedMotion, total]);
+  }, [prefersReducedMotion, total, mode]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);

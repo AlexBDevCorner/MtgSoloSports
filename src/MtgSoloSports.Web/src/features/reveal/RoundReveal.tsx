@@ -114,7 +114,7 @@ export function RoundReveal({
               type="button"
               className="primary-button"
               aria-label={reveal.isPlaying ? 'Pause reveal' : 'Play reveal'}
-              disabled={reveal.isComplete && !reveal.isPlaying ? false : total === 0}
+              disabled={total === 0}
               onClick={() => {
                 reveal.togglePlay();
               }}
