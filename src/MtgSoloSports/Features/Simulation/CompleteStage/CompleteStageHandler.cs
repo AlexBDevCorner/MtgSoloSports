@@ -475,12 +475,59 @@ public sealed class CompleteStageHandler
 
         await VerifyStandingsAsync(context, completion, ranked, cancellationToken).ConfigureAwait(false);
 
+        await EmitFirstStageWinAsync(context, completion, ranked, cancellationToken).ConfigureAwait(false);
+
         await Features.Athletes.Projections.AthleteProjectionUpdater.RefreshAfterStageAsync(
             context, completion.Season, completion.League, completion.Rules, cancellationToken).ConfigureAwait(false);
 
         int? nextStageNumber = CreateNextStage(context, completion);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return nextStageNumber;
+    }
+
+    /// <summary>
+    /// Emits the first-stage-win story event transactionally with the stage
+    /// result. Only the rank-1 athlete is considered; when it has no prior
+    /// rank-1 stage standing outside this stage, a single idempotent event is
+    /// staged in the caller's transaction.
+    /// </summary>
+    internal static async Task EmitFirstStageWinAsync(
+        SaveDbContext context,
+        StageCompletionContext completion,
+        IReadOnlyList<StageRankedAthlete> ranked,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(completion);
+        ArgumentNullException.ThrowIfNull(ranked);
+        StageRankedAthlete winner = ranked.Single(e => e.StageRank == 1);
+        bool hadPriorWin = await context.StageStandings.AnyAsync(
+            e => e.SaveAthleteId == winner.AthleteId
+                && e.StageRank == 1
+                && !(e.SeasonId == completion.Season.Id
+                    && e.LeagueId == completion.League.Id
+                    && e.StageNumber == completion.Stage.StageNumber),
+            cancellationToken).ConfigureAwait(false);
+        if (hadPriorWin)
+        {
+            return;
+        }
+
+        await Stories.StoryEventEmitter.TryEmitAsync(
+            context,
+            winner.AthleteId,
+            Stories.StoryEventType.FirstStageWin,
+            Stories.StoryEventEmitter.FirstDedup,
+            completion.Season.SeasonNumber,
+            completion.Stage.StageNumber,
+            new Stories.StoryEventPayload(
+                winner.Name,
+                completion.Season.SeasonNumber,
+                completion.League.Name,
+                completion.Stage.StageNumber,
+                StageRank: 1),
+            cancellationToken).ConfigureAwait(false);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static void PersistStandings(
