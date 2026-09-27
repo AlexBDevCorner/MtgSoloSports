@@ -47,6 +47,8 @@ public static class StoryEventRenderer
                     : $"{payload.AthleteName} is relegated from {Leaf(payload.FromLeagueName)} to {Leaf(payload.ToLeagueName)} for Season {payload.SeasonNumber}.",
             StoryEventType.ReturnFromPool =>
                 $"{payload.AthleteName} returns from the common pool to {Leaf(payload.ToLeagueName)} for Season {payload.SeasonNumber}.",
+            StoryEventType.NewRecord =>
+                RenderRecord(payload),
             _ => $"{payload.AthleteName} writes a new chapter in Season {payload.SeasonNumber}.",
         };
     }
@@ -86,4 +88,47 @@ public static class StoryEventRenderer
     }
 
     private static string Leaf(string? value) => string.IsNullOrWhiteSpace(value) ? "the league" : value;
+
+    internal static string RenderRecord(StoryEventPayload payload)
+    {
+        string label = FormatRecordKey(payload.RecordKey);
+        string value = FormatRecordValue(payload.RecordKey, payload.RecordValue);
+        if (payload.PriorRecordValue is null or 0)
+        {
+            return $"{payload.AthleteName} sets a new {label} record of {value} in Season {payload.SeasonNumber}.";
+        }
+
+        string prior = FormatRecordValue(payload.RecordKey, payload.PriorRecordValue);
+        return $"{payload.AthleteName} breaks the {label} record with {value} in Season {payload.SeasonNumber} (previous {prior}).";
+    }
+
+    internal static string FormatRecordKey(string? recordKey) => recordKey switch
+    {
+        "feeder_titles" => "feeder titles",
+        "superleague_titles" => "Superleague titles",
+        "total_titles" => "total titles",
+        "stage_wins" => "stage wins",
+        "round_wins" => "round wins",
+        "longest_superleague_tenure" => "Superleague tenure",
+        "highest_effective_bonus" => "effective bonus",
+        "longest_title_streak" => "title streak",
+        "longest_stage_win_streak" => "stage-win streak",
+        _ => string.IsNullOrWhiteSpace(recordKey) ? "career" : recordKey.Replace('_', ' '),
+    };
+
+    internal static string FormatRecordValue(string? recordKey, int? thousandthsOrCount)
+    {
+        if (thousandthsOrCount is null)
+        {
+            return "—";
+        }
+
+        if (string.Equals(recordKey, "highest_effective_bonus", StringComparison.Ordinal))
+        {
+            string sign = thousandthsOrCount.Value >= 0 ? "+" : string.Empty;
+            return $"{sign}{(thousandthsOrCount.Value / 1000.0).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)}";
+        }
+
+        return thousandthsOrCount.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
 }

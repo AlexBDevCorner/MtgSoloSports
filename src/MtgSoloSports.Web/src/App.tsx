@@ -7,6 +7,7 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
 import { HistoryPage } from './features/history/HistoryPage';
 import { LivePage } from './features/live/LivePage';
+import { RecordsPage } from './features/records/RecordsPage';
 import { AppShell, type View } from './features/shell/AppShell';
 import { SavesPage } from './features/saves/SavesPage';
 import { useSaves } from './features/saves/useSaves';
@@ -108,6 +109,18 @@ export default function App() {
         />
       ) : view === 'history' ? (
         <HistoryPage
+          saveId={selectedSaveId}
+          hasSelection={selectedSaveId !== null}
+          onGoToSaves={() => {
+            setView('saves');
+          }}
+          onSelectAthlete={(athleteId) => {
+            setSelectedAthleteId(athleteId);
+            setView('athlete');
+          }}
+        />
+      ) : view === 'records' ? (
+        <RecordsPage
           saveId={selectedSaveId}
           hasSelection={selectedSaveId !== null}
           onGoToSaves={() => {

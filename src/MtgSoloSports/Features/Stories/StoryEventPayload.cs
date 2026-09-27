@@ -23,4 +23,7 @@ public sealed record StoryEventPayload(
     [property: JsonPropertyName("toSeasonNumber")] int? ToSeasonNumber = null,
     [property: JsonPropertyName("fromSeasonRank")] int? FromSeasonRank = null,
     [property: JsonPropertyName("viaQualifier")] bool? ViaQualifier = null,
-    [property: JsonPropertyName("sportingColor")] string? SportingColor = null);
+    [property: JsonPropertyName("sportingColor")] string? SportingColor = null,
+    [property: JsonPropertyName("recordKey")] string? RecordKey = null,
+    [property: JsonPropertyName("recordValue")] int? RecordValue = null,
+    [property: JsonPropertyName("priorRecordValue")] int? PriorRecordValue = null);

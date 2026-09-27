@@ -62,6 +62,8 @@ public static class SeasonFinalizer
         await EmitTitleStoriesAsync(context, season, leagues, rules, names, cancellationToken).ConfigureAwait(false);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RefreshAfterSeasonAsync(
             context, rules, cancellationToken).ConfigureAwait(false);
+        await Features.Records.HonourUpdater.SyncSeasonAsync(context, season, leagues, cancellationToken).ConfigureAwait(false);
+        await Features.Records.RecordStoryEmitter.EmitBreaksAsync(context, season, cancellationToken).ConfigureAwait(false);
         return (true, rngAfter);
     }
 
