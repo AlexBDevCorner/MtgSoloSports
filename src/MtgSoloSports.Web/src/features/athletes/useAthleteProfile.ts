@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { fetchAthleteProfile, type AthleteProfile } from './athleteApi';
 import { fetchAthleteStories, type StoryEventItem } from '../stories/storiesApi';
+import { fetchRecords, type CareerRecord } from '../records/recordsApi';
 
 export interface AthleteProfileState {
   profile: AthleteProfile | null;
   stories: StoryEventItem[];
+  recordHoldings: CareerRecord[];
   loading: boolean;
   error: string | null;
   notFound: boolean;
@@ -22,6 +24,7 @@ export function useAthleteProfile(
 ): AthleteProfileState {
   const [profile, setProfile] = useState<AthleteProfile | null>(null);
   const [stories, setStories] = useState<StoryEventItem[]>([]);
+  const [recordHoldings, setRecordHoldings] = useState<CareerRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -31,6 +34,7 @@ export function useAthleteProfile(
     if (!saveId || athleteId === null) {
       setProfile(null);
       setStories([]);
+      setRecordHoldings([]);
       setLoading(false);
       setError(null);
       setNotFound(false);
@@ -54,11 +58,24 @@ export function useAthleteProfile(
         }
         feed = [];
       }
-      return { loaded, feed };
+      let holdings: CareerRecord[] = [];
+      try {
+        const records = await fetchRecords(saveId, signal);
+        holdings = records.records.filter((record) =>
+          record.holders.some((holder) => holder.athleteId === athleteId),
+        );
+      } catch (failure) {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          throw failure;
+        }
+        holdings = [];
+      }
+      return { loaded, feed, holdings };
     })()
-      .then(({ loaded, feed }) => {
+      .then(({ loaded, feed, holdings }) => {
         setProfile(loaded);
         setStories(feed);
+        setRecordHoldings(holdings);
         setLoading(false);
       })
       .catch((failure: unknown) => {
@@ -82,6 +99,7 @@ export function useAthleteProfile(
   return {
     profile,
     stories,
+    recordHoldings,
     loading,
     error,
     notFound,

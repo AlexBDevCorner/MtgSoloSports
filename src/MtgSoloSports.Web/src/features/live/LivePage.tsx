@@ -10,6 +10,7 @@ import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
+import { colorComposition, zoneLabelForRank } from '../standings/zones';
 
 const LEAGUE_KEY_PREFIX = 'mtg-solo-sports:live-league:';
 
@@ -399,46 +400,90 @@ export function LivePage({
             <p>Complete a stage on the backend to populate championship standings.</p>
           </Notice>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Card</th>
-                  <th scope="col">Champ pts</th>
-                  <th scope="col">Stage W</th>
-                  <th scope="col">Round W</th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.standings.map((row) => (
-                  <tr key={row.athleteId}>
-                    <td className="numeric">{row.seasonRank}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.name}`}
-                        onClick={() => {
-                          openAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.name}
-                      </button>
-                      {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
-                    </td>
-                    <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
-                    <td className="numeric">{row.stageWins}</td>
-                    <td className="numeric">{row.roundWins}</td>
+          <>
+            {(() => {
+              const kind = league?.leagueKind ?? 'Feeder';
+              const composition =
+                kind === 'Superleague' ? colorComposition(standings.standings) : [];
+              return composition.length > 0 ? (
+                <>
+                  <h3 className="reveal-subhead">Color composition — no quotas applied</h3>
+                  <ul className="color-counts">
+                    {composition.map((entry) => (
+                      <li key={entry.color}>
+                        <span>{entry.color}</span>
+                        <strong>{entry.count}/32</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null;
+            })()}
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Color</th>
+                    <th scope="col">Zone</th>
+                    <th scope="col">Champ pts</th>
+                    <th scope="col">Stage W</th>
+                    <th scope="col">Round W</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {standings.standings.map((row) => {
+                    const kind = league?.leagueKind ?? 'Feeder';
+                    return (
+                      <tr key={row.athleteId}>
+                        <td className="numeric">{row.seasonRank}</td>
+                        <td>
+                          <div className="card-cell">
+                            {row.imageUrl ? (
+                              <img className="card-thumb" src={row.imageUrl} alt="" loading="lazy" />
+                            ) : (
+                              <span className="card-thumb card-thumb-fallback" aria-hidden="true">
+                                {row.name.slice(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                            <span className="card-identity">
+                              <button
+                                type="button"
+                                className="card-name card-link"
+                                title={`Open career profile for ${row.name}`}
+                                onClick={() => {
+                                  openAthlete(row.athleteId);
+                                }}
+                              >
+                                {row.name}
+                              </button>
+                              {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{row.sportingColorName}</td>
+                        <td>
+                          <span className="badge badge-wait" title="Visual zone only; no quotas applied.">
+                            {zoneLabelForRank(row.seasonRank, kind)}
+                          </span>
+                        </td>
+                        <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
+                        <td className="numeric">{row.stageWins}</td>
+                        <td className="numeric">{row.roundWins}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
         <p className="muted small">
           Standings accumulate persisted stage championship points and link each card row
-          to its career profile.
+          to its career profile. Zones are visual only: Superleague 1–16 safe, 17–24
+          qualifier, 25–32 relegated; feeders champion auto-promoted plus 2–4 qualifier.
+          No color quotas are applied.
         </p>
       </Card>
     </div>

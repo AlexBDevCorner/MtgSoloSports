@@ -183,30 +183,37 @@ export function SavesPage({
               required
             />
           </label>
-          <div className="field-row">
-            <label className="field">
-              <span>Seed (optional)</span>
-              <input
-                value={seed}
-                onChange={(event) => {
-                  setSeed(event.target.value);
-                }}
-                inputMode="numeric"
-                placeholder="e.g. 101"
-              />
-            </label>
-            <label className="field">
-              <span>Stream (optional)</span>
-              <input
-                value={stream}
-                onChange={(event) => {
-                  setStream(event.target.value);
-                }}
-                inputMode="numeric"
-                placeholder="e.g. 202"
-              />
-            </label>
-          </div>
+          <details className="advanced">
+            <summary>Advanced: deterministic seed (optional)</summary>
+            <p className="muted small">
+              Leave blank for a random universe. Provide both values only to reproduce an
+              exact universe for testing.
+            </p>
+            <div className="field-row">
+              <label className="field">
+                <span>Seed</span>
+                <input
+                  value={seed}
+                  onChange={(event) => {
+                    setSeed(event.target.value);
+                  }}
+                  inputMode="numeric"
+                  placeholder="Blank = random"
+                />
+              </label>
+              <label className="field">
+                <span>Stream</span>
+                <input
+                  value={stream}
+                  onChange={(event) => {
+                    setStream(event.target.value);
+                  }}
+                  inputMode="numeric"
+                  placeholder="Blank = random"
+                />
+              </label>
+            </div>
+          </details>
           {createError ? (
             <Notice tone="error" title="Could not create save">
               <p>{createError}</p>

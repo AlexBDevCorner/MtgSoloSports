@@ -4,6 +4,7 @@ import type { SaveDetail } from '../saves/savesApi';
 export interface SeasonProgressLeague {
   leagueId: number;
   leagueName: string;
+  leagueKind: string;
   currentStage: number | null;
   completedStages: number;
   isLeagueComplete: boolean;

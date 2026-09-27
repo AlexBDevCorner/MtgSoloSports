@@ -182,6 +182,11 @@ export default function App() {
           onGoToSaves={() => {
             setView('saves');
           }}
+          onNavigate={setView}
+          onSelectAthlete={(athleteId) => {
+            setSelectedAthleteId(athleteId);
+            setView('athlete');
+          }}
         />
       )}
     </AppShell>

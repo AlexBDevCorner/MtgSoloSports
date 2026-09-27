@@ -60,6 +60,7 @@ public sealed class GetSeasonProgressHandler
             leagues.Add(new SeasonProgressLeague(
                 status.LeagueId,
                 status.LeagueName,
+                status.LeagueKind,
                 status.CurrentStage,
                 status.CompletedStages,
                 status.IsLeagueComplete));

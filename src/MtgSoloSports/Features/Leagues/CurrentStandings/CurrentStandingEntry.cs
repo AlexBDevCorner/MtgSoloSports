@@ -13,4 +13,7 @@ public sealed record CurrentStandingEntry(
     int TotalBaseScoreThousandths,
     int StageWins,
     int RoundWins,
-    bool IsChampion);
+    bool IsChampion,
+    int SportingColor = 0,
+    string SportingColorName = "Unknown",
+    string? ImageUrl = null);

@@ -54,12 +54,37 @@ export interface AthleteSeason {
   totalBaseScoreThousandths: number;
 }
 
+export interface AthleteHonour {
+  seasonNumber: number;
+  leagueName: string;
+  honourKind: string;
+}
+
+export interface AthleteMovement {
+  fromSeasonNumber: number;
+  toSeasonNumber: number;
+  fromLeagueName: string;
+  toLeagueName: string;
+  kind: string;
+  fromSeasonRank: number;
+}
+
+export interface AthleteCupSelection {
+  cupKind: string;
+  sourceSeasonNumber: number;
+  team: string;
+  selectionRank: number;
+}
+
 export interface AthleteProfile {
   saveId: string;
   athleteId: number;
   card: AthleteCard;
   career: AthleteCareer;
   seasons: AthleteSeason[];
+  honours: AthleteHonour[];
+  movements: AthleteMovement[];
+  cupSelections: AthleteCupSelection[];
 }
 
 export interface CurrentStandingRow {
@@ -72,6 +97,9 @@ export interface CurrentStandingRow {
   stageWins: number;
   roundWins: number;
   isChampion: boolean;
+  sportingColor: number;
+  sportingColorName: string;
+  imageUrl: string | null;
 }
 
 export interface CurrentStandings {

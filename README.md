@@ -6,7 +6,8 @@ The user does not manage a team. The application simulates leagues, promotion/re
 
 ## Current status
 
-Repository skeleton and design documentation are initialized. Autonomous implementation remains intentionally paused until the required secrets, GitHub App permissions, and control-repo activation are ready.
+Local single-user sports simulation with persistent universes, deterministic simulation,
+animated round reveal, Cups, history, records and Hall of Fame.
 
 ## Architecture
 
@@ -26,19 +27,34 @@ See:
 - [Autonomous development](docs/autonomous-development.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
 
-## Local development
+## Standard local run
 
-Backend:
+Prerequisites: .NET 10 SDK and Node.js 20+.
+
+1. Start the backend (serves the API on localhost):
 
 ```bash
 dotnet run --project src/MtgSoloSports
 ```
 
-Frontend:
+2. In a second terminal, start the frontend. The Vite server proxies `/api` to the backend:
 
 ```bash
 npm install --prefix src/MtgSoloSports.Web
 npm run dev --prefix src/MtgSoloSports.Web
 ```
 
-The Vite development server proxies `/api` to the local ASP.NET Core host.
+3. Open the Vite URL in a desktop browser and use the Saves tab:
+
+- Import the creature catalog once via `POST /api/catalog/import` with Scryfall bulk
+  JSON (the UI banner shows quota progress; a save needs 256 athletes per sporting color).
+- Create a universe on the Saves tab. Leave the advanced seed blank for a random world.
+- Open the Dashboard for season/stage, leaders, recent champions, Cup context and records.
+- Use Live event for the current stage rounds with instant or animated reveal, then
+  History for exact replays, Cups for Color/Type Cup fields and results, and
+  Records / HoF plus athlete profiles for careers, honours, movements and selections.
+- Portability lives on the Saves tab: export downloads a `.mtgsave.zip` bundle and
+  import restores it without touching other saves.
+
+Sporting simulation is deterministic (versioned RNG, fixed-point integers) and the UI
+only replays persisted results; refreshing or changing reveal speed never resimulates.
