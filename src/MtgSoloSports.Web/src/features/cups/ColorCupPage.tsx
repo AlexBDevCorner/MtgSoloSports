@@ -4,8 +4,11 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import {
   fetchColorCupIndividual,
+  fetchColorCupTeam,
   runColorCupIndividual,
+  runColorCupTeam,
   type ColorCupIndividualResult,
+  type ColorCupTeamResult,
 } from './colorCupApi';
 
 /** Display-only projection of fixed-point thousandths (no sporting math). */
@@ -42,6 +45,11 @@ export function ColorCupPage({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [team, setTeam] = useState<ColorCupTeamResult | null>(null);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamRunning, setTeamRunning] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
+  const [teamNotFound, setTeamNotFound] = useState(false);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -71,20 +79,53 @@ export function ColorCupPage({
     [saveId],
   );
 
+  const loadTeam = useCallback(
+    async (signal: AbortSignal) => {
+      if (!saveId) {
+        return;
+      }
+      setTeamLoading(true);
+      setTeamError(null);
+      try {
+        const loaded = await fetchColorCupTeam(saveId, null, signal);
+        setTeam(loaded);
+        setTeamNotFound(false);
+      } catch (failure: unknown) {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        if (failure instanceof ApiError && failure.status === 404) {
+          setTeam(null);
+          setTeamNotFound(true);
+        } else {
+          setTeamError(apiErrorMessage(failure));
+        }
+      } finally {
+        setTeamLoading(false);
+      }
+    },
+    [saveId],
+  );
+
   useEffect(() => {
     if (!saveId) {
       setResult(null);
       setLoading(false);
       setError(null);
       setNotFound(false);
+      setTeam(null);
+      setTeamLoading(false);
+      setTeamError(null);
+      setTeamNotFound(false);
       return;
     }
     const controller = new AbortController();
     void load(controller.signal);
+    void loadTeam(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [saveId, load]);
+  }, [saveId, load, loadTeam]);
 
   const handleRun = useCallback(async () => {
     if (!saveId) {
@@ -108,6 +149,29 @@ export function ColorCupPage({
       setRunning(false);
     }
   }, [saveId, load]);
+
+  const handleRunTeam = useCallback(async () => {
+    if (!saveId) {
+      return;
+    }
+    setTeamRunning(true);
+    setTeamError(null);
+    try {
+      const completed = await runColorCupTeam(saveId, null);
+      setTeam(completed);
+      setTeamNotFound(false);
+    } catch (failure: unknown) {
+      if (failure instanceof ApiError && failure.status === 409) {
+        setTeamError(apiErrorMessage(failure));
+        const controller = new AbortController();
+        await loadTeam(controller.signal);
+      } else {
+        setTeamError(apiErrorMessage(failure));
+      }
+    } finally {
+      setTeamRunning(false);
+    }
+  }, [saveId, loadTeam]);
 
   if (!hasSelection || !saveId) {
     return (
@@ -262,6 +326,134 @@ export function ColorCupPage({
                     </td>
                     <td className="numeric">{row.roundWins}</td>
                     <td>{medalBadge(row.medal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card
+        eyebrow="Color Cup · team"
+        title={
+          team
+            ? `Season ${team.sourceSeasonNumber} — ${team.championTeamName} wins the team Cup`
+            : 'Color Cup team event'
+        }
+        action={
+          teamLoading ? <span className="muted small">Refreshing…</span> : undefined
+        }
+      >
+        {teamError ? (
+          <Notice tone="error" title="Color Cup team unavailable">
+            <p>{teamError}</p>
+          </Notice>
+        ) : null}
+        {team ? (
+          <>
+            <p className="muted small">
+              8 color teams · 4 rank groups × {team.groupRounds} rounds ·
+              checksum{' '}
+              <code title={team.checksum}>
+                {team.checksum.length > 12
+                  ? `${team.checksum.slice(0, 12)}…`
+                  : team.checksum}
+              </code>{' '}
+              · active bonus applies, no new bonus or league points.
+            </p>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Medal</th>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {team.teams.map((entry) => (
+                    <tr key={entry.sportingColor}>
+                      <td>{medalBadge(entry.medal)}</td>
+                      <td className="numeric">{entry.teamRank}</td>
+                      <td>{entry.teamName}</td>
+                      <td className="numeric">
+                        {formatPoints(entry.teamScoreThousandths)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : teamNotFound ? (
+          <p className="muted">
+            No Color Cup team result yet. Resolve the Color Cup team selection
+            for a completed odd season first, then run the four 8-round rank
+            groups.
+          </p>
+        ) : null}
+        <p>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={teamRunning}
+            onClick={() => {
+              void handleRunTeam();
+            }}
+          >
+            {teamRunning ? 'Running…' : 'Run Color Cup team'}
+          </button>
+        </p>
+        <p className="muted small">
+          Runs four rank groups (#1 vs #1 through #4 vs #4) with 8 rounds each.
+          Team score is the sum of the four legs; exact group payloads persist
+          for replay and career bonus never changes.
+        </p>
+      </Card>
+
+      <Card
+        eyebrow="Legs"
+        title={team ? `Group legs — ${team.legs.length} athletes` : 'Group legs'}
+      >
+        {!team ? (
+          <p className="muted">Run the team event to populate group legs.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Group</th>
+                  <th scope="col">Rank</th>
+                  <th scope="col">Card</th>
+                  <th scope="col">Leg score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {team.legs.map((leg) => (
+                  <tr key={leg.athleteId}>
+                    <td className="numeric">#{leg.groupNumber}</td>
+                    <td className="numeric">{leg.groupRank}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="card-name card-link"
+                        title={`Open career profile for ${leg.name}`}
+                        onClick={() => {
+                          onSelectAthlete(leg.athleteId);
+                        }}
+                      >
+                        {leg.name}
+                      </button>
+                      <span className="card-sub">
+                        {' '}
+                        · {leg.sportingColor} · #{leg.selectionRank}
+                      </span>
+                    </td>
+                    <td className="numeric">
+                      {formatPoints(leg.groupScoreThousandths)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

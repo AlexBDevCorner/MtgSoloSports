@@ -53,6 +53,10 @@ public static class StoryEventRenderer
                 $"{payload.AthleteName} wins the Color Cup individual championship in Season {payload.SeasonNumber}.",
             StoryEventType.ColorCupMedal =>
                 RenderCupMedal(payload),
+            StoryEventType.ColorCupTeamTitle =>
+                $"{payload.AthleteName} wins the Color Cup team championship with {Leaf(payload.LeagueName)} in Season {payload.SeasonNumber}.",
+            StoryEventType.ColorCupTeamMedal =>
+                RenderTeamMedal(payload),
             _ => $"{payload.AthleteName} writes a new chapter in Season {payload.SeasonNumber}.",
         };
     }
@@ -102,6 +106,18 @@ public static class StoryEventRenderer
         }
 
         return $"{payload.AthleteName} wins Color Cup {medal} in Season {payload.SeasonNumber}.";
+    }
+
+    internal static string RenderTeamMedal(StoryEventPayload payload)
+    {
+        string medal = string.IsNullOrWhiteSpace(payload.Medal) ? "medal" : payload.Medal;
+        string team = string.IsNullOrWhiteSpace(payload.LeagueName) ? "the team" : payload.LeagueName;
+        if (payload.CupRank is not null)
+        {
+            return $"{payload.AthleteName} wins Color Cup team {medal} with {team} (rank {payload.CupRank}) in Season {payload.SeasonNumber}.";
+        }
+
+        return $"{payload.AthleteName} wins Color Cup team {medal} with {team} in Season {payload.SeasonNumber}.";
     }
 
     internal static string RenderRecord(StoryEventPayload payload)
