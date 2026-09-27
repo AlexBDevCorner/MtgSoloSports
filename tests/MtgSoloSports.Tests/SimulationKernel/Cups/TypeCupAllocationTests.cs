@@ -135,6 +135,48 @@ public sealed class TypeCupAllocationTests
     }
 
     [Fact]
+    public void OverlappingTypes_WithNonViableDistractor_MaximizesTwoTeams()
+    {
+        RulesV1 rules = Rules();
+
+        // Aaa never reaches four and cannot participate, but N07 ranks #1 in both
+        // Aaa and Bbb and therefore initially prefers the non-viable Aaa. A greedy
+        // most-constrained-first allocation commits Bbb without N07 (all other Bbb
+        // candidates prefer Bbb) and strands Ccc with only three remaining athletes.
+        // The exact global allocation backtracks, assigns N07 to its only viable
+        // type Bbb, and fields both Bbb and Ccc.
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "N00", ["Bbb"], bonus: 502),
+            Candidate(2, "N01", ["Ccc"], bonus: 401),
+            Candidate(3, "N02", ["Aaa"], bonus: 589),
+            Candidate(4, "N03", ["Ccc"], bonus: 466),
+            Candidate(5, "N04", ["Bbb", "Ccc"], bonus: 274),
+            Candidate(6, "N05", ["Ccc"], bonus: 818),
+            Candidate(7, "N06", ["Ccc", "Bbb"], bonus: 278),
+            Candidate(8, "N07", ["Aaa", "Bbb"], bonus: 664),
+            Candidate(9, "N08", ["Bbb"], bonus: 352),
+            Candidate(10, "N09", ["Aaa"], bonus: 521),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        result.Teams.Count.ShouldBe(2);
+        foreach (TypeCupAllocation.AllocatedTeam team in result.Teams)
+        {
+            team.Members.Count.ShouldBe(4);
+        }
+
+        HashSet<int> assigned = result.Teams.SelectMany(t => t.Members).Select(m => m.AthleteId).ToHashSet();
+        assigned.Count.ShouldBe(8);
+        assigned.Contains(8).ShouldBeTrue();
+
+        TypeCupAllocation.AllocatedTeam bbb = result.Teams.Single(t => string.Equals(t.CreatureType, "Bbb", StringComparison.Ordinal));
+        bbb.Members.Select(m => m.Name).Contains("N07", StringComparer.Ordinal).ShouldBeTrue();
+        result.Teams.Any(t => string.Equals(t.CreatureType, "Aaa", StringComparison.Ordinal)).ShouldBeFalse();
+    }
+
+    [Fact]
     public void TypesWithFewerThanFour_NeverParticipate()
     {
         RulesV1 rules = Rules();

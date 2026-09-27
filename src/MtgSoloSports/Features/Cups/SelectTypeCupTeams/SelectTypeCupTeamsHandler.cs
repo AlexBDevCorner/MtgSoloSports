@@ -14,9 +14,10 @@ namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 /// never participate. Capped athletes may represent only their permanent Type
 /// Cup nationality; uncapped athletes may initially represent any printed
 /// creature type and prefer the type where they rank higher (for example #1
-/// Wizard over #4 Human). A deterministic most-constrained-first global
-/// allocation maximizes the number of valid four-distinct-athlete teams with
-/// ordinal tie-breaking; only types that actually receive four participate and
+/// Wizard over #4 Human). A deterministic exact maximum-cardinality global
+/// allocation with backtracking maximizes the number of valid
+/// four-distinct-athlete teams with ordinal tie-breaking; only types that
+/// actually receive four participate and
 /// there is no artificial maximum. Ratings reuse the 35/30/25/10 Cup formula
 /// (effective bonus, completed-season performance, recent form over the latest
 /// ten league stages weighted 1..10 oldest-newest, career prestige) normalized
