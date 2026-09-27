@@ -20,6 +20,8 @@ public static class StoryEventType
 
     public const string ReturnFromPool = "return_from_pool";
 
+    public const string NewRecord = "new_record";
+
     /// <summary>
     /// Known types at this stage. Future tasks append without changing these.
     /// </summary>
@@ -32,6 +34,7 @@ public static class StoryEventType
         Promotion,
         Relegation,
         ReturnFromPool,
+        NewRecord,
     ];
 
     public static bool IsKnown(string eventType) => KnownTypes.Contains(eventType, StringComparer.Ordinal);

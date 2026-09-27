@@ -27,6 +27,9 @@ using MtgSoloSports.Features.Simulation.GetStageRounds;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Features.Stories.ListAthleteStories;
 using MtgSoloSports.Features.Stories.ListRecent;
+using MtgSoloSports.Features.Records.GetHallOfFame;
+using MtgSoloSports.Features.Records.GetRecords;
+using MtgSoloSports.Features.Records.ListHonours;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 using MtgSoloSports.Features.Superleague.GetInauguralRoster;
@@ -86,6 +89,9 @@ builder.Services.AddScoped<ListHistoryRoundsHandler>();
 builder.Services.AddScoped<GetHistoryRoundReplayHandler>();
 builder.Services.AddScoped<GetHistoryStageStandingsHandler>();
 builder.Services.AddScoped<GetHistorySeasonTableHandler>();
+builder.Services.AddScoped<ListHonoursHandler>();
+builder.Services.AddScoped<GetRecordsHandler>();
+builder.Services.AddScoped<GetHallOfFameHandler>();
 
 var app = builder.Build();
 
@@ -132,6 +138,9 @@ ListHistoryRoundsEndpoint.Map(app);
 GetHistoryRoundReplayEndpoint.Map(app);
 GetHistoryStageStandingsEndpoint.Map(app);
 GetHistorySeasonTableEndpoint.Map(app);
+ListHonoursEndpoint.Map(app);
+GetRecordsEndpoint.Map(app);
+GetHallOfFameEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
