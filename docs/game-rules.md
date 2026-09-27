@@ -174,6 +174,8 @@ Automatic selection rating:
 
 Each component is normalized within the color. The four highest scores make the team and are ordered #1-#4 by selection rating.
 
+Career prestige (Rules v1 initial constants) is raw points: feeder-league title 100, Superleague title 300, Superleague season appearance 20, stage win 10, stage second 5, stage third 2, other major honour (future Cup titles) 150. Recent form weights the latest ten league stages 1..10 oldest-to-newest (newest-aligned; missing stages score zero).
+
 ### Individual event
 
 All 32 selected athletes compete in one standard 16-round stage. The event awards Gold/Silver/Bronze and an official individual Color Cup title. No bonus is earned.

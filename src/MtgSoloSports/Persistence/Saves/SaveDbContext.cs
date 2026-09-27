@@ -51,6 +51,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<HonourEntity> Honours => Set<HonourEntity>();
 
+    public DbSet<ColorCupSelectionEntity> ColorCupSelections => Set<ColorCupSelectionEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -63,6 +65,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureQualifier(modelBuilder);
         ConfigureStoryEvents(modelBuilder);
         ConfigureHonours(modelBuilder);
+        ConfigureColorCupSelections(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -426,6 +429,35 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.LeagueKind).IsRequired();
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.Kind).IsRequired();
+        });
+    }
+
+    private static void ConfigureColorCupSelections(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ColorCupSelectionEntity>(entity =>
+        {
+            entity.ToTable("ColorCupSelections");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.SportingColor, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.SportingColor, e.SelectionRank }).IsUnique();
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.HasIndex(e => e.SaveAthleteId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SelectionRank).IsRequired();
+            entity.Property(e => e.FinalRatingThousandths).IsRequired();
+            entity.Property(e => e.BonusNormThousandths).IsRequired();
+            entity.Property(e => e.PerformanceNormThousandths).IsRequired();
+            entity.Property(e => e.FormNormThousandths).IsRequired();
+            entity.Property(e => e.PrestigeNormThousandths).IsRequired();
+            entity.Property(e => e.BonusRawThousandths).IsRequired();
+            entity.Property(e => e.PerformanceRawThousandths).IsRequired();
+            entity.Property(e => e.FormRaw).IsRequired();
+            entity.Property(e => e.PrestigeRaw).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
         });
     }
 

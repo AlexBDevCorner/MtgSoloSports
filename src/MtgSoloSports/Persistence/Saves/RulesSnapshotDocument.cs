@@ -41,6 +41,13 @@ public sealed record RulesSnapshotDocument(
     int CupPerformanceWeightPermille,
     int CupFormWeightPermille,
     int CupPrestigeWeightPermille,
+    int CupPrestigeFeederTitlePoints,
+    int CupPrestigeSuperleagueTitlePoints,
+    int CupPrestigeSuperleagueAppearancePoints,
+    int CupPrestigeStageWinPoints,
+    int CupPrestigeStageSecondPoints,
+    int CupPrestigeStageThirdPoints,
+    int CupPrestigeOtherMajorHonourPoints,
     int[] ScoringTable,
     int[] RoundBonusThousandths,
     int[] StageBonusThousandths,
@@ -89,6 +96,13 @@ public sealed record RulesSnapshotDocument(
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
             rules.CupPrestigeWeightPermille,
+            rules.CupPrestigeFeederTitlePoints,
+            rules.CupPrestigeSuperleagueTitlePoints,
+            rules.CupPrestigeSuperleagueAppearancePoints,
+            rules.CupPrestigeStageWinPoints,
+            rules.CupPrestigeStageSecondPoints,
+            rules.CupPrestigeStageThirdPoints,
+            rules.CupPrestigeOtherMajorHonourPoints,
             [.. rules.ScoringTable],
             [.. rules.RoundBonusThousandths],
             [.. rules.StageBonusThousandths],
@@ -102,7 +116,46 @@ public sealed record RulesSnapshotDocument(
     /// </summary>
     public RulesV1 ToRules()
     {
-        RulesV1 rules = RulesV1.Create(new RulesV1Overrides
+        RulesV1 rules = RulesV1.Create(BuildOverrides());
+
+        if (rules.Version != Version)
+        {
+            throw new InvalidOperationException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
+        }
+
+        if (!string.Equals(rules.Algorithm, Algorithm, StringComparison.Ordinal) || rules.AlgorithmVersion != AlgorithmVersion)
+        {
+            throw new InvalidOperationException("Rules RNG algorithm mismatch.");
+        }
+
+        return rules;
+    }
+
+    private RulesV1Overrides BuildOverrides()
+    {
+        // Backward compatibility: saves persisted before MSS-023 have zeroed
+        // prestige fields (missing JSON properties deserialize to 0). Zero is
+        // never a valid v1 prestige constant, so substitute the v1 defaults.
+        return BuildCoreOverrides(
+            ResolvePrestige(CupPrestigeFeederTitlePoints, RulesV1.DefaultPrestigeFeederTitlePoints),
+            ResolvePrestige(CupPrestigeSuperleagueTitlePoints, RulesV1.DefaultPrestigeSuperleagueTitlePoints),
+            ResolvePrestige(CupPrestigeSuperleagueAppearancePoints, RulesV1.DefaultPrestigeSuperleagueAppearancePoints),
+            ResolvePrestige(CupPrestigeStageWinPoints, RulesV1.DefaultPrestigeStageWinPoints),
+            ResolvePrestige(CupPrestigeStageSecondPoints, RulesV1.DefaultPrestigeStageSecondPoints),
+            ResolvePrestige(CupPrestigeStageThirdPoints, RulesV1.DefaultPrestigeStageThirdPoints),
+            ResolvePrestige(CupPrestigeOtherMajorHonourPoints, RulesV1.DefaultPrestigeOtherMajorHonourPoints));
+    }
+
+    private RulesV1Overrides BuildCoreOverrides(
+        int feederTitle,
+        int superTitle,
+        int superAppearance,
+        int stageWin,
+        int stageSecond,
+        int stageThird,
+        int otherMajor)
+    {
+        return new RulesV1Overrides
         {
             SportingColorCount = SportingColorCount,
             AthletesPerSportingColor = AthletesPerSportingColor,
@@ -133,25 +186,22 @@ public sealed record RulesSnapshotDocument(
             CupPerformanceWeightPermille = CupPerformanceWeightPermille,
             CupFormWeightPermille = CupFormWeightPermille,
             CupPrestigeWeightPermille = CupPrestigeWeightPermille,
+            CupPrestigeFeederTitlePoints = feederTitle,
+            CupPrestigeSuperleagueTitlePoints = superTitle,
+            CupPrestigeSuperleagueAppearancePoints = superAppearance,
+            CupPrestigeStageWinPoints = stageWin,
+            CupPrestigeStageSecondPoints = stageSecond,
+            CupPrestigeStageThirdPoints = stageThird,
+            CupPrestigeOtherMajorHonourPoints = otherMajor,
             ScoringTable = (int[])ScoringTable.Clone(),
             RoundBonusThousandths = (int[])RoundBonusThousandths.Clone(),
             StageBonusThousandths = (int[])StageBonusThousandths.Clone(),
             BonusAgeWeightsThousandths = (int[])BonusAgeWeightsThousandths.Clone(),
             RecentFormWeights = (int[])RecentFormWeights.Clone(),
-        });
-
-        if (rules.Version != Version)
-        {
-            throw new InvalidOperationException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
-        }
-
-        if (!string.Equals(rules.Algorithm, Algorithm, StringComparison.Ordinal) || rules.AlgorithmVersion != AlgorithmVersion)
-        {
-            throw new InvalidOperationException("Rules RNG algorithm mismatch.");
-        }
-
-        return rules;
+        };
     }
+
+    private static int ResolvePrestige(int stored, int @default) => stored == 0 ? @default : stored;
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 

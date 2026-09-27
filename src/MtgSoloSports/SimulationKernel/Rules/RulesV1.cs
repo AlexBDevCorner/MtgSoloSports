@@ -22,6 +22,23 @@ public sealed class RulesV1
     private static readonly int[] DefaultBonusAgeWeightsThousandths = [1000, 800, 600, 400, 200, 0];
     private static readonly int[] DefaultRecentFormWeights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
+    // Color Cup career-prestige v1 constants (raw prestige points per achievement).
+    // Prestige raw = feederTitles * 100 + superleagueTitles * 300
+    //   + superleagueAppearances * 20 + stageWins * 10 + stageSeconds * 5
+    //   + stageThirds * 2 + otherMajorHonours * 150.
+    // Other major honours counts official Honour rows beyond feeder/Superleague
+    // titles (future Color Cup individual/team and Type Cup team honours); it is
+    // zero for saves created before Cups and keeps the formula forward compatible.
+    // Calibrated so prestige decides close calls (10% weight) without dominating
+    // bonus (35%) or season performance (30%).
+    public const int DefaultPrestigeFeederTitlePoints = 100;
+    public const int DefaultPrestigeSuperleagueTitlePoints = 300;
+    public const int DefaultPrestigeSuperleagueAppearancePoints = 20;
+    public const int DefaultPrestigeStageWinPoints = 10;
+    public const int DefaultPrestigeStageSecondPoints = 5;
+    public const int DefaultPrestigeStageThirdPoints = 2;
+    public const int DefaultPrestigeOtherMajorHonourPoints = 150;
+
     private RulesV1(
         int sportingColorCount,
         int athletesPerSportingColor,
@@ -52,6 +69,7 @@ public sealed class RulesV1
         int cupPerformanceWeightPermille,
         int cupFormWeightPermille,
         int cupPrestigeWeightPermille,
+        ColorCupPrestigeConstants prestige,
         int[] scoringTable,
         int[] roundBonusThousandths,
         int[] stageBonusThousandths,
@@ -87,6 +105,7 @@ public sealed class RulesV1
         CupPerformanceWeightPermille = cupPerformanceWeightPermille;
         CupFormWeightPermille = cupFormWeightPermille;
         CupPrestigeWeightPermille = cupPrestigeWeightPermille;
+        Prestige = prestige ?? throw new ArgumentNullException(nameof(prestige));
         ScoringTable = Array.AsReadOnly(scoringTable);
         RoundBonusThousandths = Array.AsReadOnly(roundBonusThousandths);
         StageBonusThousandths = Array.AsReadOnly(stageBonusThousandths);
@@ -158,6 +177,49 @@ public sealed class RulesV1
 
     public int CupPrestigeWeightPermille { get; }
 
+    /// <summary>
+    /// Versioned career-prestige constants. Stored in every save snapshot.
+    /// Initial v1: feeder 100, Superleague title 300, appearance 20,
+    /// stage win 10, second 5, third 2, other major 150.
+    /// </summary>
+    public ColorCupPrestigeConstants Prestige { get; }
+
+    /// <summary>
+    /// Raw prestige points per feeder-league championship. Initial v1 value 100.
+    /// </summary>
+    public int CupPrestigeFeederTitlePoints => Prestige.FeederTitlePoints;
+
+    /// <summary>
+    /// Raw prestige points per Superleague championship. Initial v1 value 300.
+    /// </summary>
+    public int CupPrestigeSuperleagueTitlePoints => Prestige.SuperleagueTitlePoints;
+
+    /// <summary>
+    /// Raw prestige points per active Superleague season. Initial v1 value 20.
+    /// </summary>
+    public int CupPrestigeSuperleagueAppearancePoints => Prestige.SuperleagueAppearancePoints;
+
+    /// <summary>
+    /// Raw prestige points per league stage win. Initial v1 value 10.
+    /// </summary>
+    public int CupPrestigeStageWinPoints => Prestige.StageWinPoints;
+
+    /// <summary>
+    /// Raw prestige points per league stage second place. Initial v1 value 5.
+    /// </summary>
+    public int CupPrestigeStageSecondPoints => Prestige.StageSecondPoints;
+
+    /// <summary>
+    /// Raw prestige points per league stage third place. Initial v1 value 2.
+    /// </summary>
+    public int CupPrestigeStageThirdPoints => Prestige.StageThirdPoints;
+
+    /// <summary>
+    /// Raw prestige points per other official major honour (future Cup titles).
+    /// Initial v1 value 150.
+    /// </summary>
+    public int CupPrestigeOtherMajorHonourPoints => Prestige.OtherMajorHonourPoints;
+
     public IReadOnlyList<int> ScoringTable { get; }
 
     public IReadOnlyList<int> RoundBonusThousandths { get; }
@@ -178,6 +240,7 @@ public sealed class RulesV1
         int[] resolvedStageBonus = ResolveTable(active.StageBonusThousandths, DefaultStageBonusThousandths, nameof(active.StageBonusThousandths));
         int[] resolvedAgeWeights = ResolveTable(active.BonusAgeWeightsThousandths, DefaultBonusAgeWeightsThousandths, nameof(active.BonusAgeWeightsThousandths));
         int[] resolvedFormWeights = ResolveTable(active.RecentFormWeights, DefaultRecentFormWeights, nameof(active.RecentFormWeights));
+        ColorCupPrestigeConstants prestige = ResolvePrestige(active);
 
         var candidate = new RulesV1(
             active.SportingColorCount ?? 8,
@@ -209,6 +272,7 @@ public sealed class RulesV1
             active.CupPerformanceWeightPermille ?? 300,
             active.CupFormWeightPermille ?? 250,
             active.CupPrestigeWeightPermille ?? 100,
+            prestige,
             resolvedScoring,
             resolvedRoundBonus,
             resolvedStageBonus,
@@ -216,6 +280,19 @@ public sealed class RulesV1
             resolvedFormWeights);
         candidate.Validate();
         return candidate;
+    }
+
+    private static ColorCupPrestigeConstants ResolvePrestige(RulesV1Overrides active)
+    {
+        ArgumentNullException.ThrowIfNull(active);
+        return new ColorCupPrestigeConstants(
+            active.CupPrestigeFeederTitlePoints ?? DefaultPrestigeFeederTitlePoints,
+            active.CupPrestigeSuperleagueTitlePoints ?? DefaultPrestigeSuperleagueTitlePoints,
+            active.CupPrestigeSuperleagueAppearancePoints ?? DefaultPrestigeSuperleagueAppearancePoints,
+            active.CupPrestigeStageWinPoints ?? DefaultPrestigeStageWinPoints,
+            active.CupPrestigeStageSecondPoints ?? DefaultPrestigeStageSecondPoints,
+            active.CupPrestigeStageThirdPoints ?? DefaultPrestigeStageThirdPoints,
+            active.CupPrestigeOtherMajorHonourPoints ?? DefaultPrestigeOtherMajorHonourPoints);
     }
 
     /// <summary>
@@ -435,6 +512,13 @@ public sealed class RulesV1
 
     private void ValidateCups()
     {
+        ValidateCupCounts();
+        ValidateCupWeights();
+        ValidatePrestige();
+    }
+
+    private void ValidateCupCounts()
+    {
         if (ColorCupColorCount != SportingColorCount)
         {
             throw new InvalidOperationException($"ColorCupColorCount must equal SportingColorCount ({SportingColorCount}), was {ColorCupColorCount}.");
@@ -469,7 +553,10 @@ public sealed class RulesV1
         {
             throw new InvalidOperationException($"TypeCupGroupRounds must be 8, was {TypeCupGroupRounds}.");
         }
+    }
 
+    private void ValidateCupWeights()
+    {
         checked
         {
             int total = CupBonusWeightPermille + CupPerformanceWeightPermille + CupFormWeightPermille + CupPrestigeWeightPermille;
@@ -482,6 +569,53 @@ public sealed class RulesV1
         if (CupBonusWeightPermille != 350 || CupPerformanceWeightPermille != 300 || CupFormWeightPermille != 250 || CupPrestigeWeightPermille != 100)
         {
             throw new InvalidOperationException("Cup selection weights must be 350/300/250/100.");
+        }
+    }
+
+    private void ValidatePrestige()
+    {
+        ValidatePrestigeTitles();
+        ValidatePrestigePodiums();
+    }
+
+    private void ValidatePrestigeTitles()
+    {
+        if (CupPrestigeFeederTitlePoints != DefaultPrestigeFeederTitlePoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeFeederTitlePoints must be {DefaultPrestigeFeederTitlePoints}, was {CupPrestigeFeederTitlePoints}.");
+        }
+
+        if (CupPrestigeSuperleagueTitlePoints != DefaultPrestigeSuperleagueTitlePoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeSuperleagueTitlePoints must be {DefaultPrestigeSuperleagueTitlePoints}, was {CupPrestigeSuperleagueTitlePoints}.");
+        }
+
+        if (CupPrestigeSuperleagueAppearancePoints != DefaultPrestigeSuperleagueAppearancePoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeSuperleagueAppearancePoints must be {DefaultPrestigeSuperleagueAppearancePoints}, was {CupPrestigeSuperleagueAppearancePoints}.");
+        }
+
+        if (CupPrestigeOtherMajorHonourPoints != DefaultPrestigeOtherMajorHonourPoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeOtherMajorHonourPoints must be {DefaultPrestigeOtherMajorHonourPoints}, was {CupPrestigeOtherMajorHonourPoints}.");
+        }
+    }
+
+    private void ValidatePrestigePodiums()
+    {
+        if (CupPrestigeStageWinPoints != DefaultPrestigeStageWinPoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeStageWinPoints must be {DefaultPrestigeStageWinPoints}, was {CupPrestigeStageWinPoints}.");
+        }
+
+        if (CupPrestigeStageSecondPoints != DefaultPrestigeStageSecondPoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeStageSecondPoints must be {DefaultPrestigeStageSecondPoints}, was {CupPrestigeStageSecondPoints}.");
+        }
+
+        if (CupPrestigeStageThirdPoints != DefaultPrestigeStageThirdPoints)
+        {
+            throw new InvalidOperationException($"CupPrestigeStageThirdPoints must be {DefaultPrestigeStageThirdPoints}, was {CupPrestigeStageThirdPoints}.");
         }
     }
 

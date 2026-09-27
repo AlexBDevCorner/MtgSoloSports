@@ -64,6 +64,20 @@ public sealed class RulesV1Overrides
 
     public int? CupPrestigeWeightPermille { get; init; }
 
+    public int? CupPrestigeFeederTitlePoints { get; init; }
+
+    public int? CupPrestigeSuperleagueTitlePoints { get; init; }
+
+    public int? CupPrestigeSuperleagueAppearancePoints { get; init; }
+
+    public int? CupPrestigeStageWinPoints { get; init; }
+
+    public int? CupPrestigeStageSecondPoints { get; init; }
+
+    public int? CupPrestigeStageThirdPoints { get; init; }
+
+    public int? CupPrestigeOtherMajorHonourPoints { get; init; }
+
     public IReadOnlyList<int>? ScoringTable { get; init; }
 
     public IReadOnlyList<int>? RoundBonusThousandths { get; init; }
