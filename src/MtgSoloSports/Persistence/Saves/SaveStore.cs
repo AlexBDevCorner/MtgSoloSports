@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Security.Cryptography;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -515,6 +516,7 @@ public sealed class SaveStore
         cancellationToken.ThrowIfCancellationRequested();
         File.Delete(path);
         DeleteCompanionFiles(path);
+        ClearSaveConnections(path);
 
         string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
         if (Directory.Exists(checkpointDirectory))
@@ -640,6 +642,9 @@ public sealed class SaveStore
                 File.Move(extraction.StagedDatabasePath, target);
             }
 
+            // File replacement bypasses pooled SQLite handles, which would
+            // otherwise keep serving pages from the previous file content.
+            ClearSaveConnections(target);
             return await ReadDetailAsync(manifest.SaveId, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -1222,7 +1227,19 @@ public sealed class SaveStore
         cancellationToken.ThrowIfCancellationRequested();
         File.Copy(checkpointPath, livePath, overwrite: true);
         DeleteCompanionFiles(livePath);
+        ClearSaveConnections(livePath);
         _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Drops pooled SQLite handles for a save file after the file bytes were
+    /// replaced or removed outside any connection. Without this, pooled
+    /// handles keep serving pages from the previous file content.
+    /// </summary>
+    private static void ClearSaveConnections(string saveFilePath)
+    {
+        using SqliteConnection connection = new($"Data Source={saveFilePath}");
+        SqliteConnection.ClearPool(connection);
     }
 
     private static void DeleteCompanionFiles(string saveFilePath)
