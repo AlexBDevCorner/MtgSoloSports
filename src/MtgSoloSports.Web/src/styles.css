@@ -644,3 +644,77 @@ code {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.reveal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.reveal-speed {
+  min-width: 140px;
+  flex: 0 1 180px;
+}
+
+.reveal-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #0e1420;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.reveal-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.reveal-spotlight {
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  animation: reveal-pop 0.35s ease;
+}
+
+.reveal-subhead {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.reveal-standings .reveal-pending {
+  opacity: 0.62;
+}
+
+.reveal-latest {
+  animation: reveal-pop 0.35s ease;
+  background: linear-gradient(90deg, #e8b44a14, transparent);
+}
+
+@keyframes reveal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-progress-bar,
+  .reveal-latest,
+  .reveal-spotlight,
+  .spinner {
+    animation: none;
+    transition: none;
+  }
+}

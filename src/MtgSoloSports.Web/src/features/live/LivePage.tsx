@@ -7,30 +7,15 @@ import {
   type CurrentStandings,
 } from '../athletes/athleteApi';
 import type { SeasonProgress } from '../dashboard/dashboardApi';
+import { RoundReveal } from '../reveal/RoundReveal';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 
-type LiveMode = 'instant' | 'reveal';
-
 const LEAGUE_KEY_PREFIX = 'mtg-solo-sports:live-league:';
-const MODE_KEY = 'mtg-solo-sports:live-mode';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
-}
-
-/** Display-only projection of a fixed-point bonus (no sporting math). */
-function formatBonus(thousandths: number): string {
-  const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
-}
-
-function formatMovement(movement: number): string {
-  if (movement > 0) {
-    return `+${movement}`;
-  }
-  return `${movement}`;
 }
 
 function readStored(key: string): string | null {
@@ -48,13 +33,6 @@ function writeStored(key: string, value: string): void {
   } catch {
     // storage is best-effort; selection still works in memory
   }
-}
-
-function cardCaption(setCode: string | null, typeLine: string): string | null {
-  const parts = [setCode, typeLine].filter(
-    (part): part is string => typeof part === 'string' && part.length > 0,
-  );
-  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 export function LivePage({
@@ -75,11 +53,7 @@ export function LivePage({
   onSelectAthlete: (athleteId: number) => void;
 }) {
   const [leagueId, setLeagueId] = useState<number | null>(null);
-  const [mode, setMode] = useState<LiveMode>(() =>
-    readStored(MODE_KEY) === 'reveal' ? 'reveal' : 'instant',
-  );
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
-  const [revealed, setRevealed] = useState(0);
   const [advancing, setAdvancing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -177,26 +151,6 @@ export function LivePage({
     });
   }, [stageRounds.rounds]);
 
-  useEffect(() => {
-    setRevealed(0);
-  }, [visibleRound?.roundNumber, visibleRound?.payloadChecksum, mode]);
-
-  useEffect(() => {
-    if (mode !== 'reveal' || !visibleRound) {
-      return;
-    }
-    const total = visibleRound.placements.length;
-    if (revealed >= total) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setRevealed((value) => Math.min(value + 1, total));
-    }, 120);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [mode, visibleRound, revealed]);
-
   if (!hasSelection || !saveId) {
     return (
       <Notice tone="empty" title="No save selected">
@@ -249,13 +203,6 @@ export function LivePage({
       ? 'This stage is already complete.'
       : 'Simulate any remaining rounds on the backend and persist stage standings.';
 
-  const shownPlacements = visibleRound
-    ? mode === 'instant'
-      ? visibleRound.placements
-      : visibleRound.placements.slice(0, revealed)
-    : [];
-  const revealTotal = visibleRound?.placements.length ?? 0;
-
   async function handleAdvance(): Promise<void> {
     if (!saveId || leagueId === null || !canAdvance) {
       return;
@@ -296,37 +243,21 @@ export function LivePage({
     onSelectAthlete(athleteId);
   }
 
+  const revealKey = visibleRound
+    ? `${stageRounds.rounds?.stageNumber ?? effectiveStage ?? 0}:${visibleRound.roundNumber}:${visibleRound.payloadChecksum}`
+    : null;
+  const revealMeta = visibleRound
+    ? `Round ${visibleRound.roundNumber} · rules v${visibleRound.rulesVersion} · checksum ` +
+      (visibleRound.payloadChecksum.length > 12
+        ? `${visibleRound.payloadChecksum.slice(0, 12)}…`
+        : visibleRound.payloadChecksum)
+    : undefined;
+
   return (
     <div className="dashboard">
       <Card
         eyebrow="Live competition"
         title={league ? `${league.leagueName} — Stage ${effectiveStage ?? '—'}` : 'Live competition'}
-        action={
-          <div className="mode-toggle" role="group" aria-label="Results mode">
-            <button
-              type="button"
-              className={mode === 'instant' ? 'nav-item current' : 'nav-item'}
-              aria-pressed={mode === 'instant'}
-              onClick={() => {
-                setMode('instant');
-                writeStored(MODE_KEY, 'instant');
-              }}
-            >
-              Instant
-            </button>
-            <button
-              type="button"
-              className={mode === 'reveal' ? 'nav-item current' : 'nav-item'}
-              aria-pressed={mode === 'reveal'}
-              onClick={() => {
-                setMode('reveal');
-                writeStored(MODE_KEY, 'reveal');
-              }}
-            >
-              Reveal
-            </button>
-          </div>
-        }
       >
         <div className="live-controls">
           <label className="field">
@@ -376,11 +307,9 @@ export function LivePage({
           </div>
         </div>
         <p className="muted small">
-          {mode === 'instant'
-            ? 'Instant results render the full persisted table immediately with no client-side sporting calculations.'
-            : 'Reveal mode steps through the same persisted rows as presentation-only highlighting with no client-side sporting calculations.'}{' '}
           The backend result is authoritative; refreshing only re-reads persisted rounds and
-          never resimulates.
+          never resimulates. The reveal below replays those immutable rows with
+          presentation-only animation.
         </p>
         {gateReason ? <p className="muted small">{gateReason}</p> : null}
         <p className="muted small">
@@ -418,140 +347,37 @@ export function LivePage({
             </p>
           </Notice>
         ) : (
-          <>
-            <div className="round-pills" role="group" aria-label="Completed rounds">
-              {stageRounds.rounds?.rounds.map((round) => (
-                <button
-                  key={round.roundNumber}
-                  type="button"
-                  className={
-                    (selectedRound ?? completedRounds) === round.roundNumber
-                      ? 'nav-item current'
-                      : 'nav-item'
-                  }
-                  aria-pressed={(selectedRound ?? completedRounds) === round.roundNumber}
-                  disabled={busy}
-                  onClick={() => {
-                    setSelectedRound(round.roundNumber);
-                  }}
-                >
-                  {round.roundNumber}
-                </button>
-              ))}
-            </div>
-            {visibleRound ? (
-              <p className="muted small">
-                Round {visibleRound.roundNumber} · rules v{visibleRound.rulesVersion} · checksum{' '}
-                <code title={visibleRound.payloadChecksum}>
-                  {visibleRound.payloadChecksum.length > 12
-                    ? `${visibleRound.payloadChecksum.slice(0, 12)}…`
-                    : visibleRound.payloadChecksum}
-                </code>
-              </p>
-            ) : null}
-          </>
+          <div className="round-pills" role="group" aria-label="Completed rounds">
+            {stageRounds.rounds?.rounds.map((round) => (
+              <button
+                key={round.roundNumber}
+                type="button"
+                className={
+                  (selectedRound ?? completedRounds) === round.roundNumber
+                    ? 'nav-item current'
+                    : 'nav-item'
+                }
+                aria-pressed={(selectedRound ?? completedRounds) === round.roundNumber}
+                disabled={busy}
+                onClick={() => {
+                  setSelectedRound(round.roundNumber);
+                }}
+              >
+                {round.roundNumber}
+              </button>
+            ))}
+          </div>
         )}
       </Card>
 
-      {visibleRound ? (
-        <Card
-          eyebrow={mode === 'instant' ? 'Instant results' : 'Step reveal'}
-          title={`Round ${visibleRound.roundNumber} results — ${visibleRound.placements.length} athletes`}
-          action={
-            mode === 'reveal' && revealed < revealTotal ? (
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => {
-                  setRevealed(revealTotal);
-                }}
-              >
-                Show all ({revealed}/{revealTotal})
-              </button>
-            ) : undefined
-          }
-        >
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Pos</th>
-                  <th scope="col">Card</th>
-                  <th scope="col">Base</th>
-                  <th scope="col">Bonus</th>
-                  <th scope="col">Final</th>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Stage score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownPlacements.map((placement) => {
-                  const caption = cardCaption(placement.setCode, placement.typeLine);
-                  return (
-                    <tr key={placement.athleteId}>
-                      <td className="numeric">{placement.position}</td>
-                      <td>
-                        <div className="card-cell">
-                          {placement.imageUrl ? (
-                            <img
-                              className="card-thumb"
-                              src={placement.imageUrl}
-                              alt=""
-                              loading="lazy"
-                            />
-                          ) : (
-                            <span className="card-thumb card-thumb-fallback" aria-hidden="true">
-                              {placement.name.slice(0, 2).toUpperCase()}
-                            </span>
-                          )}
-                          <span className="card-identity">
-                            <button
-                              type="button"
-                              className="card-name card-link"
-                              title={`Open career profile for ${placement.name}`}
-                              onClick={() => {
-                                openAthlete(placement.athleteId);
-                              }}
-                            >
-                              {placement.name}
-                            </button>
-                            {caption ? <span className="card-sub">{caption}</span> : null}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="numeric">{formatPoints(placement.baseThousandths)}</td>
-                      <td className="numeric">{formatBonus(placement.activeBonusThousandths)}</td>
-                      <td className="numeric">{formatPoints(placement.finalThousandths)}</td>
-                      <td className="numeric">
-                        {placement.rankBefore} → {placement.rankAfter}{' '}
-                        <span
-                          className={
-                            placement.rankMovement > 0
-                              ? 'move-up'
-                              : placement.rankMovement < 0
-                                ? 'move-down'
-                                : 'move-flat'
-                          }
-                        >
-                          ({formatMovement(placement.rankMovement)})
-                        </span>
-                      </td>
-                      <td className="numeric">
-                        {formatPoints(placement.cumulativeAfterThousandths)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {mode === 'reveal' && revealed < revealTotal ? (
-            <p className="muted small" aria-live="polite">
-              Revealing persisted rows {revealed}/{revealTotal} — presentation only, nothing is
-              recalculated.
-            </p>
-          ) : null}
-        </Card>
+      {visibleRound && revealKey ? (
+        <RoundReveal
+          placements={visibleRound.placements}
+          revealKey={revealKey}
+          roundLabel={`Round ${visibleRound.roundNumber} results`}
+          meta={revealMeta}
+          onSelectAthlete={openAthlete}
+        />
       ) : null}
 
       <Card

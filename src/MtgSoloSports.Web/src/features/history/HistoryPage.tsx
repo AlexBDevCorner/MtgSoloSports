@@ -25,30 +25,11 @@ import {
   type ColorCupTeamResult,
 } from '../cups/colorCupApi';
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
+import { RoundReveal } from '../reveal/RoundReveal';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
-}
-
-/** Display-only projection of a fixed-point bonus (no sporting math). */
-function formatBonus(thousandths: number): string {
-  const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
-}
-
-function formatMovement(movement: number): string {
-  if (movement > 0) {
-    return `+${movement}`;
-  }
-  return `${movement}`;
-}
-
-function cardCaption(setCode: string | null, typeLine: string): string | null {
-  const parts = [setCode, typeLine].filter(
-    (part): part is string => typeof part === 'string' && part.length > 0,
-  );
-  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 function useAsync<T>(
@@ -479,112 +460,31 @@ export function HistoryPage({
         )}
       </Card>
 
-      <Card
-        eyebrow="Exact replay"
-        title={
-          replay
-            ? `Season ${replay.seasonNumber} · ${replay.leagueName} · Stage ${replay.stageNumber} · Round ${replay.roundNumber}`
-            : 'Exact replay'
-        }
-      >
-        {replayState.loading && !replay ? (
+      {replayState.loading && !replay ? (
+        <Card eyebrow="Exact replay" title="Exact replay">
           <Loading label="Loading replay…" />
-        ) : replayState.error ? (
+        </Card>
+      ) : replayState.error ? (
+        <Card eyebrow="Exact replay" title="Exact replay">
           <Notice tone="error" title="Replay unavailable">
             <p>{replayState.error}</p>
           </Notice>
-        ) : !replay || replay.placements.length === 0 ? (
+        </Card>
+      ) : !replay || replay.placements.length === 0 ? (
+        <Card eyebrow="Exact replay" title="Exact replay">
           <Notice tone="empty" title="No round selected">
             <p>Simulate rounds on the Live tab, then pick a persisted round here.</p>
           </Notice>
-        ) : (
-          <>
-            <p className="muted small">
-              Rules v{replay.rulesVersion} · checksum{' '}
-              <code title={replay.payloadChecksum}>
-                {replay.payloadChecksum.length > 12
-                  ? `${replay.payloadChecksum.slice(0, 12)}…`
-                  : replay.payloadChecksum}
-              </code>{' '}
-              · same presentation model as live results.
-            </p>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Pos</th>
-                    <th scope="col">Card</th>
-                    <th scope="col">Base</th>
-                    <th scope="col">Bonus</th>
-                    <th scope="col">Final</th>
-                    <th scope="col">Rank</th>
-                    <th scope="col">Stage score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {replay.placements.map((placement) => {
-                    const caption = cardCaption(placement.setCode, placement.typeLine);
-                    return (
-                      <tr key={placement.athleteId}>
-                        <td className="numeric">{placement.position}</td>
-                        <td>
-                          <div className="card-cell">
-                            {placement.imageUrl ? (
-                              <img
-                                className="card-thumb"
-                                src={placement.imageUrl}
-                                alt=""
-                                loading="lazy"
-                              />
-                            ) : (
-                              <span className="card-thumb card-thumb-fallback" aria-hidden="true">
-                                {placement.name.slice(0, 2).toUpperCase()}
-                              </span>
-                            )}
-                            <span className="card-identity">
-                              <button
-                                type="button"
-                                className="card-name card-link"
-                                title={`Open career profile for ${placement.name}`}
-                                onClick={() => {
-                                  onSelectAthlete(placement.athleteId);
-                                }}
-                              >
-                                {placement.name}
-                              </button>
-                              {caption ? <span className="card-sub">{caption}</span> : null}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="numeric">{formatPoints(placement.baseThousandths)}</td>
-                        <td className="numeric">{formatBonus(placement.activeBonusThousandths)}</td>
-                        <td className="numeric">{formatPoints(placement.finalThousandths)}</td>
-                        <td className="numeric">
-                          {placement.rankBefore} → {placement.rankAfter}{' '}
-                          <span
-                            className={
-                              placement.rankMovement > 0
-                                ? 'move-up'
-                                : placement.rankMovement < 0
-                                  ? 'move-down'
-                                  : 'move-flat'
-                            }
-                          >
-                            ({formatMovement(placement.rankMovement)})
-                          </span>
-                        </td>
-                        <td className="numeric">
-                          {formatPoints(placement.cumulativeAfterThousandths)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <RoundReveal
+          placements={replay.placements}
+          revealKey={`${replay.seasonNumber}:${replay.leagueId}:${replay.stageNumber}:${replay.roundNumber}:${replay.payloadChecksum}`}
+          roundLabel={`Season ${replay.seasonNumber} · ${replay.leagueName} · Stage ${replay.stageNumber} · Round ${replay.roundNumber}`}
+          meta={`Rules v${replay.rulesVersion} · checksum ${replay.payloadChecksum.length > 12 ? `${replay.payloadChecksum.slice(0, 12)}…` : replay.payloadChecksum} · same presentation model as live results. Replay never consumes RNG and never mutates save state.`}
+          onSelectAthlete={onSelectAthlete}
+        />
+      )}
 
       <Card
         eyebrow="Standings"
