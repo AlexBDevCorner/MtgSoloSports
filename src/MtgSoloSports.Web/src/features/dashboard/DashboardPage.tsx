@@ -57,7 +57,7 @@ export function DashboardPage({
     return <Loading label="Loading dashboard…" />;
   }
 
-  const { detail, progress, rosters, status } = data;
+  const { detail, progress, rosters, status, stories } = data;
   const next = describeNextAction(progress, status);
   const completedTotal = progress.leagues.reduce((sum, league) => sum + league.completedStages, 0);
 
@@ -211,6 +211,28 @@ export function DashboardPage({
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card eyebrow="Stories" title="Recent sporting stories">
+        {stories.length === 0 ? (
+          <p className="muted">
+            No stories yet. Stage wins, titles, promotions and pool returns appear here
+            once the backend simulates them.
+          </p>
+        ) : (
+          <ul className="story-list">
+            {stories.map((story) => (
+              <li key={story.id}>
+                <span className="badge badge-ready">{story.eventType}</span>{' '}
+                <span>{story.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="muted small">
+          Stories are structured backend events with deterministic wording; the reveal
+          only replays persisted facts.
+        </p>
       </Card>
     </div>
   );

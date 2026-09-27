@@ -23,7 +23,7 @@ public static class StoryEventEmitter
         int seasonNumber,
         int? stageNumber,
         StoryEventPayload payload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
@@ -75,7 +75,7 @@ public static class StoryEventEmitter
         SaveDbContext context,
         int saveAthleteId,
         int excludeSeasonId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
         bool hasPrior = await (from membership in context.SeasonMemberships

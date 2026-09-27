@@ -221,6 +221,24 @@ export function AthleteProfilePage({
           and season standings; round-by-round replay stays in Live rounds.
         </p>
       </Card>
+
+      <Card eyebrow="Stories" title="Sporting stories">
+        {state.stories.length === 0 ? (
+          <p className="muted">
+            No stories yet for this athlete. First stage wins, titles, Superleague
+            milestones and pool returns appear here.
+          </p>
+        ) : (
+          <ul className="story-list">
+            {state.stories.map((story) => (
+              <li key={story.id}>
+                <span className="badge badge-ready">{story.eventType}</span>{' '}
+                <span>{story.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

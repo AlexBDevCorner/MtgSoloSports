@@ -10,12 +10,15 @@ import {
   type SeasonStatus,
 } from './dashboardApi';
 import type { SaveDetail } from '../saves/savesApi';
+import type { StoryEventItem } from '../stories/storiesApi';
+import { fetchRecentStories } from '../stories/storiesApi';
 
 export interface DashboardData {
   detail: SaveDetail;
   progress: SeasonProgress;
   rosters: Season1Leagues | null;
   status: SeasonStatus | null;
+  stories: StoryEventItem[];
 }
 
 export interface DashboardState {
@@ -73,7 +76,7 @@ export function useDashboard(saveId: string | null): DashboardState {
           throw failure;
         }
       }
-      return { detail, progress, rosters, status };
+      return { detail, progress, rosters, status, stories: await loadStories(saveId, signal) };
     })()
       .then((loaded) => {
         setData(loaded);
@@ -106,6 +109,18 @@ export function useDashboard(saveId: string | null): DashboardState {
       setRevision((value) => value + 1);
     },
   };
+}
+
+async function loadStories(saveId: string, signal: AbortSignal): Promise<StoryEventItem[]> {
+  try {
+    const feed = await fetchRecentStories(saveId, 20, signal);
+    return feed.stories;
+  } catch (failure) {
+    if (failure instanceof DOMException && failure.name === 'AbortError') {
+      throw failure;
+    }
+    return [];
+  }
 }
 
 export function describeNextAction(progress: SeasonProgress, status?: SeasonStatus | null): {
