@@ -47,6 +47,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<QualifierStandingEntity> QualifierStandings => Set<QualifierStandingEntity>();
 
+    public DbSet<StoryEventEntity> StoryEvents => Set<StoryEventEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -57,6 +59,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureAthleteProjections(modelBuilder);
         ConfigureMovements(modelBuilder);
         ConfigureQualifier(modelBuilder);
+        ConfigureStoryEvents(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -382,6 +385,24 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.FromLeagueId).IsRequired();
             entity.Property(e => e.FromSeasonRank).IsRequired();
             entity.Property(e => e.SportingColor).IsRequired();
+        });
+    }
+
+    private static void ConfigureStoryEvents(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<StoryEventEntity>(entity =>
+        {
+            entity.ToTable("StoryEvents");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SaveAthleteId, e.EventType, e.DedupKey }).IsUnique();
+            entity.HasIndex(e => e.SaveAthleteId);
+            entity.HasIndex(e => new { e.SeasonNumber, e.Id });
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.DedupKey).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.SeasonNumber).IsRequired();
+            entity.Property(e => e.ContextJson).IsRequired();
         });
     }
 

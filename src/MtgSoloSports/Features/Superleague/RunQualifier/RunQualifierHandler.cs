@@ -107,11 +107,176 @@ public sealed class RunQualifierHandler
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(context, source, next, simulation, rules, stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken).ConfigureAwait(false);
+        await EmitQualifierStoriesAsync(context, source, next, simulation, rules, cancellationToken).ConfigureAwait(false);
         metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, simulation, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Emits qualifier-decided promotion (challenger winners), relegation
+    /// (failed incumbents) and first-Superleague-appearance story events
+    /// transactionally with the qualifier result. Retained incumbents and failed
+    /// challengers emit nothing. Idempotent via dedup keys.
+    /// </summary>
+    internal static async Task EmitQualifierStoriesAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        QualifierSimulation simulation,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(simulation);
+        ArgumentNullException.ThrowIfNull(rules);
+        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete = await context.SeasonMemberships
+            .Where(e => e.SeasonId == next.Id)
+            .ToDictionaryAsync(e => e.SaveAthleteId, cancellationToken)
+            .ConfigureAwait(false);
+        bool emitted = await EmitQualifierMovementsAsync(context, source, next, simulation, rules, leaguesById, nextByAthlete, cancellationToken).ConfigureAwait(false);
+        emitted |= await EmitQualifierFirstAppearancesAsync(context, source, next, simulation, rules, leaguesById, nextByAthlete, cancellationToken).ConfigureAwait(false);
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task<bool> EmitQualifierMovementsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        QualifierSimulation simulation,
+        RulesV1 rules,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete =
+            simulation.Field.All.ToDictionary(p => p.SaveAthleteId);
+        string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
+            source.SeasonNumber, next.SeasonNumber);
+        bool emitted = false;
+        foreach (StageRankedAthlete entry in simulation.Ranked.OrderBy(r => r.StageRank))
+        {
+            emitted |= await EmitSingleQualifierMovementAsync(
+                context, source, next, rules, leaguesById, nextByAthlete, picksByAthlete, movementDedup, entry, cancellationToken).ConfigureAwait(false);
+        }
+
+        return emitted;
+    }
+
+    internal static async Task<bool> EmitSingleQualifierMovementAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
+        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete,
+        string movementDedup,
+        StageRankedAthlete entry,
+        CancellationToken cancellationToken)
+    {
+        if (!picksByAthlete.TryGetValue(entry.AthleteId, out QualifierFieldSelection.QualifierPick? pick))
+        {
+            throw new InvalidOperationException($"Qualifier standing for '{entry.Name}' has no field provenance.");
+        }
+
+        bool qualified = entry.StageRank <= rules.QualifierWinners;
+        leaguesById.TryGetValue(pick.FromLeagueId, out LeagueEntity? from);
+        string fromName = from?.Name ?? $"League {pick.FromLeagueId}";
+        nextByAthlete.TryGetValue(entry.AthleteId, out SeasonMembershipEntity? nextMembership);
+        string toName = ResolveQualifierLeagueName(nextMembership, leaguesById, fromName);
+        string eventType = qualified && pick.Role == QualifierRole.Challenger
+            ? Features.Stories.StoryEventType.Promotion
+            : !qualified && pick.Role == QualifierRole.Incumbent
+                ? Features.Stories.StoryEventType.Relegation
+                : string.Empty;
+        if (string.IsNullOrEmpty(eventType))
+        {
+            return false;
+        }
+
+        return await Features.Stories.StoryEventEmitter.TryEmitAsync(
+            context,
+            entry.AthleteId,
+            eventType,
+            movementDedup,
+            next.SeasonNumber,
+            null,
+            new Features.Stories.StoryEventPayload(
+                entry.Name,
+                next.SeasonNumber,
+                FromLeagueName: fromName,
+                ToLeagueName: toName,
+                FromSeasonNumber: source.SeasonNumber,
+                ToSeasonNumber: next.SeasonNumber,
+                FromSeasonRank: pick.FromSeasonRank,
+                ViaQualifier: true),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<bool> EmitQualifierFirstAppearancesAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        QualifierSimulation simulation,
+        RulesV1 rules,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
+        CancellationToken cancellationToken)
+    {
+        bool emitted = false;
+        foreach (StageRankedAthlete entry in simulation.Ranked.Where(r => r.StageRank <= rules.QualifierWinners).OrderBy(r => r.AthleteId))
+        {
+            bool hadPrior = await Features.Stories.StoryEventEmitter.HasPriorSuperleagueAppearanceAsync(
+                context, entry.AthleteId, next.Id, cancellationToken).ConfigureAwait(false);
+            if (hadPrior)
+            {
+                continue;
+            }
+
+            nextByAthlete.TryGetValue(entry.AthleteId, out SeasonMembershipEntity? nextMembership);
+            string toName = ResolveQualifierLeagueName(nextMembership, leaguesById, "Superleague");
+            emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                context,
+                entry.AthleteId,
+                Features.Stories.StoryEventType.FirstSuperleagueAppearance,
+                Features.Stories.StoryEventEmitter.FirstDedup,
+                next.SeasonNumber,
+                null,
+                new Features.Stories.StoryEventPayload(
+                    entry.Name,
+                    next.SeasonNumber,
+                    ToLeagueName: toName,
+                    FromSeasonNumber: source.SeasonNumber,
+                    ToSeasonNumber: next.SeasonNumber),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return emitted;
+    }
+
+    internal static string ResolveQualifierLeagueName(
+        SeasonMembershipEntity? membership,
+        Dictionary<int, LeagueEntity> leaguesById,
+        string fallback)
+    {
+        if (membership?.LeagueId is not null && leaguesById.TryGetValue(membership.LeagueId.Value, out LeagueEntity? league))
+        {
+            return league.Name;
+        }
+
+        return fallback;
     }
 
     internal sealed record QualifierSimulation(

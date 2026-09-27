@@ -95,17 +95,11 @@ public sealed class RebalanceFeedersHandler
         Pcg32State rngAfter = rng.Snapshot();
 
         ApplyPlan(context, next, nextFeeders, nextMemberships, plan, sourceStandings);
-        List<MovementEntity> movements = BuildMovements(source, next, nextFeeders, plan, nextMemberships);
-        foreach (MovementEntity movement in movements)
-        {
-            context.Movements.Add(movement);
-        }
-
-        context.ApplyRngState(rngAfter);
-        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.Rebalanced);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await PersistRebalanceMovementsAsync(context, source, next, nextFeeders, nextMemberships, plan, rngAfter, metadata, cancellationToken).ConfigureAwait(false);
 
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
+
+        await EmitReturnFromPoolStoriesAsync(context, source, next, nextFeeders, plan, cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(
             context, source, next, nextSuperleague, nextFeeders, plan,
@@ -116,6 +110,88 @@ public sealed class RebalanceFeedersHandler
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, plan, rngBefore, rngAfter, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<List<MovementEntity>> PersistRebalanceMovementsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        List<LeagueEntity> nextFeeders,
+        List<SeasonMembershipEntity> nextMemberships,
+        RebalanceFeedersSelection.RebalancePlan plan,
+        Pcg32State rngAfter,
+        SaveMetadataEntity metadata,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(nextFeeders);
+        ArgumentNullException.ThrowIfNull(nextMemberships);
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(metadata);
+        List<MovementEntity> movements = BuildMovements(source, next, nextFeeders, plan, nextMemberships);
+        foreach (MovementEntity movement in movements)
+        {
+            context.Movements.Add(movement);
+        }
+
+        context.ApplyRngState(rngAfter);
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.Rebalanced);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return movements;
+    }
+
+    /// <summary>
+    /// Emits return-from-pool story events transactionally with feeder
+    /// rebalancing. One event per pool draw (pool to feeder); displacements
+    /// (feeder to pool) emit nothing at this stage. Idempotent via dedup keys.
+    /// </summary>
+    internal static async Task EmitReturnFromPoolStoriesAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        List<LeagueEntity> nextFeeders,
+        RebalanceFeedersSelection.RebalancePlan plan,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(nextFeeders);
+        ArgumentNullException.ThrowIfNull(plan);
+        Dictionary<string, string> feederNames = nextFeeders.ToDictionary(
+            l => ((SportingColor)l.SportingColor).ToString(), l => l.Name, StringComparer.Ordinal);
+        string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
+            source.SeasonNumber, next.SeasonNumber);
+        bool emitted = false;
+        foreach (RebalanceFeedersSelection.ColorPlan colorPlan in plan.PerColor.OrderBy(p => p.Color))
+        {
+            feederNames.TryGetValue(colorPlan.Color.ToString(), out string? feederName);
+            foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws.OrderBy(d => d.SaveAthleteId))
+            {
+                emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                    context,
+                    draw.SaveAthleteId,
+                    Features.Stories.StoryEventType.ReturnFromPool,
+                    movementDedup,
+                    next.SeasonNumber,
+                    null,
+                    new Features.Stories.StoryEventPayload(
+                        draw.Name,
+                        next.SeasonNumber,
+                        ToLeagueName: feederName ?? $"{colorPlan.Color} League",
+                        FromSeasonNumber: source.SeasonNumber,
+                        ToSeasonNumber: next.SeasonNumber,
+                        SportingColor: colorPlan.Color.ToString()),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal static async Task<(SeasonEntity Source, SeasonEntity Next, bool IsInaugural)> LoadPendingTransitionAsync(

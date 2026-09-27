@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { fetchAthleteProfile, type AthleteProfile } from './athleteApi';
+import { fetchAthleteStories, type StoryEventItem } from '../stories/storiesApi';
 
 export interface AthleteProfileState {
   profile: AthleteProfile | null;
+  stories: StoryEventItem[];
   loading: boolean;
   error: string | null;
   notFound: boolean;
@@ -19,6 +21,7 @@ export function useAthleteProfile(
   athleteId: number | null,
 ): AthleteProfileState {
   const [profile, setProfile] = useState<AthleteProfile | null>(null);
+  const [stories, setStories] = useState<StoryEventItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -27,6 +30,7 @@ export function useAthleteProfile(
   useEffect(() => {
     if (!saveId || athleteId === null) {
       setProfile(null);
+      setStories([]);
       setLoading(false);
       setError(null);
       setNotFound(false);
@@ -38,9 +42,23 @@ export function useAthleteProfile(
     setError(null);
     setNotFound(false);
 
-    fetchAthleteProfile(saveId, athleteId, signal)
-      .then((loaded) => {
+    (async () => {
+      const loaded = await fetchAthleteProfile(saveId, athleteId, signal);
+      let feed: StoryEventItem[] = [];
+      try {
+        const storiesFeed = await fetchAthleteStories(saveId, athleteId, 20, signal);
+        feed = storiesFeed.stories;
+      } catch (failure) {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          throw failure;
+        }
+        feed = [];
+      }
+      return { loaded, feed };
+    })()
+      .then(({ loaded, feed }) => {
         setProfile(loaded);
+        setStories(feed);
         setLoading(false);
       })
       .catch((failure: unknown) => {
@@ -63,6 +81,7 @@ export function useAthleteProfile(
 
   return {
     profile,
+    stories,
     loading,
     error,
     notFound,

@@ -59,9 +59,87 @@ public static class SeasonFinalizer
         context.ApplyRngState(rngAfter);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await VerifyFinalizedAsync(context, season, leagues, rules, cancellationToken).ConfigureAwait(false);
+        await EmitTitleStoriesAsync(context, season, leagues, rules, names, cancellationToken).ConfigureAwait(false);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RefreshAfterSeasonAsync(
             context, rules, cancellationToken).ConfigureAwait(false);
         return (true, rngAfter);
+    }
+
+    /// <summary>
+    /// Emits first-league-title and repeat-title-milestone story events
+    /// transactionally with season finalization. Prior titles exclude the
+    /// just-finalized season; the 1st title emits <c>first_league_title</c>
+    /// while 2nd/3rd/5th/10th/... emit <c>league_title_milestone</c> per
+    /// <see cref="Features.Stories.StoryEventRenderer.IsTitleMilestone"/>.
+    /// Idempotent across retries via per-athlete dedup keys.
+    /// </summary>
+    internal static async Task EmitTitleStoriesAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        List<LeagueEntity> leagues,
+        RulesV1 rules,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(season);
+        ArgumentNullException.ThrowIfNull(leagues);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(names);
+        bool emitted = false;
+        foreach (LeagueEntity league in leagues)
+        {
+            SeasonStandingEntity champion = await context.SeasonStandings
+                .SingleAsync(
+                    e => e.SeasonId == season.Id && e.LeagueId == league.Id && e.IsChampion,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            int priorTitles = await context.SeasonStandings.CountAsync(
+                e => e.SaveAthleteId == champion.SaveAthleteId && e.IsChampion && e.SeasonId != season.Id,
+                cancellationToken).ConfigureAwait(false);
+            int totalTitles = checked(priorTitles + 1);
+            names.TryGetValue(champion.SaveAthleteId, out string? name);
+            string athleteName = name ?? $"Athlete {champion.SaveAthleteId}";
+            if (priorTitles == 0)
+            {
+                emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                    context,
+                    champion.SaveAthleteId,
+                    Features.Stories.StoryEventType.FirstLeagueTitle,
+                    Features.Stories.StoryEventEmitter.FirstDedup,
+                    season.SeasonNumber,
+                    null,
+                    new Features.Stories.StoryEventPayload(
+                        athleteName,
+                        season.SeasonNumber,
+                        league.Name,
+                        SeasonRank: 1,
+                        TitleCount: 1),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else if (Features.Stories.StoryEventRenderer.IsTitleMilestone(totalTitles))
+            {
+                emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                    context,
+                    champion.SaveAthleteId,
+                    Features.Stories.StoryEventType.LeagueTitleMilestone,
+                    Features.Stories.StoryEventEmitter.TitleDedup(totalTitles),
+                    season.SeasonNumber,
+                    null,
+                    new Features.Stories.StoryEventPayload(
+                        athleteName,
+                        season.SeasonNumber,
+                        league.Name,
+                        SeasonRank: 1,
+                        TitleCount: totalTitles),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal static async Task EnsureNotAlreadyFinalizedAsync(

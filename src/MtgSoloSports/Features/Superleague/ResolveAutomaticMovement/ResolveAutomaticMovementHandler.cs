@@ -65,11 +65,171 @@ public sealed class ResolveAutomaticMovementHandler
         ResolutionInputs inputs = await LoadResolutionInputsAsync(context, rules, cancellationToken).ConfigureAwait(false);
         ResolutionOutput output = await PersistResolutionAsync(context, inputs, rules, cancellationToken).ConfigureAwait(false);
 
+        await EmitAutomaticStoriesAsync(context, inputs, output, cancellationToken).ConfigureAwait(false);
+
         metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.AutomaticMovementResolved);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, output.Source, output.Next, output.NextSuperleague, output.Plan, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Emits automatic promotion, automatic relegation and first-Superleague-
+    /// appearance story events transactionally with movement resolution.
+    /// Qualifier-candidate markers emit nothing yet; the qualifier slice emits
+    /// qualifier-decided promotion/relegation. Idempotent via dedup keys.
+    /// </summary>
+    internal static async Task EmitAutomaticStoriesAsync(
+        SaveDbContext context,
+        ResolutionInputs inputs,
+        ResolutionOutput output,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(output);
+        Dictionary<int, string> sourceNames = inputs.SourceFeeders.ToDictionary(l => l.Id, l => l.Name);
+        sourceNames[inputs.SourceSuperleague.Id] = inputs.SourceSuperleague.Name;
+        Dictionary<int, string> athleteNames = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
+            inputs.Source.SeasonNumber, output.Next.SeasonNumber);
+        bool emitted = await EmitAutomaticPromotionsAsync(context, inputs, output, sourceNames, athleteNames, movementDedup, cancellationToken).ConfigureAwait(false);
+        emitted |= await EmitAutomaticRelegationsAsync(context, inputs, output, sourceNames, athleteNames, movementDedup, cancellationToken).ConfigureAwait(false);
+        emitted |= await EmitAutomaticFirstAppearancesAsync(context, inputs, output, athleteNames, cancellationToken).ConfigureAwait(false);
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task<bool> EmitAutomaticPromotionsAsync(
+        SaveDbContext context,
+        ResolutionInputs inputs,
+        ResolutionOutput output,
+        Dictionary<int, string> sourceNames,
+        Dictionary<int, string> athleteNames,
+        string movementDedup,
+        CancellationToken cancellationToken)
+    {
+        bool emitted = false;
+        foreach (AutomaticMovementSelection.AutomaticPick pick in output.Plan.Promotions.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
+        {
+            athleteNames.TryGetValue(pick.SaveAthleteId, out string? name);
+            sourceNames.TryGetValue(pick.FromLeagueId, out string? fromName);
+            emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                context,
+                pick.SaveAthleteId,
+                Features.Stories.StoryEventType.Promotion,
+                movementDedup,
+                output.Next.SeasonNumber,
+                null,
+                new Features.Stories.StoryEventPayload(
+                    name ?? $"Athlete {pick.SaveAthleteId}",
+                    output.Next.SeasonNumber,
+                    FromLeagueName: fromName ?? $"League {pick.FromLeagueId}",
+                    ToLeagueName: output.NextSuperleague.Name,
+                    FromSeasonNumber: inputs.Source.SeasonNumber,
+                    ToSeasonNumber: output.Next.SeasonNumber,
+                    FromSeasonRank: pick.FromSeasonRank),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return emitted;
+    }
+
+    internal static async Task<bool> EmitAutomaticRelegationsAsync(
+        SaveDbContext context,
+        ResolutionInputs inputs,
+        ResolutionOutput output,
+        Dictionary<int, string> sourceNames,
+        Dictionary<int, string> athleteNames,
+        string movementDedup,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, LeagueEntity> nextLeagues = (await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == output.Next.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false)).ToDictionary(l => l.Id);
+        bool emitted = false;
+        foreach (AutomaticMovementSelection.AutomaticPick pick in output.Plan.Relegations.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
+        {
+            athleteNames.TryGetValue(pick.SaveAthleteId, out string? name);
+            sourceNames.TryGetValue(pick.FromLeagueId, out string? fromName);
+            SeasonMembershipEntity? nextMembership = await context.SeasonMemberships
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    e => e.SeasonId == output.Next.Id && e.SaveAthleteId == pick.SaveAthleteId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            string toName = nextMembership?.LeagueId is not null && nextLeagues.TryGetValue(nextMembership.LeagueId.Value, out LeagueEntity? to)
+                ? to.Name
+                : "the feeder league";
+            emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                context,
+                pick.SaveAthleteId,
+                Features.Stories.StoryEventType.Relegation,
+                movementDedup,
+                output.Next.SeasonNumber,
+                null,
+                new Features.Stories.StoryEventPayload(
+                    name ?? $"Athlete {pick.SaveAthleteId}",
+                    output.Next.SeasonNumber,
+                    FromLeagueName: fromName ?? $"League {pick.FromLeagueId}",
+                    ToLeagueName: toName,
+                    FromSeasonNumber: inputs.Source.SeasonNumber,
+                    ToSeasonNumber: output.Next.SeasonNumber,
+                    FromSeasonRank: pick.FromSeasonRank),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return emitted;
+    }
+
+    internal static async Task<bool> EmitAutomaticFirstAppearancesAsync(
+        SaveDbContext context,
+        ResolutionInputs inputs,
+        ResolutionOutput output,
+        Dictionary<int, string> athleteNames,
+        CancellationToken cancellationToken)
+    {
+        List<int> nextSuperIds = await context.SeasonMemberships
+            .Where(e => e.SeasonId == output.Next.Id && e.LeagueId == output.NextSuperleague.Id)
+            .Select(e => e.SaveAthleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        bool emitted = false;
+        foreach (int athleteId in nextSuperIds.OrderBy(id => id))
+        {
+            bool hadPrior = await Features.Stories.StoryEventEmitter.HasPriorSuperleagueAppearanceAsync(
+                context, athleteId, output.Next.Id, cancellationToken).ConfigureAwait(false);
+            if (hadPrior)
+            {
+                continue;
+            }
+
+            athleteNames.TryGetValue(athleteId, out string? name);
+            emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                context,
+                athleteId,
+                Features.Stories.StoryEventType.FirstSuperleagueAppearance,
+                Features.Stories.StoryEventEmitter.FirstDedup,
+                output.Next.SeasonNumber,
+                null,
+                new Features.Stories.StoryEventPayload(
+                    name ?? $"Athlete {athleteId}",
+                    output.Next.SeasonNumber,
+                    ToLeagueName: output.NextSuperleague.Name,
+                    FromSeasonNumber: inputs.Source.SeasonNumber,
+                    ToSeasonNumber: output.Next.SeasonNumber),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return emitted;
     }
 
     internal sealed record ResolutionInputs(

@@ -105,11 +105,89 @@ public sealed class CreateInauguralSuperleagueHandler
         InauguralSuperleagueInvariants.ValidateCreated(
             seasonOne, seasonTwo, superleague, feedersTwo, membershipsOne, persistedTwo, persistedMovements, rules);
 
+        await EmitInauguralStoriesAsync(context, seasonOne, seasonTwo, feedersOne, superleague, picks, cancellationToken).ConfigureAwait(false);
+
         metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.InauguralMovementResolved);
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, seasonOne, seasonTwo, superleague, feedersTwo, picks, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Emits inaugural promotion plus first-Superleague-appearance story events
+    /// transactionally with the Season 1 transition. Season 1 has no Superleague
+    /// so every promoted athlete is a first appearance; the prior-membership
+    /// check keeps the rule explicit and idempotent via dedup keys.
+    /// </summary>
+    internal static async Task EmitInauguralStoriesAsync(
+        SaveDbContext context,
+        SeasonEntity seasonOne,
+        SeasonEntity seasonTwo,
+        List<LeagueEntity> feedersOne,
+        LeagueEntity superleague,
+        IReadOnlyList<InauguralSuperleagueSelection.InauguralPick> picks,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(seasonOne);
+        ArgumentNullException.ThrowIfNull(seasonTwo);
+        ArgumentNullException.ThrowIfNull(feedersOne);
+        ArgumentNullException.ThrowIfNull(superleague);
+        ArgumentNullException.ThrowIfNull(picks);
+        Dictionary<int, string> feederNames = feedersOne.ToDictionary(l => l.Id, l => l.Name);
+        Dictionary<int, string> athleteNames = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(seasonOne.SeasonNumber, seasonTwo.SeasonNumber);
+        bool emitted = false;
+        foreach (InauguralSuperleagueSelection.InauguralPick pick in picks.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
+        {
+            athleteNames.TryGetValue(pick.SaveAthleteId, out string? name);
+            string athleteName = name ?? $"Athlete {pick.SaveAthleteId}";
+            feederNames.TryGetValue(pick.FromLeagueId, out string? fromName);
+            emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                context,
+                pick.SaveAthleteId,
+                Features.Stories.StoryEventType.Promotion,
+                movementDedup,
+                seasonTwo.SeasonNumber,
+                null,
+                new Features.Stories.StoryEventPayload(
+                    athleteName,
+                    seasonTwo.SeasonNumber,
+                    FromLeagueName: fromName ?? $"League {pick.FromLeagueId}",
+                    ToLeagueName: superleague.Name,
+                    FromSeasonNumber: seasonOne.SeasonNumber,
+                    ToSeasonNumber: seasonTwo.SeasonNumber,
+                    FromSeasonRank: pick.FromSeasonRank),
+                cancellationToken).ConfigureAwait(false);
+            bool hadPrior = await Features.Stories.StoryEventEmitter.HasPriorSuperleagueAppearanceAsync(
+                context, pick.SaveAthleteId, seasonTwo.Id, cancellationToken).ConfigureAwait(false);
+            if (!hadPrior)
+            {
+                emitted |= await Features.Stories.StoryEventEmitter.TryEmitAsync(
+                    context,
+                    pick.SaveAthleteId,
+                    Features.Stories.StoryEventType.FirstSuperleagueAppearance,
+                    Features.Stories.StoryEventEmitter.FirstDedup,
+                    seasonTwo.SeasonNumber,
+                    null,
+                    new Features.Stories.StoryEventPayload(
+                        athleteName,
+                        seasonTwo.SeasonNumber,
+                        ToLeagueName: superleague.Name,
+                        FromSeasonNumber: seasonOne.SeasonNumber,
+                        ToSeasonNumber: seasonTwo.SeasonNumber),
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal static async Task<SeasonEntity> LoadSeasonOneAsync(SaveDbContext context, CancellationToken cancellationToken)
