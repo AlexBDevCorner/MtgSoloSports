@@ -31,6 +31,10 @@ export interface SeasonStatus {
   movementResolved: boolean;
   qualifierResolved: boolean;
   rebalanced: boolean;
+  cupSelectionResolved: boolean;
+  cupIndividualResolved: boolean;
+  cupTeamResolved: boolean;
+  cupComplete: boolean;
   readyToStartNextSeason: boolean;
   expectedCup: string;
   legalNextActions: string[];
@@ -49,6 +53,16 @@ export interface AdvanceNextEventResult {
   isInauguralTransition: boolean;
   globalStage: number;
   isCurrentSeasonComplete: boolean;
+  seasonComplete: boolean;
+  movementResolved: boolean;
+  qualifierResolved: boolean;
+  rebalanced: boolean;
+  cupSelectionResolved: boolean;
+  cupIndividualResolved: boolean;
+  cupTeamResolved: boolean;
+  cupComplete: boolean;
+  readyToStartNextSeason: boolean;
+  expectedCup: string;
   legalNextActions: string[];
   nextActionDetail: string;
 }

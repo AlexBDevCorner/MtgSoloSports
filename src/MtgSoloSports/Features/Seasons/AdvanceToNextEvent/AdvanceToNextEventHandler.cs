@@ -1,3 +1,8 @@
+using MtgSoloSports.Features.Cups.RunColorCupIndividual;
+using MtgSoloSports.Features.Cups.RunColorCupTeam;
+using MtgSoloSports.Features.Cups.RunTypeCupTeam;
+using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -17,10 +22,11 @@ namespace MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 /// The orchestration slice calls focused feature operations and is behaviorally
 /// equivalent to executing the same underlying operation directly with the
 /// identical RNG and mathematics sequence. Order after Stage 32 is movement,
-/// qualifier (normal seasons only), rebalancing, then next-season start; each
-/// step exposes its inspectable event boundary and illegal transitions are
-/// rejected rather than skipped. Holds one per-save lock for inspection plus
-/// the single delegated mutation; read-only status queries never lock.
+/// qualifier (normal seasons only), rebalancing, Cup selection, Cup individual
+/// (Color only), Cup team, then next-season start; each step exposes its
+/// inspectable event boundary and illegal transitions are rejected rather than
+/// skipped. Holds one per-save lock for inspection plus the single delegated
+/// mutation; read-only status queries never lock.
 /// </summary>
 public sealed class AdvanceToNextEventHandler
 {
@@ -70,6 +76,16 @@ public sealed class AdvanceToNextEventHandler
             after.IsInauguralTransition,
             after.GlobalStage,
             after.IsCurrentSeasonComplete,
+            after.SeasonComplete,
+            after.MovementResolved,
+            after.QualifierResolved,
+            after.Rebalanced,
+            after.CupSelectionResolved,
+            after.CupIndividualResolved,
+            after.CupTeamResolved,
+            after.CupComplete,
+            after.ReadyToStartNextSeason,
+            after.ExpectedCup,
             after.LegalNextActions,
             after.NextActionDetail);
     }
@@ -100,7 +116,18 @@ public sealed class AdvanceToNextEventHandler
             SeasonLifecycleActions.RunQualifier => status is { MovementResolved: true, QualifierResolved: false, IsInauguralTransition: false },
             SeasonLifecycleActions.RebalanceFeeders => status is { MovementResolved: true, Rebalanced: false }
                 && (status.IsInauguralTransition || status.QualifierResolved),
-            SeasonLifecycleActions.StartNextSeason => status.ReadyToStartNextSeason,
+            SeasonLifecycleActions.SelectColorCup => status is { Rebalanced: true, CupSelectionResolved: false }
+                && string.Equals(status.ExpectedCup, CupExtensionPoint.ColorCup, StringComparison.Ordinal),
+            SeasonLifecycleActions.RunColorCupIndividual => status is { CupSelectionResolved: true, CupIndividualResolved: false, CupComplete: false }
+                && string.Equals(status.ExpectedCup, CupExtensionPoint.ColorCup, StringComparison.Ordinal),
+            SeasonLifecycleActions.RunColorCupTeam => status is { CupSelectionResolved: true, CupTeamResolved: false, CupComplete: false }
+                && string.Equals(status.ExpectedCup, CupExtensionPoint.ColorCup, StringComparison.Ordinal)
+                && status.CupIndividualResolved,
+            SeasonLifecycleActions.SelectTypeCup => status is { Rebalanced: true, CupSelectionResolved: false }
+                && string.Equals(status.ExpectedCup, CupExtensionPoint.TypeCup, StringComparison.Ordinal),
+            SeasonLifecycleActions.RunTypeCupTeam => status is { CupSelectionResolved: true, CupTeamResolved: false, CupComplete: false }
+                && string.Equals(status.ExpectedCup, CupExtensionPoint.TypeCup, StringComparison.Ordinal),
+            SeasonLifecycleActions.StartNextSeason => status.ReadyToStartNextSeason && status.CupComplete,
             _ => false,
         };
         if (!legal)
@@ -120,6 +147,11 @@ public sealed class AdvanceToNextEventHandler
             SeasonLifecycleActions.ResolveAutomaticMovement => await ExecuteAutomaticAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.RunQualifier => await ExecuteQualifierAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.RebalanceFeeders => await ExecuteRebalanceAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.SelectColorCup => await ExecuteSelectColorCupAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.RunColorCupIndividual => await ExecuteRunColorCupIndividualAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.RunColorCupTeam => await ExecuteRunColorCupTeamAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.SelectTypeCup => await ExecuteSelectTypeCupAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.RunTypeCupTeam => await ExecuteRunTypeCupTeamAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.StartNextSeason => await ExecuteStartNextAsync(saveId, cancellationToken).ConfigureAwait(false),
             _ => throw new AdvanceToNextEventConflictException($"Unknown lifecycle action '{action}'."),
         };
@@ -179,12 +211,87 @@ public sealed class AdvanceToNextEventHandler
         return $"Rebalanced feeders Season {response.FromSeasonNumber} -> {response.ToSeasonNumber} (drawn {response.TotalDrawn}, displaced {response.TotalDisplaced}).";
     }
 
+    internal async Task<string> ExecuteSelectColorCupAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Color Cup selection requires a completed source season.");
+        }
+
+        SelectColorCupTeamsHandler handler = new(_store);
+        SelectColorCupTeamsResponse response = await handler
+            .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Selected Color Cup field for Season {response.SourceSeasonNumber} ({response.TotalSelected} athletes across {response.Teams.Count} colors).";
+    }
+
+    internal async Task<string> ExecuteRunColorCupIndividualAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Color Cup individual requires a completed source season.");
+        }
+
+        RunColorCupIndividualHandler handler = new(_store);
+        RunColorCupIndividualResponse response = await handler
+            .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Ran Color Cup individual for Season {response.SourceSeasonNumber} ({response.CupSize} athletes over {response.Rounds} rounds; champion {response.ChampionName}).";
+    }
+
+    internal async Task<string> ExecuteRunColorCupTeamAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Color Cup team requires a completed source season.");
+        }
+
+        RunColorCupTeamHandler handler = new(_store);
+        RunColorCupTeamResponse response = await handler
+            .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Ran Color Cup team for Season {response.SourceSeasonNumber} ({response.TeamCount} teams over {response.GroupCount} groups; champion {response.ChampionTeamName}).";
+    }
+
+    internal async Task<string> ExecuteSelectTypeCupAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Type Cup allocation requires a completed source season.");
+        }
+
+        SelectTypeCupTeamsHandler handler = new(_store);
+        SelectTypeCupTeamsResponse response = await handler
+            .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Allocated Type Cup field for Season {response.SourceSeasonNumber} ({response.TotalSelected} athletes across {response.TeamCount} teams).";
+    }
+
+    internal async Task<string> ExecuteRunTypeCupTeamAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Type Cup team requires a completed source season.");
+        }
+
+        RunTypeCupTeamHandler handler = new(_store);
+        RunTypeCupTeamResponse response = await handler
+            .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Ran Type Cup team for Season {response.SourceSeasonNumber} ({response.TeamCount} teams over {response.GroupCount} groups; champion {response.ChampionTeamName}).";
+    }
+
     internal async Task<string> ExecuteStartNextAsync(Guid saveId, CancellationToken cancellationToken)
     {
         StartNextSeasonHandler handler = new(_store);
         StartNextSeasonResponse response = await handler
             .StartUnderLockAsync(saveId, cancellationToken)
             .ConfigureAwait(false);
-        return $"Started Season {response.ToSeasonNumber} (active {response.ActiveAthletes}, pool {response.PoolAthletes}; Cup extension point {response.ExpectedCup} validated).";
+        return $"Started Season {response.ToSeasonNumber} (active {response.ActiveAthletes}, pool {response.PoolAthletes}; post-season {response.ExpectedCup} complete).";
     }
 }

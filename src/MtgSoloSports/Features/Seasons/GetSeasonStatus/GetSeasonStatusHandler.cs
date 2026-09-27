@@ -7,8 +7,8 @@ namespace MtgSoloSports.Features.Seasons.GetSeasonStatus;
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Reads the explicit season
 /// lifecycle state without mutating or resimulating: the computed phase, the
-/// postseason checklist (season complete, movement, qualifier, rebalance), the
-/// post-rebalance Cup extension point and exactly the legal next actions.
+/// postseason checklist (season complete, movement, qualifier, rebalance, Cup
+/// selection/individual/team) and exactly the legal next actions.
 /// Read-only queries never take the per-save lock.
 /// </summary>
 public sealed class GetSeasonStatusHandler
@@ -46,6 +46,10 @@ public sealed class GetSeasonStatusHandler
             snapshot.MovementResolved,
             snapshot.QualifierResolved,
             snapshot.Rebalanced,
+            snapshot.CupSelectionResolved,
+            snapshot.CupIndividualResolved,
+            snapshot.CupTeamResolved,
+            snapshot.CupComplete,
             snapshot.ReadyToStartNextSeason,
             snapshot.ExpectedCup,
             snapshot.LegalNextActions,

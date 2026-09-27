@@ -130,7 +130,7 @@ export function describeNextAction(progress: SeasonProgress, status?: SeasonStat
   if (status && status.legalNextActions.length > 0) {
     const action = status.legalNextActions[0];
     return {
-      headline: `${status.computedPhase} — ${action}`,
+      headline: `${status.computedPhase} — ${describeAction(action, status)}`,
       detail: `${status.nextActionDetail} Next backend step is POST /api/saves/{saveId}/advance-next-event.`,
     };
   }
@@ -149,4 +149,21 @@ export function describeNextAction(progress: SeasonProgress, status?: SeasonStat
     headline: `Stage ${progress.globalStage} ready — ${ready} of ${pending} leagues pending`,
     detail: `Synchronous gate: stage ${progress.globalStage} must complete for every active league before stage ${progress.globalStage + 1} can begin. Next backend step is POST /api/saves/{saveId}/stages/complete-all.`,
   };
+}
+
+function describeAction(action: string, status: SeasonStatus): string {
+  switch (action) {
+    case 'SelectColorCup':
+      return `SelectColorCup (Season ${status.sourceSeasonNumber} Color Cup field)`;
+    case 'RunColorCupIndividual':
+      return `RunColorCupIndividual (Season ${status.sourceSeasonNumber} individual)`;
+    case 'RunColorCupTeam':
+      return `RunColorCupTeam (Season ${status.sourceSeasonNumber} team)`;
+    case 'SelectTypeCup':
+      return `SelectTypeCup (Season ${status.sourceSeasonNumber} Type Cup field)`;
+    case 'RunTypeCupTeam':
+      return `RunTypeCupTeam (Season ${status.sourceSeasonNumber} team)`;
+    default:
+      return action;
+  }
 }

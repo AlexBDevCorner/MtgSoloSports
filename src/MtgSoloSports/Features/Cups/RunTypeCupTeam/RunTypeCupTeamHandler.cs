@@ -78,7 +78,7 @@ public sealed partial class RunTypeCupTeamHandler
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
         Pcg32State rngBefore = rngRow.ToState();
 
@@ -102,6 +102,7 @@ public sealed partial class RunTypeCupTeamHandler
 
         await PersistTeamAsync(context, source, selection, simulation, teamCount, cancellationToken).ConfigureAwait(false);
         context.ApplyRngState(simulation.RngAfter);
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupComplete);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(

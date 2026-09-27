@@ -10,17 +10,18 @@ namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Starts the next season only
-/// from a fully valid 32-per-league roster after movement, qualifier and
-/// rebalancing have resolved in the correct order. Season 1 uses the special
-/// inaugural chain (no qualifier); Season 2+ requires automatic movement plus
-/// qualifier winners (16 safe + 8 champions + 8 winners). Finalizes bonus
-/// season aging so next-season effective contributions use the versioned
+/// from a fully valid 32-per-league roster after movement, qualifier,
+/// rebalancing and the required post-season Cup (odd Color with selection,
+/// individual and team; even Type with selection and team) have resolved in
+/// canonical order. Season 1 uses the special inaugural chain (no qualifier);
+/// Season 2+ requires automatic movement plus qualifier winners
+/// (16 safe + 8 champions + 8 winners). Cups use the completed source season
+/// plus current-season effective bonus values before season aging. Finalizes
+/// bonus season aging so next-season effective contributions use the versioned
 /// 80/60/40/20/0 weights (Stage 32 enters at 80%). Advances
 /// <c>SaveMetadata.CurrentSeason</c> and returns the phase to SeasonInProgress
 /// in the same transaction as refreshed projections. Consumes no sporting RNG.
-/// Holds one per-save lock; read-only status queries never lock. The
-/// post-rebalance Cup extension point sits immediately before this step and is
-/// validated as a no-op until Cups are implemented.
+/// Holds one per-save lock; read-only status queries never lock.
 /// </summary>
 public sealed class StartNextSeasonHandler
 {
@@ -81,7 +82,7 @@ public sealed class StartNextSeasonHandler
         await ValidateSuperCompositionAsync(context, source, next, nextLeagues, nextMemberships, isInaugural, rules, cancellationToken).ConfigureAwait(false);
         StartNextSeasonInvariants.ValidateBonusAging(rules, source, sourceLeagues);
         await EnsureSourceBonusHistoryCompleteAsync(context, source, sourceLeagues, rules, cancellationToken).ConfigureAwait(false);
-        CupExtensionPoint.ValidateCupExtensionPoint(context, source, next);
+        await EnsureCupCompleteAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         metadata.CurrentSeason = next.SeasonNumber;
         metadata.Phase = SavePhaseParser.ToText(SavePhase.SeasonInProgress);
@@ -241,6 +242,26 @@ public sealed class StartNextSeasonHandler
             throw new StartNextSeasonConflictException(
                 "Feeder rebalancing must be resolved before the next season can start.");
         }
+    }
+
+    internal static async Task EnsureCupCompleteAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        string expectedCup = CupExtensionPoint.ExpectedCupForSource(source.SeasonNumber);
+        CupExtensionPoint.CupState state = await CupExtensionPoint
+            .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
+            .ConfigureAwait(false);
+        if (state.Complete)
+        {
+            return;
+        }
+
+        throw new StartNextSeasonConflictException(
+            $"Post-season {expectedCup} for Season {source.SeasonNumber} must be complete before the next season can start " +
+            $"(selection {state.SelectionResolved}, individual {state.IndividualResolved}, team {state.TeamResolved}). " +
+            "Advance through the Cup Next Event boundaries so the field and results stay inspectable.");
     }
 
     internal static async Task ValidateSuperCompositionAsync(

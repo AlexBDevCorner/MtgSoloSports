@@ -161,10 +161,39 @@ export function DashboardPage({
                 <dd>{status.legalNextActions.join(', ')}</dd>
               </div>
               <div>
-                <dt>Cup extension point</dt>
+                <dt>Expected Cup</dt>
                 <dd>{status.expectedCup}</dd>
               </div>
+              <div>
+                <dt>Cup selection</dt>
+                <dd>{status.cupSelectionResolved ? 'Resolved' : 'Pending'}</dd>
+              </div>
+              <div>
+                <dt>Cup individual</dt>
+                <dd>
+                  {status.expectedCup === 'TypeCup'
+                    ? 'N/A (team-only)'
+                    : status.cupIndividualResolved
+                      ? 'Resolved'
+                      : 'Pending'}
+                </dd>
+              </div>
+              <div>
+                <dt>Cup team</dt>
+                <dd>{status.cupTeamResolved ? 'Resolved' : 'Pending'}</dd>
+              </div>
+              <div>
+                <dt>Cup complete</dt>
+                <dd>{status.cupComplete ? 'Complete' : 'Pending'}</dd>
+              </div>
             </dl>
+          ) : null}
+          {status?.sourceSeasonNumber !== null && status?.sourceSeasonNumber !== undefined ? (
+            <p className="muted small">
+              Post-season {status.expectedCup} for Season {status.sourceSeasonNumber} runs after
+              feeder rebalancing and before bonus aging. Each Cup step is an explicit Next
+              Event: inspect the field on the Cups tab before running the events.
+            </p>
           ) : null}
           <p className="muted small">
             Simulation itself runs on the backend; this board only replays persisted results
