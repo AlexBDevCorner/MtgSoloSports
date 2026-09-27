@@ -9,11 +9,14 @@ namespace MtgSoloSports.Features.Seasons.SeasonLifecycle;
 /// <summary>
 /// Pure lifecycle computation shared by the season-status read model, the
 /// AdvanceToNextEvent orchestrator and the StartNextSeason gate. Derives the
-/// authoritative phase from persisted seasons, standings, movements, qualifier
-/// and roster counts; fundamental invariant failures throw and abort, never
+/// authoritative phase from persisted seasons, standings, movements, qualifier,
+/// roster and Cup rows; fundamental invariant failures throw and abort, never
 /// silently repair. Season 1 uses the special inaugural chain (no qualifier);
 /// Season 2+ uses automatic movement plus qualifier. Both converge on
-/// Rebalanced, the post-rebalance Cup extension point, before StartNextSeason.
+/// Rebalanced, then run the alternating post-season Cup (odd seasons Color Cup
+/// with selection, individual and team; even seasons Type Cup with selection
+/// and team) before StartNextSeason. Each Cup step is an explicit inspectable
+/// Next Event boundary with deterministic fast/manual equivalence.
 /// </summary>
 public static class SeasonLifecycleEvaluator
 {
@@ -154,6 +157,10 @@ public static class SeasonLifecycleEvaluator
             MovementResolved: false,
             QualifierResolved: false,
             Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
             ReadyToStartNextSeason: false,
             CupExtensionPoint.NoCup,
             [SeasonLifecycleActions.CompleteNextGlobalStage],
@@ -227,6 +234,10 @@ public static class SeasonLifecycleEvaluator
             MovementResolved: false,
             QualifierResolved: false,
             Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
             ReadyToStartNextSeason: false,
             expectedCup,
             [action],
@@ -273,6 +284,10 @@ public static class SeasonLifecycleEvaluator
                 MovementResolved: true,
                 QualifierResolved: false,
                 Rebalanced: false,
+                CupSelectionResolved: false,
+                CupIndividualResolved: false,
+                CupTeamResolved: false,
+                CupComplete: false,
                 ReadyToStartNextSeason: false,
                 expectedCup,
                 [SeasonLifecycleActions.RebalanceFeeders],
@@ -280,24 +295,10 @@ public static class SeasonLifecycleEvaluator
         }
 
         await EnsureRebalancedRosterAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
-        return new SeasonLifecycleSnapshot(
-            saveId,
-            source.SeasonNumber,
-            persistedPhase,
-            SavePhaseParser.ToText(SavePhase.Rebalanced),
-            source.SeasonNumber,
-            next.SeasonNumber,
-            true,
-            rules.StagesPerSeason + 1,
-            IsCurrentSeasonComplete: true,
-            SeasonComplete: true,
-            MovementResolved: true,
-            QualifierResolved: false,
-            Rebalanced: true,
-            ReadyToStartNextSeason: true,
-            expectedCup,
-            [SeasonLifecycleActions.StartNextSeason],
-            $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Cup extension point ({expectedCup}) sits between rebalance and next-season start. Next backend step starts Season {next.SeasonNumber}.");
+        CupExtensionPoint.CupState cup = await CupExtensionPoint
+            .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
+            .ConfigureAwait(false);
+        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: true, cup);
     }
 
     internal static async Task<SeasonLifecycleSnapshot> EvaluateNormalPendingAsync(
@@ -325,7 +326,10 @@ public static class SeasonLifecycleEvaluator
         }
 
         await EnsureRebalancedRosterAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
-        return SnapshotRebalanced(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: false);
+        CupExtensionPoint.CupState cup = await CupExtensionPoint
+            .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
+            .ConfigureAwait(false);
+        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: false, cup);
     }
 
     internal sealed record MovementCounts(int Promotions, int Relegations, int Incumbents, int Challengers);
@@ -416,6 +420,10 @@ public static class SeasonLifecycleEvaluator
             MovementResolved: true,
             QualifierResolved: false,
             Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RunQualifier],
@@ -444,21 +452,66 @@ public static class SeasonLifecycleEvaluator
             MovementResolved: true,
             QualifierResolved: true,
             Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RebalanceFeeders],
             "Qualifier winners (8) are applied to the next Superleague (16 safe + 8 champions + 8 winners). Next backend step rebalances every feeder to 32 from its color pool.");
     }
 
-    internal static SeasonLifecycleSnapshot SnapshotRebalanced(
+    internal static SeasonLifecycleSnapshot SnapshotPostRebalance(
         Guid saveId,
         SeasonEntity source,
         SeasonEntity next,
         RulesV1 rules,
         string persistedPhase,
         string expectedCup,
-        bool isInaugural)
+        bool isInaugural,
+        CupExtensionPoint.CupState cup)
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(cup);
+        ArgumentException.ThrowIfNullOrWhiteSpace(persistedPhase);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedCup);
+
+        bool isColor = string.Equals(expectedCup, CupExtensionPoint.ColorCup, StringComparison.Ordinal);
+        if (!cup.SelectionResolved)
+        {
+            return SnapshotCupSelectionPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor);
+        }
+
+        if (isColor && !cup.IndividualResolved)
+        {
+            return SnapshotColorIndividualPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+        }
+
+        if (!cup.TeamResolved)
+        {
+            return SnapshotTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor);
+        }
+
+        return SnapshotCupComplete(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, cup);
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotCupSelectionPending(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural,
+        bool isColor)
+    {
+        string action = isColor ? SeasonLifecycleActions.SelectColorCup : SeasonLifecycleActions.SelectTypeCup;
+        string detail = isColor
+            ? $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step selects the Color Cup field for Season {source.SeasonNumber} (8 colors x 4, 35/30/25/10 formula) before any Cup event."
+            : $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step allocates Type Cup teams for Season {source.SeasonNumber} (four-athlete creature-type teams) before the team event.";
         return new SeasonLifecycleSnapshot(
             saveId,
             source.SeasonNumber,
@@ -473,10 +526,165 @@ public static class SeasonLifecycleEvaluator
             MovementResolved: true,
             QualifierResolved: !isInaugural,
             Rebalanced: true,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [action],
+            detail);
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotColorIndividualPending(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural)
+    {
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            source.SeasonNumber,
+            persistedPhase,
+            SavePhaseParser.ToText(SavePhase.CupSelectionResolved),
+            source.SeasonNumber,
+            next.SeasonNumber,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: true,
+            QualifierResolved: !isInaugural,
+            Rebalanced: true,
+            CupSelectionResolved: true,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [SeasonLifecycleActions.RunColorCupIndividual],
+            $"Color Cup field for Season {source.SeasonNumber} is selected (32 athletes). Next backend step runs the 16-round individual event (Gold/Silver/Bronze plus official title) before the team event.");
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotTeamPending(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural,
+        bool isColor)
+    {
+        if (isColor)
+        {
+            return SnapshotColorTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+        }
+
+        return SnapshotTypeTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotColorTeamPending(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural)
+    {
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            source.SeasonNumber,
+            persistedPhase,
+            SavePhaseParser.ToText(SavePhase.CupIndividualResolved),
+            source.SeasonNumber,
+            next.SeasonNumber,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: true,
+            QualifierResolved: !isInaugural,
+            Rebalanced: true,
+            CupSelectionResolved: true,
+            CupIndividualResolved: true,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [SeasonLifecycleActions.RunColorCupTeam],
+            $"Color Cup individual for Season {source.SeasonNumber} is complete and inspectable. Next backend step runs the four 8-round rank groups for the team championship.");
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotTypeTeamPending(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural)
+    {
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            source.SeasonNumber,
+            persistedPhase,
+            SavePhaseParser.ToText(SavePhase.CupSelectionResolved),
+            source.SeasonNumber,
+            next.SeasonNumber,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: true,
+            QualifierResolved: !isInaugural,
+            Rebalanced: true,
+            CupSelectionResolved: true,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [SeasonLifecycleActions.RunTypeCupTeam],
+            $"Type Cup field for Season {source.SeasonNumber} is allocated. Next backend step runs the four 8-round rank groups for the team championship.");
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotCupComplete(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural,
+        CupExtensionPoint.CupState cup)
+    {
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            source.SeasonNumber,
+            persistedPhase,
+            SavePhaseParser.ToText(SavePhase.CupComplete),
+            source.SeasonNumber,
+            next.SeasonNumber,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: true,
+            QualifierResolved: !isInaugural,
+            Rebalanced: true,
+            CupSelectionResolved: true,
+            CupIndividualResolved: cup.IndividualResolved,
+            CupTeamResolved: true,
+            CupComplete: true,
             ReadyToStartNextSeason: true,
             expectedCup,
             [SeasonLifecycleActions.StartNextSeason],
-            $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Cup extension point ({expectedCup}) sits between rebalance and next-season start. Next backend step starts Season {next.SeasonNumber}.");
+            $"Post-season {expectedCup} for Season {source.SeasonNumber} is complete and inspectable (field plus all events). Next backend step finalizes bonus aging and starts Season {next.SeasonNumber}.");
     }
 
     internal static async Task EnsureRebalancedRosterAsync(

@@ -109,7 +109,7 @@ public sealed partial class SelectTypeCupTeamsHandler
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         EnsureEvenSeason(source);
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -122,6 +122,8 @@ public sealed partial class SelectTypeCupTeamsHandler
         List<TypeCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
         TypeCupSelectionInvariants.ValidatePersisted(source, persisted, rules);
         await ValidateNationalityUntouchedAsync(context, persisted, cancellationToken).ConfigureAwait(false);
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupSelectionResolved);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, rules, cancellationToken).ConfigureAwait(false);

@@ -18,6 +18,13 @@ import {
   type HistoryStages,
   type HistoryStageStandings,
 } from './historyApi';
+import {
+  fetchColorCupIndividual,
+  fetchColorCupTeam,
+  type ColorCupIndividualResult,
+  type ColorCupTeamResult,
+} from '../cups/colorCupApi';
+import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -239,6 +246,25 @@ export function HistoryPage({
     ),
   );
 
+  const colorIndividualKey =
+    saveId && seasonNumber !== null ? `${saveId}/cup-color-ind/s${seasonNumber}` : null;
+  const colorIndividualState = useAsync<ColorCupIndividualResult>(
+    colorIndividualKey,
+    (signal) => fetchColorCupIndividual(saveId as string, seasonNumber as number, signal),
+  );
+
+  const colorTeamKey =
+    saveId && seasonNumber !== null ? `${saveId}/cup-color-team/s${seasonNumber}` : null;
+  const colorTeamState = useAsync<ColorCupTeamResult>(colorTeamKey, (signal) =>
+    fetchColorCupTeam(saveId as string, seasonNumber as number, signal),
+  );
+
+  const typeTeamKey =
+    saveId && seasonNumber !== null ? `${saveId}/cup-type-team/s${seasonNumber}` : null;
+  const typeTeamState = useAsync<TypeCupTeamResult>(typeTeamKey, (signal) =>
+    fetchTypeCupTeam(saveId as string, seasonNumber as number, signal),
+  );
+
   if (!hasSelection || !saveId) {
     return (
       <Notice tone="empty" title="No save selected">
@@ -372,6 +398,85 @@ export function HistoryPage({
         ) : null}
         {stagesState.error ? <p className="muted small">Stages: {stagesState.error}</p> : null}
         {roundsState.error ? <p className="muted small">Rounds: {roundsState.error}</p> : null}
+      </Card>
+
+      <Card
+        eyebrow="Post-season Cup"
+        title={
+          seasonNumber !== null
+            ? seasonNumber % 2 === 1
+              ? `Season ${seasonNumber} · Color Cup`
+              : `Season ${seasonNumber} · Type Cup`
+            : 'Post-season Cup'
+        }
+      >
+        {seasonNumber === null ? (
+          <p className="muted">Select a season to see its post-season Cup outcome.</p>
+        ) : seasonNumber % 2 === 1 ? (
+          <>
+            <p className="muted small">
+              Odd seasons run the Color Cup after feeder rebalancing and before bonus
+              aging: 32 selected athletes in a 16-round individual plus four 8-round
+              rank groups for the team title. Honours and stories persist with the Cup.
+            </p>
+            {colorIndividualState.loading && !colorIndividualState.data ? (
+              <Loading label="Loading Color Cup…" />
+            ) : colorIndividualState.data ? (
+              <p>
+                Individual champion{' '}
+                <button
+                  type="button"
+                  className="card-name card-link"
+                  onClick={() => {
+                    onSelectAthlete(colorIndividualState.data!.championAthleteId);
+                  }}
+                >
+                  {colorIndividualState.data!.championName}
+                </button>{' '}
+                · {colorIndividualState.data!.cupSize} athletes ·{' '}
+                {colorIndividualState.data!.rounds} rounds.
+              </p>
+            ) : (
+              <p className="muted">No Color Cup individual result for this season yet.</p>
+            )}
+            {colorTeamState.loading && !colorTeamState.data ? (
+              <Loading label="Loading Color Cup team…" />
+            ) : colorTeamState.data ? (
+              <p>
+                Team champion {colorTeamState.data!.championTeamName} ·{' '}
+                {colorTeamState.data!.teamCount} teams · {colorTeamState.data!.groupCount}{' '}
+                groups × {colorTeamState.data!.groupRounds} rounds.
+              </p>
+            ) : (
+              <p className="muted">No Color Cup team result for this season yet.</p>
+            )}
+            <p className="muted small">
+              Open the Cups tab for the full field, standings and replay payloads.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="muted small">
+              Even seasons run the team-only Type Cup after feeder rebalancing and before
+              bonus aging. Permanent nationality is set on participation. Honours and
+              stories persist with the Cup.
+            </p>
+            {typeTeamState.loading && !typeTeamState.data ? (
+              <Loading label="Loading Type Cup…" />
+            ) : typeTeamState.data ? (
+              <p>
+                Team champion {typeTeamState.data!.championTeamName} ·{' '}
+                {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
+                groups × {typeTeamState.data!.groupRounds} rounds.
+              </p>
+            ) : (
+              <p className="muted">No Type Cup team result for this season yet.</p>
+            )}
+            <p className="muted small">
+              Open the Cups tab for the full allocation, standings and replay payloads.
+            </p>
+          </>
+        )}
       </Card>
 
       <Card

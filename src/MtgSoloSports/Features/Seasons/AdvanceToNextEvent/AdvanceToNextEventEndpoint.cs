@@ -1,3 +1,8 @@
+using MtgSoloSports.Features.Cups.RunColorCupIndividual;
+using MtgSoloSports.Features.Cups.RunColorCupTeam;
+using MtgSoloSports.Features.Cups.RunTypeCupTeam;
+using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
@@ -56,6 +61,11 @@ public static class AdvanceToNextEventEndpoint
             ResolveAutomaticMovementConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RunQualifierConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RebalanceFeedersConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            SelectColorCupTeamsConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            RunColorCupIndividualConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            RunColorCupTeamConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            SelectTypeCupTeamsConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            RunTypeCupTeamConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             StartNextSeasonConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             _ => Results.BadRequest(new { error = ex.Message }),
         };

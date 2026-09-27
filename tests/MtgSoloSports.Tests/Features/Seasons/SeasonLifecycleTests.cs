@@ -154,6 +154,23 @@ public sealed class SeasonLifecycleTests
         AdvanceToNextEventResponse rebalanced = await advance.HandleAsync(saveId).ConfigureAwait(false);
         rebalanced.ExecutedAction.ShouldBe(SeasonLifecycleActions.RebalanceFeeders);
 
+        // Post-season Color Cup for Season 1 is an explicit Next Event chain:
+        // selection, individual, team, then start. Starting early must conflict.
+        GetSeasonStatusResponse afterRebalance = await status.HandleAsync(saveId).ConfigureAwait(false);
+        afterRebalance.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.Rebalanced));
+        afterRebalance.LegalNextActions.ShouldBe([SeasonLifecycleActions.SelectColorCup]);
+        afterRebalance.CupSelectionResolved.ShouldBeFalse();
+        await Should.ThrowAsync<StartNextSeasonConflictException>(() => starter.HandleAsync(saveId)).ConfigureAwait(false);
+
+        AdvanceToNextEventResponse selected = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selected.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectColorCup);
+
+        AdvanceToNextEventResponse individual = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        individual.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunColorCupIndividual);
+
+        AdvanceToNextEventResponse team = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        team.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunColorCupTeam);
+
         await AssertReadyToStartAsync(store, saveId).ConfigureAwait(false);
         await AssertRosterValidAsync(store, saveId, 2).ConfigureAwait(false);
 
@@ -169,10 +186,13 @@ public sealed class SeasonLifecycleTests
     {
         GetSeasonStatusHandler status = new(store);
         GetSeasonStatusResponse ready = await status.HandleAsync(saveId).ConfigureAwait(false);
-        ready.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.Rebalanced));
+        ready.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.CupComplete));
         ready.LegalNextActions.ShouldBe([SeasonLifecycleActions.StartNextSeason]);
         ready.ReadyToStartNextSeason.ShouldBeTrue();
         ready.Rebalanced.ShouldBeTrue();
+        ready.CupSelectionResolved.ShouldBeTrue();
+        ready.CupTeamResolved.ShouldBeTrue();
+        ready.CupComplete.ShouldBeTrue();
         ready.ExpectedCup.ShouldBe(CupExtensionPoint.ColorCup);
     }
 
@@ -210,6 +230,15 @@ public sealed class SeasonLifecycleTests
         await AssertRebalanceInspectableAsync(store, saveId, fromSeason: 1, expectedToSeason: 2).ConfigureAwait(false);
         await AssertRosterValidAsync(store, saveId, 2).ConfigureAwait(false);
 
+        AdvanceToNextEventResponse selectOne = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selectOne.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectColorCup);
+
+        AdvanceToNextEventResponse individualOne = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        individualOne.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunColorCupIndividual);
+
+        AdvanceToNextEventResponse teamOne = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        teamOne.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunColorCupTeam);
+
         AdvanceToNextEventResponse startTwo = await advance.HandleAsync(saveId).ConfigureAwait(false);
         startTwo.ExecutedAction.ShouldBe(SeasonLifecycleActions.StartNextSeason);
         startTwo.CurrentSeasonNumber.ShouldBe(2);
@@ -245,6 +274,12 @@ public sealed class SeasonLifecycleTests
         await AssertRebalanceInspectableAsync(store, saveId, fromSeason: 2, expectedToSeason: 3).ConfigureAwait(false);
         await AssertRosterValidAsync(store, saveId, 3).ConfigureAwait(false);
         await AssertNormalSuperCompositionAsync(store, saveId, fromSeason: 2, toSeason: 3).ConfigureAwait(false);
+
+        AdvanceToNextEventResponse selectTwo = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selectTwo.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectTypeCup);
+
+        AdvanceToNextEventResponse teamTwo = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        teamTwo.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunTypeCupTeam);
 
         AdvanceToNextEventResponse startThree = await advance.HandleAsync(saveId).ConfigureAwait(false);
         startThree.ExecutedAction.ShouldBe(SeasonLifecycleActions.StartNextSeason);

@@ -12,5 +12,10 @@ public static class SeasonLifecycleActions
     public const string ResolveAutomaticMovement = "ResolveAutomaticMovement";
     public const string RunQualifier = "RunQualifier";
     public const string RebalanceFeeders = "RebalanceFeeders";
+    public const string SelectColorCup = "SelectColorCup";
+    public const string RunColorCupIndividual = "RunColorCupIndividual";
+    public const string RunColorCupTeam = "RunColorCupTeam";
+    public const string SelectTypeCup = "SelectTypeCup";
+    public const string RunTypeCupTeam = "RunTypeCupTeam";
     public const string StartNextSeason = "StartNextSeason";
 }

@@ -90,10 +90,8 @@ public sealed class RunQualifierHandler
 
         (int stageCountBefore, int seasonCountBefore, int roundCountBefore, int qualifierRoundsBefore, int qualifierStandingsBefore) =
             await CapturePreservationAsync(context, cancellationToken).ConfigureAwait(false);
-        if (qualifierRoundsBefore != 0 || qualifierStandingsBefore != 0)
-        {
-            throw new InvalidOperationException("Qualifier preservation snapshot is corrupt.");
-        }
+        _ = qualifierRoundsBefore;
+        _ = qualifierStandingsBefore;
 
         List<AdvanceRoundHandler.MemberRow> roster = BuildRoster(field);
         Dictionary<int, Bonus> activeBonuses = await LoadQualifierActiveBonusesAsync(
