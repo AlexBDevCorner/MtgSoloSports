@@ -30,6 +30,10 @@ public static class StoryEventType
 
     public const string ColorCupTeamMedal = "color_cup_team_medal";
 
+    public const string TypeCupTeamTitle = "type_cup_team_title";
+
+    public const string TypeCupTeamMedal = "type_cup_team_medal";
+
     /// <summary>
     /// Known types at this stage. Future tasks append without changing these.
     /// </summary>
@@ -47,6 +51,8 @@ public static class StoryEventType
         ColorCupMedal,
         ColorCupTeamTitle,
         ColorCupTeamMedal,
+        TypeCupTeamTitle,
+        TypeCupTeamMedal,
     ];
 
     public static bool IsKnown(string eventType) => KnownTypes.Contains(eventType, StringComparer.Ordinal);
