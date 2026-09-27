@@ -26,7 +26,9 @@ public sealed class RecordsApiTests
             await SimulateSeasonsAsync(client, saveId, 1);
 
             HonoursPayload honours = await FetchHonoursAsync(client, saveId);
-            honours.Honours.Count.ShouldBe(8);
+            // Season 1 is odd, so SimulateSeasons now includes the post-season Color Cup:
+            // 8 feeder titles + 1 individual champion + 4 team champions = 13.
+            honours.Honours.Count.ShouldBe(13);
 
             RecordsPayload records = await FetchRecordsAsync(client, saveId);
             records.Records.Count.ShouldBe(13);
