@@ -78,6 +78,33 @@ public sealed class SaveStore
         SaveDetailRecord Detail,
         UniverseSummaryRecord Universe);
 
+    /// <summary>
+    /// Verified technical recovery checkpoint. Checkpoints are crash/migration
+    /// recovery boundaries, never user-facing gameplay undo.
+    /// </summary>
+    public sealed record CheckpointRecord(
+        Guid CheckpointId,
+        Guid SaveId,
+        DateTimeOffset CreatedUtc,
+        string Reason,
+        string SaveName,
+        int SchemaVersion,
+        int CurrentSeason,
+        string Phase,
+        string DatabaseSha256);
+
+    /// <summary>
+    /// Portable export artifact: the SQLite save database plus manifest/version
+    /// metadata zipped together. The external artwork cache is intentionally
+    /// not embedded; image references/fallbacks remain valid on import.
+    /// </summary>
+    public sealed record ExportRecord(
+        Guid SaveId,
+        string FileName,
+        string ContentType,
+        byte[] ZipBytes,
+        SaveBundleManifest Manifest);
+
     public string GetSavesRoot()
     {
         string configured = _options.Value.SavesRoot;
@@ -104,9 +131,13 @@ public sealed class SaveStore
 
     /// <summary>
     /// Applies pending save-schema (EF) migrations to one existing save file.
-    /// Database-schema migration is separate from game-rule migration: this
-    /// only ensures tables such as Stages/Rounds exist and never changes the
-    /// persisted rules snapshot or sporting results.
+    /// Database-schema migration is separate from game-rule migration: the
+    /// schema runner only ensures tables/indexes exist and stamps schema
+    /// bookkeeping, while the persisted rules snapshot and sporting results
+    /// are compared before/after and must be byte-identical. When migrations
+    /// are pending, a verified recoverable checkpoint is created first; a
+    /// failed migration restores that checkpoint and aborts instead of
+    /// leaving a half-migrated file behind.
     /// </summary>
     public async Task EnsureMigratedAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -116,8 +147,32 @@ public sealed class SaveStore
             throw new SaveNotFoundException(saveId);
         }
 
-        using SaveDbContext context = _factory.Create(path);
-        await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> pending = await SaveSchemaMigrator
+            .GetPendingMigrationsAsync(_factory, path, cancellationToken)
+            .ConfigureAwait(false);
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        string rulesBefore = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
+        CheckpointRecord checkpoint = await CreateCheckpointAsync(
+            saveId, $"pre-schema-migration-to-{SaveSchemaVersion.Current}", cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SaveSchemaMigrator.ApplyPendingAsync(_factory, path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await OverwriteLiveFromCheckpointAsync(saveId, checkpoint.CheckpointId, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException(
+                $"Database-schema migration failed and the save was rolled back to verified checkpoint '{checkpoint.CheckpointId:D}'.",
+                ex);
+        }
+
+        string rulesAfter = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
+        SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
+        _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -444,9 +499,9 @@ public sealed class SaveStore
         => ReadDetailAsync(saveId, cancellationToken);
 
     /// <summary>
-    /// Explicitly deletes one save's own database file plus its SQLite
-    /// companion files (-wal/-shm/-journal). The resolved path must stay
-    /// inside the saves root; nothing else is ever removed.
+    /// Explicitly deletes one save's own database file, its SQLite companion
+    /// files (-wal/-shm/-journal) and its technical recovery checkpoints.
+    /// The resolved path must stay inside the saves root; nothing else is ever removed.
     /// </summary>
     public Task DeleteAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -459,16 +514,434 @@ public sealed class SaveStore
 
         cancellationToken.ThrowIfCancellationRequested();
         File.Delete(path);
-        foreach (string suffix in new[] { "-wal", "-shm", "-journal" })
+        DeleteCompanionFiles(path);
+
+        string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
+        if (Directory.Exists(checkpointDirectory))
         {
-            string companion = path + suffix;
-            if (File.Exists(companion))
+            try
             {
-                File.Delete(companion);
+                Directory.Delete(checkpointDirectory, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
             }
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Exports a complete save as a portable artifact: the SQLite save
+    /// database plus manifest/version metadata zipped together. The live save
+    /// is WAL-checkpointed first so the embedded copy is a consistent
+    /// committed snapshot. Never mutates sporting state.
+    /// </summary>
+    public async Task<ExportRecord> ExportAsync(Guid saveId, CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        string path = GetSaveFilePath(saveId);
+        if (!File.Exists(path))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await CheckpointWalAsync(path, cancellationToken).ConfigureAwait(false);
+        SaveDetailRecord detail = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+        string sha256 = SaveBundle.ComputeFileSha256Hex(path);
+        DateTimeOffset exportedUtc = _timeProvider.GetUtcNow();
+
+        SaveBundleManifest manifest = new(
+            SaveBundleManifest.ExpectedFormat,
+            SaveBundleManifest.CurrentFormatVersion,
+            detail.SaveId,
+            detail.Name,
+            detail.CreatedUtc,
+            detail.SchemaVersion,
+            detail.RulesVersion,
+            detail.RngAlgorithm,
+            detail.RngVersion,
+            detail.CurrentSeason,
+            detail.Phase,
+            SaveBundleManifest.DatabaseEntryName,
+            sha256,
+            exportedUtc,
+            "MtgSoloSports");
+        byte[] zipBytes = SaveBundle.Create(path, manifest);
+        return new ExportRecord(
+            detail.SaveId,
+            $"{saveId:N}.mtgsave.zip",
+            "application/zip",
+            zipBytes,
+            manifest);
+    }
+
+    /// <summary>
+    /// Imports a portable save artifact. Validates archive shape, manifest
+    /// checksum, identity, and schema/rules compatibility before placing the
+    /// file, migrates older database schemas forward on the staged copy, and
+    /// never silently overwrites another save: an existing save id is
+    /// rejected unless <paramref name="overwrite"/> is explicitly true, in
+    /// which case a verified checkpoint of the current file is created first.
+    /// Any validation failure leaves existing saves untouched and removes the
+    /// staged copy.
+    /// </summary>
+    public async Task<SaveDetailRecord> ImportAsync(
+        byte[] bundleBytes,
+        bool overwrite,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(bundleBytes);
+        if (bundleBytes.Length == 0)
+        {
+            throw new ArgumentException("Save bundle is empty.", nameof(bundleBytes));
+        }
+
+        if (bundleBytes.LongLength > SaveBundle.MaxBundleBytes)
+        {
+            throw new InvalidOperationException(
+                $"Save bundle exceeds the {SaveBundle.MaxBundleBytes} byte import limit.");
+        }
+
+        string root = GetSavesRoot();
+        Directory.CreateDirectory(root);
+        string stagingDirectory = Path.Combine(root, $".staging-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(stagingDirectory);
+        try
+        {
+            SaveBundle.Extraction extraction = await SaveBundle
+                .ExtractToStagingAsync(bundleBytes, stagingDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            SaveBundleManifest manifest = extraction.Manifest;
+            SaveRulesCompatibility.EnsureImportableRules(manifest);
+            await VerifyStagedDatabaseAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
+            await MigrateStagedDatabaseIfNeededAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
+
+            string target = SaveFileNaming.GetSaveFilePath(root, manifest.SaveId);
+            if (File.Exists(target))
+            {
+                if (!overwrite)
+                {
+                    throw new SaveAlreadyExistsException(manifest.SaveId);
+                }
+
+                await CreateCheckpointAsync(manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
+                File.Copy(extraction.StagedDatabasePath, target, overwrite: true);
+                DeleteCompanionFiles(target);
+            }
+            else
+            {
+                File.Move(extraction.StagedDatabasePath, target);
+            }
+
+            return await ReadDetailAsync(manifest.SaveId, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeleteDirectoryBestEffort(stagingDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Creates a verified technical recovery checkpoint of the last known
+    /// valid save boundary: WAL-checkpoint, file copy, checksum comparison,
+    /// identity verification of the copy, and sidecar persistence. Used before
+    /// migrations, import overwrites, and large bulk operations, and for
+    /// restoring after a software bug/failure. This is technical recovery,
+    /// never normal gameplay rewind.
+    /// </summary>
+    public async Task<CheckpointRecord> CreateCheckpointAsync(
+        Guid saveId,
+        string? reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        string livePath = GetSaveFilePath(saveId);
+        if (!File.Exists(livePath))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        SaveDetailRecord detail = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+        await CheckpointWalAsync(livePath, cancellationToken).ConfigureAwait(false);
+
+        string root = GetSavesRoot();
+        CheckpointPaths paths = PrepareCheckpointPaths(root, saveId);
+        string normalizedReason = SaveCheckpointFiles.NormalizeReason(reason);
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+
+        File.Copy(livePath, paths.TempCopy, overwrite: false);
+        try
+        {
+            return await PersistVerifiedCheckpointAsync(
+                livePath, paths, detail, normalizedReason, now, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            DeleteFileBestEffort(paths.TempCopy);
+            throw;
+        }
+    }
+
+    private sealed record CheckpointPaths(
+        string Directory,
+        Guid CheckpointId,
+        string DatabasePath,
+        string SidecarPath,
+        string TempCopy);
+
+    private static CheckpointPaths PrepareCheckpointPaths(string savesRoot, Guid saveId)
+    {
+        string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(savesRoot, saveId);
+        Directory.CreateDirectory(directory);
+        Guid checkpointId = Guid.NewGuid();
+        return new CheckpointPaths(
+            directory,
+            checkpointId,
+            SaveCheckpointFiles.GetCheckpointDatabasePath(directory, checkpointId),
+            SaveCheckpointFiles.GetCheckpointSidecarPath(directory, checkpointId),
+            Path.Combine(directory, $".tmp-{checkpointId:N}.db"));
+    }
+
+    /// <summary>
+    /// Verifies the staged copy, moves it into place, persists a verified
+    /// sidecar, prunes old checkpoints and reports the new checkpoint record.
+    /// </summary>
+    private async Task<CheckpointRecord> PersistVerifiedCheckpointAsync(
+        string livePath,
+        CheckpointPaths paths,
+        SaveDetailRecord detail,
+        string normalizedReason,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(livePath);
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(detail);
+        ArgumentException.ThrowIfNullOrWhiteSpace(normalizedReason);
+
+        string copySha = await CopyAndVerifyDatabaseAsync(livePath, paths.TempCopy, detail.SaveId, cancellationToken).ConfigureAwait(false);
+        File.Move(paths.TempCopy, paths.DatabasePath);
+
+        SaveCheckpointSidecar sidecar = new(
+            paths.CheckpointId,
+            detail.SaveId,
+            now,
+            normalizedReason,
+            detail.Name,
+            detail.SchemaVersion,
+            detail.CurrentSeason,
+            detail.Phase,
+            copySha);
+        await WriteVerifiedSidecarAsync(paths.SidecarPath, sidecar, copySha, cancellationToken).ConfigureAwait(false);
+
+        SaveCheckpointFiles.PruneOldest(paths.Directory);
+        _logger.LogInformation(
+            "Created technical recovery checkpoint {CheckpointId} for save {SaveId} (reason: {Reason}).",
+            paths.CheckpointId,
+            detail.SaveId,
+            normalizedReason);
+        return new CheckpointRecord(
+            paths.CheckpointId,
+            detail.SaveId,
+            now,
+            normalizedReason,
+            detail.Name,
+            detail.SchemaVersion,
+            detail.CurrentSeason,
+            detail.Phase,
+            copySha);
+    }
+
+    /// <summary>
+    /// Verifies a checkpoint file copy byte-for-byte against its source and
+    /// proves the copy opens with the expected save identity.
+    /// Returns the verified checksum.
+    /// </summary>
+    private async Task<string> CopyAndVerifyDatabaseAsync(
+        string sourcePath,
+        string copyPath,
+        Guid saveId,
+        CancellationToken cancellationToken)
+    {
+        string sourceSha = SaveBundle.ComputeFileSha256Hex(sourcePath);
+        string copySha = SaveBundle.ComputeFileSha256Hex(copyPath);
+        if (!string.Equals(sourceSha, copySha, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Checkpoint copy verification failed for save '{saveId:D}'.");
+        }
+
+        await VerifyCheckpointCopyAsync(copyPath, saveId, cancellationToken).ConfigureAwait(false);
+        return copySha;
+    }
+
+    /// <summary>
+    /// Persists a checkpoint sidecar and verifies it round-trips with the
+    /// expected checksum before the checkpoint is trusted.
+    /// </summary>
+    private static async Task WriteVerifiedSidecarAsync(
+        string sidecarPath,
+        SaveCheckpointSidecar sidecar,
+        string expectedSha256,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sidecar);
+        await File.WriteAllTextAsync(sidecarPath, sidecar.ToJson(), cancellationToken).ConfigureAwait(false);
+        SaveCheckpointSidecar reloaded = SaveCheckpointSidecar.FromJson(
+            await File.ReadAllTextAsync(sidecarPath, cancellationToken).ConfigureAwait(false));
+        if (reloaded.CheckpointId != sidecar.CheckpointId
+            || !string.Equals(reloaded.DatabaseSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Checkpoint sidecar verification failed for save '{sidecar.SaveId:D}'.");
+        }
+    }
+
+    /// <summary>
+    /// Lists verified technical recovery checkpoints for a save, newest last.
+    /// Entries whose sidecar or database file is unreadable are skipped.
+    /// </summary>
+    public Task<IReadOnlyList<CheckpointRecord>> ListCheckpointsAsync(
+        Guid saveId,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(GetSavesRoot(), saveId);
+        List<CheckpointRecord> records = [];
+        if (!Directory.Exists(directory))
+        {
+            return Task.FromResult<IReadOnlyList<CheckpointRecord>>(records);
+        }
+
+        foreach (string sidecarPath in Directory.GetFiles(directory, "*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                SaveCheckpointSidecar sidecar = SaveCheckpointSidecar.FromJson(File.ReadAllText(sidecarPath));
+                if (sidecar.SaveId != saveId || sidecar.CheckpointId == Guid.Empty)
+                {
+                    continue;
+                }
+
+                if (!File.Exists(SaveCheckpointFiles.GetCheckpointDatabasePath(directory, sidecar.CheckpointId)))
+                {
+                    continue;
+                }
+
+                records.Add(new CheckpointRecord(
+                    sidecar.CheckpointId,
+                    sidecar.SaveId,
+                    sidecar.CreatedUtc,
+                    sidecar.Reason,
+                    sidecar.SaveName,
+                    sidecar.SchemaVersion,
+                    sidecar.CurrentSeason,
+                    sidecar.Phase,
+                    sidecar.DatabaseSha256));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            {
+                _logger.LogWarning(ex, "Skipping unreadable checkpoint sidecar {SidecarPath}.", sidecarPath);
+            }
+        }
+
+        records.Sort(static (left, right) =>
+        {
+            int created = left.CreatedUtc.CompareTo(right.CreatedUtc);
+            return created != 0 ? created : left.CheckpointId.CompareTo(right.CheckpointId);
+        });
+        return Task.FromResult<IReadOnlyList<CheckpointRecord>>(records);
+    }
+
+    /// <summary>
+    /// Restores the last known valid boundary from a verified technical
+    /// recovery checkpoint after a software bug/failure. The checkpoint is
+    /// checksum- and identity-verified before use, a safety checkpoint of the
+    /// current file is created first, and the restored file is verified
+    /// readable afterwards. Technical recovery only; normal gameplay never
+    /// rewinds or resimulates sporting results.
+    /// </summary>
+    public async Task<SaveDetailRecord> RestoreCheckpointAsync(
+        Guid saveId,
+        Guid checkpointId,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        if (checkpointId == Guid.Empty)
+        {
+            throw new ArgumentException("Checkpoint id must not be empty.", nameof(checkpointId));
+        }
+
+        string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(GetSavesRoot(), saveId);
+        string databasePath = SaveCheckpointFiles.GetCheckpointDatabasePath(directory, checkpointId);
+        string sidecarPath = SaveCheckpointFiles.GetCheckpointSidecarPath(directory, checkpointId);
+        if (!File.Exists(databasePath) || !File.Exists(sidecarPath))
+        {
+            throw new SaveCheckpointNotFoundException(saveId, checkpointId);
+        }
+
+        SaveCheckpointSidecar sidecar;
+        try
+        {
+            sidecar = SaveCheckpointSidecar.FromJson(
+                await File.ReadAllTextAsync(sidecarPath, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException(
+                $"Checkpoint '{checkpointId:D}' sidecar is unreadable; restore was rejected.", ex);
+        }
+
+        if (sidecar.SaveId != saveId || sidecar.CheckpointId != checkpointId)
+        {
+            throw new InvalidOperationException(
+                $"Checkpoint '{checkpointId:D}' sidecar identity mismatch; restore was rejected.");
+        }
+
+        string actualSha = SaveBundle.ComputeFileSha256Hex(databasePath);
+        if (!string.Equals(actualSha, sidecar.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Checkpoint '{checkpointId:D}' checksum mismatch; the backup is corrupt and restore was rejected.");
+        }
+
+        await VerifyCheckpointCopyAsync(databasePath, saveId, cancellationToken).ConfigureAwait(false);
+
+        string livePath = GetSaveFilePath(saveId);
+        if (!File.Exists(livePath))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
+        await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogWarning(
+            "Restored save {SaveId} from technical recovery checkpoint {CheckpointId}.",
+            saveId,
+            checkpointId);
+        return await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<SaveDetailRecord> ReadDetailAsync(Guid saveId, CancellationToken cancellationToken)
@@ -579,6 +1052,213 @@ public sealed class SaveStore
         ulong freshSeed = BitConverter.ToUInt64(bytes[..8]);
         ulong freshStream = BitConverter.ToUInt64(bytes[8..]);
         return (seed ?? freshSeed, stream ?? freshStream);
+    }
+
+    /// <summary>
+    /// Forces pending WAL frames into the main database file so a subsequent
+    /// file copy is a consistent committed snapshot.
+    /// </summary>
+    private async Task CheckpointWalAsync(string saveFilePath, CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = _factory.Create(saveFilePath);
+        await context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates a staged import database: required rows exist, identity and
+    /// schema version match the manifest, and RNG/rules snapshots parse.
+    /// Throws before anything live is touched.
+    /// </summary>
+    private async Task VerifyStagedDatabaseAsync(
+        string stagedDatabasePath,
+        SaveBundleManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = _factory.Create(stagedDatabasePath);
+        SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
+        if (rows.Metadata is null || rows.Rules is null || rows.Rng is null)
+        {
+            throw new InvalidOperationException("Imported save is missing required metadata, rules, or RNG rows.");
+        }
+
+        if (rows.Metadata.SaveId != manifest.SaveId)
+        {
+            throw new InvalidOperationException(
+                $"Imported save identity '{rows.Metadata.SaveId:D}' does not match manifest save '{manifest.SaveId:D}'.");
+        }
+
+        if (rows.Metadata.SchemaVersion != manifest.SchemaVersion)
+        {
+            throw new InvalidOperationException(
+                $"Imported save schema version {rows.Metadata.SchemaVersion} does not match manifest version {manifest.SchemaVersion}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(rows.Metadata.Phase))
+        {
+            throw new InvalidOperationException("Imported save has an empty phase.");
+        }
+
+        if (string.IsNullOrWhiteSpace(rows.Rules.RulesJson))
+        {
+            throw new InvalidOperationException("Imported save has an empty rules snapshot.");
+        }
+
+        _ = rows.Rng.ToState();
+        _ = SaveRulesCompatibility.ReadSnapshotRules(rows.Rules.RulesJson);
+        if (rows.Rules.RulesVersion != manifest.RulesVersion)
+        {
+            throw new InvalidOperationException(
+                $"Imported save rules version {rows.Rules.RulesVersion} does not match manifest version {manifest.RulesVersion}.");
+        }
+    }
+
+    /// <summary>
+    /// Migrates an older staged import database forward to the current
+    /// schema. Runs on the staging copy only, proves the rules snapshot is
+    /// unchanged, and verifies the result maps cleanly before placement.
+    /// </summary>
+    private async Task MigrateStagedDatabaseIfNeededAsync(
+        string stagedDatabasePath,
+        SaveBundleManifest manifest,
+        CancellationToken cancellationToken)
+    {
+        string rulesBefore = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> pending = await SaveSchemaMigrator
+            .GetPendingMigrationsAsync(_factory, stagedDatabasePath, cancellationToken)
+            .ConfigureAwait(false);
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        await SaveSchemaMigrator.ApplyPendingAsync(_factory, stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+        string rulesAfter = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+        SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
+
+        using SaveDbContext context = _factory.Create(stagedDatabasePath);
+        SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
+        _ = MapDetail(manifest.SaveId, rows);
+    }
+
+    private async Task<string> ReadRulesJsonByPathAsync(string saveFilePath, CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = _factory.Create(saveFilePath);
+        RulesSnapshotEntity? rules = await context.RulesSnapshots
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == 1, cancellationToken)
+            .ConfigureAwait(false);
+        if (rules is null || string.IsNullOrWhiteSpace(rules.RulesJson))
+        {
+            throw new InvalidOperationException("Save has an empty rules snapshot.");
+        }
+
+        return rules.RulesJson;
+    }
+
+    /// <summary>
+    /// Verifies a checkpoint database copy opens with required rows and the
+    /// expected save identity. Cleans up SQLite companions opened by the check.
+    /// </summary>
+    private async Task VerifyCheckpointCopyAsync(
+        string checkpointDatabasePath,
+        Guid saveId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using SaveDbContext context = _factory.Create(checkpointDatabasePath);
+            SaveMetadataEntity? metadata = await context.SaveMetadata
+                .AsNoTracking()
+                .SingleOrDefaultAsync(e => e.Id == 1, cancellationToken)
+                .ConfigureAwait(false);
+            bool hasRules = await context.RulesSnapshots
+                .AsNoTracking()
+                .AnyAsync(e => e.Id == 1, cancellationToken)
+                .ConfigureAwait(false);
+            bool hasRng = await context.RngStates
+                .AsNoTracking()
+                .AnyAsync(e => e.Id == 1, cancellationToken)
+                .ConfigureAwait(false);
+            if (metadata is null || !hasRules || !hasRng)
+            {
+                throw new InvalidOperationException(
+                    $"Checkpoint for save '{saveId:D}' is missing required metadata, rules, or RNG rows.");
+            }
+
+            if (metadata.SaveId != saveId)
+            {
+                throw new InvalidOperationException(
+                    $"Checkpoint save identity '{metadata.SaveId:D}' does not match save '{saveId:D}'.");
+            }
+        }
+        finally
+        {
+            DeleteCompanionFiles(checkpointDatabasePath);
+        }
+    }
+
+    /// <summary>
+    /// Overwrites the live save file with a verified checkpoint copy and
+    /// verifies the result opens. Used by restore and migration rollback.
+    /// </summary>
+    private async Task OverwriteLiveFromCheckpointAsync(
+        Guid saveId,
+        Guid checkpointId,
+        CancellationToken cancellationToken)
+    {
+        string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(GetSavesRoot(), saveId);
+        string checkpointPath = SaveCheckpointFiles.GetCheckpointDatabasePath(directory, checkpointId);
+        if (!File.Exists(checkpointPath))
+        {
+            throw new SaveCheckpointNotFoundException(saveId, checkpointId);
+        }
+
+        string livePath = GetSaveFilePath(saveId);
+        if (!File.Exists(livePath))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        File.Copy(checkpointPath, livePath, overwrite: true);
+        DeleteCompanionFiles(livePath);
+        _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void DeleteCompanionFiles(string saveFilePath)
+    {
+        foreach (string suffix in new[] { "-wal", "-shm", "-journal" })
+        {
+            DeleteFileBestEffort(saveFilePath + suffix);
+        }
+    }
+
+    private static void DeleteFileBestEffort(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void DeleteDirectoryBestEffort(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     /// <summary>

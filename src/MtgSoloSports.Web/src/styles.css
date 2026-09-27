@@ -415,6 +415,21 @@ body {
   gap: 12px;
 }
 
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.check-row input[type='checkbox'] {
+  width: auto;
+  padding: 0;
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+
 input {
   background: #0e1420;
   border: 1px solid var(--line);

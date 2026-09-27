@@ -1,4 +1,4 @@
-import { fetchJson } from '../../shared/api/http';
+import { ApiError, fetchJson } from '../../shared/api/http';
 
 export interface SaveSummary {
   saveId: string;
@@ -71,4 +71,21 @@ export async function deleteSave(saveId: string): Promise<void> {
     const body = await response.text().catch(() => '');
     throw new Error(body || `Delete failed (${response.status}).`);
   }
+}
+
+export function exportSaveUrl(saveId: string): string {
+  return `/api/saves/${saveId}/export`;
+}
+
+export async function importSave(file: Blob, overwrite: boolean): Promise<SaveDetail> {
+  const response = await fetch(`/api/saves/import${overwrite ? '?overwrite=true' : ''}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: file,
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new ApiError(response.status, body || response.statusText);
+  }
+  return (await response.json()) as SaveDetail;
 }
