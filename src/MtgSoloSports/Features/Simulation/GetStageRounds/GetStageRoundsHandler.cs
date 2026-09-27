@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -145,7 +146,7 @@ public sealed class GetStageRoundsHandler
                 throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage identity.");
             }
 
-            RoundPayloadDocument document = RoundPayloadDocument.FromJson(round.PayloadJson);
+            RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             if (document.StageNumber != stageNumber || document.RoundNumber != round.RoundNumber)
             {
                 throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage/round identity.");
@@ -177,7 +178,7 @@ public sealed class GetStageRoundsHandler
             return new Dictionary<int, SaveAthleteEntity>();
         }
 
-        RoundPayloadDocument first = RoundPayloadDocument.FromJson(rounds[0].PayloadJson);
+        RoundPayloadDocument first = RoundPayloadCodec.DecodeRound(rounds[0].PayloadJson);
         List<int> athleteIds = first.Placements.Select(p => p.AthleteId).ToList();
         return await context.SaveAthletes
             .AsNoTracking()
@@ -194,7 +195,7 @@ public sealed class GetStageRoundsHandler
         List<GetStageRound> entries = new(rounds.Count);
         foreach (RoundEntity round in rounds)
         {
-            RoundPayloadDocument document = RoundPayloadDocument.FromJson(round.PayloadJson);
+            RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             List<GetStageRoundPlacement> placements = new(document.Placements.Count);
             foreach (RoundPayloadEntry placement in document.Placements.OrderBy(p => p.Position))
             {

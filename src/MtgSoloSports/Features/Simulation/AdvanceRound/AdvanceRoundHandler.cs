@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
@@ -432,7 +433,7 @@ public sealed class AdvanceRoundHandler
                 $"Round {roundNumber - 1} of stage {stage.StageNumber} for league '{league.Name}' is missing; rounds must advance in order.");
         }
 
-        RoundPayloadDocument document = RoundPayloadDocument.FromJson(previous.PayloadJson);
+        RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(previous.PayloadJson);
         if (document.StageNumber != stage.StageNumber || document.RoundNumber != roundNumber - 1)
         {
             throw new InvalidOperationException($"Persisted round {previous.Id} has corrupt stage/round identity.");
@@ -658,7 +659,7 @@ public sealed class AdvanceRoundHandler
             RngBeforeStream = unchecked((long)rngBefore.Stream),
             RngAfterState = unchecked((long)simulation.RngAfter.State),
             RngAfterStream = unchecked((long)simulation.RngAfter.Stream),
-            PayloadJson = payload.ToJson(),
+            PayloadJson = RoundPayloadCodec.Encode(payload.ToJson()),
             PayloadChecksum = payload.Checksum,
         };
         context.Rounds.Add(round);
@@ -686,7 +687,7 @@ public sealed class AdvanceRoundHandler
             throw new InvalidOperationException("Staged round checksum does not match the simulated result.");
         }
 
-        RoundPayloadDocument reparsed = RoundPayloadDocument.FromJson(stored.PayloadJson);
+        RoundPayloadDocument reparsed = RoundPayloadCodec.DecodeRound(stored.PayloadJson);
         if (!string.Equals(reparsed.Checksum, simulation.Checksum, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Staged round payload does not match the simulated result.");
@@ -766,7 +767,7 @@ public sealed class AdvanceRoundHandler
             throw new AdvanceRoundConflictException($"Round {roundNumber} of stage {stageNumber} for league '{league.Name}' has not been simulated.");
         }
 
-        RoundPayloadDocument payload = RoundPayloadDocument.FromJson(round.PayloadJson);
+        RoundPayloadDocument payload = RoundPayloadCodec.DecodeRound(round.PayloadJson);
         if (!string.Equals(payload.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"Persisted round {roundNumber} payload checksum mismatch.");

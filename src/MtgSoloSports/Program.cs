@@ -1,6 +1,13 @@
 using MtgSoloSports.Features.Athletes.GetProfile;
 using MtgSoloSports.Features.Catalog.GetCatalogStats;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Features.History.GetRoundReplay;
+using MtgSoloSports.Features.History.GetSeasonTable;
+using MtgSoloSports.Features.History.GetStageStandings;
+using MtgSoloSports.Features.History.ListCompetitions;
+using MtgSoloSports.Features.History.ListRounds;
+using MtgSoloSports.Features.History.ListSeasons;
+using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Leagues.GetSeason1Leagues;
 using MtgSoloSports.Features.Leagues.SeasonProgress;
@@ -68,6 +75,13 @@ builder.Services.AddScoped<GetRebalanceResultHandler>();
 builder.Services.AddScoped<GetSeasonStatusHandler>();
 builder.Services.AddScoped<StartNextSeasonHandler>();
 builder.Services.AddScoped<AdvanceToNextEventHandler>();
+builder.Services.AddScoped<ListHistorySeasonsHandler>();
+builder.Services.AddScoped<ListHistoryCompetitionsHandler>();
+builder.Services.AddScoped<ListHistoryStagesHandler>();
+builder.Services.AddScoped<ListHistoryRoundsHandler>();
+builder.Services.AddScoped<GetHistoryRoundReplayHandler>();
+builder.Services.AddScoped<GetHistoryStageStandingsHandler>();
+builder.Services.AddScoped<GetHistorySeasonTableHandler>();
 
 var app = builder.Build();
 
@@ -105,6 +119,13 @@ GetRebalanceResultEndpoint.Map(app);
 GetSeasonStatusEndpoint.Map(app);
 StartNextSeasonEndpoint.Map(app);
 AdvanceToNextEventEndpoint.Map(app);
+ListHistorySeasonsEndpoint.Map(app);
+ListHistoryCompetitionsEndpoint.Map(app);
+ListHistoryStagesEndpoint.Map(app);
+ListHistoryRoundsEndpoint.Map(app);
+GetHistoryRoundReplayEndpoint.Map(app);
+GetHistoryStageStandingsEndpoint.Map(app);
+GetHistorySeasonTableEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 

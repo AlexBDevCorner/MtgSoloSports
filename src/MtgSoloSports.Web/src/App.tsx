@@ -5,6 +5,7 @@ import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
+import { HistoryPage } from './features/history/HistoryPage';
 import { LivePage } from './features/live/LivePage';
 import { AppShell, type View } from './features/shell/AppShell';
 import { SavesPage } from './features/saves/SavesPage';
@@ -97,6 +98,18 @@ export default function App() {
           progressLoading={dashboard.loading}
           hasSelection={selectedSaveId !== null}
           onMutated={dashboard.refresh}
+          onGoToSaves={() => {
+            setView('saves');
+          }}
+          onSelectAthlete={(athleteId) => {
+            setSelectedAthleteId(athleteId);
+            setView('athlete');
+          }}
+        />
+      ) : view === 'history' ? (
+        <HistoryPage
+          saveId={selectedSaveId}
+          hasSelection={selectedSaveId !== null}
           onGoToSaves={() => {
             setView('saves');
           }}

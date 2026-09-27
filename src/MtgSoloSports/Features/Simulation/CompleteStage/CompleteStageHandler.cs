@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Features.Simulation.SeasonCompletion;
@@ -397,7 +398,7 @@ public sealed class CompleteStageHandler
         List<RoundPayloadDocument> payloads = new(existingRounds.Count);
         foreach (RoundEntity round in existingRounds)
         {
-            RoundPayloadDocument document = RoundPayloadDocument.FromJson(round.PayloadJson);
+            RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             if (document.StageNumber != completion.Stage.StageNumber)
             {
                 throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage identity.");
