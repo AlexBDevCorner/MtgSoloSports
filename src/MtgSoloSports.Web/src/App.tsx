@@ -4,6 +4,7 @@ import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
 import { ColorCupPage } from './features/cups/ColorCupPage';
+import { TypeCupPage } from './features/cups/TypeCupPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
 import { HistoryPage } from './features/history/HistoryPage';
@@ -133,17 +134,30 @@ export default function App() {
           }}
         />
       ) : view === 'cups' ? (
-        <ColorCupPage
-          saveId={selectedSaveId}
-          hasSelection={selectedSaveId !== null}
-          onGoToSaves={() => {
-            setView('saves');
-          }}
-          onSelectAthlete={(athleteId) => {
-            setSelectedAthleteId(athleteId);
-            setView('athlete');
-          }}
-        />
+        <>
+          <ColorCupPage
+            saveId={selectedSaveId}
+            hasSelection={selectedSaveId !== null}
+            onGoToSaves={() => {
+              setView('saves');
+            }}
+            onSelectAthlete={(athleteId) => {
+              setSelectedAthleteId(athleteId);
+              setView('athlete');
+            }}
+          />
+          <TypeCupPage
+            saveId={selectedSaveId}
+            hasSelection={selectedSaveId !== null}
+            onGoToSaves={() => {
+              setView('saves');
+            }}
+            onSelectAthlete={(athleteId) => {
+              setSelectedAthleteId(athleteId);
+              setView('athlete');
+            }}
+          />
+        </>
       ) : view === 'athlete' ? (
         <AthleteProfilePage
           saveId={selectedSaveId}

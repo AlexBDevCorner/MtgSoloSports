@@ -185,7 +185,8 @@ public sealed class GetAthleteProfileHandler
             athlete.SetCode,
             athlete.IsArtifact,
             athlete.HasDevoid,
-            athlete.HasHybridMana);
+            athlete.HasHybridMana,
+            string.IsNullOrWhiteSpace(athlete.TypeCupNationality) ? null : athlete.TypeCupNationality.Trim());
     }
 
     internal static AthleteCareerDto MapCareer(AthleteCareerEntity career)

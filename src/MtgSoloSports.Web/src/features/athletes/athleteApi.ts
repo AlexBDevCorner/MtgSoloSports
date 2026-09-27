@@ -13,6 +13,7 @@ export interface AthleteCard {
   isArtifact: boolean;
   hasDevoid: boolean;
   hasHybridMana: boolean;
+  typeCupNationality?: string | null;
 }
 
 export interface AthleteCareer {

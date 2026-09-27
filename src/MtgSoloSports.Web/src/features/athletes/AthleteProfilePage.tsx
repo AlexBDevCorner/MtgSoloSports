@@ -174,6 +174,10 @@ export function AthleteProfilePage({
               <dt>Front colors</dt>
               <dd>{card.frontColors || '—'}</dd>
             </div>
+            <div>
+              <dt>Type Cup nationality</dt>
+              <dd>{card.typeCupNationality ?? 'Uncapped'}</dd>
+            </div>
           </dl>
         </Card>
       </div>
