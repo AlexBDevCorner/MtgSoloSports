@@ -17,6 +17,8 @@ using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 using MtgSoloSports.Features.Superleague.GetInauguralRoster;
 using MtgSoloSports.Features.Superleague.GetQualifierResult;
+using MtgSoloSports.Features.Superleague.GetRebalanceResult;
+using MtgSoloSports.Features.Superleague.RebalanceFeeders;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Catalog;
@@ -54,6 +56,8 @@ builder.Services.AddScoped<ResolveAutomaticMovementHandler>();
 builder.Services.AddScoped<GetAutomaticMovementHandler>();
 builder.Services.AddScoped<RunQualifierHandler>();
 builder.Services.AddScoped<GetQualifierResultHandler>();
+builder.Services.AddScoped<RebalanceFeedersHandler>();
+builder.Services.AddScoped<GetRebalanceResultHandler>();
 
 var app = builder.Build();
 
@@ -84,6 +88,8 @@ ResolveAutomaticMovementEndpoint.Map(app);
 GetAutomaticMovementEndpoint.Map(app);
 RunQualifierEndpoint.Map(app);
 GetQualifierResultEndpoint.Map(app);
+RebalanceFeedersEndpoint.Map(app);
+GetRebalanceResultEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
