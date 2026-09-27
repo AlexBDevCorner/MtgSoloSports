@@ -6,16 +6,19 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --test --experimental-strip-types \"src/features/reveal/*.test.ts\""
   },
   "dependencies": {
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
     "@vitejs/plugin-react": "5.0.4",
-    "vite": "7.1.7",
-    "typescript": "5.9.2",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "@types/react": "19.1.16",
-    "@types/react-dom": "19.1.9"
+    "typescript": "5.9.2",
+    "vite": "7.1.7"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/node": "^22.12.0"
+  }
 }
