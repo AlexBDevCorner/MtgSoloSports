@@ -4,6 +4,8 @@ namespace MtgSoloSports.Persistence.Saves;
 /// Kind of postseason league movement. MSS-014 persists only
 /// <see cref="InauguralPromotion"/>; MSS-015 adds automatic Superleague
 /// movement plus qualifier-candidate markers without rewriting existing rows.
+/// MSS-017 adds feeder-rebalancing transfers between feeder leagues and their
+/// color's common pool without rewriting existing rows.
 /// Stored as an integer so future kinds extend the enum.
 /// </summary>
 public enum MovementKind
@@ -33,4 +35,18 @@ public enum MovementKind
     /// Exactly 24 per normal transition (3 per feeder); winners decided by MSS-016.
     /// </summary>
     QualifierChallenger = 4,
+
+    /// <summary>
+    /// Common-pool athlete drawn into its sporting-color feeder to restore 32.
+    /// Equal-probability draw with the versioned simulation RNG (MSS-017).
+    /// Former pool athletes are eligible immediately; no cooldown or weighting.
+    /// </summary>
+    RebalanceDraw = 5,
+
+    /// <summary>
+    /// Lowest-ranked retained feeder athlete displaced to its color's common
+    /// pool to restore 32 when returning Superleague athletes overflow (MSS-017).
+    /// Deterministic by previous feeder-season rank; consumes no RNG.
+    /// </summary>
+    RebalanceDisplacement = 6,
 }
