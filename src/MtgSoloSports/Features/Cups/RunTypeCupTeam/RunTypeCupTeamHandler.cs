@@ -321,7 +321,8 @@ public sealed partial class RunTypeCupTeamHandler
         }
 
         int cupSeason = checked(sourceSeasonNumber + 1);
-        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(context, combined, cancellationToken).ConfigureAwait(false);
+        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(
+            context, combined, AdvanceRoundHandler.SelectBonusSeasonIds(seasonNumbers, cupSeason), cancellationToken).ConfigureAwait(false);
         Dictionary<int, List<SimulationKernel.Scoring.BonusContribution>> contributions = AdvanceRoundHandler.GroupBonusContributions(
             combined, standings, seasonNumbers, cupSeason);
 

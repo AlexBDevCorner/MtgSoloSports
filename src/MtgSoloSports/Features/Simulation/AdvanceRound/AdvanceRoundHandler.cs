@@ -463,9 +463,35 @@ public sealed class AdvanceRoundHandler
 
         Dictionary<int, int> seasonNumbers = await LoadSeasonNumbersAsync(context, season, cancellationToken).ConfigureAwait(false);
         int currentSeasonNumber = seasonNumbers[season.Id];
-        List<StageStandingEntity> standings = await LoadBonusStandingsAsync(context, roster, cancellationToken).ConfigureAwait(false);
+        IReadOnlySet<int> relevantSeasonIds = SelectBonusSeasonIds(seasonNumbers, currentSeasonNumber);
+        List<StageStandingEntity> standings = await LoadBonusStandingsAsync(context, roster, relevantSeasonIds, cancellationToken).ConfigureAwait(false);
         Dictionary<int, List<BonusContribution>> contributions = GroupBonusContributions(roster, standings, seasonNumbers, currentSeasonNumber);
         return ComputeStageStartBonuses(roster, contributions, currentSeasonNumber, stage.StageNumber, rules);
+    }
+
+    /// <summary>
+    /// Selects the season ids whose stage bonus can still contribute to the
+    /// current season under v1 decay (age 0..5). Older seasons decay to zero
+    /// (<see cref="ScoringCalculator.ApplyDecay"/>) so excluding them at the
+    /// SQL layer is an exact optimization, not a rule change: the same
+    /// contributions reach <see cref="BonusCalculator.EffectiveBonus"/>.
+    /// Bounds per-bonus-load history to six seasons regardless of total save age.
+    /// </summary>
+    public static IReadOnlySet<int> SelectBonusSeasonIds(
+        IReadOnlyDictionary<int, int> seasonNumbers,
+        int currentSeasonNumber)
+    {
+        ArgumentNullException.ThrowIfNull(seasonNumbers);
+        HashSet<int> ids = new();
+        foreach ((int seasonId, int seasonNumber) in seasonNumbers)
+        {
+            if (seasonNumber <= currentSeasonNumber && currentSeasonNumber - seasonNumber <= 5)
+            {
+                ids.Add(seasonId);
+            }
+        }
+
+        return ids;
     }
 
     internal static async Task<Dictionary<int, int>> LoadSeasonNumbersAsync(
@@ -488,12 +514,14 @@ public sealed class AdvanceRoundHandler
     internal static async Task<List<StageStandingEntity>> LoadBonusStandingsAsync(
         SaveDbContext context,
         List<MemberRow> roster,
+        IReadOnlySet<int> relevantSeasonIds,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(relevantSeasonIds);
         HashSet<int> rosterIds = new(roster.Select(r => r.AthleteId));
         return await context.StageStandings
             .AsNoTracking()
-            .Where(e => rosterIds.Contains(e.SaveAthleteId))
+            .Where(e => rosterIds.Contains(e.SaveAthleteId) && relevantSeasonIds.Contains(e.SeasonId))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
     }

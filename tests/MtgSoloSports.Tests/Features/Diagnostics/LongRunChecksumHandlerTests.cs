@@ -1,0 +1,120 @@
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Diagnostics.LongRunChecksum;
+using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
+using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features.Universe;
+using Shouldly;
+using Xunit;
+
+namespace MtgSoloSports.Tests.Features.Diagnostics;
+
+/// <summary>
+/// Proves the stable checksum detects sporting divergence without storing
+/// full datasets: identical seeds hash identically, different seeds differ,
+/// and bulk fast simulation hashes identically to manual progression.
+/// </summary>
+public sealed class LongRunChecksumHandlerTests
+{
+    [Fact]
+    public async Task SameSeed_SameChecksum_DifferentSeed_Differs()
+    {
+        var (firstStore, firstRoot) = CreateStore();
+        var (secondStore, secondRoot) = CreateStore();
+        var (thirdStore, thirdRoot) = CreateStore();
+        try
+        {
+            var catalog = UniverseTestCatalog.Build();
+            SaveStore.CreationRecord first = await firstStore.CreateAsync("Checksum A", 9001UL, 9002UL, catalog);
+            SaveStore.CreationRecord second = await secondStore.CreateAsync("Checksum B", 9001UL, 9002UL, catalog);
+            SaveStore.CreationRecord third = await thirdStore.CreateAsync("Checksum C", 7001UL, 7002UL, catalog);
+
+            CompleteStageForAllLeaguesHandler bulkFirst = new(firstStore);
+            CompleteStageForAllLeaguesHandler bulkSecond = new(secondStore);
+            CompleteStageForAllLeaguesHandler bulkThird = new(thirdStore);
+            for (int stage = 0; stage < 3; stage++)
+            {
+                await bulkFirst.HandleAsync(first.Detail.SaveId);
+                await bulkSecond.HandleAsync(second.Detail.SaveId);
+                await bulkThird.HandleAsync(third.Detail.SaveId);
+            }
+
+            GetLongRunChecksumResponse a = await new GetLongRunChecksumHandler(firstStore).HandleAsync(first.Detail.SaveId);
+            GetLongRunChecksumResponse b = await new GetLongRunChecksumHandler(secondStore).HandleAsync(second.Detail.SaveId);
+            GetLongRunChecksumResponse c = await new GetLongRunChecksumHandler(thirdStore).HandleAsync(third.Detail.SaveId);
+
+            string.Equals(a.Checksum, b.Checksum, StringComparison.Ordinal).ShouldBeTrue();
+            a.SeasonChecksums.Select(e => e.Checksum).ToList().ShouldBe(b.SeasonChecksums.Select(e => e.Checksum).ToList());
+            string.Equals(c.Checksum, a.Checksum, StringComparison.Ordinal).ShouldBeFalse();
+            a.TotalRounds.ShouldBeGreaterThan(0);
+            a.TotalStageStandings.ShouldBeGreaterThan(0);
+        }
+        finally
+        {
+            Directory.Delete(firstRoot, recursive: true);
+            Directory.Delete(secondRoot, recursive: true);
+            Directory.Delete(thirdRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task FastSimulation_MatchesManual_Checksum()
+    {
+        var (firstStore, firstRoot) = CreateStore();
+        var (secondStore, secondRoot) = CreateStore();
+        try
+        {
+            var catalog = UniverseTestCatalog.Build();
+            SaveStore.CreationRecord manual = await firstStore.CreateAsync("Checksum Manual", 5150UL, 6160UL, catalog);
+            SaveStore.CreationRecord fast = await secondStore.CreateAsync("Checksum Fast", 5150UL, 6160UL, catalog);
+
+            CompleteStageForAllLeaguesHandler bulk = new(firstStore);
+            for (int stage = 1; stage <= 32; stage++)
+            {
+                await bulk.HandleAsync(manual.Detail.SaveId);
+            }
+
+            MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler fastHandler = new(secondStore);
+            await fastHandler.HandleAsync(fast.Detail.SaveId);
+
+            GetLongRunChecksumResponse m = await new GetLongRunChecksumHandler(firstStore).HandleAsync(manual.Detail.SaveId);
+            GetLongRunChecksumResponse f = await new GetLongRunChecksumHandler(secondStore).HandleAsync(fast.Detail.SaveId);
+            string.Equals(f.Checksum, m.Checksum, StringComparison.Ordinal).ShouldBeTrue();
+        }
+        finally
+        {
+            Directory.Delete(firstRoot, recursive: true);
+            Directory.Delete(secondRoot, recursive: true);
+        }
+    }
+
+    private static (SaveStore Store, string Root) CreateStore()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-ck-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        IOptions<SaveStorageOptions> options = Options.Create(new SaveStorageOptions { SavesRoot = root });
+        TestHostEnvironment environment = new(root);
+        SaveSqliteConnectionInterceptor interceptor = new();
+        SaveDbContextFactory factory = new(interceptor);
+        SaveStore store = new(options, environment, factory, TimeProvider.System, NullLogger<SaveStore>.Instance);
+        return (store, root);
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public TestHostEnvironment(string contentRoot)
+        {
+            ContentRootPath = contentRoot;
+        }
+
+        public string EnvironmentName { get; set; } = "Test";
+
+        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
+
+        public string ContentRootPath { get; set; }
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+}

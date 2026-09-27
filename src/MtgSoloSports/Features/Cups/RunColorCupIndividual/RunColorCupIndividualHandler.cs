@@ -270,7 +270,8 @@ public sealed class RunColorCupIndividualHandler
         }
 
         int cupSeason = checked(sourceSeasonNumber + 1);
-        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(context, roster, cancellationToken).ConfigureAwait(false);
+        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(
+            context, roster, AdvanceRoundHandler.SelectBonusSeasonIds(seasonNumbers, cupSeason), cancellationToken).ConfigureAwait(false);
         Dictionary<int, List<BonusContribution>> contributions = AdvanceRoundHandler.GroupBonusContributions(
             roster, standings, seasonNumbers, cupSeason);
 

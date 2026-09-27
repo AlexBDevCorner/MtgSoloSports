@@ -196,6 +196,8 @@ public sealed class SaveDbContext : DbContext
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
             entity.HasIndex(e => new { e.SeasonId, e.SportingColor });
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.DrawIndex });
+            // Long-run projection/record paths filter by athlete across seasons.
+            entity.HasIndex(e => e.SaveAthleteId);
             entity.Property(e => e.SeasonId).IsRequired();
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.SportingColor).IsRequired();
@@ -238,6 +240,9 @@ public sealed class SaveDbContext : DbContext
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber, e.SaveAthleteId }).IsUnique();
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.StageNumber });
             entity.HasIndex(e => e.StageId);
+            // Long-run bonus path filters by athlete plus a six-season window;
+            // without this index every round/stage scans the full standings table.
+            entity.HasIndex(e => new { e.SaveAthleteId, e.SeasonId });
             entity.Property(e => e.SeasonId).IsRequired();
             entity.Property(e => e.LeagueId).IsRequired();
             entity.Property(e => e.StageId).IsRequired();
@@ -263,6 +268,8 @@ public sealed class SaveDbContext : DbContext
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.SaveAthleteId }).IsUnique();
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId, e.SeasonRank }).IsUnique();
             entity.HasIndex(e => new { e.SeasonId, e.LeagueId });
+            // Long-run career/profile/record paths filter by athlete across seasons.
+            entity.HasIndex(e => e.SaveAthleteId);
             entity.Property(e => e.SeasonId).IsRequired();
             entity.Property(e => e.LeagueId).IsRequired();
             entity.Property(e => e.SaveAthleteId).IsRequired();
