@@ -4,8 +4,10 @@ import {
   fetchSaveDetail,
   fetchSeason1Leagues,
   fetchSeasonProgress,
+  fetchSeasonStatus,
   type Season1Leagues,
   type SeasonProgress,
+  type SeasonStatus,
 } from './dashboardApi';
 import type { SaveDetail } from '../saves/savesApi';
 
@@ -13,6 +15,7 @@ export interface DashboardData {
   detail: SaveDetail;
   progress: SeasonProgress;
   rosters: Season1Leagues | null;
+  status: SeasonStatus | null;
 }
 
 export interface DashboardState {
@@ -47,6 +50,15 @@ export function useDashboard(saveId: string | null): DashboardState {
     (async () => {
       const detail = await fetchSaveDetail(saveId, signal);
       const progress = await fetchSeasonProgress(saveId, detail.currentSeason, signal);
+      let status: SeasonStatus | null = null;
+      try {
+        status = await fetchSeasonStatus(saveId, signal);
+      } catch (failure) {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          throw failure;
+        }
+        status = null;
+      }
       let rosters: Season1Leagues | null = null;
       try {
         rosters = await fetchSeason1Leagues(saveId, signal);
@@ -61,7 +73,7 @@ export function useDashboard(saveId: string | null): DashboardState {
           throw failure;
         }
       }
-      return { detail, progress, rosters };
+      return { detail, progress, rosters, status };
     })()
       .then((loaded) => {
         setData(loaded);
@@ -96,15 +108,22 @@ export function useDashboard(saveId: string | null): DashboardState {
   };
 }
 
-export function describeNextAction(progress: SeasonProgress): {
+export function describeNextAction(progress: SeasonProgress, status?: SeasonStatus | null): {
   headline: string;
   detail: string;
 } {
+  if (status && status.legalNextActions.length > 0) {
+    const action = status.legalNextActions[0];
+    return {
+      headline: `${status.computedPhase} — ${action}`,
+      detail: `${status.nextActionDetail} Next backend step is POST /api/saves/{saveId}/advance-next-event.`,
+    };
+  }
   if (progress.isSeasonComplete) {
     return {
       headline: `Season ${progress.seasonNumber} complete`,
       detail:
-        'All 32 stages are complete for every active league. Final tables are persisted; postseason movement and cups arrive in later slices.',
+        'All 32 stages are complete for every active league. Final tables are persisted; postseason movement runs through the season lifecycle.',
     };
   }
   const pending = progress.leagues.filter((league) => !league.isLeagueComplete).length;

@@ -68,7 +68,7 @@ public sealed class RunQualifierHandler
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        var metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
         Pcg32State rngBefore = rngRow.ToState();
 
@@ -107,6 +107,8 @@ public sealed class RunQualifierHandler
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(context, source, next, simulation, rules, stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken).ConfigureAwait(false);
+        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, simulation, cancellationToken).ConfigureAwait(false);

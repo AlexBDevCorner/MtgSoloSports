@@ -57,8 +57,8 @@ export function DashboardPage({
     return <Loading label="Loading dashboard…" />;
   }
 
-  const { detail, progress, rosters } = data;
-  const next = describeNextAction(progress);
+  const { detail, progress, rosters, status } = data;
+  const next = describeNextAction(progress, status);
   const completedTotal = progress.leagues.reduce((sum, league) => sum + league.completedStages, 0);
 
   return (
@@ -150,6 +150,22 @@ export function DashboardPage({
         >
           <p className="next-headline">{next.headline}</p>
           <p className="muted">{next.detail}</p>
+          {status ? (
+            <dl className="stats">
+              <div>
+                <dt>Lifecycle phase</dt>
+                <dd>{status.computedPhase}</dd>
+              </div>
+              <div>
+                <dt>Legal next action</dt>
+                <dd>{status.legalNextActions.join(', ')}</dd>
+              </div>
+              <div>
+                <dt>Cup extension point</dt>
+                <dd>{status.expectedCup}</dd>
+              </div>
+            </dl>
+          ) : null}
           <p className="muted small">
             Simulation itself runs on the backend; this board only replays persisted results
             and never resimulates.

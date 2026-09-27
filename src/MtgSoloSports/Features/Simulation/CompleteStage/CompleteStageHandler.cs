@@ -89,9 +89,26 @@ public sealed class CompleteStageHandler
         Pcg32State rngAfter = await MaybeFinalizeSeasonAsync(
             context, completion, rngAfterStage, cancellationToken).ConfigureAwait(false);
 
+        SyncLifecyclePhase(completion);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return BuildResponse(completion, ranked, nextStageNumber, rngAfter);
+    }
+
+    /// <summary>
+    /// Keeps the persisted lifecycle phase in sync with the season-complete flag
+    /// in the same transaction as the stage result. Regular stages stay
+    /// SeasonInProgress; the transaction that finalizes Stage 32 for every
+    /// active league moves the save to SeasonComplete for the postseason chain.
+    /// </summary>
+    internal static void SyncLifecyclePhase(StageCompletionContext completion)
+    {
+        ArgumentNullException.ThrowIfNull(completion);
+        completion.Metadata.Phase = completion.Season.IsComplete
+            ? Saves.SavePhaseParser.ToText(Saves.SavePhase.SeasonComplete)
+            : Saves.SavePhaseParser.ToText(Saves.SavePhase.SeasonInProgress);
     }
 
     /// <summary>
