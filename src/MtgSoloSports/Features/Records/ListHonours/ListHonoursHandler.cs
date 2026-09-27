@@ -61,7 +61,9 @@ public sealed class ListHonoursHandler
             .ThenBy(e => e.LeagueName)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (athleteId is null && persisted.Count == championCount)
+        int leaguePersisted = persisted.Count(e =>
+            e.Kind == (int)HonourKind.FeederTitle || e.Kind == (int)HonourKind.SuperleagueTitle);
+        if (athleteId is null && leaguePersisted == championCount)
         {
             return MapPersisted(persisted, names);
         }
@@ -71,13 +73,15 @@ public sealed class ListHonoursHandler
             int expectedForAthlete = await context.SeasonStandings
                 .CountAsync(e => e.IsChampion && e.SaveAthleteId == athleteId.Value, cancellationToken)
                 .ConfigureAwait(false);
-            if (persisted.Count == expectedForAthlete)
+            int leagueForAthlete = persisted.Count(e =>
+                e.Kind == (int)HonourKind.FeederTitle || e.Kind == (int)HonourKind.SuperleagueTitle);
+            if (leagueForAthlete == expectedForAthlete)
             {
                 return MapPersisted(persisted, names);
             }
         }
 
-        return await LoadFallbackAsync(context, names, athleteId, cancellationToken).ConfigureAwait(false);
+        return await LoadFallbackAsync(context, names, athleteId, persisted, cancellationToken).ConfigureAwait(false);
     }
 
     internal static List<HonourEntry> MapPersisted(List<HonourEntity> persisted, Dictionary<int, string> names)
@@ -104,6 +108,36 @@ public sealed class ListHonoursHandler
         SaveDbContext context,
         Dictionary<int, string> names,
         int? athleteId,
+        List<HonourEntity> persistedCupHonours,
+        CancellationToken cancellationToken)
+    {
+        List<SeasonStandingEntity> champions = await LoadFallbackChampionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, int> seasonNumbers = await LoadFallbackSeasonNumbersAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, LeagueEntity> leaguesById = await LoadFallbackLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
+        List<HonourEntry> entries = MapFallbackChampions(champions, seasonNumbers, leaguesById, names);
+        AppendCupHonours(entries, persistedCupHonours, names);
+        return entries
+            .OrderBy(e => e.SeasonNumber)
+            .ThenBy(e => e.LeagueName, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    internal static async Task<List<SeasonStandingEntity>> LoadFallbackChampionsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<SeasonStandingEntity> query = context.SeasonStandings.AsNoTracking().Where(e => e.IsChampion);
+        if (athleteId is not null)
+        {
+            query = query.Where(e => e.SaveAthleteId == athleteId.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadFallbackSeasonNumbersAsync(
+        SaveDbContext context,
         CancellationToken cancellationToken)
     {
         List<SeasonEntity> seasons = await context.Seasons
@@ -111,47 +145,81 @@ public sealed class ListHonoursHandler
             .OrderBy(e => e.SeasonNumber)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
+        return seasons.ToDictionary(s => s.Id, s => s.SeasonNumber);
+    }
+
+    internal static async Task<Dictionary<int, LeagueEntity>> LoadFallbackLeaguesAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        IQueryable<SeasonStandingEntity> query = context.SeasonStandings.AsNoTracking().Where(e => e.IsChampion);
-        if (athleteId is not null)
-        {
-            query = query.Where(e => e.SaveAthleteId == athleteId.Value);
-        }
+    }
 
-        List<SeasonStandingEntity> champions = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
-        Dictionary<int, int> seasonNumbers = seasons.ToDictionary(s => s.Id, s => s.SeasonNumber);
+    internal static List<HonourEntry> MapFallbackChampions(
+        List<SeasonStandingEntity> champions,
+        Dictionary<int, int> seasonNumbers,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, string> names)
+    {
         List<HonourEntry> entries = new(champions.Count);
         foreach (SeasonStandingEntity champion in champions)
         {
-            if (!seasonNumbers.TryGetValue(champion.SeasonId, out int seasonNumber))
-            {
-                throw new InvalidOperationException($"Season standing {champion.Id} references unknown season {champion.SeasonId}.");
-            }
-
-            if (!leaguesById.TryGetValue(champion.LeagueId, out LeagueEntity? league))
-            {
-                throw new InvalidOperationException($"Season standing {champion.Id} references unknown league {champion.LeagueId}.");
-            }
-
-            HonourKind kind = HonourKindMapper.FromLeagueKind(league.Kind);
-            names.TryGetValue(champion.SaveAthleteId, out string? name);
-            entries.Add(new HonourEntry(
-                seasonNumber,
-                champion.SeasonId,
-                league.Id,
-                league.Name,
-                league.Kind,
-                kind.ToString(),
-                champion.SaveAthleteId,
-                name ?? $"Athlete {champion.SaveAthleteId}"));
+            entries.Add(MapSingleFallbackChampion(champion, seasonNumbers, leaguesById, names));
         }
 
-        return entries
-            .OrderBy(e => e.SeasonNumber)
-            .ThenBy(e => e.LeagueName, StringComparer.Ordinal)
-            .ToList();
+        return entries;
+    }
+
+    internal static HonourEntry MapSingleFallbackChampion(
+        SeasonStandingEntity champion,
+        Dictionary<int, int> seasonNumbers,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, string> names)
+    {
+        if (!seasonNumbers.TryGetValue(champion.SeasonId, out int seasonNumber))
+        {
+            throw new InvalidOperationException($"Season standing {champion.Id} references unknown season {champion.SeasonId}.");
+        }
+
+        if (!leaguesById.TryGetValue(champion.LeagueId, out LeagueEntity? league))
+        {
+            throw new InvalidOperationException($"Season standing {champion.Id} references unknown league {champion.LeagueId}.");
+        }
+
+        HonourKind kind = HonourKindMapper.FromLeagueKind(league.Kind);
+        names.TryGetValue(champion.SaveAthleteId, out string? name);
+        return new HonourEntry(
+            seasonNumber,
+            champion.SeasonId,
+            league.Id,
+            league.Name,
+            league.Kind,
+            kind.ToString(),
+            champion.SaveAthleteId,
+            name ?? $"Athlete {champion.SaveAthleteId}");
+    }
+
+    internal static void AppendCupHonours(
+        List<HonourEntry> entries,
+        List<HonourEntity> persistedCupHonours,
+        Dictionary<int, string> names)
+    {
+        foreach (HonourEntity cup in persistedCupHonours.Where(e =>
+            e.Kind != (int)HonourKind.FeederTitle && e.Kind != (int)HonourKind.SuperleagueTitle))
+        {
+            names.TryGetValue(cup.SaveAthleteId, out string? name);
+            entries.Add(new HonourEntry(
+                cup.SeasonNumber,
+                cup.SeasonId,
+                cup.LeagueId,
+                cup.LeagueName,
+                cup.LeagueKind,
+                ((HonourKind)cup.Kind).ToString(),
+                cup.SaveAthleteId,
+                name ?? $"Athlete {cup.SaveAthleteId}"));
+        }
     }
 }

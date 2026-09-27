@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type View = 'saves' | 'dashboard' | 'live' | 'history' | 'records' | 'athlete';
+export type View = 'saves' | 'dashboard' | 'live' | 'history' | 'records' | 'cups' | 'athlete';
 
 export function AppShell({
   view,
@@ -84,6 +84,18 @@ export function AppShell({
             }}
           >
             Records
+          </button>
+          <button
+            type="button"
+            className={view === 'cups' ? 'nav-item current' : 'nav-item'}
+            aria-current={view === 'cups' ? 'page' : undefined}
+            disabled={!dashboardEnabled}
+            title={dashboardEnabled ? 'Browse cups' : 'Select a save first'}
+            onClick={() => {
+              onNavigate('cups');
+            }}
+          >
+            Cups
           </button>
         </nav>
         <div className="save-strip" aria-live="polite">
