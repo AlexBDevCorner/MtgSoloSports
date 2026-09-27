@@ -34,12 +34,205 @@ public static class AthleteProjectionUpdater
         ArgumentNullException.ThrowIfNull(rules);
 
         List<int> athleteIds = await LoadLeagueAthleteIdsAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
+        await RebuildBatchAsync(context, athleteIds, rules, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal const int RebuildBatchSize = 64;
+
+    /// <summary>
+    /// Rebuilds one batch of athletes from bulk-loaded history. Reduces the
+    /// per-stage query storm (seasons/leagues/memberships/standings loaded once
+    /// per batch instead of once per athlete) while computing identical rows
+    /// with the same pure <c>BuildSeasonSummary</c>/<c>BuildCareer</c> functions.
+    /// </summary>
+    internal static async Task RebuildBatchAsync(
+        SaveDbContext context,
+        IReadOnlyList<int> athleteIds,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(athleteIds);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (athleteIds.Count == 0)
+        {
+            return;
+        }
+
+        List<SeasonEntity> seasons = await context.Seasons
+            .OrderBy(e => e.SeasonNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (seasons.Count == 0)
+        {
+            throw new InvalidOperationException("Save has no seasons for projection rebuild.");
+        }
+
+        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> seasonNumbers = seasons.ToDictionary(e => e.Id, e => e.SeasonNumber);
+
+        HashSet<int> idSet = athleteIds.ToHashSet();
+        List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
+            .Where(e => idSet.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<StageStandingEntity> stageRows = await context.StageStandings
+            .Where(e => idSet.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<SeasonStandingEntity> seasonRows = await context.SeasonStandings
+            .Where(e => idSet.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        Dictionary<(int SeasonId, int AthleteId), AthleteSeasonSummaryEntity> existingSummaries =
+            await LoadSummariesForBatchAsync(context, idSet, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, AthleteCareerEntity> existingCareers =
+            await LoadCareersForBatchAsync(context, idSet, cancellationToken).ConfigureAwait(false);
+
         foreach (int athleteId in athleteIds)
         {
-            await RebuildAthleteAsync(context, athleteId, rules, cancellationToken).ConfigureAwait(false);
+            AthleteHistory history = SliceHistory(
+                athleteId, seasons, seasonNumbers, leaguesById, memberships, stageRows, seasonRows);
+            ApplyHistoryToTracked(
+                context, athleteId, history, rules, existingSummaries, existingCareers);
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static AthleteHistory SliceHistory(
+        int saveAthleteId,
+        List<SeasonEntity> seasons,
+        Dictionary<int, int> seasonNumbers,
+        Dictionary<int, LeagueEntity> leaguesById,
+        List<SeasonMembershipEntity> memberships,
+        List<StageStandingEntity> stageRows,
+        List<SeasonStandingEntity> seasonRows)
+    {
+        List<SeasonMembershipEntity> mine = memberships.Where(e => e.SaveAthleteId == saveAthleteId).ToList();
+        List<StageStandingEntity> myStages = stageRows.Where(e => e.SaveAthleteId == saveAthleteId).ToList();
+        List<SeasonStandingEntity> mySeasons = seasonRows.Where(e => e.SaveAthleteId == saveAthleteId).ToList();
+        return new AthleteHistory(seasons, seasonNumbers, leaguesById, mine, myStages, mySeasons);
+    }
+
+    internal static void ApplyHistoryToTracked(
+        SaveDbContext context,
+        int saveAthleteId,
+        AthleteHistory history,
+        RulesV1 rules,
+        Dictionary<(int SeasonId, int AthleteId), AthleteSeasonSummaryEntity> existingSummaries,
+        Dictionary<int, AthleteCareerEntity> existingCareers)
+    {
+        Dictionary<int, SeasonMembershipEntity> membershipBySeason = history.Memberships.ToDictionary(e => e.SeasonId);
+        Dictionary<int, SeasonStandingEntity> seasonStandingBySeason = history.SeasonRows.ToDictionary(e => e.SeasonId);
+        foreach (SeasonEntity season in history.Seasons)
+        {
+            membershipBySeason.TryGetValue(season.Id, out SeasonMembershipEntity? membership);
+            seasonStandingBySeason.TryGetValue(season.Id, out SeasonStandingEntity? final);
+            List<StageStandingEntity> seasonStages = history.StageRows.Where(r => r.SeasonId == season.Id).ToList();
+            AthleteSeasonSummaryEntity summary = BuildSeasonSummary(
+                season, membership, final, seasonStages, history.LeaguesById);
+            UpsertTrackedSummary(context, summary, existingSummaries);
+        }
+
+        AthleteCareerEntity career = BuildCareer(saveAthleteId, history, rules);
+        UpsertTrackedCareer(context, career, existingCareers);
+    }
+
+    internal static void UpsertTrackedSummary(
+        SaveDbContext context,
+        AthleteSeasonSummaryEntity summary,
+        Dictionary<(int SeasonId, int AthleteId), AthleteSeasonSummaryEntity> existing)
+    {
+        if (existing.TryGetValue((summary.SeasonId, summary.SaveAthleteId), out AthleteSeasonSummaryEntity? row))
+        {
+            CopySummary(summary, row);
+            return;
+        }
+
+        context.AthleteSeasonSummaries.Add(summary);
+        existing[(summary.SeasonId, summary.SaveAthleteId)] = summary;
+    }
+
+    internal static void UpsertTrackedCareer(
+        SaveDbContext context,
+        AthleteCareerEntity career,
+        Dictionary<int, AthleteCareerEntity> existing)
+    {
+        if (existing.TryGetValue(career.SaveAthleteId, out AthleteCareerEntity? row))
+        {
+            CopyCareer(career, row);
+            return;
+        }
+
+        context.AthleteCareers.Add(career);
+        existing[career.SaveAthleteId] = career;
+    }
+
+    internal static void CopySummary(AthleteSeasonSummaryEntity source, AthleteSeasonSummaryEntity target)
+    {
+        target.SeasonNumber = source.SeasonNumber;
+        target.LeagueId = source.LeagueId;
+        target.LeagueName = source.LeagueName;
+        target.LeagueKind = source.LeagueKind;
+        target.WasActive = source.WasActive;
+        target.RoundWins = source.RoundWins;
+        target.StageWins = source.StageWins;
+        target.StageSeconds = source.StageSeconds;
+        target.StageThirds = source.StageThirds;
+        target.SeasonRank = source.SeasonRank;
+        target.IsChampion = source.IsChampion;
+        target.EarnedBonusThousandths = source.EarnedBonusThousandths;
+        target.TotalChampionshipPointsThousandths = source.TotalChampionshipPointsThousandths;
+        target.TotalStageScoreThousandths = source.TotalStageScoreThousandths;
+        target.TotalBaseScoreThousandths = source.TotalBaseScoreThousandths;
+    }
+
+    internal static void CopyCareer(AthleteCareerEntity source, AthleteCareerEntity target)
+    {
+        target.SeasonsActive = source.SeasonsActive;
+        target.CurrentLeagueId = source.CurrentLeagueId;
+        target.CurrentLeagueName = source.CurrentLeagueName;
+        target.CurrentLeagueKind = source.CurrentLeagueKind;
+        target.IsActive = source.IsActive;
+        target.RoundWins = source.RoundWins;
+        target.StageWins = source.StageWins;
+        target.StageSeconds = source.StageSeconds;
+        target.StageThirds = source.StageThirds;
+        target.BestSeasonFinish = source.BestSeasonFinish;
+        target.BestSeasonNumber = source.BestSeasonNumber;
+        target.LifetimeEarnedBonusThousandths = source.LifetimeEarnedBonusThousandths;
+        target.CurrentEffectiveBonusThousandths = source.CurrentEffectiveBonusThousandths;
+        target.LastSeasonNumber = source.LastSeasonNumber;
+        target.LastStageNumber = source.LastStageNumber;
+    }
+
+    internal static async Task<Dictionary<(int SeasonId, int AthleteId), AthleteSeasonSummaryEntity>> LoadSummariesForBatchAsync(
+        SaveDbContext context,
+        HashSet<int> athleteIds,
+        CancellationToken cancellationToken)
+    {
+        List<AthleteSeasonSummaryEntity> rows = await context.AthleteSeasonSummaries
+            .Where(e => athleteIds.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return rows.ToDictionary(e => (e.SeasonId, e.SaveAthleteId));
+    }
+
+    internal static async Task<Dictionary<int, AthleteCareerEntity>> LoadCareersForBatchAsync(
+        SaveDbContext context,
+        HashSet<int> athleteIds,
+        CancellationToken cancellationToken)
+    {
+        List<AthleteCareerEntity> rows = await context.AthleteCareers
+            .Where(e => athleteIds.Contains(e.SaveAthleteId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return rows.ToDictionary(e => e.SaveAthleteId);
     }
 
     /// <summary>
@@ -112,13 +305,13 @@ public static class AthleteProjectionUpdater
             .Select(e => e.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        foreach (int athleteId in athleteIds)
+        for (int offset = 0; offset < athleteIds.Count; offset += RebuildBatchSize)
         {
-            await RebuildAthleteAsync(context, athleteId, rules, cancellationToken).ConfigureAwait(false);
+            int count = Math.Min(RebuildBatchSize, athleteIds.Count - offset);
+            List<int> batch = athleteIds.GetRange(offset, count);
+            await RebuildBatchAsync(context, batch, rules, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
         }
-
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal sealed record AthleteHistory(

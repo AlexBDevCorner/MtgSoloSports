@@ -319,7 +319,8 @@ public sealed class RunQualifierHandler
             throw new InvalidOperationException($"Save has no season row for season {next.SeasonNumber}.");
         }
 
-        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(context, roster, cancellationToken).ConfigureAwait(false);
+        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(
+            context, roster, AdvanceRoundHandler.SelectBonusSeasonIds(seasonNumbers, nextSeasonNumber), cancellationToken).ConfigureAwait(false);
         Dictionary<int, List<BonusContribution>> contributions = AdvanceRoundHandler.GroupBonusContributions(
             roster, standings, seasonNumbers, nextSeasonNumber);
 

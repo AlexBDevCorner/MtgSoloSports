@@ -11,6 +11,9 @@ using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Diagnostics.LongRunChecksum;
+using MtgSoloSports.Features.Diagnostics.LongRunInvariants;
+using MtgSoloSports.Features.Diagnostics.LongRunStats;
 using MtgSoloSports.Features.History.GetRoundReplay;
 using MtgSoloSports.Features.History.GetSeasonTable;
 using MtgSoloSports.Features.History.GetStageStandings;
@@ -122,6 +125,9 @@ builder.Services.AddScoped<GetHistorySeasonTableHandler>();
 builder.Services.AddScoped<ListHonoursHandler>();
 builder.Services.AddScoped<GetRecordsHandler>();
 builder.Services.AddScoped<GetHallOfFameHandler>();
+builder.Services.AddScoped<GetLongRunChecksumHandler>();
+builder.Services.AddScoped<ValidateLongRunInvariantsHandler>();
+builder.Services.AddScoped<GetLongRunStatsHandler>();
 
 var app = builder.Build();
 
@@ -186,6 +192,9 @@ GetHistorySeasonTableEndpoint.Map(app);
 ListHonoursEndpoint.Map(app);
 GetRecordsEndpoint.Map(app);
 GetHallOfFameEndpoint.Map(app);
+GetLongRunChecksumEndpoint.Map(app);
+ValidateLongRunInvariantsEndpoint.Map(app);
+GetLongRunStatsEndpoint.Map(app);
 
 app.MapFallbackToFile("index.html");
 
