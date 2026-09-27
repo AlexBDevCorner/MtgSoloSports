@@ -22,6 +22,10 @@ public static class StoryEventType
 
     public const string NewRecord = "new_record";
 
+    public const string ColorCupIndividualTitle = "color_cup_individual_title";
+
+    public const string ColorCupMedal = "color_cup_medal";
+
     /// <summary>
     /// Known types at this stage. Future tasks append without changing these.
     /// </summary>
@@ -35,6 +39,8 @@ public static class StoryEventType
         Relegation,
         ReturnFromPool,
         NewRecord,
+        ColorCupIndividualTitle,
+        ColorCupMedal,
     ];
 
     public static bool IsKnown(string eventType) => KnownTypes.Contains(eventType, StringComparer.Ordinal);

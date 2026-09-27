@@ -78,10 +78,13 @@ public static class HonourUpdater
     }
 
     /// <summary>
-    /// Ensures honours exist for every finalized season. Read paths call this
-    /// before serving so pre-MSS-022 saves backfill without a dedicated
+    /// Ensures league honours exist for every finalized season. Read paths call
+    /// this before serving so pre-MSS-022 saves backfill without a dedicated
     /// migration of sporting data (schema migration stays separate from
-    /// sporting history).
+    /// sporting history). Cup honours (MSS-024+) are ignored here: they are
+    /// major honours but have no <c>SeasonStandings</c> champion row, so only
+    /// league kinds participate in the comparison and rebuilds never delete
+    /// Cup rows.
     /// </summary>
     public static async Task EnsureSyncedAsync(
         SaveDbContext context,
@@ -91,17 +94,19 @@ public static class HonourUpdater
         int championCount = await context.SeasonStandings
             .CountAsync(e => e.IsChampion, cancellationToken)
             .ConfigureAwait(false);
-        int honourCount = await context.Honours
-            .CountAsync(cancellationToken)
+        int leagueHonourCount = await context.Honours
+            .CountAsync(
+                e => e.Kind == (int)HonourKind.FeederTitle || e.Kind == (int)HonourKind.SuperleagueTitle,
+                cancellationToken)
             .ConfigureAwait(false);
-        if (honourCount == championCount)
+        if (leagueHonourCount == championCount)
         {
             return;
         }
 
-        if (honourCount > championCount)
+        if (leagueHonourCount > championCount)
         {
-            throw new InvalidOperationException($"Honours ({honourCount}) exceed champions ({championCount}); sporting state is corrupt.");
+            throw new InvalidOperationException($"League honours ({leagueHonourCount}) exceed champions ({championCount}); sporting state is corrupt.");
         }
 
         await RebuildAllAsync(context, cancellationToken).ConfigureAwait(false);

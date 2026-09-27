@@ -3,6 +3,7 @@ import { AthleteProfilePage } from './features/athletes/AthleteProfilePage';
 import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
+import { ColorCupPage } from './features/cups/ColorCupPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
 import { HistoryPage } from './features/history/HistoryPage';
@@ -121,6 +122,18 @@ export default function App() {
         />
       ) : view === 'records' ? (
         <RecordsPage
+          saveId={selectedSaveId}
+          hasSelection={selectedSaveId !== null}
+          onGoToSaves={() => {
+            setView('saves');
+          }}
+          onSelectAthlete={(athleteId) => {
+            setSelectedAthleteId(athleteId);
+            setView('athlete');
+          }}
+        />
+      ) : view === 'cups' ? (
+        <ColorCupPage
           saveId={selectedSaveId}
           hasSelection={selectedSaveId !== null}
           onGoToSaves={() => {

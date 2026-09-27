@@ -218,6 +218,110 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                     b.ToTable("ColorCupSelections", (string)null);
                 });
 
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ColorCupIndividualRoundEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PayloadChecksum")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RngAfterState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RoundNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RulesVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "RoundNumber")
+                        .IsUnique();
+
+                    b.ToTable("ColorCupIndividualRounds", (string)null);
+                });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ColorCupIndividualStandingEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BaseScoreThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CupRank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CupScoreThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Medal")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RoundPlaceCountsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RoundWins")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SaveAthleteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SelectionRank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SportingColor")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SaveAthleteId");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "CupRank")
+                        .IsUnique();
+
+                    b.HasIndex("SourceSeasonId", "SaveAthleteId")
+                        .IsUnique();
+
+                    b.ToTable("ColorCupIndividualStandings", (string)null);
+                });
+
             modelBuilder.Entity("MtgSoloSports.Persistence.Saves.HonourEntity", b =>
                 {
                     b.Property<int>("Id")
