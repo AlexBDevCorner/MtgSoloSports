@@ -9,9 +9,12 @@ namespace MtgSoloSports.Features.Athletes.GetProfile;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Reads one athlete's career
-/// profile from transactional projections plus the save-owned card snapshot.
-/// Never decompresses round payloads; the normal path touches only
-/// <c>SaveAthletes</c> + <c>AthleteCareers</c> + <c>AthleteSeasonSummaries</c>.
+/// profile from transactional projections plus the save-owned card snapshot,
+/// plus official honours, postseason movements and Cup selections for the
+/// spectator profile view. Never decompresses round payloads; the normal path
+/// touches only <c>SaveAthletes</c> + <c>AthleteCareers</c> +
+/// <c>AthleteSeasonSummaries</c> + <c>Honours</c> + <c>Movements</c> +
+/// Cup selection tables.
 /// When projections are missing (saves created before MSS-013), falls back to
 /// an in-memory rebuild from normalized standings/memberships for that single
 /// athlete — still without round payloads — so old saves remain readable while
@@ -48,7 +51,10 @@ public sealed class GetAthleteProfileHandler
             return await BuildFallbackAsync(context, saveId, athlete, cancellationToken).ConfigureAwait(false);
         }
 
-        return MapPersisted(saveId, athlete, career, summaries);
+        List<AthleteHonourDto> honours = await LoadHonoursAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections);
     }
 
     internal static async Task<SaveAthleteEntity> LoadAthleteAsync(
@@ -114,7 +120,10 @@ public sealed class GetAthleteProfileHandler
         Guid saveId,
         SaveAthleteEntity athlete,
         AthleteCareerEntity career,
-        List<AthleteSeasonSummaryEntity> summaries)
+        List<AthleteSeasonSummaryEntity> summaries,
+        IReadOnlyList<AthleteHonourDto>? honours = null,
+        IReadOnlyList<AthleteMovementDto>? movements = null,
+        IReadOnlyList<AthleteCupSelectionDto>? selections = null)
     {
         AthleteCardDto card = MapCard(athlete);
         AthleteCareerDto careerDto = MapCareer(career);
@@ -122,7 +131,15 @@ public sealed class GetAthleteProfileHandler
             .OrderBy(s => s.SeasonNumber)
             .Select(MapSeason)
             .ToList();
-        return new GetAthleteProfileResponse(saveId, athlete.Id, card, careerDto, seasons);
+        return new GetAthleteProfileResponse(
+            saveId,
+            athlete.Id,
+            card,
+            careerDto,
+            seasons,
+            honours ?? Array.Empty<AthleteHonourDto>(),
+            movements ?? Array.Empty<AthleteMovementDto>(),
+            selections ?? Array.Empty<AthleteCupSelectionDto>());
     }
 
     internal static async Task<GetAthleteProfileResponse> BuildFallbackAsync(
@@ -136,7 +153,10 @@ public sealed class GetAthleteProfileHandler
         RulesV1Snapshot snapshot = await LoadRulesSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         AthleteProjectionUpdater.AthleteHistory history =
             await AthleteProjectionUpdater.LoadHistoryAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
-        return MapFallback(saveId, athlete, history, snapshot.Rules);
+        List<AthleteHonourDto> honours = await LoadHonoursAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
+        List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
+        List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
+        return MapFallback(saveId, athlete, history, snapshot.Rules, honours, movements, selections);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);
@@ -151,7 +171,10 @@ public sealed class GetAthleteProfileHandler
         Guid saveId,
         SaveAthleteEntity athlete,
         AthleteProjectionUpdater.AthleteHistory history,
-        SimulationKernel.Rules.RulesV1 rules)
+        SimulationKernel.Rules.RulesV1 rules,
+        IReadOnlyList<AthleteHonourDto>? honours = null,
+        IReadOnlyList<AthleteMovementDto>? movements = null,
+        IReadOnlyList<AthleteCupSelectionDto>? selections = null)
     {
         Dictionary<int, SeasonMembershipEntity> membershipBySeason = history.Memberships.ToDictionary(e => e.SeasonId);
         Dictionary<int, SeasonStandingEntity> finalBySeason = history.SeasonRows.ToDictionary(e => e.SeasonId);
@@ -166,7 +189,125 @@ public sealed class GetAthleteProfileHandler
         }
 
         AthleteCareerEntity career = AthleteProjectionUpdater.BuildCareer(athlete.Id, history, rules);
-        return MapPersisted(saveId, athlete, career, summaries);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections);
+    }
+
+    internal static async Task<List<AthleteHonourDto>> LoadHonoursAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<HonourEntity> rows = await context.Honours
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .OrderBy(e => e.SeasonNumber)
+            .ThenBy(e => e.LeagueName)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = new(rows.Count);
+        foreach (HonourEntity row in rows)
+        {
+            string kind = Enum.IsDefined(typeof(Records.HonourKind), row.Kind)
+                ? ((Records.HonourKind)row.Kind).ToString()
+                : $"Honour{row.Kind}";
+            honours.Add(new AthleteHonourDto(row.SeasonNumber, row.LeagueName, kind));
+        }
+
+        return honours;
+    }
+
+    internal static async Task<List<AthleteMovementDto>> LoadMovementsAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<MovementEntity> rows = await context.Movements
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .OrderBy(e => e.ToSeasonId)
+            .ThenBy(e => e.Kind)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        Dictionary<int, int> seasonNumbers = await context.Seasons
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> leagueNames = await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteMovementDto> movements = new(rows.Count);
+        foreach (MovementEntity row in rows)
+        {
+            seasonNumbers.TryGetValue(row.FromSeasonId, out int fromSeason);
+            seasonNumbers.TryGetValue(row.ToSeasonId, out int toSeason);
+            string fromLeague = row.FromLeagueId == 0
+                ? "Common pool"
+                : leagueNames.TryGetValue(row.FromLeagueId, out string? fromName) ? fromName : $"League {row.FromLeagueId}";
+            string toLeague = row.ToLeagueId == 0
+                ? "Common pool"
+                : leagueNames.TryGetValue(row.ToLeagueId, out string? toName) ? toName : $"League {row.ToLeagueId}";
+            string kind = Enum.IsDefined(typeof(MovementKind), row.Kind)
+                ? ((MovementKind)row.Kind).ToString()
+                : $"Movement{row.Kind}";
+            movements.Add(new AthleteMovementDto(
+                fromSeason,
+                toSeason,
+                fromLeague,
+                toLeague,
+                kind,
+                row.FromSeasonRank));
+        }
+
+        return movements
+            .OrderBy(e => e.ToSeasonNumber)
+            .ThenBy(e => e.Kind, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    internal static async Task<List<AthleteCupSelectionDto>> LoadCupSelectionsAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<ColorCupSelectionEntity> colorRows = await context.ColorCupSelections
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .OrderBy(e => e.SourceSeasonNumber)
+            .ThenBy(e => e.SelectionRank)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupSelectionEntity> typeRows = await context.TypeCupSelections
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .OrderBy(e => e.SourceSeasonNumber)
+            .ThenBy(e => e.SelectionRank)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteCupSelectionDto> selections = new(colorRows.Count + typeRows.Count);
+        foreach (ColorCupSelectionEntity row in colorRows)
+        {
+            string team = Enum.IsDefined(typeof(SportingColor), row.SportingColor)
+                ? ((SportingColor)row.SportingColor).ToString()
+                : $"Color{row.SportingColor}";
+            selections.Add(new AthleteCupSelectionDto("ColorCup", row.SourceSeasonNumber, team, row.SelectionRank));
+        }
+
+        foreach (TypeCupSelectionEntity row in typeRows)
+        {
+            selections.Add(new AthleteCupSelectionDto("TypeCup", row.SourceSeasonNumber, row.CreatureType, row.SelectionRank));
+        }
+
+        return selections
+            .OrderBy(e => e.SourceSeasonNumber)
+            .ThenBy(e => e.CupKind, StringComparer.Ordinal)
+            .ThenBy(e => e.SelectionRank)
+            .ToList();
     }
 
     internal static AthleteCardDto MapCard(SaveAthleteEntity athlete)

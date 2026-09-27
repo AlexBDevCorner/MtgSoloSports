@@ -20,6 +20,7 @@ public static class GlobalStageGate
     public sealed record LeagueStageStatus(
         int LeagueId,
         string LeagueName,
+        string LeagueKind,
         int? CurrentStage,
         int CompletedStages,
         bool IsLeagueComplete);
@@ -112,7 +113,7 @@ public static class GlobalStageGate
         ValidateStageRows(league, leagueStages, rules);
         if (leagueStages.Count == 0)
         {
-            return new LeagueStageStatus(league.Id, league.Name, 1, 0, false);
+            return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), 1, 0, false);
         }
 
         List<StageEntity> ordered = CheckContiguous(league, leagueStages);
@@ -170,7 +171,7 @@ public static class GlobalStageGate
         {
             if (max.StageNumber == rules.StagesPerSeason)
             {
-                return new LeagueStageStatus(league.Id, league.Name, null, rules.StagesPerSeason, true);
+                return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), null, rules.StagesPerSeason, true);
             }
 
             throw new InvalidOperationException(
@@ -184,7 +185,13 @@ public static class GlobalStageGate
                 $"League '{league.Name}' has non-contiguous completion; all stages before {max.StageNumber} must be complete.");
         }
 
-        return new LeagueStageStatus(league.Id, league.Name, max.StageNumber, completed, false);
+        return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), max.StageNumber, completed, false);
+    }
+
+    internal static string DescribeKind(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return ((LeagueKind)league.Kind).ToString();
     }
 
     /// <summary>

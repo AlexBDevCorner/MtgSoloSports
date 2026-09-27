@@ -88,7 +88,8 @@ public sealed class GetCurrentStandingsHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
-        List<CurrentStandingEntry> standings = MapPersisted(rows, names);
+        Dictionary<int, AthleteCardInfo> cards = await LoadCardsAsync(context, cancellationToken).ConfigureAwait(false);
+        List<CurrentStandingEntry> standings = MapPersisted(rows, names, cards);
         string checksum = ComputePersistedChecksum(rows, names);
         return new GetCurrentStandingsResponse(
             saveId,
@@ -130,7 +131,8 @@ public sealed class GetCurrentStandingsHandler
         Pcg32V1 fork = await ForkRngAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(groups, rules);
         IReadOnlyList<SeasonRankedAthlete> ranked = SeasonCalculator.Rank(totals, fork, rules);
-        return MapProvisional(saveId, season, league, global, completedStages, ranked);
+        Dictionary<int, AthleteCardInfo> cards = await LoadCardsAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapProvisional(saveId, season, league, global, completedStages, ranked, cards);
     }
 
     internal static GetCurrentStandingsResponse EmptyResponse(
@@ -215,11 +217,13 @@ public sealed class GetCurrentStandingsHandler
         LeagueEntity league,
         GlobalStageGate.GlobalStageView global,
         int completedStages,
-        IReadOnlyList<SeasonRankedAthlete> ranked)
+        IReadOnlyList<SeasonRankedAthlete> ranked,
+        Dictionary<int, AthleteCardInfo>? cards = null)
     {
         List<CurrentStandingEntry> standings = new(ranked.Count);
         foreach (SeasonRankedAthlete entry in ranked)
         {
+            (int color, string colorName, string? imageUrl) = LookupCard(cards, entry.AthleteId);
             standings.Add(new CurrentStandingEntry(
                 entry.AthleteId,
                 entry.Name,
@@ -229,7 +233,10 @@ public sealed class GetCurrentStandingsHandler
                 entry.TotalBaseScoreThousandths,
                 entry.StageWins,
                 entry.RoundWins,
-                false));
+                false,
+                color,
+                colorName,
+                imageUrl));
         }
 
         return new GetCurrentStandingsResponse(
@@ -247,7 +254,8 @@ public sealed class GetCurrentStandingsHandler
 
     internal static List<CurrentStandingEntry> MapPersisted(
         List<SeasonStandingEntity> rows,
-        Dictionary<int, string> names)
+        Dictionary<int, string> names,
+        Dictionary<int, AthleteCardInfo>? cards = null)
     {
         List<CurrentStandingEntry> standings = new(rows.Count);
         foreach (SeasonStandingEntity row in rows)
@@ -257,6 +265,7 @@ public sealed class GetCurrentStandingsHandler
                 name = $"Athlete {row.SaveAthleteId}";
             }
 
+            (int color, string colorName, string? imageUrl) = LookupCard(cards, row.SaveAthleteId);
             standings.Add(new CurrentStandingEntry(
                 row.SaveAthleteId,
                 name,
@@ -266,7 +275,10 @@ public sealed class GetCurrentStandingsHandler
                 row.TotalBaseScoreThousandths,
                 row.StageWins,
                 row.RoundWins,
-                row.IsChampion));
+                row.IsChampion,
+                color,
+                colorName,
+                imageUrl));
         }
 
         return standings;
@@ -303,6 +315,34 @@ public sealed class GetCurrentStandingsHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    internal sealed record AthleteCardInfo(string Name, int SportingColor, string? ImageUrl);
+
+    internal static async Task<Dictionary<int, AthleteCardInfo>> LoadCardsAsync(SaveDbContext context, CancellationToken cancellationToken)
+    {
+        return await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(
+                e => e.Id,
+                e => new AthleteCardInfo(e.Name, e.SportingColor, e.ImageUrl),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static (int SportingColor, string SportingColorName, string? ImageUrl) LookupCard(
+        Dictionary<int, AthleteCardInfo>? cards,
+        int athleteId)
+    {
+        if (cards is not null && cards.TryGetValue(athleteId, out AthleteCardInfo? info))
+        {
+            string colorName = Enum.IsDefined(typeof(SimulationKernel.Catalog.SportingColor), info.SportingColor)
+                ? ((SimulationKernel.Catalog.SportingColor)info.SportingColor).ToString()
+                : "Unknown";
+            return (info.SportingColor, colorName, info.ImageUrl);
+        }
+
+        return (0, "Unknown", null);
     }
 
     internal static async Task<Pcg32V1> ForkRngAsync(SaveDbContext context, CancellationToken cancellationToken)

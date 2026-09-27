@@ -1,9 +1,19 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import type { View } from '../shell/AppShell';
 import { describeNextAction, type DashboardData } from './useDashboard';
 
 function shortChecksum(value: string): string {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
+function formatPoints(thousandths: number): string {
+  return (thousandths / 1000).toFixed(3);
+}
+
+function formatBonus(thousandths: number): string {
+  const sign = thousandths >= 0 ? '+' : '';
+  return `${sign}${(thousandths / 1000).toFixed(3)}`;
 }
 
 export function DashboardPage({
@@ -14,6 +24,8 @@ export function DashboardPage({
   hasSelection,
   onRefresh,
   onGoToSaves,
+  onNavigate,
+  onSelectAthlete,
 }: {
   data: DashboardData | null;
   loading: boolean;
@@ -22,6 +34,8 @@ export function DashboardPage({
   hasSelection: boolean;
   onRefresh: () => void;
   onGoToSaves: () => void;
+  onNavigate?: (view: View) => void;
+  onSelectAthlete?: (athleteId: number) => void;
 }) {
   if (!hasSelection) {
     return (
@@ -57,9 +71,35 @@ export function DashboardPage({
     return <Loading label="Loading dashboard…" />;
   }
 
-  const { detail, progress, rosters, status, stories } = data;
+  const {
+    detail,
+    progress,
+    rosters,
+    status,
+    stories,
+    leaders,
+    superleagueComposition,
+    recentHonours,
+    records,
+    hallOfFame,
+  } = data;
   const next = describeNextAction(progress, status);
   const completedTotal = progress.leagues.reduce((sum, league) => sum + league.completedStages, 0);
+  const superleagueBoard = leaders.find((board) => board.leagueKind === 'Superleague') ?? null;
+  const feederBoards = leaders
+    .filter((board) => board.leagueKind !== 'Superleague')
+    .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  const cupHonours = recentHonours.filter((honour) => honour.honourKind.includes('Cup'));
+  const leagueHonours = recentHonours.filter((honour) => !honour.honourKind.includes('Cup'));
+  const recordPreview = (records?.records ?? []).slice(0, 6);
+
+  function openAthlete(athleteId: number): void {
+    onSelectAthlete?.(athleteId);
+  }
+
+  function go(view: View): void {
+    onNavigate?.(view);
+  }
 
   return (
     <div className="dashboard">
@@ -202,6 +242,173 @@ export function DashboardPage({
         </Card>
       </div>
 
+      {onNavigate ? (
+        <Card eyebrow="Navigate" title="Competitions · live event · history · records">
+          <div className="live-buttons" role="group" aria-label="Competition navigation">
+            <button type="button" className="primary-button" onClick={() => go('live')}>
+              Current live event
+            </button>
+            <button type="button" className="ghost-button" onClick={() => go('history')}>
+              History
+            </button>
+            <button type="button" className="ghost-button" onClick={() => go('records')}>
+              Records / Hall of Fame
+            </button>
+            <button type="button" className="ghost-button" onClick={() => go('cups')}>
+              Cups
+            </button>
+          </div>
+          <p className="muted small">
+            Live event runs the current stage rounds. History replays any persisted season,
+            competition, stage and round. Records tracks career leaders and Hall of Fame.
+            Athlete profiles open from any card name.
+          </p>
+        </Card>
+      ) : null}
+
+      <div className="page-grid">
+        <Card
+          eyebrow="Leaders"
+          title={superleagueBoard ? `Superleague — top ${Math.min(5, superleagueBoard.top.length)}` : 'Superleague leaders'}
+          action={
+            onNavigate ? (
+              <button type="button" className="ghost-button" onClick={() => go('live')}>
+                Open live
+              </button>
+            ) : undefined
+          }
+        >
+          {!superleagueBoard ? (
+            <p className="muted">
+              Season 1 has feeder leagues only. The inaugural Superleague forms after Season 1;
+              from Season 2 its leaders appear here.
+            </p>
+          ) : superleagueBoard.top.length === 0 ? (
+            <p className="muted">No completed stages yet; leaders appear after stage results persist.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Color</th>
+                    <th scope="col">Champ pts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {superleagueBoard.top.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.seasonRank}</td>
+                      <td>
+                        <div className="card-cell">
+                          {row.imageUrl ? (
+                            <img className="card-thumb" src={row.imageUrl} alt="" loading="lazy" />
+                          ) : (
+                            <span className="card-thumb card-thumb-fallback" aria-hidden="true">
+                              {row.name.slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                          <span className="card-identity">
+                            <button
+                              type="button"
+                              className="card-name card-link"
+                              title={`Open career profile for ${row.name}`}
+                              onClick={() => openAthlete(row.athleteId)}
+                            >
+                              {row.name}
+                            </button>
+                          </span>
+                        </div>
+                      </td>
+                      <td>{row.sportingColorName}</td>
+                      <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {superleagueComposition.length > 0 ? (
+            <>
+              <h3 className="reveal-subhead">Color composition — no quotas applied</h3>
+              <ul className="color-counts">
+                {superleagueComposition.map((entry) => (
+                  <li key={entry.color}>
+                    <span>{entry.color}</span>
+                    <strong>{entry.count}/32</strong>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">
+                Superleague has no color quotas. Composition is informational only; zones are
+                1–16 safe, 17–24 qualifier, 25–32 relegated. Full zone badges live on the Live
+                tab.
+              </p>
+            </>
+          ) : null}
+        </Card>
+
+        <Card
+          eyebrow="Leaders"
+          title="Feeder leagues — current leaders"
+          action={
+            onNavigate ? (
+              <button type="button" className="ghost-button" onClick={() => go('live')}>
+                Open live
+              </button>
+            ) : undefined
+          }
+        >
+          {feederBoards.length === 0 ? (
+            <p className="muted">No feeder leagues in this season.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">League</th>
+                    <th scope="col">Leader</th>
+                    <th scope="col">Champ pts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feederBoards.map((board) => {
+                    const leader = board.top[0];
+                    return (
+                      <tr key={board.leagueId}>
+                        <td>{board.leagueName}</td>
+                        <td>
+                          {leader ? (
+                            <button
+                              type="button"
+                              className="card-name card-link"
+                              title={`Open career profile for ${leader.name}`}
+                              onClick={() => openAthlete(leader.athleteId)}
+                            >
+                              {leader.name}
+                            </button>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td className="numeric">
+                          {leader ? formatPoints(leader.totalChampionshipPointsThousandths) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted small">
+            Feeder champion is auto-promoted; places 2–4 enter the qualifier. Zones are visual
+            only and never change selection math.
+          </p>
+        </Card>
+      </div>
+
       <Card eyebrow="Leagues" title={`Stage gate — Season ${progress.seasonNumber}`}>
         {error ? (
           <Notice tone="warn" title="Showing last loaded state">
@@ -213,6 +420,7 @@ export function DashboardPage({
             <thead>
               <tr>
                 <th scope="col">League</th>
+                <th scope="col">Kind</th>
                 <th scope="col">Current stage</th>
                 <th scope="col">Completed</th>
                 <th scope="col">Status</th>
@@ -224,6 +432,7 @@ export function DashboardPage({
                 .map((league) => (
                   <tr key={league.leagueId}>
                     <td>{league.leagueName}</td>
+                    <td>{league.leagueKind}</td>
                     <td className="numeric">{league.currentStage ?? '—'}</td>
                     <td className="numeric">{league.completedStages} / 32</td>
                     <td>
@@ -240,7 +449,211 @@ export function DashboardPage({
             </tbody>
           </table>
         </div>
+        <p className="muted small">
+          Superleague zones are 1–16 safe, 17–24 qualifier and 25–32 relegated. Feeder zones
+          are champion auto-promoted plus 2–4 qualifier. Zones never apply color quotas.
+        </p>
       </Card>
+
+      <div className="page-grid">
+        <Card
+          eyebrow="Winners"
+          title={`Recent champions — ${leagueHonours.length} shown`}
+          action={
+            onNavigate ? (
+              <button type="button" className="ghost-button" onClick={() => go('records')}>
+                All honours
+              </button>
+            ) : undefined
+          }
+        >
+          {leagueHonours.length === 0 ? (
+            <p className="muted">No league champions yet. Final tables persist at season end.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Season</th>
+                    <th scope="col">League</th>
+                    <th scope="col">Champion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leagueHonours.map((honour, index) => (
+                    <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.athleteId}-${index}`}>
+                      <td className="numeric">{honour.seasonNumber}</td>
+                      <td>{honour.leagueName}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="card-name card-link"
+                          title={`Open career profile for ${honour.athleteName}`}
+                          onClick={() => openAthlete(honour.athleteId)}
+                        >
+                          {honour.athleteName}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          eyebrow="Cup context"
+          title={status ? `${status.expectedCup} — ${status.cupComplete ? 'complete' : 'pending'}` : 'Post-season Cup'}
+        >
+          {status ? (
+            <dl className="stats">
+              <div>
+                <dt>Expected Cup</dt>
+                <dd>{status.expectedCup}</dd>
+              </div>
+              <div>
+                <dt>Source season</dt>
+                <dd>{status.sourceSeasonNumber ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Selection</dt>
+                <dd>{status.cupSelectionResolved ? 'Resolved' : 'Pending'}</dd>
+              </div>
+              <div>
+                <dt>Team event</dt>
+                <dd>{status.cupTeamResolved ? 'Resolved' : 'Pending'}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="muted">Cup lifecycle status is unavailable for this save.</p>
+          )}
+          {cupHonours.length === 0 ? (
+            <p className="muted">No Cup titles yet. Odd seasons run Color Cup, even seasons run Type Cup.</p>
+          ) : (
+            <ul className="story-list">
+              {cupHonours.slice(0, 5).map((honour, index) => (
+                <li key={`${honour.seasonNumber}-${honour.honourKind}-${honour.athleteId}-${index}`}>
+                  <span className="badge badge-ready">{honour.honourKind}</span>{' '}
+                  <button
+                    type="button"
+                    className="card-name card-link"
+                    title={`Open career profile for ${honour.athleteName}`}
+                    onClick={() => openAthlete(honour.athleteId)}
+                  >
+                    {honour.athleteName}
+                  </button>{' '}
+                  <span className="muted small">
+                    · Season {honour.seasonNumber} · {honour.leagueName}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {onNavigate ? (
+            <p>
+              <button type="button" className="ghost-button" onClick={() => go('cups')}>
+                Inspect Cup field
+              </button>
+            </p>
+          ) : null}
+        </Card>
+      </div>
+
+      <div className="page-grid">
+        <Card
+          eyebrow="Records"
+          title={`Meaningful records — ${recordPreview.length} shown`}
+          action={
+            onNavigate ? (
+              <button type="button" className="ghost-button" onClick={() => go('records')}>
+                All records
+              </button>
+            ) : undefined
+          }
+        >
+          {recordPreview.length === 0 ? (
+            <p className="muted">No records yet. Complete seasons to set career benchmarks.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Record</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Holders</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recordPreview.map((record) => (
+                    <tr key={record.recordKey}>
+                      <td>{record.label}</td>
+                      <td className="numeric">{record.valueDisplay}</td>
+                      <td>
+                        {record.isVacant ? (
+                          <span className="muted">Vacant</span>
+                        ) : (
+                          record.holders.slice(0, 3).map((holder, index) => (
+                            <span key={holder.athleteId}>
+                              {index > 0 ? ', ' : ''}
+                              <button
+                                type="button"
+                                className="card-name card-link"
+                                title={`Open career profile for ${holder.athleteName}`}
+                                onClick={() => openAthlete(holder.athleteId)}
+                              >
+                                {holder.athleteName}
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card eyebrow="Hall of Fame" title={`Career leaders — ${hallOfFame.length} shown`}>
+          {hallOfFame.length === 0 ? (
+            <p className="muted">No leaders yet. Titles, stage wins and tenure build the table.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Titles</th>
+                    <th scope="col">Bonus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hallOfFame.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.rank}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="card-name card-link"
+                          title={`Open career profile for ${row.athleteName}`}
+                          onClick={() => openAthlete(row.athleteId)}
+                        >
+                          {row.athleteName}
+                        </button>
+                      </td>
+                      <td className="numeric">{row.totalTitles}</td>
+                      <td className="numeric">{formatBonus(row.currentEffectiveBonusThousandths)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
 
       <Card eyebrow="Stories" title="Recent sporting stories">
         {stories.length === 0 ? (
@@ -253,6 +666,14 @@ export function DashboardPage({
             {stories.map((story) => (
               <li key={story.id}>
                 <span className="badge badge-ready">{story.eventType}</span>{' '}
+                <button
+                  type="button"
+                  className="card-name card-link"
+                  title={`Open career profile for ${story.athleteName}`}
+                  onClick={() => openAthlete(story.athleteId)}
+                >
+                  {story.athleteName}
+                </button>{' '}
                 <span>{story.text}</span>
               </li>
             ))}

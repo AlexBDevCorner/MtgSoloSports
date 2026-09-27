@@ -63,7 +63,7 @@ export function AthleteProfilePage({
     return <Loading label="Loading athlete profile…" />;
   }
 
-  const { card, career, seasons } = profile;
+  const { card, career, seasons, honours, movements, cupSelections } = profile;
   const statusLabel = career.isActive
     ? `Active · ${career.currentLeagueName ?? 'League'}`
     : 'Common pool';
@@ -79,11 +79,11 @@ export function AthleteProfilePage({
           </button>
         }
       >
-        <div className="card-cell">
+        <div className="athlete-hero">
           {card.imageUrl ? (
-            <img className="card-thumb" src={card.imageUrl} alt="" loading="lazy" />
+            <img className="card-art-large" src={card.imageUrl} alt="" loading="lazy" />
           ) : (
-            <span className="card-thumb card-thumb-fallback" aria-hidden="true">
+            <span className="card-art-large card-art-fallback" aria-hidden="true">
               {card.name.slice(0, 2).toUpperCase()}
             </span>
           )}
@@ -95,8 +95,15 @@ export function AthleteProfilePage({
               {card.setCode ? ` · ${card.setCode}` : ''}
             </span>
             <span className="card-sub">{statusLabel}</span>
+            <span className="card-sub">
+              Type Cup nationality: {card.typeCupNationality ?? 'Uncapped — eligible for any printed type'}
+            </span>
           </span>
         </div>
+        <p className="muted small">
+          Card artwork is referenced by URL from the save snapshot and never downloaded by the
+          simulation. When artwork is unavailable the initials fallback keeps the layout stable.
+        </p>
         {state.error ? (
           <Notice tone="warn" title="Showing last loaded state">
             <p>{state.error}</p>
@@ -178,7 +185,154 @@ export function AthleteProfilePage({
               <dt>Type Cup nationality</dt>
               <dd>{card.typeCupNationality ?? 'Uncapped'}</dd>
             </div>
+            <div>
+              <dt>Creature types</dt>
+              <dd>{card.creatureTypes.join(', ') || '—'}</dd>
+            </div>
           </dl>
+          <p className="muted small">
+            Once an athlete appears in a Type Cup for a type, that nationality is permanent
+            and the athlete can never represent another type.
+          </p>
+        </Card>
+      </div>
+
+      <div className="page-grid">
+        <Card eyebrow="Honours" title={`Career honours — ${honours.length}`}>
+          {honours.length === 0 ? (
+            <p className="muted">
+              No official honours yet. Feeder and Superleague championships plus Color Cup and
+              Type Cup team titles persist here.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Season</th>
+                    <th scope="col">League</th>
+                    <th scope="col">Honour</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {honours.map((honour, index) => (
+                    <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.honourKind}-${index}`}>
+                      <td className="numeric">{honour.seasonNumber}</td>
+                      <td>{honour.leagueName}</td>
+                      <td>{honour.honourKind}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card eyebrow="Movements" title={`Promotion · relegation · pool — ${movements.length}`}>
+          {movements.length === 0 ? (
+            <p className="muted">
+              No postseason movements yet. Superleague promotion, relegation, qualifier entries
+              and pool returns appear here.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Season</th>
+                    <th scope="col">Movement</th>
+                    <th scope="col">From → To</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements.map((movement, index) => (
+                    <tr key={`${movement.toSeasonNumber}-${movement.kind}-${index}`}>
+                      <td className="numeric">
+                        {movement.fromSeasonNumber} → {movement.toSeasonNumber}
+                      </td>
+                      <td>
+                        <span className="badge badge-wait">{movement.kind}</span>
+                        {movement.fromSeasonRank > 0 ? (
+                          <span className="card-sub"> · P{movement.fromSeasonRank}</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        {movement.fromLeagueName} → {movement.toLeagueName}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="page-grid">
+        <Card eyebrow="Selections" title={`Cup selections — ${cupSelections.length}`}>
+          {cupSelections.length === 0 ? (
+            <p className="muted">
+              No Cup selections yet. Color Cup picks four athletes per sporting color; Type Cup
+              allocation respects permanent nationality.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Season</th>
+                    <th scope="col">Cup</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Rank</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cupSelections.map((selection, index) => (
+                    <tr key={`${selection.cupKind}-${selection.sourceSeasonNumber}-${selection.team}-${index}`}>
+                      <td className="numeric">{selection.sourceSeasonNumber}</td>
+                      <td>{selection.cupKind}</td>
+                      <td>{selection.team}</td>
+                      <td className="numeric">#{selection.selectionRank}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted small">
+            Selection order is #1–#4 by rating within each color or creature-type team.
+          </p>
+        </Card>
+
+        <Card eyebrow="Records" title={`Record context — ${state.recordHoldings.length} held`}>
+          {state.recordHoldings.length === 0 ? (
+            <p className="muted">
+              Holds no outright career records right now. Ties share records; only an outright
+              higher value replaces holders.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Record</th>
+                    <th scope="col">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.recordHoldings.map((record) => (
+                    <tr key={record.recordKey}>
+                      <td>{record.label}</td>
+                      <td className="numeric">{record.valueDisplay}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted small">
+            Computed from normalized projections without decompressing round payloads.
+          </p>
         </Card>
       </div>
 

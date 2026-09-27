@@ -6,6 +6,7 @@ namespace MtgSoloSports.Features.Leagues.SeasonProgress;
 public sealed record SeasonProgressLeague(
     int LeagueId,
     string LeagueName,
+    string LeagueKind,
     int? CurrentStage,
     int CompletedStages,
     bool IsLeagueComplete);

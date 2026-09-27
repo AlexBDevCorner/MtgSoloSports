@@ -54,12 +54,12 @@ export function AppShell({
             className={view === 'live' ? 'nav-item current' : 'nav-item'}
             aria-current={view === 'live' ? 'page' : undefined}
             disabled={!dashboardEnabled}
-            title={dashboardEnabled ? 'Open live rounds' : 'Select a save first'}
+            title={dashboardEnabled ? 'Open the current live event' : 'Select a save first'}
             onClick={() => {
               onNavigate('live');
             }}
           >
-            Live
+            Live event
           </button>
           <button
             type="button"
@@ -78,12 +78,12 @@ export function AppShell({
             className={view === 'records' ? 'nav-item current' : 'nav-item'}
             aria-current={view === 'records' ? 'page' : undefined}
             disabled={!dashboardEnabled}
-            title={dashboardEnabled ? 'Browse records' : 'Select a save first'}
+            title={dashboardEnabled ? 'Browse records and Hall of Fame' : 'Select a save first'}
             onClick={() => {
               onNavigate('records');
             }}
           >
-            Records
+            Records / HoF
           </button>
           <button
             type="button"
