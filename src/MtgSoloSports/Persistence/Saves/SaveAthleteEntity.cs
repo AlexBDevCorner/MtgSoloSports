@@ -42,6 +42,16 @@ public sealed class SaveAthleteEntity
     public int Status { get; set; }
 
     /// <summary>
+    /// Permanent Type Cup nationality (Game Rules §15). Null means uncapped:
+    /// the athlete may initially represent any printed creature type. Once an
+    /// athlete actually participates in a Type Cup for a type, that type becomes
+    /// permanent and the athlete may never represent another type. Allocation
+    /// previews and team selections never set this; only actual participation
+    /// (a later slice) sets it atomically with the event.
+    /// </summary>
+    public string? TypeCupNationality { get; set; }
+
+    /// <summary>
     /// Copies catalog metadata into a save-owned row. Every selected athlete
     /// starts in its color's common pool; Season 1 league draws happen later.
     /// </summary>

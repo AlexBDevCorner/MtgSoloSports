@@ -63,6 +63,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<ColorCupTeamStandingEntity> ColorCupTeamStandings => Set<ColorCupTeamStandingEntity>();
 
+    public DbSet<TypeCupSelectionEntity> TypeCupSelections => Set<TypeCupSelectionEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -78,6 +80,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureColorCupSelections(modelBuilder);
         ConfigureColorCupIndividual(modelBuilder);
         ConfigureColorCupTeam(modelBuilder);
+        ConfigureTypeCupSelections(modelBuilder);
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)
@@ -134,6 +137,7 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.ImageUrl).HasMaxLength(1024);
             entity.Property(e => e.SetCode).HasMaxLength(16);
             entity.Property(e => e.Status).IsRequired();
+            entity.Property(e => e.TypeCupNationality).HasMaxLength(64);
         });
     }
 
@@ -579,7 +583,6 @@ public sealed class SaveDbContext : DbContext
         {
             entity.ToTable("ColorCupTeamStandings");
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd();
             entity.HasIndex(e => new { e.SourceSeasonId, e.SportingColor }).IsUnique();
             entity.HasIndex(e => new { e.SourceSeasonId, e.TeamRank }).IsUnique();
             entity.HasIndex(e => e.SourceSeasonId);
@@ -594,6 +597,38 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.GroupPlaceCountsJson).IsRequired();
             entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
             entity.Property(e => e.Medal).IsRequired();
+        });
+    }
+
+    private static void ConfigureTypeCupSelections(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+        modelBuilder.Entity<TypeCupSelectionEntity>(entity =>
+        {
+            entity.ToTable("TypeCupSelections");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.CreatureType, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.CreatureType, e.SelectionRank }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.HasIndex(e => e.SaveAthleteId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.CreatureType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SelectionRank).IsRequired();
+            entity.Property(e => e.TypeRank).IsRequired();
+            entity.Property(e => e.FinalRatingThousandths).IsRequired();
+            entity.Property(e => e.BonusNormThousandths).IsRequired();
+            entity.Property(e => e.PerformanceNormThousandths).IsRequired();
+            entity.Property(e => e.FormNormThousandths).IsRequired();
+            entity.Property(e => e.PrestigeNormThousandths).IsRequired();
+            entity.Property(e => e.BonusRawThousandths).IsRequired();
+            entity.Property(e => e.PerformanceRawThousandths).IsRequired();
+            entity.Property(e => e.FormRaw).IsRequired();
+            entity.Property(e => e.PrestigeRaw).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
         });
     }
 
