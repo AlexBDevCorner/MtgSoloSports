@@ -336,7 +336,7 @@ public static class ColorCupIndividualInvariants
             throw new InvalidOperationException($"Color Cup round {round.RoundNumber} has an empty payload.");
         }
 
-        ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromJson(round.PayloadJson);
+        ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromStored(round.PayloadJson);
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"Color Cup round {round.RoundNumber} checksum does not match its payload.");

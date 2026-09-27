@@ -149,8 +149,8 @@ public sealed class GetColorCupIndividualResultHandler
         ArgumentNullException.ThrowIfNull(standings);
         ArgumentNullException.ThrowIfNull(rounds);
         ArgumentNullException.ThrowIfNull(names);
-        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[0].PayloadJson);
-        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[^1].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[0].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[^1].PayloadJson);
         string checksum = ComputeChecksum(standings);
         List<GetColorCupIndividualMember> members = new(standings.Count);
         foreach (ColorCupIndividualStandingEntity standing in standings)

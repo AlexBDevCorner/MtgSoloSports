@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.ListHonours;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
@@ -203,7 +204,8 @@ public sealed class ColorCupIndividualTests
         rounds.Select(r => r.RoundNumber).ShouldBe(Enumerable.Range(1, 16).ToList());
         foreach (ColorCupIndividualRoundEntity round in rounds)
         {
-            ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromJson(round.PayloadJson);
+            round.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
+            ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromStored(round.PayloadJson);
             document.Placements.Count.ShouldBe(32);
             document.Checksum.ShouldBe(round.PayloadChecksum);
             document.SourceSeasonNumber.ShouldBe(response.SourceSeasonNumber);
@@ -303,14 +305,15 @@ public sealed class ColorCupIndividualTests
         List<ColorCupIndividualRoundEntity> rounds = await context.ColorCupIndividualRounds.AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.RoundNumber).ToListAsync().ConfigureAwait(false);
-        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[0].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[0].PayloadJson);
         first.Placements.Count.ShouldBe(32);
         first.RngBeforeState.ShouldBe(response.RngBeforeState);
-        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[^1].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[^1].PayloadJson);
         last.RngAfterState.ShouldBe(response.RngAfterState);
         foreach (ColorCupIndividualRoundEntity round in rounds)
         {
-            ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromJson(round.PayloadJson);
+            round.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
+            ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromStored(round.PayloadJson);
             document.Checksum.ShouldBe(round.PayloadChecksum);
         }
     }
@@ -321,7 +324,8 @@ public sealed class ColorCupIndividualTests
         SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.SourceSeasonNumber).ConfigureAwait(false);
         ColorCupIndividualRoundEntity roundOne = await context.ColorCupIndividualRounds.AsNoTracking()
             .SingleAsync(e => e.SourceSeasonId == source.Id && e.RoundNumber == 1).ConfigureAwait(false);
-        ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromJson(roundOne.PayloadJson);
+        roundOne.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
+        ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromStored(roundOne.PayloadJson);
 
         Dictionary<int, int> seasonNumbers = await context.Seasons.AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber).ConfigureAwait(false);

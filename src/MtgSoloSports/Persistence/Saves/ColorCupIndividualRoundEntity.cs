@@ -7,8 +7,9 @@ namespace MtgSoloSports.Persistence.Saves;
 /// scoring/ranking, but no new career bonus is generated and no league
 /// <c>Round</c>, <c>Stage</c> or <c>StageStanding</c> rows are created, so
 /// normal league season championship totals are untouched. Detailed replay
-/// lives in the compact immutable JSON payload, never in one row per athlete
-/// placement. RNG before/after states are stored alongside the result so the
+/// lives in the compact immutable compressed payload (JSON + Brotli
+/// <c>br1:</c>, matching normal league round history), never in one row per
+/// athlete placement. RNG before/after states are stored alongside the result so the
 /// RNG commit and the sporting result share one transaction.
 /// </summary>
 public sealed class ColorCupIndividualRoundEntity

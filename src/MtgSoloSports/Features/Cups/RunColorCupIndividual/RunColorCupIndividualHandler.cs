@@ -427,7 +427,7 @@ public sealed class RunColorCupIndividualHandler
                 RngBeforeStream = unchecked((long)payload.RngBeforeStream),
                 RngAfterState = unchecked((long)payload.RngAfterState),
                 RngAfterStream = unchecked((long)payload.RngAfterStream),
-                PayloadJson = payload.ToJson(),
+                PayloadJson = payload.ToStored(),
                 PayloadChecksum = payload.Checksum,
             });
         }
@@ -698,8 +698,8 @@ public sealed class RunColorCupIndividualHandler
                 ((ColorCupMedal)standing.Medal).ToString()));
         }
 
-        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[0].PayloadJson);
-        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromJson(rounds[^1].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[0].PayloadJson);
+        ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[^1].PayloadJson);
         ColorCupIndividualStandingEntity champion = standings.Single(s => s.CupRank == 1);
         names.TryGetValue(champion.SaveAthleteId, out string? championName);
         return new RunColorCupIndividualResponse(
