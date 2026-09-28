@@ -5,7 +5,7 @@ import {
   describeTile,
   tileMovementGlyph,
   tileMovementKind,
-} from './revealBoard.ts';
+} from './revealBoardHelpers.ts';
 import type { ProgressiveStandingRow } from './revealOrder.ts';
 
 function makeRow(overrides: Partial<ProgressiveStandingRow> & { athleteId: number }): ProgressiveStandingRow {

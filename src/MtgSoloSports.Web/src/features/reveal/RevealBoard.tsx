@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cardCaption, formatMovement, formatPoints } from './format';
-import { describeTile, tileMovementGlyph } from './revealBoard';
+import { describeTile, tileMovementGlyph } from './revealBoardHelpers';
 import type { ProgressiveStandingRow } from './revealOrder';
 import './RevealBoard.css';
 
