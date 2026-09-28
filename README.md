@@ -71,6 +71,45 @@ npm run dev --prefix src/MtgSoloSports.Web
 Sporting simulation is deterministic (versioned RNG, fixed-point integers) and the UI
 only replays persisted results; refreshing or changing reveal speed never resimulates.
 
+### Troubleshooting: blank page with a `RevealBoard` missing-export error
+
+If the browser shows a completely blank page and the Vite console reports:
+
+```text
+Uncaught SyntaxError: The requested module '/src/features/reveal/revealBoard.ts'
+does not provide an export named 'RevealBoard' (at RoundReveal.tsx:3:10)
+```
+
+the app failed to resolve the reveal-board component module. A separate
+`/favicon.ico` 404 in the same console is unrelated and can be ignored.
+
+Stale local files versus a committed regression: on a healthy checkout line 3 of
+`src/MtgSoloSports.Web/src/features/reveal/RoundReveal.tsx` reads
+`import { RevealBoard } from './RevealBoard';` (capital-R component module).
+`RevealBoard.tsx` owns the React component; lowercase `revealBoard.ts` owns only
+pure helpers (`boardColumnCount`, `tileMovementKind`, `tileMovementGlyph`,
+`describeTile`) and never exports a component. If your line 3 points at lowercase
+`./revealBoard`, your working tree predates the fix, has mixed files, or is
+serving a stale Vite transform — check `git status --short --branch`,
+`git log --oneline -3`, and `git diff` before assuming `main` is broken.
+A genuine committed regression is caught by CI: `npm run typecheck` and
+`npm run build` both fail with
+`error TS2305: Module '"./revealBoard"' has no exported member 'RevealBoard'`.
+
+Safe recovery (never deletes uncommitted work):
+
+1. `git status --short --branch` and `git log --oneline -3` to see where you are.
+2. `git fetch origin`, then `git status` to see whether you are behind `origin/main`.
+3. Update without discarding edits: `git pull --ff-only` (or `git fetch origin`
+   followed by `git merge --ff-only origin/main`). If it refuses because of local
+   changes, commit or stash first — never `git reset --hard` or `git checkout -- .`.
+4. `npm ci --prefix src/MtgSoloSports.Web` so dependencies match the lockfile.
+5. Stop the running Vite server (Ctrl+C in its terminal), then
+   `npm run dev --prefix src/MtgSoloSports.Web` and hard-refresh the browser.
+6. Only if the error persists after the steps above, stop Vite and drop its
+   transform cache with `rm -rf src/MtgSoloSports.Web/node_modules/.vite`,
+   then start Vite again.
+
 ### Troubleshooting: NuGet restore with extra package sources (NU1507)
 
 All .NET dependencies come from `nuget.org`. The repository-root `NuGet.Config`
