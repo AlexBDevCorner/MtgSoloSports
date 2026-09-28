@@ -2,6 +2,9 @@ import { useRef, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { CatalogCounts } from '../catalog/CatalogCounts';
+import type { CatalogStats } from '../catalog/catalogApi';
+import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
 import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
 import type { SavesState } from './useSaves';
 
@@ -28,11 +31,15 @@ export function SavesPage({
   selectedSaveId,
   onSelect,
   catalogSufficient,
+  catalogStats,
+  onCatalogImported,
 }: {
   saves: SavesState;
   selectedSaveId: string | null;
   onSelect: (saveId: string) => void;
   catalogSufficient: boolean;
+  catalogStats: CatalogStats | null;
+  onCatalogImported: () => void;
 }) {
   const [name, setName] = useState('');
   const [seed, setSeed] = useState('');
@@ -166,9 +173,20 @@ export function SavesPage({
 
       <Card eyebrow="New save" title="Create a universe">
         {!catalogSufficient ? (
-          <Notice tone="warn" title="Catalog quota not met">
-            <p>Creation is disabled until every sporting color has 256 catalog athletes.</p>
-          </Notice>
+          <>
+            <Notice tone="warn" title="Catalog quota not met">
+              <p>
+                Creation is disabled until every sporting color has 256 catalog athletes. Import
+                cards from Scryfall below — no file download or API call needed.
+              </p>
+              {catalogStats ? <CatalogCounts stats={catalogStats} /> : null}
+            </Notice>
+            <ScryfallImportPanel
+              stats={catalogStats}
+              onImported={onCatalogImported}
+              idPrefix="saves-create"
+            />
+          </>
         ) : null}
         <form className="form" onSubmit={(event) => void handleCreate(event)}>
           <label className="field">
@@ -227,6 +245,25 @@ export function SavesPage({
             {creating ? 'Creating…' : 'Create save'}
           </button>
         </form>
+      </Card>
+
+      <Card eyebrow="Card catalog" title="Refresh from Scryfall">
+        <p className="muted small">
+          The shared catalog feeds new universes only. Refreshing replaces the shared catalog and
+          never modifies existing saves.
+        </p>
+        <ScryfallImportPanel
+          stats={catalogStats}
+          onImported={onCatalogImported}
+          idPrefix="saves-catalog"
+        />
+        <details className="advanced">
+          <summary>Advanced/offline import</summary>
+          <p className="muted small">
+            Automatic import needs an internet connection. For offline use you can still POST a
+            Scryfall bulk JSON array to <code>/api/catalog/import</code>.
+          </p>
+        </details>
       </Card>
 
       <Card eyebrow="Portability" title="Import a save">

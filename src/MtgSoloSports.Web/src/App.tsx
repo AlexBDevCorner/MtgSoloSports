@@ -83,12 +83,14 @@ export default function App() {
       seasonLabel={seasonLabel}
       stageLabel={stageLabel}
     >
-      <CatalogBanner stats={catalog.stats} loading={catalog.loading} />
+      <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
       {view === 'saves' ? (
         <SavesPage
           saves={saves}
           selectedSaveId={selectedSaveId}
           catalogSufficient={catalog.stats?.isSufficientForSave ?? false}
+          catalogStats={catalog.stats}
+          onCatalogImported={catalog.refresh}
           onSelect={(saveId) => {
             setSelectedSaveId(saveId);
             setView('dashboard');

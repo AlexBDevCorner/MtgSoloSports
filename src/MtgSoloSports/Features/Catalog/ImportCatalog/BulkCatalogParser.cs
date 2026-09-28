@@ -78,6 +78,68 @@ public static class BulkCatalogParser
     }
 
     /// <summary>
+    /// Parses newline-delimited JSON (JSON Lines) into raw card records without
+    /// network access. Each non-empty line must be one Scryfall-like card object.
+    /// This is the current Scryfall bulk-data file format (decompressed
+    /// <c>.jsonl.gz</c>). Lines are parsed one at a time so the raw file is
+    /// never buffered into a single string.
+    /// </summary>
+    public static async Task<IReadOnlyList<BulkCardRecord>> ParseJsonLinesAsync(Stream jsonLinesStream, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jsonLinesStream);
+        List<BulkCardRecord> records = [];
+        using StreamReader reader = new(jsonLinesStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 8192, leaveOpen: true);
+        int lineNumber = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line is null)
+            {
+                break;
+            }
+
+            lineNumber++;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            BulkCardRecord? record;
+            try
+            {
+                record = JsonSerializer.Deserialize<BulkCardRecord>(line, JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"Bulk catalog JSONL is malformed on line {lineNumber}: {ex.Message}", ex);
+            }
+
+            if (record is null)
+            {
+                throw new InvalidOperationException($"Bulk catalog JSONL deserialized to null on line {lineNumber}.");
+            }
+
+            records.Add(record);
+        }
+
+        return records;
+    }
+
+    /// <summary>
+    /// Parses newline-delimited JSON (JSON Lines) text into raw card records.
+    /// Fixture helper for offline tests; production streams via
+    /// <see cref="ParseJsonLinesAsync(Stream, CancellationToken)"/>.
+    /// </summary>
+    public static IReadOnlyList<BulkCardRecord> ParseJsonLines(string jsonLines)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jsonLines);
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(jsonLines);
+        using MemoryStream stream = new(bytes, writable: false);
+        return ParseJsonLinesAsync(stream, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
     /// Resolves the front face of a bulk entry: <c>card_faces[0]</c> when present,
     /// otherwise the top-level fields. Missing collections become empty.
     /// </summary>
