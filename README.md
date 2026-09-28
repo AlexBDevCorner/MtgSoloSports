@@ -46,8 +46,17 @@ npm run dev --prefix src/MtgSoloSports.Web
 
 3. Open the Vite URL in a desktop browser and use the Saves tab:
 
-- Import the creature catalog once via `POST /api/catalog/import` with Scryfall bulk
-  JSON (the UI banner shows quota progress; a save needs 256 athletes per sporting color).
+- Click **Import cards from Scryfall** on the Saves screen (also shown in the catalog
+  banner when the catalog is empty or incomplete) and wait for verified quota:
+  the backend discovers the current `default_cards` bulk file from
+  `https://api.scryfall.com/bulk-data`, downloads the advertised `.jsonl.gz`,
+  keeps eligible creature cards, excludes tokens, groups printings by card name,
+  and only replaces a healthy catalog after quotas verify. The UI refreshes
+  `/api/catalog/stats` automatically, shows the unique-athlete count with the
+  per-color `count/256` breakdown, and reports **Ready to create a universe**
+  once all eight colors reach 256. An internet connection is required; existing
+  saves keep their own snapshots and are never modified.
+  Card data: Scryfall bulk data — https://scryfall.com/docs/api/bulk-data.
 - Create a universe on the Saves tab. Leave the advanced seed blank for a random world.
 - Open the Dashboard for season/stage, leaders, recent champions, Cup context and records.
 - Use Live event for the current stage rounds with instant or animated reveal, then
@@ -55,6 +64,9 @@ npm run dev --prefix src/MtgSoloSports.Web
   Records / HoF plus athlete profiles for careers, honours, movements and selections.
 - Portability lives on the Saves tab: export downloads a `.mtgsave.zip` bundle and
   import restores it without touching other saves.
+- Catalog fallback (advanced/offline): `POST /api/catalog/import` still accepts a
+  caller-supplied Scryfall bulk JSON array for offline use. Prefer the one-click
+  Scryfall button for normal onboarding.
 
 Sporting simulation is deterministic (versioned RNG, fixed-point integers) and the UI
 only replays persisted results; refreshing or changing reveal speed never resimulates.

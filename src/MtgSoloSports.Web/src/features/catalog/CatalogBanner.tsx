@@ -1,23 +1,16 @@
 import { Notice } from '../../shared/ui/Notice';
 import type { CatalogStats } from './catalogApi';
-
-const COLOR_ORDER = [
-  'White',
-  'Blue',
-  'Black',
-  'Red',
-  'Green',
-  'Multicolor',
-  'Hybrid',
-  'Colorless',
-] as const;
+import { CatalogCounts } from './CatalogCounts';
+import { ScryfallImportPanel } from './ScryfallImportPanel';
 
 export function CatalogBanner({
   stats,
   loading,
+  onImported,
 }: {
   stats: CatalogStats | null;
   loading: boolean;
+  onImported: () => void;
 }) {
   if (loading) {
     return (
@@ -32,9 +25,10 @@ export function CatalogBanner({
     return (
       <Notice tone="empty" title="No card catalog yet">
         <p>
-          Import the creature catalog through <code>POST /api/catalog/import</code> before
-          creating a save. A save needs 256 athletes per sporting color.
+          A save needs 256 athletes per sporting color. Import cards directly from Scryfall with
+          one action — no file download or API call needed.
         </p>
+        <ScryfallImportPanel stats={stats} onImported={onImported} idPrefix="catalog-banner" />
       </Notice>
     );
   }
@@ -43,10 +37,11 @@ export function CatalogBanner({
     return (
       <Notice tone="warn" title={`Catalog incomplete — ${stats.totalAthletes} athletes`}>
         <p>
-          Every sporting color needs 256 athletes before a save can be created. Current
-          coverage is listed below.
+          Every sporting color needs 256 athletes before a save can be created. Current coverage
+          is listed below. Top up the shared catalog from Scryfall with one action.
         </p>
         <CatalogCounts stats={stats} />
+        <ScryfallImportPanel stats={stats} onImported={onImported} idPrefix="catalog-banner" />
       </Notice>
     );
   }
@@ -58,27 +53,5 @@ export function CatalogBanner({
         Catalog ready — <strong>{stats.totalAthletes}</strong> athletes, 8 colors at quota.
       </span>
     </div>
-  );
-}
-
-export function CatalogCounts({ stats }: { stats: CatalogStats }) {
-  return (
-    <ul className="color-counts">
-      {COLOR_ORDER.map((color) => {
-        const key = color.toLowerCase();
-        const count =
-          stats.countsBySportingColor[color] ??
-          stats.countsBySportingColor[key] ??
-          stats.countsBySportingColor[color.toUpperCase()] ??
-          0;
-        const ok = count >= 256;
-        return (
-          <li key={color} className={ok ? 'ok' : 'short'}>
-            <span>{color}</span>
-            <strong>{count}/256</strong>
-          </li>
-        );
-      })}
-    </ul>
   );
 }

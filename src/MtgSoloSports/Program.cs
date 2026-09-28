@@ -1,6 +1,7 @@
 using MtgSoloSports.Features.Athletes.GetProfile;
 using MtgSoloSports.Features.Catalog.GetCatalogStats;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Features.Catalog.ImportFromScryfall;
 using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.GetColorCupSelection;
 using MtgSoloSports.Features.Cups.GetColorCupTeamResult;
@@ -70,6 +71,14 @@ builder.Services.AddSingleton<SaveDbContextFactory>();
 builder.Services.AddSingleton<SaveStore>();
 builder.Services.AddSingleton<CatalogDbContextFactory>();
 builder.Services.AddSingleton<CatalogStore>();
+builder.Services.Configure<ScryfallBulkOptions>(builder.Configuration.GetSection(ScryfallBulkOptions.SectionName));
+builder.Services.AddSingleton<ScryfallImportLock>();
+builder.Services.AddHttpClient<IScryfallBulkGateway, ScryfallBulkGateway>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("MtgSoloSports/1.0 (+https://github.com/AlexBDevCorner/MtgSoloSports)");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+});
 builder.Services.AddScoped<CreateSaveHandler>();
 builder.Services.AddScoped<ListSavesHandler>();
 builder.Services.AddScoped<OpenSaveHandler>();
@@ -81,6 +90,7 @@ builder.Services.AddScoped<ListCheckpointsHandler>();
 builder.Services.AddScoped<RestoreCheckpointHandler>();
 builder.Services.AddScoped<ImportCatalogHandler>();
 builder.Services.AddScoped<GetCatalogStatsHandler>();
+builder.Services.AddScoped<ImportFromScryfallHandler>();
 builder.Services.AddScoped<GetSeason1LeaguesHandler>();
 builder.Services.AddScoped<AdvanceRoundHandler>();
 builder.Services.AddScoped<CompleteStageHandler>();
@@ -148,6 +158,7 @@ ListCheckpointsEndpoint.Map(app);
 RestoreCheckpointEndpoint.Map(app);
 ImportCatalogEndpoint.Map(app);
 GetCatalogStatsEndpoint.Map(app);
+ImportFromScryfallEndpoint.Map(app);
 GetSeason1LeaguesEndpoint.Map(app);
 AdvanceRoundEndpoint.Map(app);
 CompleteStageEndpoint.Map(app);
