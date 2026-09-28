@@ -33,9 +33,10 @@ body {
 }
 
 .app {
-  max-width: 1160px;
+  max-width: 1760px;
+  width: 100%;
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 24px clamp(16px, 3vw, 48px) 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -129,6 +130,22 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Naturally narrow content stays readable on very wide viewports. */
+.form {
+  max-width: 640px;
+}
+
+.notice-body,
+.muted {
+  overflow-wrap: anywhere;
+}
+
+img {
+  max-width: 100%;
 }
 
 .page-grid {
