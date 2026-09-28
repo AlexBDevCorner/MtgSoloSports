@@ -14,6 +14,12 @@ export interface RoundRevealProps {
   roundLabel: string;
   /** Optional meta line such as rules version + checksum note. */
   meta?: string;
+  /**
+   * False selects the Live manual default: a new animated round starts
+   * paused at 0 and mode/restart transitions stay paused until Play.
+   * Defaults to true to preserve History autoplay-on-start semantics.
+   */
+  autoPlayOnStart?: boolean;
   onSelectAthlete?: (athleteId: number) => void;
 }
 
@@ -46,9 +52,11 @@ export function RoundReveal({
   revealKey,
   roundLabel,
   meta,
+  autoPlayOnStart = true,
   onSelectAthlete,
 }: RoundRevealProps) {
-  const reveal = useRoundReveal(placements, revealKey);
+  const reveal = useRoundReveal(placements, revealKey, false, { autoPlayOnStart });
+  const manualByDefault = autoPlayOnStart === false;
   const latestRevealed = reveal.revealedFeed.length > 0
     ? reveal.revealedFeed[reveal.revealedFeed.length - 1]!
     : null;
@@ -105,6 +113,12 @@ export function RoundReveal({
         <p className="muted small" role="note">
           Reduced-motion preference detected: animation is off and the full instant board is
           shown. This accessible alternative never resimulates and never consumes RNG.
+        </p>
+      ) : manualByDefault ? (
+        <p className="muted small">
+          Cards start face-down: step through with +1 (or −1 to go back) or press Play
+          for automatic lowest-to-winner reveal. Animated replay uses the same
+          persisted rows and never resimulates.
         </p>
       ) : (
         <p className="muted small">

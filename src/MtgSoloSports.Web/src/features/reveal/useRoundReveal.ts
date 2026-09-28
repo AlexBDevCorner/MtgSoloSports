@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  canOptInPlay,
+  resolveModeTransition,
+  resolveNewRoundPresentation,
+  resolveReplayPresentation,
+} from './revealPlaybackPolicy';
 import {
   buildRevealOrder,
   clampRevealed,
@@ -93,11 +99,26 @@ function resolveReducedMotion(initial: boolean): boolean {
  * Refreshing, changing speed, pausing or replaying only re-derives the
  * presentation from the same props. Mode/speed preferences persist to
  * localStorage as presentation-only settings.
+ *
+ * `autoPlayOnStart: false` selects the Live manual default: a new animated
+ * round starts paused at 0 and mode/restart transitions stay paused. Only an
+ * explicit Play opts into the timer. The default (`true`) preserves History
+ * autoplay-on-start semantics.
  */
+export interface UseRoundRevealOptions {
+  /**
+   * False starts a new animated round paused at 0 and keeps mode/restart
+   * transitions paused (Live manual default). True preserves autoplay on
+   * start (History replay default). Explicit Play always opts into autoplay.
+   */
+  autoPlayOnStart?: boolean;
+}
+
 export function useRoundReveal(
   placements: readonly RevealPlacement[],
   revealKey: string,
   initialReducedMotion = false,
+  options?: UseRoundRevealOptions,
 ): RoundRevealState {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() =>
     resolveReducedMotion(initialReducedMotion),
@@ -108,6 +129,12 @@ export function useRoundReveal(
   const [speed, setSpeedState] = useState<RevealSpeed>(() => readInitialSpeed());
   const [revealedCount, setRevealedCount] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const autoPlayOnStart = options?.autoPlayOnStart ?? true;
+  const autoPlayRef = useRef(autoPlayOnStart);
+  autoPlayRef.current = autoPlayOnStart;
+  // Guards timer callbacks from a previous round (revealKey) so they can
+  // never reveal cards in the new round after navigation.
+  const roundGenerationRef = useRef(0);
 
   const revealOrder = useMemo(() => buildRevealOrder(placements), [placements]);
   const byAthlete = useMemo(() => indexPlacementsByAthlete(placements), [placements]);
@@ -140,16 +167,22 @@ export function useRoundReveal(
   }, []);
 
   // A new round payload restarts the presentation from the beginning. Instant
-  // mode shows everything; animated mode starts playing from the first card
-  // unless reduced motion forces the instant alternative.
+  // mode (or reduced motion) shows everything; animated mode autoplays only
+  // when autoPlayOnStart allows it (History). Live starts paused at 0 so the
+  // user steps with +1 or presses Play explicitly. A stored animated
+  // preference never implies autoplay permission for Live.
   useEffect(() => {
-    if (mode === 'instant' || prefersReducedMotion) {
-      setRevealedCount(total);
-      setIsPlaying(false);
-    } else {
-      setRevealedCount(0);
-      setIsPlaying(total > 0);
-    }
+    roundGenerationRef.current += 1;
+    // Stop any inherited timer before resetting the new round.
+    setIsPlaying(false);
+    const next = resolveNewRoundPresentation({
+      mode,
+      prefersReducedMotion,
+      total,
+      autoPlayOnStart: autoPlayRef.current,
+    });
+    setRevealedCount(next.revealedCount);
+    setIsPlaying(next.isPlaying);
     // Restart only when the round identity or total changes by key intent;
     // mode/reduced-motion are applied deliberately, not on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,7 +199,8 @@ export function useRoundReveal(
   }, [mode, prefersReducedMotion, total, revealedCount]);
 
   // The timer only advances local presentation state. It never fetches,
-  // resimulates, or writes sporting state.
+  // resimulates, or writes sporting state. It is bound to the current round
+  // generation so a late callback from a previous round is ignored.
   useEffect(() => {
     if (mode !== 'animated' || !isPlaying || prefersReducedMotion) {
       return;
@@ -175,8 +209,12 @@ export function useRoundReveal(
       setIsPlaying(false);
       return;
     }
+    const generationAtSchedule = roundGenerationRef.current;
     const timer = window.setTimeout(
       () => {
+        if (generationAtSchedule !== roundGenerationRef.current) {
+          return;
+        }
         setRevealedCount((value) => {
           const next = clampRevealed(value + 1, total);
           if (next >= total) {
@@ -190,25 +228,20 @@ export function useRoundReveal(
     return () => {
       window.clearTimeout(timer);
     };
-  }, [mode, isPlaying, prefersReducedMotion, revealedCount, total, speed]);
+  }, [mode, isPlaying, prefersReducedMotion, revealedCount, total, speed, revealKey]);
 
   const setMode = useCallback(
     (next: RevealMode) => {
-      if (next === 'animated' && prefersReducedMotion) {
-        // Minimal-motion alternative: stay on the accessible instant table.
-        setModeState('instant');
-        writeStored(MODE_KEY, 'instant');
-        return;
-      }
-      setModeState(next);
-      writeStored(MODE_KEY, next);
-      if (next === 'instant') {
-        setRevealedCount(total);
-        setIsPlaying(false);
-      } else {
-        setRevealedCount(0);
-        setIsPlaying(total > 0 && !prefersReducedMotion);
-      }
+      const transition = resolveModeTransition({
+        next,
+        prefersReducedMotion,
+        total,
+        autoPlayOnStart: autoPlayRef.current,
+      });
+      setModeState(transition.mode);
+      writeStored(MODE_KEY, transition.mode);
+      setRevealedCount(transition.revealedCount);
+      setIsPlaying(transition.isPlaying);
     },
     [prefersReducedMotion, total],
   );
@@ -219,7 +252,7 @@ export function useRoundReveal(
   }, []);
 
   const play = useCallback(() => {
-    if (prefersReducedMotion || total === 0) {
+    if (!canOptInPlay({ prefersReducedMotion, total })) {
       return;
     }
     if (mode === 'instant') {
@@ -251,13 +284,14 @@ export function useRoundReveal(
   }, [isPlaying, prefersReducedMotion, revealedCount, total]);
 
   const replay = useCallback(() => {
-    if (mode === 'instant' || prefersReducedMotion) {
-      setRevealedCount(total);
-      setIsPlaying(false);
-      return;
-    }
-    setRevealedCount(0);
-    setIsPlaying(total > 0);
+    const next = resolveReplayPresentation({
+      mode,
+      prefersReducedMotion,
+      total,
+      autoPlayOnStart: autoPlayRef.current,
+    });
+    setRevealedCount(next.revealedCount);
+    setIsPlaying(next.isPlaying);
   }, [mode, prefersReducedMotion, total]);
 
   const showAll = useCallback(() => {
