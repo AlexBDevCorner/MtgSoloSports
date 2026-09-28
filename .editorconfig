@@ -15,6 +15,13 @@ csharp_style_var_when_type_is_apparent = true:suggestion
 csharp_style_var_elsewhere = false:suggestion
 dotnet_diagnostic.CA2007.severity = none
 
+# Temporary: Meziantou.Analyzer 3.0.290 (latest) crashes on the Roslyn 5.x compiler
+# shipped with the .NET 10 SDK (AD0001 MissingMethodException for
+# ITypeSymbol.get_IsClosed, an API removed in Roslyn 5). Disabling the affected
+# rule keeps the build green while the rest of the analyzer package stays active.
+# Re-enable once upstream ships a Roslyn 5-compatible build.
+dotnet_diagnostic.MA0150.severity = none
+
 # Conservative correctness/maintainability baseline.
 # Intentionally small: using hygiene, braces, readonly state and
 # low-noise modernizations. No broad opinionated ruleset.
