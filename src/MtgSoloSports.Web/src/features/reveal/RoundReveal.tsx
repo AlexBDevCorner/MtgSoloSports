@@ -1,5 +1,6 @@
 import { Card } from '../../shared/ui/Card';
 import { cardCaption, formatBonus, formatMovement, formatPoints } from './format';
+import { RevealBoard } from './RevealBoard';
 import type { RevealPlacement } from './types';
 import { REVEAL_SPEEDS } from './types';
 import { useRoundReveal } from './useRoundReveal';
@@ -36,6 +37,9 @@ function speedLabel(speed: (typeof REVEAL_SPEEDS)[number]): string {
  * animation state lives in React (`useRoundReveal`), and no callback mutates
  * sporting state or calls simulation endpoints. The same component backs a
  * live completed round and a historical replay.
+ *
+ * The visual 32-card board is the primary standings presentation; the full
+ * detailed table stays available inside a collapsed disclosure.
  */
 export function RoundReveal({
   placements,
@@ -58,6 +62,9 @@ export function RoundReveal({
   function openAthlete(athleteId: number): void {
     onSelectAthlete?.(athleteId);
   }
+
+  const detailsTitle =
+    reveal.mode === 'instant' ? 'Full finishing order' : 'Reveal feed (lowest first)';
 
   return (
     <Card
@@ -96,7 +103,7 @@ export function RoundReveal({
       {meta ? <p className="muted small">{meta}</p> : null}
       {reveal.prefersReducedMotion ? (
         <p className="muted small" role="note">
-          Reduced-motion preference detected: animation is off and the full instant table is
+          Reduced-motion preference detected: animation is off and the full instant board is
           shown. This accessible alternative never resimulates and never consumes RNG.
         </p>
       ) : (
@@ -211,19 +218,21 @@ export function RoundReveal({
 
       {reveal.mode === 'animated' && latestRevealed ? (
         <div className="reveal-spotlight" aria-live="polite">
-          <div className="card-cell">
-            {latestRevealed.imageUrl ? (
-              <img className="card-thumb" src={latestRevealed.imageUrl} alt="" loading="lazy" />
-            ) : (
-              <span className="card-thumb card-thumb-fallback" aria-hidden="true">
-                {latestRevealed.name.slice(0, 2).toUpperCase()}
-              </span>
-            )}
-            <span className="card-identity">
-              <span className="card-name">
+          <div className="reveal-spotlight-card">
+            <span className="reveal-spotlight-art">
+              {latestRevealed.imageUrl ? (
+                <img src={latestRevealed.imageUrl} alt="" loading="lazy" draggable={false} />
+              ) : (
+                <span className="reveal-spotlight-fallback" aria-hidden="true">
+                  {latestRevealed.name.slice(0, 2).toUpperCase()}
+                </span>
+              )}
+            </span>
+            <span className="reveal-spotlight-body">
+              <span className="reveal-spotlight-name">
                 P{latestRevealed.position} · {latestRevealed.name}
               </span>
-              <span className="card-sub">
+              <span className="reveal-spotlight-sub">
                 +{formatPoints(latestRevealed.finalThousandths)} pts · stage{' '}
                 {formatPoints(latestRevealed.cumulativeAfterThousandths)}
               </span>
@@ -233,160 +242,97 @@ export function RoundReveal({
       ) : null}
 
       <h3 className="reveal-subhead">Cumulative stage standings as revealed</h3>
-      <div className="table-wrap">
-        <table className="data-table reveal-standings">
-          <thead>
-            <tr>
-              <th scope="col">Rank</th>
-              <th scope="col">Card</th>
-              <th scope="col">Awarded</th>
-              <th scope="col">Stage score</th>
-              <th scope="col">Move</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reveal.standings.map((row) => {
-              const caption = cardCaption(row.setCode, row.typeLine);
-              const rowClass = row.isRevealed ? '' : 'reveal-pending';
-              const latestClass =
-                reveal.mode === 'animated' && latestRevealed?.athleteId === row.athleteId
-                  ? ' reveal-latest'
-                  : '';
-              return (
-                <tr key={row.athleteId} className={`${rowClass}${latestClass}`}>
-                  <td className="numeric">{row.currentRank}</td>
-                  <td>
-                    <div className="card-cell">
-                      {row.imageUrl ? (
-                        <img className="card-thumb" src={row.imageUrl} alt="" loading="lazy" />
-                      ) : (
-                        <span className="card-thumb card-thumb-fallback" aria-hidden="true">
-                          {row.name.slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="card-identity">
-                        {onSelectAthlete ? (
-                          <button
-                            type="button"
-                            className="card-name card-link"
-                            title={`Open career profile for ${row.name}`}
-                            onClick={() => {
-                              openAthlete(row.athleteId);
-                            }}
-                          >
-                            {row.name}
-                          </button>
-                        ) : (
-                          <span className="card-name">{row.name}</span>
-                        )}
-                        {caption ? <span className="card-sub">{caption}</span> : null}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="numeric">
-                    {row.isRevealed ? `+${formatPoints(row.awardedThousandths)}` : '—'}
-                  </td>
-                  <td className="numeric">{formatPoints(row.displayedScoreThousandths)}</td>
-                  <td className="numeric">
-                    <span
-                      className={
-                        row.rankDelta > 0 ? 'move-up' : row.rankDelta < 0 ? 'move-down' : 'move-flat'
-                      }
-                    >
-                      {formatMovement(row.rankDelta)}
-                    </span>
-                    {row.isRevealed ? null : <span className="card-sub"> · waiting</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <RevealBoard
+        standings={reveal.standings}
+        latestAthleteId={reveal.mode === 'animated' ? (latestRevealed?.athleteId ?? null) : null}
+        onSelectAthlete={onSelectAthlete ? openAthlete : undefined}
+      />
 
-      <h3 className="reveal-subhead">
-        {reveal.mode === 'instant' ? 'Full finishing order' : 'Reveal feed (lowest first)'}
-      </h3>
-      <div className="table-wrap">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th scope="col">Pos</th>
-              <th scope="col">Card</th>
-              <th scope="col">Base</th>
-              <th scope="col">Bonus</th>
-              <th scope="col">Final</th>
-              <th scope="col">Rank</th>
-              <th scope="col">Stage score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {feed.map((placement) => {
-              const caption = cardCaption(placement.setCode, placement.typeLine);
-              const isLatest =
-                reveal.mode === 'animated' && latestRevealed?.athleteId === placement.athleteId;
-              return (
-                <tr key={placement.athleteId} className={isLatest ? 'reveal-latest' : undefined}>
-                  <td className="numeric">{placement.position}</td>
-                  <td>
-                    <div className="card-cell">
-                      {placement.imageUrl ? (
-                        <img
-                          className="card-thumb"
-                          src={placement.imageUrl}
-                          alt=""
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="card-thumb card-thumb-fallback" aria-hidden="true">
-                          {placement.name.slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="card-identity">
-                        {onSelectAthlete ? (
-                          <button
-                            type="button"
-                            className="card-name card-link"
-                            title={`Open career profile for ${placement.name}`}
-                            onClick={() => {
-                              openAthlete(placement.athleteId);
-                            }}
-                          >
-                            {placement.name}
-                          </button>
+      <details className="reveal-details">
+        <summary>
+          {detailsTitle} — detailed table (base, bonus, final, rank transition)
+        </summary>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Pos</th>
+                <th scope="col">Card</th>
+                <th scope="col">Base</th>
+                <th scope="col">Bonus</th>
+                <th scope="col">Final</th>
+                <th scope="col">Rank</th>
+                <th scope="col">Stage score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {feed.map((placement) => {
+                const caption = cardCaption(placement.setCode, placement.typeLine);
+                const isLatest =
+                  reveal.mode === 'animated' && latestRevealed?.athleteId === placement.athleteId;
+                return (
+                  <tr key={placement.athleteId} className={isLatest ? 'reveal-latest' : undefined}>
+                    <td className="numeric">{placement.position}</td>
+                    <td>
+                      <div className="card-cell">
+                        {placement.imageUrl ? (
+                          <img
+                            className="card-thumb"
+                            src={placement.imageUrl}
+                            alt=""
+                            loading="lazy"
+                          />
                         ) : (
-                          <span className="card-name">{placement.name}</span>
+                          <span className="card-thumb card-thumb-fallback" aria-hidden="true">
+                            {placement.name.slice(0, 2).toUpperCase()}
+                          </span>
                         )}
-                        {caption ? <span className="card-sub">{caption}</span> : null}
+                        <span className="card-identity">
+                          {onSelectAthlete ? (
+                            <button
+                              type="button"
+                              className="card-name card-link"
+                              title={`Open career profile for ${placement.name}`}
+                              onClick={() => {
+                                openAthlete(placement.athleteId);
+                              }}
+                            >
+                              {placement.name}
+                            </button>
+                          ) : (
+                            <span className="card-name">{placement.name}</span>
+                          )}
+                          {caption ? <span className="card-sub">{caption}</span> : null}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="numeric">{formatPoints(placement.baseThousandths)}</td>
+                    <td className="numeric">{formatBonus(placement.activeBonusThousandths)}</td>
+                    <td className="numeric">{formatPoints(placement.finalThousandths)}</td>
+                    <td className="numeric">
+                      {placement.rankBefore} → {placement.rankAfter}{' '}
+                      <span
+                        className={
+                          placement.rankMovement > 0
+                            ? 'move-up'
+                            : placement.rankMovement < 0
+                              ? 'move-down'
+                              : 'move-flat'
+                        }
+                      >
+                        ({formatMovement(placement.rankMovement)})
                       </span>
-                    </div>
-                  </td>
-                  <td className="numeric">{formatPoints(placement.baseThousandths)}</td>
-                  <td className="numeric">{formatBonus(placement.activeBonusThousandths)}</td>
-                  <td className="numeric">{formatPoints(placement.finalThousandths)}</td>
-                  <td className="numeric">
-                    {placement.rankBefore} → {placement.rankAfter}{' '}
-                    <span
-                      className={
-                        placement.rankMovement > 0
-                          ? 'move-up'
-                          : placement.rankMovement < 0
-                            ? 'move-down'
-                            : 'move-flat'
-                      }
-                    >
-                      ({formatMovement(placement.rankMovement)})
-                    </span>
-                  </td>
-                  <td className="numeric">
-                    {formatPoints(placement.cumulativeAfterThousandths)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                    </td>
+                    <td className="numeric">
+                      {formatPoints(placement.cumulativeAfterThousandths)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </Card>
   );
 }
