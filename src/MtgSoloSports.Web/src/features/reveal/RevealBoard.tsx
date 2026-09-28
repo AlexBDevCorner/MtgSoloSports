@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cardCaption, formatMovement, formatPoints } from './format';
 import { describeTile, tileMovementGlyph } from './revealBoard';
 import type { ProgressiveStandingRow } from './revealOrder';
@@ -44,6 +45,51 @@ function TileName({
 }
 
 /**
+ * Tile artwork with a visually consistent portrait fallback.
+ *
+ * Handles both absent URLs (caller renders the fallback directly) and URLs
+ * whose image request fails at runtime: a failed load flips to the same
+ * initials portrait instead of leaving a broken-image icon. Failure state
+ * resets whenever the URL changes so a new URL gets a fresh load attempt.
+ */
+function TileArt({ row, showArtwork }: { row: ProgressiveStandingRow; showArtwork: boolean }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = row.imageUrl;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
+  if (showArtwork && imageUrl && !imageFailed) {
+    return (
+      <img
+        className="reveal-card-portrait"
+        src={imageUrl}
+        alt=""
+        loading="lazy"
+        draggable={false}
+        onError={() => {
+          setImageFailed(true);
+        }}
+      />
+    );
+  }
+  if (row.isRevealed) {
+    return (
+      <span className="reveal-card-portrait reveal-portrait-fallback" aria-hidden="true">
+        {row.name.slice(0, 2).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <span className="reveal-card-back" aria-hidden="true">
+      <span className="reveal-card-back-motif">✦</span>
+      <span className="reveal-card-back-text">Face down</span>
+    </span>
+  );
+}
+
+/**
  * Visual 32-card board: the primary standings/reveal presentation.
  *
  * Ordered by the current progressive stage standings (rank 1 onward) with a
@@ -78,27 +124,7 @@ export function RevealBoard({ standings, latestAthleteId, onSelectAthlete }: Rev
               )}
             </div>
             <div className="reveal-tile-art">
-              {tile.showArtwork && row.imageUrl ? (
-                <img
-                  className="reveal-card-portrait"
-                  src={row.imageUrl}
-                  alt=""
-                  loading="lazy"
-                  draggable={false}
-                />
-              ) : tile.isRevealed ? (
-                <span
-                  className="reveal-card-portrait reveal-portrait-fallback"
-                  aria-hidden="true"
-                >
-                  {row.name.slice(0, 2).toUpperCase()}
-                </span>
-              ) : (
-                <span className="reveal-card-back" aria-hidden="true">
-                  <span className="reveal-card-back-motif">✦</span>
-                  <span className="reveal-card-back-text">Face down</span>
-                </span>
-              )}
+              <TileArt row={row} showArtwork={tile.showArtwork} />
             </div>
             <div className="reveal-tile-body">
               <div className="reveal-tile-identity">
