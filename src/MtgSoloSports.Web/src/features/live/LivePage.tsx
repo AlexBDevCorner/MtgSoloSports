@@ -377,6 +377,7 @@ export function LivePage({
           revealKey={revealKey}
           roundLabel={`Round ${visibleRound.roundNumber} results`}
           meta={revealMeta}
+          autoPlayOnStart={false}
           onSelectAthlete={openAthlete}
         />
       ) : null}
