@@ -58,3 +58,14 @@ npm run dev --prefix src/MtgSoloSports.Web
 
 Sporting simulation is deterministic (versioned RNG, fixed-point integers) and the UI
 only replays persisted results; refreshing or changing reveal speed never resimulates.
+
+### Troubleshooting: NuGet restore with extra package sources (NU1507)
+
+All .NET dependencies come from `nuget.org`. The repository-root `NuGet.Config`
+clears inherited user/machine package sources and declares only `nuget.org`, so a
+clean clone restores even if your machine has extra feeds configured (for example a
+company `SD` source). You do not need to delete or disable those global sources:
+both `dotnet restore MtgSoloSports.slnx --locked-mode` from the repository root
+and Visual Studio solution restore pick up the repository configuration
+automatically. Central Package Management, locked-mode restore, analyzers, and
+warnings-as-errors stay enabled.
