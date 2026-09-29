@@ -5,14 +5,16 @@ export function Card({
   eyebrow,
   action,
   children,
+  className,
 }: {
   title: string;
   eyebrow?: string;
   action?: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <section className="card" aria-label={title}>
+    <section className={className ? `card ${className}` : 'card'} aria-label={title}>
       <header className="card-head">
         <div>
           {eyebrow ? <p className="card-eyebrow">{eyebrow}</p> : null}

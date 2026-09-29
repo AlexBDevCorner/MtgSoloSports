@@ -1,0 +1,356 @@
+/* MSS-038: Live reveal is the hero. Narrow management sidebar + dominant main board.
+   Presentation only: no sporting logic here. History never uses these classes. */
+
+.live-layout {
+  display: grid;
+  grid-template-columns: clamp(240px, 22vw, 320px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.live-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.live-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.live-sidebar .card {
+  padding: 12px;
+}
+
+.live-sidebar .card-title {
+  font-size: 1.02rem;
+}
+
+.live-manage-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.live-manage-controls .field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.live-manage-controls .live-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.live-manage-controls .live-buttons .primary-button,
+.live-manage-controls .live-buttons .ghost-button {
+  min-height: 40px;
+}
+
+.live-count {
+  margin: 0;
+}
+
+.live-help {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.live-help summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.live-help summary:hover {
+  color: inherit;
+}
+
+.live-help p {
+  margin: 8px 0 4px;
+}
+
+.round-pills-compact {
+  max-width: 100%;
+}
+
+/* Compact live reveal: single toolbar row with an inline stable latest chip,
+   so stepping +1 never pushes the board down. */
+.reveal-live.card {
+  padding: 12px;
+}
+
+.reveal-live .card-head {
+  margin-bottom: 4px;
+}
+
+.reveal-live .card-title {
+  font-size: 1.08rem;
+}
+
+.reveal-meta {
+  margin: 6px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reveal-help {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.reveal-help summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.reveal-help summary:hover {
+  color: inherit;
+}
+
+.reveal-help p {
+  margin: 6px 0 2px;
+}
+
+.reveal-live-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.reveal-live-toolbar .live-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.reveal-live-toolbar .primary-button,
+.reveal-live-toolbar .ghost-button {
+  min-height: 36px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.reveal-live-toolbar .reveal-speed {
+  min-width: 110px;
+  flex: 0 1 140px;
+  margin: 0;
+}
+
+.reveal-live-toolbar .reveal-speed span {
+  font-size: 0.78rem;
+}
+
+.reveal-live-toolbar .reveal-speed select {
+  padding: 6px 8px;
+}
+
+.reveal-live-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.reveal-live-progress .reveal-progress {
+  flex: 1 1 auto;
+  min-width: 100px;
+  height: 6px;
+}
+
+.reveal-live-count {
+  margin: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.reveal-live-progress-instant {
+  margin-top: 2px;
+}
+
+/* Inline latest-card chip: adjacent to controls, fixed 40px height at 0/N and
+   after reveals alike, so the board never jumps. Text truncates; art falls
+   back to initials when the image is missing or fails to load. */
+.reveal-live-latest {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  max-width: 100%;
+  flex: 1 1 220px;
+  min-width: 200px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px 4px 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.reveal-live-latest-art {
+  width: 28px;
+  height: 32px;
+  flex: 0 0 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0e1420;
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reveal-live-latest-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #0e1420;
+}
+
+.reveal-live-latest-art .reveal-spotlight-fallback {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.reveal-live-latest-text {
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.reveal-live-latest-hint {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reveal-live .reveal-subhead {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+}
+
+.reveal-live .reveal-board {
+  margin-top: 6px;
+}
+
+/* Live-only tile tightening: artwork and AWARDED / STAGE SCORE / MOVE are
+   untouched; only paddings and name clamp shrink so the first full row fits
+   at 1536x806 without becoming thumbnails. */
+.reveal-live .reveal-tile-top {
+  padding: 6px 8px 4px;
+}
+
+.reveal-live .reveal-tile-body {
+  padding: 8px 8px 10px;
+  gap: 6px;
+}
+
+.reveal-live .reveal-tile-name {
+  min-height: 2.2em;
+}
+
+.reveal-live .reveal-metric {
+  padding: 2px 0;
+}
+
+/* Tablet: keep single management column but reveal stays first visually. */
+@media (max-width: 1020px) {
+  .live-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .live-main {
+    order: -1;
+  }
+
+  .live-sidebar {
+    order: 0;
+    width: 100%;
+  }
+
+  .live-manage-controls {
+    flex-direction: column;
+  }
+
+  .reveal-live-toolbar .reveal-speed {
+    flex: 1 1 140px;
+  }
+
+  .reveal-live-latest {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
+
+/* Narrow phones: touch-friendly, no horizontal overflow, no overlapping sticky. */
+@media (max-width: 640px) {
+  .live-layout {
+    gap: 12px;
+  }
+
+  .live-main {
+    gap: 12px;
+  }
+
+  .reveal-live.card,
+  .live-sidebar .card {
+    padding: 12px;
+  }
+
+  .reveal-live-toolbar {
+    gap: 8px;
+  }
+
+  .reveal-live-toolbar .live-buttons .primary-button,
+  .reveal-live-toolbar .live-buttons .ghost-button,
+  .live-manage-controls .live-buttons .primary-button,
+  .live-manage-controls .live-buttons .ghost-button,
+  .round-pills .nav-item,
+  .mode-toggle .nav-item {
+    min-height: 44px;
+  }
+
+  .reveal-live-progress {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .reveal-live-latest {
+    flex-basis: 100%;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .reveal-meta {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-live-latest {
+    animation: none;
+  }
+}

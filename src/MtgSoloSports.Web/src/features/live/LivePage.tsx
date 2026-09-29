@@ -11,6 +11,7 @@ import { RoundReveal } from '../reveal/RoundReveal';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 import { colorComposition, zoneLabelForRank } from '../standings/zones';
+import './LivePage.css';
 
 const LEAGUE_KEY_PREFIX = 'mtg-solo-sports:live-league:';
 
@@ -255,82 +256,142 @@ export function LivePage({
     : undefined;
 
   return (
-    <div className="dashboard">
-      <Card
-        eyebrow="Live competition"
-        title={league ? `${league.leagueName} — Stage ${effectiveStage ?? '—'}` : 'Live competition'}
-      >
-        <div className="live-controls">
-          <label className="field">
-            <span>League</span>
-            <select
-              value={leagueId ?? ''}
-              disabled={leagues.length === 0 || busy}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                setLeagueId(Number.isNaN(next) ? null : next);
-                setSelectedRound(null);
-                if (saveId && !Number.isNaN(next)) {
-                  writeStored(`${LEAGUE_KEY_PREFIX}${saveId}`, String(next));
-                }
-              }}
-            >
-              {leagues.map((entry) => (
-                <option key={entry.leagueId} value={entry.leagueId}>
-                  {entry.leagueName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="live-buttons">
-            <button
-              type="button"
-              className="primary-button"
-              disabled={!canAdvance}
-              title={advanceTitle}
-              onClick={() => {
-                void handleAdvance();
-              }}
-            >
-              {advancing ? 'Simulating…' : 'Next Round'}
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={!canComplete}
-              title={completeTitle}
-              onClick={() => {
-                void handleCompleteStage();
-              }}
-            >
-              {completing ? 'Completing…' : 'Complete Stage'}
-            </button>
-          </div>
-        </div>
-        <p className="muted small">
-          The backend result is authoritative; refreshing only re-reads persisted rounds and
-          never resimulates. The reveal below replays those immutable rows with
-          presentation-only animation.
-        </p>
-        {gateReason ? <p className="muted small">{gateReason}</p> : null}
-        <p className="muted small">
-          Completed rounds in this stage: {completedRounds} / {roundsPerStage}
-          {isStageComplete ? ' · stage complete' : ''}
-        </p>
-        {actionError ? (
-          <Notice tone="error" title="Simulation failed">
-            <p>{actionError}</p>
-            <p>
-              <button type="button" className="ghost-button" onClick={() => setActionError(null)}>
-                Dismiss
+    <div className="live-layout">
+      <aside className="live-sidebar" aria-label="Competition management">
+        <Card
+          eyebrow="Live competition"
+          title={league ? `${league.leagueName} — Stage ${effectiveStage ?? '—'}` : 'Live competition'}
+        >
+          <div className="live-manage-controls">
+            <label className="field">
+              <span>League</span>
+              <select
+                value={leagueId ?? ''}
+                disabled={leagues.length === 0 || busy}
+                onChange={(event) => {
+                  const next = Number.parseInt(event.target.value, 10);
+                  setLeagueId(Number.isNaN(next) ? null : next);
+                  setSelectedRound(null);
+                  if (saveId && !Number.isNaN(next)) {
+                    writeStored(`${LEAGUE_KEY_PREFIX}${saveId}`, String(next));
+                  }
+                }}
+              >
+                {leagues.map((entry) => (
+                  <option key={entry.leagueId} value={entry.leagueId}>
+                    {entry.leagueName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="live-buttons">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!canAdvance}
+                title={advanceTitle}
+                onClick={() => {
+                  void handleAdvance();
+                }}
+              >
+                {advancing ? 'Simulating…' : 'Next Round'}
               </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={!canComplete}
+                title={completeTitle}
+                onClick={() => {
+                  void handleCompleteStage();
+                }}
+              >
+                {completing ? 'Completing…' : 'Complete Stage'}
+              </button>
+            </div>
+          </div>
+          {gateReason ? <p className="muted small">{gateReason}</p> : null}
+          <p className="muted small live-count">
+            Completed rounds in this stage: {completedRounds} / {roundsPerStage}
+            {isStageComplete ? ' · stage complete' : ''}
+          </p>
+          {actionError ? (
+            <Notice tone="error" title="Simulation failed">
+              <p>{actionError}</p>
+              <p>
+                <button type="button" className="ghost-button" onClick={() => setActionError(null)}>
+                  Dismiss
+                </button>
+              </p>
+            </Notice>
+          ) : null}
+          <details className="live-help">
+            <summary>About live replay</summary>
+            <p className="muted small">
+              The backend result is authoritative; refreshing only re-reads persisted rounds and
+              never resimulates. The reveal replays those immutable rows with
+              presentation-only animation.
             </p>
-          </Notice>
-        ) : null}
-      </Card>
+          </details>
+        </Card>
 
-      <Card eyebrow="Rounds" title={`Persisted rounds — Stage ${effectiveStage ?? '—'}`}>
-        {stageRounds.error && !stageRounds.rounds ? (
+        <Card
+          eyebrow="Rounds"
+          title={`Stage ${effectiveStage ?? '—'} · ${completedRounds}/${roundsPerStage}`}
+        >
+          {stageRounds.error && !stageRounds.rounds ? (
+            <Notice tone="error" title="Rounds unavailable">
+              <p>{stageRounds.error}</p>
+              <p>
+                <button type="button" className="ghost-button" onClick={stageRounds.refresh}>
+                  Retry
+                </button>
+              </p>
+            </Notice>
+          ) : completedRounds === 0 ? (
+            <Notice tone="empty" title="No rounds yet">
+              <p>
+                {canAdvance
+                  ? 'Press Next Round to simulate round 1 on the backend.'
+                  : 'No persisted rounds exist for this stage yet.'}
+              </p>
+            </Notice>
+          ) : (
+            <div className="round-pills round-pills-compact" role="group" aria-label="Completed rounds">
+              {stageRounds.rounds?.rounds.map((round) => (
+                <button
+                  key={round.roundNumber}
+                  type="button"
+                  className={
+                    (selectedRound ?? completedRounds) === round.roundNumber
+                      ? 'nav-item current'
+                      : 'nav-item'
+                  }
+                  aria-pressed={(selectedRound ?? completedRounds) === round.roundNumber}
+                  disabled={busy}
+                  onClick={() => {
+                    setSelectedRound(round.roundNumber);
+                  }}
+                >
+                  {round.roundNumber}
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+      </aside>
+
+      <div className="live-main">
+        {visibleRound && revealKey ? (
+          <RoundReveal
+            placements={visibleRound.placements}
+            revealKey={revealKey}
+            roundLabel={`Round ${visibleRound.roundNumber} results`}
+            meta={revealMeta}
+            autoPlayOnStart={false}
+            layout="live"
+            onSelectAthlete={openAthlete}
+          />
+        ) : stageRounds.error && !stageRounds.rounds ? (
           <Notice tone="error" title="Rounds unavailable">
             <p>{stageRounds.error}</p>
             <p>
@@ -339,7 +400,7 @@ export function LivePage({
               </button>
             </p>
           </Notice>
-        ) : completedRounds === 0 ? (
+        ) : (
           <Notice tone="empty" title="No rounds yet">
             <p>
               {canAdvance
@@ -347,40 +408,7 @@ export function LivePage({
                 : 'No persisted rounds exist for this stage yet.'}
             </p>
           </Notice>
-        ) : (
-          <div className="round-pills" role="group" aria-label="Completed rounds">
-            {stageRounds.rounds?.rounds.map((round) => (
-              <button
-                key={round.roundNumber}
-                type="button"
-                className={
-                  (selectedRound ?? completedRounds) === round.roundNumber
-                    ? 'nav-item current'
-                    : 'nav-item'
-                }
-                aria-pressed={(selectedRound ?? completedRounds) === round.roundNumber}
-                disabled={busy}
-                onClick={() => {
-                  setSelectedRound(round.roundNumber);
-                }}
-              >
-                {round.roundNumber}
-              </button>
-            ))}
-          </div>
         )}
-      </Card>
-
-      {visibleRound && revealKey ? (
-        <RoundReveal
-          placements={visibleRound.placements}
-          revealKey={revealKey}
-          roundLabel={`Round ${visibleRound.roundNumber} results`}
-          meta={revealMeta}
-          autoPlayOnStart={false}
-          onSelectAthlete={openAthlete}
-        />
-      ) : null}
 
       <Card
         eyebrow="Standings"
@@ -487,6 +515,7 @@ export function LivePage({
           No color quotas are applied.
         </p>
       </Card>
+      </div>
     </div>
   );
 }
