@@ -9,7 +9,7 @@ import {
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { AthleteLink, Link } from '../routing/router';
-import { savesPath } from '../routing/routes';
+import { savesPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 import { colorComposition, zoneLabelForRank } from '../standings/zones';
@@ -467,6 +467,25 @@ export function LivePage({
             ? `${standings.leagueName} — ${standings.completedStages} stage(s)${standings.isFinal ? ' · final' : ''}`
             : 'Current standings'
         }
+        action={
+          leagueId !== null ? (
+            <Link
+              to={standingsLeaguePath(saveId, leagueId)}
+              className="ghost-button"
+              title="Open the dedicated league tables and stage placements"
+            >
+              Full standings
+            </Link>
+          ) : (
+            <Link
+              to={standingsPath(saveId)}
+              className="ghost-button"
+              title="Open the dedicated league tables and stage placements"
+            >
+              Full standings
+            </Link>
+          )
+        }
       >
         {standingsLoading && !standings ? (
           <Loading label="Loading standings…" />
@@ -553,7 +572,8 @@ export function LivePage({
           Standings accumulate persisted stage championship points and link each card row
           to its career profile. Zones are visual only: Superleague 1–16 safe, 17–24
           qualifier, 25–32 relegated; feeders champion auto-promoted plus 2–4 qualifier.
-          No color quotas are applied.
+          No color quotas are applied. The dedicated Standings page adds the full
+          season table plus the stage-by-stage placement matrix for bonus calibration.
         </p>
       </Card>
       </div>

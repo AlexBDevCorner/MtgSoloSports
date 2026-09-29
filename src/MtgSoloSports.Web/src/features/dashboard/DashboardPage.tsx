@@ -1,7 +1,7 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, historyPath, livePath, recordsPath, savesPath } from '../routing/routes';
+import { cupsPath, historyPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
 import { describeNextAction, type DashboardData } from './useDashboard';
 
 function shortChecksum(value: string): string {
@@ -221,6 +221,9 @@ export function DashboardPage({
           <Link to={livePath(saveId)} className="primary-button">
             Current live event
           </Link>
+          <Link to={standingsPath(saveId)} className="ghost-button">
+            Standings
+          </Link>
           <Link to={historyPath(saveId)} className="ghost-button">
             History
           </Link>
@@ -232,9 +235,11 @@ export function DashboardPage({
           </Link>
         </div>
         <p className="muted small">
-          Live event runs the current stage rounds. History replays any persisted season,
-          competition, stage and round. Records tracks career leaders and Hall of Fame.
-          Athlete profiles open from any card name.
+          Live event runs the current stage rounds. Standings opens the dedicated
+          league tables and stage-placement matrix at any point in the season.
+          History replays any persisted season, competition, stage and round.
+          Records tracks career leaders and Hall of Fame. Athlete profiles open
+          from any card name.
         </p>
       </Card>
 

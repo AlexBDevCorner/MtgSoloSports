@@ -7,9 +7,10 @@ import {
   livePath,
   recordsPath,
   savesPath,
+  standingsPath,
 } from '../routing/routes';
 
-export type View = 'saves' | 'dashboard' | 'live' | 'history' | 'records' | 'cups' | 'athlete';
+export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'history' | 'records' | 'cups' | 'athlete';
 
 export function AppShell({
   view,
@@ -31,6 +32,7 @@ export function AppShell({
 }) {
   const dashboardHref = saveId ? dashboardPath(saveId) : null;
   const liveHref = saveId ? livePath(saveId) : null;
+  const standingsHref = saveId ? standingsPath(saveId) : null;
   const historyHref = saveId ? historyPath(saveId) : null;
   const recordsHref = saveId ? recordsPath(saveId) : null;
   const cupsHref = saveId ? cupsPath(saveId) : null;
@@ -83,6 +85,24 @@ export function AppShell({
               title="Select a save first"
             >
               Live event
+            </span>
+          )}
+          {standingsHref ? (
+            <Link
+              to={standingsHref}
+              className={view === 'standings' ? 'nav-item current' : 'nav-item'}
+              ariaCurrent={view === 'standings' ? 'page' : undefined}
+              title="Open league tables and stage placements"
+            >
+              Standings
+            </Link>
+          ) : (
+            <span
+              className="nav-item"
+              aria-disabled="true"
+              title="Select a save first"
+            >
+              Standings
             </span>
           )}
           {historyHref ? (

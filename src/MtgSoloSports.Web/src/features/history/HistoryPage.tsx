@@ -27,7 +27,7 @@ import {
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, savesPath } from '../routing/routes';
+import { cupsPath, savesPath, standingsLeaguePath } from '../routing/routes';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -593,6 +593,17 @@ export function HistoryPage({
           seasonTable && seasonTable.standings.length > 0
             ? `${seasonTable.leagueName} — Season ${seasonTable.seasonNumber} final`
             : 'Season final table'
+        }
+        action={
+          seasonNumber !== null && leagueId !== null ? (
+            <Link
+              to={standingsLeaguePath(saveId, leagueId, { season: seasonNumber, view: 'matrix' })}
+              className="ghost-button"
+              title="Open this league in the dedicated standings matrix"
+            >
+              Open matrix
+            </Link>
+          ) : undefined
         }
       >
         {tableState.loading && !seasonTable ? (
