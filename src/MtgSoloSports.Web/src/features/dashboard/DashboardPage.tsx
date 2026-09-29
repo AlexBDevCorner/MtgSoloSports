@@ -3,6 +3,7 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink, Link } from '../routing/router';
 import { cupsPath, historyPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
 import { describeNextAction, type DashboardData } from './useDashboard';
+import { FastForwardSeason } from './FastForwardSeason';
 
 function shortChecksum(value: string): string {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
@@ -213,6 +214,12 @@ export function DashboardPage({
             Simulation itself runs on the backend; this board only replays persisted results
             and never resimulates.
           </p>
+          <FastForwardSeason
+            saveId={saveId}
+            progress={progress}
+            status={status}
+            onCompleted={onRefresh}
+          />
         </Card>
       </div>
 

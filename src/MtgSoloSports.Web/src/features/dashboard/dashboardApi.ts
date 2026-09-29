@@ -68,6 +68,27 @@ export interface AdvanceNextEventResult {
   nextActionDetail: string;
 }
 
+export interface CompleteSeasonProgress {
+  stagesCompleted: number;
+  totalStagesInSeason: number;
+  globalStageBefore: number;
+  globalStageAfter: number;
+}
+
+export interface CompleteSeasonResult {
+  saveId: string;
+  seasonNumber: number;
+  stagesCompleted: number;
+  globalStageBefore: number;
+  globalStageAfter: number;
+  isSeasonComplete: boolean;
+  rngBeforeState: number;
+  rngBeforeStream: number;
+  rngAfterState: number;
+  rngAfterStream: number;
+  progress: CompleteSeasonProgress;
+}
+
 export interface Season1RosterAthlete {
   name: string;
   drawIndex: number;
@@ -129,6 +150,25 @@ export async function advanceToNextEvent(
   signal?: AbortSignal,
 ): Promise<AdvanceNextEventResult> {
   return fetchJson<AdvanceNextEventResult>(`/api/saves/${saveId}/advance-next-event`, {
+    method: 'POST',
+    signal,
+  });
+}
+
+/**
+ * MSS-042 one-click fast-forward of the remaining league stages of the
+ * current season across all active leagues. Reuses the existing
+ * `POST /api/saves/{saveId}/seasons/complete-season` bulk operation once;
+ * the backend stops after persisted Stage 32 league results and never runs
+ * postseason (movement, qualifier, Cup selection/events) or the next-season
+ * transition. Deliberately NOT `simulate-seasons`, which would skip the
+ * qualifier/Cup boundaries the user wants to inspect step by step.
+ */
+export async function completeSeason(
+  saveId: string,
+  signal?: AbortSignal,
+): Promise<CompleteSeasonResult> {
+  return fetchJson<CompleteSeasonResult>(`/api/saves/${saveId}/seasons/complete-season`, {
     method: 'POST',
     signal,
   });
