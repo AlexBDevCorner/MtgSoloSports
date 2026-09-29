@@ -59,7 +59,7 @@ public sealed class CatalogStore
         ArgumentNullException.ThrowIfNull(rawRecords);
         ArgumentNullException.ThrowIfNull(athletes);
 
-        (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature) = BulkCatalogParser.CountCollapse(rawRecords);
+        (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature, int skippedAmbiguous) = BulkCatalogParser.CountCollapse(rawRecords);
 
         using CatalogDbContext context = OpenDbContext();
         _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
@@ -83,7 +83,7 @@ public sealed class CatalogStore
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         Dictionary<SportingColor, int> counts = CountByColor(athletes);
-        return new CatalogImportResult(total, eligible, unique, counts, skippedTokens, skippedNonCreature);
+        return new CatalogImportResult(total, eligible, unique, counts, skippedTokens, skippedNonCreature, skippedAmbiguous);
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ public sealed record ImportCatalogResponse(
     IReadOnlyDictionary<SportingColor, int> CountsBySportingColor,
     int SkippedTokens,
     int SkippedNonCreature,
+    int SkippedAmbiguousColor,
     bool IsSufficientForSave)
 {
     public static ImportCatalogResponse FromResult(CatalogImportResult result)
@@ -25,6 +26,7 @@ public sealed record ImportCatalogResponse(
             result.CountsBySportingColor,
             result.SkippedTokens,
             result.SkippedNonCreature,
+            result.SkippedAmbiguousColor,
             result.IsSufficientForSave);
     }
 }
