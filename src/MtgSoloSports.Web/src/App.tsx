@@ -10,6 +10,7 @@ import { useDashboard } from './features/dashboard/useDashboard';
 import { HistoryPage } from './features/history/HistoryPage';
 import { LivePage } from './features/live/LivePage';
 import { RecordsPage } from './features/records/RecordsPage';
+import { StandingsPage } from './features/standings/StandingsPage';
 import {
   Link,
   navigate,
@@ -23,6 +24,8 @@ import {
   livePath,
   routeSaveId as getRouteSaveId,
   savesPath,
+  standingsLeaguePath,
+  standingsPath,
   type Route,
 } from './features/routing/routes';
 import { AppShell, type View } from './features/shell/AppShell';
@@ -36,6 +39,8 @@ function viewForRoute(route: Route): View {
       return 'dashboard';
     case 'live':
       return 'live';
+    case 'standings':
+      return 'standings';
     case 'history':
       return 'history';
     case 'records':
@@ -236,6 +241,29 @@ export default function App() {
                   stage: selection.stage,
                   round: selection.round,
                 }),
+              );
+            }}
+          />
+        );
+      case 'standings':
+        return (
+          <StandingsPage
+            saveId={saveId}
+            urlLeagueId={route.leagueId}
+            urlSeason={route.season}
+            urlView={route.view}
+            onStandingsChange={(selection) => {
+              navigate(
+                selection.league !== null
+                  ? standingsLeaguePath(saveId, selection.league, {
+                      season: selection.season,
+                      view: selection.view,
+                    })
+                  : standingsPath(saveId, {
+                      league: selection.league,
+                      season: selection.season,
+                      view: selection.view,
+                    }),
               );
             }}
           />

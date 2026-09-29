@@ -1,0 +1,190 @@
+/* MSS-041 standings matrix: dense 32-stage table that stays practical on wide
+   monitors and usable on narrow screens. Presentation only. */
+
+.standings-page {
+  min-width: 0;
+}
+
+.standings-matrix-controls {
+  justify-content: flex-start;
+}
+
+.standings-matrix-controls .field {
+  min-width: 180px;
+  flex: 0 1 220px;
+}
+
+.matrix-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.matrix-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.matrix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 1180px;
+  width: max-content;
+}
+
+.matrix-table th,
+.matrix-table td {
+  border-bottom: 1px solid #222c46;
+  white-space: nowrap;
+}
+
+.matrix-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-2);
+  z-index: 3;
+}
+
+.matrix-table .sticky {
+  position: sticky;
+  background: var(--panel);
+  z-index: 2;
+}
+
+.matrix-table thead .sticky {
+  background: var(--panel-2);
+  z-index: 4;
+}
+
+.matrix-table .sticky-rank {
+  left: 0;
+  min-width: 56px;
+}
+
+.matrix-table .sticky-athlete {
+  left: 56px;
+  min-width: 220px;
+  max-width: 260px;
+}
+
+.matrix-table .sticky-points {
+  left: 276px;
+  min-width: 92px;
+}
+
+.matrix-table .sticky-wins {
+  left: 368px;
+  min-width: 72px;
+}
+
+.matrix-table .sticky-bonus {
+  left: 440px;
+  min-width: 92px;
+}
+
+.matrix-table .sticky-athlete .card-cell {
+  max-width: 240px;
+}
+
+.matrix-stage-head {
+  min-width: 58px;
+  text-align: center;
+}
+
+.matrix-cell {
+  text-align: center;
+  min-width: 58px;
+}
+
+.matrix-place {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix-bonus {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.place-win {
+  background: linear-gradient(180deg, #e8b44a26, transparent);
+}
+
+.place-win .matrix-place::after {
+  content: ' ★';
+  color: var(--accent);
+}
+
+.place-podium {
+  background: linear-gradient(180deg, #5fd0c526, transparent);
+}
+
+.place-podium .matrix-place {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-2);
+  text-underline-offset: 3px;
+}
+
+.place-top10 {
+  background: #5fd0c512;
+}
+
+.place-top10 .matrix-place {
+  font-weight: 700;
+}
+
+.place-rest .matrix-place {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.place-empty .matrix-place {
+  color: #5b6579;
+  font-weight: 400;
+}
+
+@media (max-width: 900px) {
+  .matrix-table {
+    min-width: 960px;
+  }
+
+  .matrix-table .sticky-athlete {
+    min-width: 170px;
+    left: 52px;
+  }
+
+  .matrix-table .sticky-rank {
+    min-width: 52px;
+  }
+
+  .matrix-table .sticky-points {
+    left: 222px;
+    min-width: 84px;
+  }
+
+  .matrix-table .sticky-wins {
+    left: 306px;
+    min-width: 64px;
+  }
+
+  .matrix-table .sticky-bonus {
+    left: 370px;
+    min-width: 84px;
+  }
+
+  .matrix-stage-head,
+  .matrix-cell {
+    min-width: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .matrix-table .sticky {
+    transition: none;
+  }
+}

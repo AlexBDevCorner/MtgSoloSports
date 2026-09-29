@@ -10,6 +10,8 @@ import {
   parseRoute,
   recordsPath,
   savesPath,
+  standingsLeaguePath,
+  standingsPath,
 } from './routes.ts';
 
 const SAVE = '11111111-1111-1111-1111-111111111111';
@@ -122,10 +124,54 @@ describe('MSS-040 route shapes', () => {
   });
 
   it('reserves the MSS-041 league standings path convention', () => {
-    // MSS-041 owns `/saves/:saveId/leagues/:leagueId`; MSS-040 only documents
-    // the builder and keeps the address free for that task.
+    // MSS-041 owns `/saves/:saveId/leagues/:leagueId` as a Standings alias;
+    // MSS-040 only documented the builder.
     assert.equal(leagueStandingsPath(SAVE, 9), `/saves/${SAVE}/leagues/9`);
     const current = parseRoute(leagueStandingsPath(SAVE, 9), '');
-    assert.equal(current.name, 'notFound');
+    assert.equal(current.name, 'standings');
+    assert.equal((current as { leagueId: number | null }).leagueId, 9);
+  });
+
+  it('supports the dedicated standings entry and league detail routes', () => {
+    assert.equal(standingsPath(SAVE), `/saves/${SAVE}/standings`);
+    assert.equal(
+      standingsPath(SAVE, { league: 9, season: 2, view: 'matrix' }),
+      `/saves/${SAVE}/standings?league=9&season=2&view=matrix`,
+    );
+    assert.equal(
+      standingsLeaguePath(SAVE, 9, { season: 2, view: 'season' }),
+      `/saves/${SAVE}/leagues/9/standings?season=2&view=season`,
+    );
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/standings`, '?league=9&season=2&view=matrix'), {
+      name: 'standings',
+      saveId: SAVE,
+      leagueId: 9,
+      season: 2,
+      view: 'matrix',
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/leagues/9/standings`, '?season=2&view=season'), {
+      name: 'standings',
+      saveId: SAVE,
+      leagueId: 9,
+      season: 2,
+      view: 'season',
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/standings`, ''), {
+      name: 'standings',
+      saveId: SAVE,
+      leagueId: null,
+      season: null,
+      view: null,
+    });
+  });
+
+  it('ignores invalid standings view values instead of crashing', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/standings`, '?view=bogus'), {
+      name: 'standings',
+      saveId: SAVE,
+      leagueId: null,
+      season: null,
+      view: null,
+    });
   });
 });
