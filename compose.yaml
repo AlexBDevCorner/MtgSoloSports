@@ -1,0 +1,41 @@
+# MSS-043: default local run for MtgSoloSports.
+#
+#   docker compose up --build
+#
+# One production-like Linux service serves both the compiled React UI and the
+# API from the same host (http://localhost:8080). Source is COPYied into the
+# image at build time; this file deliberately mounts NO host source,
+# node_modules or build output into the container, so a case-insensitive
+# Windows/NTFS checkout cannot shadow the Linux image filesystem.
+#
+# Persistent state lives in the named volume `mtgsolosports-data` mounted at
+# /data (per-save SQLite files under /data/saves, shared catalog at
+# /data/catalog/catalog.db). `docker compose down` preserves it;
+# `docker compose down -v` DESTROYS it (cards + universes).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mtgsolosports:latest
+    ports:
+      # Single published port: React UI, static assets and /api together.
+      - "8080:8080"
+    environment:
+      ASPNETCORE_HTTP_PORTS: "8080"
+      Saves__SavesRoot: /data/saves
+      Catalog__CatalogPath: /data/catalog/catalog.db
+    volumes:
+      - mtgsolosports-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  mtgsolosports-data:
+    name: mtgsolosports-data

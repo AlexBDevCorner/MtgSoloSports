@@ -33,3 +33,41 @@ jobs:
         run: npm run typecheck --prefix src/MtgSoloSports.Web
       - name: Build frontend
         run: npm run build --prefix src/MtgSoloSports.Web
+      - name: Check exact-case paths and imports
+        # MSS-043: fails on case-only tracked-path collisions, wrongly cased
+        # frontend imports and missing Dockerfile/Compose sources, so Linux
+        # CI catches what a case-insensitive Windows checkout would hide.
+        run: python3 scripts/check-casing.py
+
+  docker-smoke:
+    # MSS-043: validates the documented one-command local run on Linux:
+    # Compose syntax, production image build, API + SPA fallback smoke and
+    # named-volume persistence across down/rebuild. Existing backend and
+    # frontend gates above stay untouched.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate Compose syntax
+        run: docker compose config -q
+      - name: Build production image
+        run: docker compose build
+      - name: Start application
+        run: docker compose up -d
+      - name: Smoke test API and SPA fallback
+        run: sh scripts/docker-smoke.sh http://localhost:8080 180
+      - name: Verify volume persistence across restart
+        # No catalog import or save creation is needed: a marker written
+        # through the running (non-root) container must survive
+        # `docker compose down` (volumes kept) plus an image rebuild.
+        run: |
+          docker compose exec -T app sh -c 'echo "persist-probe" > /data/.persist-probe && cat /data/.persist-probe'
+          docker compose down
+          docker compose up -d --build
+          sh scripts/docker-smoke.sh http://localhost:8080 180
+          docker compose exec -T app cat /data/.persist-probe
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color app
+      - name: Tear down
+        if: always()
+        run: docker compose down

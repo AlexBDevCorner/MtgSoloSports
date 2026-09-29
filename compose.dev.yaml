@@ -1,0 +1,50 @@
+# MSS-043: OPTIONAL frontend live-reload mode. The default
+# `docker compose up --build` needs nothing from this file.
+#
+# What this adds: a Vite dev server with hot-module replacement for fast
+# React iteration. The backend (`app`) still runs from the built Linux image,
+# so backend changes need `docker compose up --build` again; only the
+# frontend refreshes live.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml --profile dev up --build
+#
+# Then open the Vite URL http://localhost:5173 (the Vite container proxies
+# /api to http://app:8080 via Compose service DNS; browsers keep using
+# localhost). See README.md for details.
+#
+# WSL2/Native-checkout requirement: live source mounts MUST come from a
+# repository clone inside the WSL2 Linux filesystem (e.g. ~/src/MtgSoloSports),
+# NOT from /mnt/c/... . Bind mounts from NTFS keep host case-insensitivity,
+# so HMR mounts do NOT guarantee Linux case sensitivity and can hide the very
+# import-casing bugs the CI guard (scripts/check-casing.py) is designed to
+# catch. If you can only check out on NTFS, skip this file and use the
+# reliable default: edit locally, then `docker compose up --build`.
+
+services:
+  web-dev:
+    image: node:22-bookworm-slim
+    working_dir: /repo/src/MtgSoloSports.Web
+    # Deterministic install matching package-lock.json, then Vite HMR bound
+    # to every container interface so the published 5173 port is reachable.
+    command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
+    ports:
+      - "5173:5173"
+    environment:
+      # Container-to-container API target (service DNS). Browsers still use
+      # localhost:5173; the Vite process forwards /api to the app service.
+      VITE_API_PROXY: http://app:8080
+    volumes:
+      # Live source for HMR. Requires a WSL2-native checkout (see above).
+      - .:/repo
+      # Isolate container dependencies from any host node_modules so host
+      # installs can never shadow the Linux module graph.
+      - web-dev-node-modules:/repo/src/MtgSoloSports.Web/node_modules
+    depends_on:
+      app:
+        condition: service_started
+    # Profile-gated: never starts on a plain `docker compose up --build`.
+    profiles:
+      - dev
+
+volumes:
+  web-dev-node-modules:
