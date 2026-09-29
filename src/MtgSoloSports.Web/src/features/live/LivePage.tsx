@@ -9,7 +9,7 @@ import {
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { AthleteLink, Link } from '../routing/router';
-import { savesPath, standingsLeaguePath, standingsPath } from '../routing/routes';
+import { savesPath, dashboardPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 import { colorComposition, zoneLabelForRank } from '../standings/zones';
@@ -379,6 +379,13 @@ export function LivePage({
               The backend result is authoritative; refreshing only re-reads persisted rounds and
               never resimulates. The reveal replays those immutable rows with
               presentation-only animation.
+            </p>
+            <p className="muted small">
+              Need the whole season at once?{' '}
+              <Link to={dashboardPath(saveId)}>
+                Fast-forward the league season on the Dashboard
+              </Link>{' '}
+              — one step completes every remaining league stage and stops before postseason.
             </p>
           </details>
         </Card>
