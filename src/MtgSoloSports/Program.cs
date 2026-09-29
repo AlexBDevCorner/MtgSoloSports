@@ -207,6 +207,10 @@ GetLongRunChecksumEndpoint.Map(app);
 ValidateLongRunInvariantsEndpoint.Map(app);
 GetLongRunStatsEndpoint.Map(app);
 
+// MSS-040: unknown /api routes stay JSON 404s so the SPA fallback never masks
+// server errors. Valid UI routes fall through to index.html for deep links.
+app.MapFallback("/api/{*path}", () => Results.NotFound(new { error = "Unknown API route." }));
+
 app.MapFallbackToFile("index.html");
 
 app.Run();

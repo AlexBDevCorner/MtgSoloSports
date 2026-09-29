@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { cardCaption, formatBonus, formatMovement, formatPoints } from './format';
 import { RevealBoard } from './RevealBoard';
+import { AthleteLink } from '../routing/router';
 import type { RevealPlacement } from './types';
 import { REVEAL_SPEEDS } from './types';
 import { useRoundReveal } from './useRoundReveal';
@@ -27,7 +28,8 @@ export interface RoundRevealProps {
    * `'default'` which preserves the existing History stacked presentation.
    */
   layout?: 'default' | 'live';
-  onSelectAthlete?: (athleteId: number) => void;
+  /** Save context for athlete profile links; when absent names render as text. */
+  saveId?: string | null;
 }
 
 function speedLabel(speed: (typeof REVEAL_SPEEDS)[number]): string {
@@ -61,7 +63,7 @@ export function RoundReveal({
   meta,
   autoPlayOnStart = true,
   layout = 'default',
-  onSelectAthlete,
+  saveId,
 }: RoundRevealProps) {
   const reveal = useRoundReveal(placements, revealKey, false, { autoPlayOnStart });
   const manualByDefault = autoPlayOnStart === false;
@@ -74,10 +76,6 @@ export function RoundReveal({
   const instantOrder: RevealPlacement[] = [...placements].sort((a, b) => a.position - b.position);
   const feed: RevealPlacement[] = reveal.mode === 'instant' ? instantOrder : reveal.revealedFeed;
   const total = reveal.total;
-
-  function openAthlete(athleteId: number): void {
-    onSelectAthlete?.(athleteId);
-  }
 
   const detailsTitle =
     reveal.mode === 'instant' ? 'Full finishing order' : 'Reveal feed (lowest first)';
@@ -244,17 +242,12 @@ export function RoundReveal({
                         </span>
                       )}
                       <span className="card-identity">
-                        {onSelectAthlete ? (
-                          <button
-                            type="button"
-                            className="card-name card-link"
-                            title={`Open career profile for ${placement.name}`}
-                            onClick={() => {
-                              openAthlete(placement.athleteId);
-                            }}
-                          >
-                            {placement.name}
-                          </button>
+                        {saveId ? (
+                          <AthleteLink
+                            saveId={saveId}
+                            athleteId={placement.athleteId}
+                            name={placement.name}
+                          />
                         ) : (
                           <span className="card-name">{placement.name}</span>
                         )}
@@ -405,7 +398,7 @@ export function RoundReveal({
         <RevealBoard
           standings={reveal.standings}
           latestAthleteId={reveal.mode === 'animated' ? (latestRevealed?.athleteId ?? null) : null}
-          onSelectAthlete={onSelectAthlete ? openAthlete : undefined}
+          saveId={saveId}
         />
 
         {detailsTable}
@@ -504,7 +497,7 @@ export function RoundReveal({
       <RevealBoard
         standings={reveal.standings}
         latestAthleteId={reveal.mode === 'animated' ? (latestRevealed?.athleteId ?? null) : null}
-        onSelectAthlete={onSelectAthlete ? openAthlete : undefined}
+        saveId={saveId}
       />
 
       {detailsTable}

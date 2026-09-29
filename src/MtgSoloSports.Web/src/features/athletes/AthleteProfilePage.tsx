@@ -1,5 +1,7 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { Link } from '../routing/router';
+import { dashboardPath, livePath, savesPath } from '../routing/routes';
 import type { AthleteProfileState } from './useAthleteProfile';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
@@ -16,26 +18,28 @@ function formatBonus(thousandths: number): string {
 export function AthleteProfilePage({
   saveId,
   athleteId,
+  rawAthleteId,
   state,
-  hasSelection,
-  onBackToLive,
-  onGoToSaves,
 }: {
-  saveId: string | null;
+  saveId: string;
   athleteId: number | null;
+  rawAthleteId?: string;
   state: AthleteProfileState;
-  hasSelection: boolean;
-  onBackToLive: () => void;
-  onGoToSaves: () => void;
 }) {
-  if (!hasSelection || !saveId || athleteId === null) {
+  if (athleteId === null) {
     return (
-      <Notice tone="empty" title="No athlete selected">
-        <p>Pick a card row in Live rounds or standings to open its career profile.</p>
+      <Notice tone="error" title="Invalid athlete link">
         <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
+          {rawAthleteId ? `“${rawAthleteId}” is not a valid athlete id. ` : ''}Athlete ids are
+          positive integers. Open a card row to find a valid career profile.
+        </p>
+        <p className="live-buttons">
+          <Link to={dashboardPath(saveId)} className="ghost-button">
+            Back to dashboard
+          </Link>{' '}
+          <Link to={livePath(saveId)} className="ghost-button">
+            Back to live
+          </Link>
         </p>
       </Notice>
     );
@@ -49,10 +53,16 @@ export function AthleteProfilePage({
     return (
       <Notice tone="error" title="Athlete unavailable">
         <p>{state.error ?? 'That athlete no longer exists.'}</p>
-        <p>
-          <button type="button" className="ghost-button" onClick={onBackToLive}>
+        <p className="live-buttons">
+          <Link to={livePath(saveId)} className="ghost-button">
             Back to live
-          </button>
+          </Link>{' '}
+          <Link to={dashboardPath(saveId)} className="ghost-button">
+            Back to dashboard
+          </Link>{' '}
+          <Link to={savesPath()} className="ghost-button">
+            Back to saves
+          </Link>
         </p>
       </Notice>
     );
@@ -74,9 +84,14 @@ export function AthleteProfilePage({
         eyebrow="Athlete profile"
         title={card.name}
         action={
-          <button type="button" className="ghost-button" onClick={onBackToLive}>
-            Back to live
-          </button>
+          <span className="live-buttons">
+            <Link to={livePath(saveId)} className="ghost-button">
+              Back to live
+            </Link>{' '}
+            <Link to={dashboardPath(saveId)} className="ghost-button">
+              Dashboard
+            </Link>
+          </span>
         }
       >
         <div className="athlete-hero">

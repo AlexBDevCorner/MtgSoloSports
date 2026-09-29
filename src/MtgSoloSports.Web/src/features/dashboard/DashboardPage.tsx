@@ -1,6 +1,7 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import type { View } from '../shell/AppShell';
+import { AthleteLink, Link } from '../routing/router';
+import { cupsPath, historyPath, livePath, recordsPath, savesPath } from '../routing/routes';
 import { describeNextAction, type DashboardData } from './useDashboard';
 
 function shortChecksum(value: string): string {
@@ -17,39 +18,20 @@ function formatBonus(thousandths: number): string {
 }
 
 export function DashboardPage({
+  saveId,
   data,
   loading,
   error,
   notFound,
-  hasSelection,
   onRefresh,
-  onGoToSaves,
-  onNavigate,
-  onSelectAthlete,
 }: {
+  saveId: string;
   data: DashboardData | null;
   loading: boolean;
   error: string | null;
   notFound: boolean;
-  hasSelection: boolean;
   onRefresh: () => void;
-  onGoToSaves: () => void;
-  onNavigate?: (view: View) => void;
-  onSelectAthlete?: (athleteId: number) => void;
 }) {
-  if (!hasSelection) {
-    return (
-      <Notice tone="empty" title="No save selected">
-        <p>Pick a universe on the Saves tab to see its current sporting state.</p>
-        <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
-        </p>
-      </Notice>
-    );
-  }
-
   if (loading && !data) {
     return <Loading label="Loading dashboard…" />;
   }
@@ -59,9 +41,9 @@ export function DashboardPage({
       <Notice tone="error" title="Save unavailable">
         <p>{error ?? 'That save no longer exists.'}</p>
         <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
+          <Link to={savesPath()} className="primary-button">
             Back to saves
-          </button>
+          </Link>
         </p>
       </Notice>
     );
@@ -92,14 +74,6 @@ export function DashboardPage({
   const cupHonours = recentHonours.filter((honour) => honour.honourKind.includes('Cup'));
   const leagueHonours = recentHonours.filter((honour) => !honour.honourKind.includes('Cup'));
   const recordPreview = (records?.records ?? []).slice(0, 6);
-
-  function openAthlete(athleteId: number): void {
-    onSelectAthlete?.(athleteId);
-  }
-
-  function go(view: View): void {
-    onNavigate?.(view);
-  }
 
   return (
     <div className="dashboard">
@@ -242,40 +216,36 @@ export function DashboardPage({
         </Card>
       </div>
 
-      {onNavigate ? (
-        <Card eyebrow="Navigate" title="Competitions · live event · history · records">
-          <div className="live-buttons" role="group" aria-label="Competition navigation">
-            <button type="button" className="primary-button" onClick={() => go('live')}>
-              Current live event
-            </button>
-            <button type="button" className="ghost-button" onClick={() => go('history')}>
-              History
-            </button>
-            <button type="button" className="ghost-button" onClick={() => go('records')}>
-              Records / Hall of Fame
-            </button>
-            <button type="button" className="ghost-button" onClick={() => go('cups')}>
-              Cups
-            </button>
-          </div>
-          <p className="muted small">
-            Live event runs the current stage rounds. History replays any persisted season,
-            competition, stage and round. Records tracks career leaders and Hall of Fame.
-            Athlete profiles open from any card name.
-          </p>
-        </Card>
-      ) : null}
+      <Card eyebrow="Navigate" title="Competitions · live event · history · records">
+        <div className="live-buttons" role="group" aria-label="Competition navigation">
+          <Link to={livePath(saveId)} className="primary-button">
+            Current live event
+          </Link>
+          <Link to={historyPath(saveId)} className="ghost-button">
+            History
+          </Link>
+          <Link to={recordsPath(saveId)} className="ghost-button">
+            Records / Hall of Fame
+          </Link>
+          <Link to={cupsPath(saveId)} className="ghost-button">
+            Cups
+          </Link>
+        </div>
+        <p className="muted small">
+          Live event runs the current stage rounds. History replays any persisted season,
+          competition, stage and round. Records tracks career leaders and Hall of Fame.
+          Athlete profiles open from any card name.
+        </p>
+      </Card>
 
       <div className="page-grid">
         <Card
           eyebrow="Leaders"
           title={superleagueBoard ? `Superleague — top ${Math.min(5, superleagueBoard.top.length)}` : 'Superleague leaders'}
           action={
-            onNavigate ? (
-              <button type="button" className="ghost-button" onClick={() => go('live')}>
-                Open live
-              </button>
-            ) : undefined
+            <Link to={livePath(saveId)} className="ghost-button">
+              Open live
+            </Link>
           }
         >
           {!superleagueBoard ? (
@@ -310,14 +280,7 @@ export function DashboardPage({
                             </span>
                           )}
                           <span className="card-identity">
-                            <button
-                              type="button"
-                              className="card-name card-link"
-                              title={`Open career profile for ${row.name}`}
-                              onClick={() => openAthlete(row.athleteId)}
-                            >
-                              {row.name}
-                            </button>
+                            <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                           </span>
                         </div>
                       </td>
@@ -353,11 +316,9 @@ export function DashboardPage({
           eyebrow="Leaders"
           title="Feeder leagues — current leaders"
           action={
-            onNavigate ? (
-              <button type="button" className="ghost-button" onClick={() => go('live')}>
-                Open live
-              </button>
-            ) : undefined
+            <Link to={livePath(saveId)} className="ghost-button">
+              Open live
+            </Link>
           }
         >
           {feederBoards.length === 0 ? (
@@ -380,14 +341,7 @@ export function DashboardPage({
                         <td>{board.leagueName}</td>
                         <td>
                           {leader ? (
-                            <button
-                              type="button"
-                              className="card-name card-link"
-                              title={`Open career profile for ${leader.name}`}
-                              onClick={() => openAthlete(leader.athleteId)}
-                            >
-                              {leader.name}
-                            </button>
+                            <AthleteLink saveId={saveId} athleteId={leader.athleteId} name={leader.name} />
                           ) : (
                             <span className="muted">—</span>
                           )}
@@ -460,11 +414,9 @@ export function DashboardPage({
           eyebrow="Winners"
           title={`Recent champions — ${leagueHonours.length} shown`}
           action={
-            onNavigate ? (
-              <button type="button" className="ghost-button" onClick={() => go('records')}>
-                All honours
-              </button>
-            ) : undefined
+            <Link to={recordsPath(saveId)} className="ghost-button">
+              All honours
+            </Link>
           }
         >
           {leagueHonours.length === 0 ? (
@@ -485,14 +437,7 @@ export function DashboardPage({
                       <td className="numeric">{honour.seasonNumber}</td>
                       <td>{honour.leagueName}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="card-name card-link"
-                          title={`Open career profile for ${honour.athleteName}`}
-                          onClick={() => openAthlete(honour.athleteId)}
-                        >
-                          {honour.athleteName}
-                        </button>
+                        <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />
                       </td>
                     </tr>
                   ))}
@@ -535,14 +480,7 @@ export function DashboardPage({
               {cupHonours.slice(0, 5).map((honour, index) => (
                 <li key={`${honour.seasonNumber}-${honour.honourKind}-${honour.athleteId}-${index}`}>
                   <span className="badge badge-ready">{honour.honourKind}</span>{' '}
-                  <button
-                    type="button"
-                    className="card-name card-link"
-                    title={`Open career profile for ${honour.athleteName}`}
-                    onClick={() => openAthlete(honour.athleteId)}
-                  >
-                    {honour.athleteName}
-                  </button>{' '}
+                  <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />{' '}
                   <span className="muted small">
                     · Season {honour.seasonNumber} · {honour.leagueName}
                   </span>
@@ -550,13 +488,11 @@ export function DashboardPage({
               ))}
             </ul>
           )}
-          {onNavigate ? (
-            <p>
-              <button type="button" className="ghost-button" onClick={() => go('cups')}>
-                Inspect Cup field
-              </button>
-            </p>
-          ) : null}
+          <p>
+            <Link to={cupsPath(saveId)} className="ghost-button">
+              Inspect Cup field
+            </Link>
+          </p>
         </Card>
       </div>
 
@@ -565,11 +501,9 @@ export function DashboardPage({
           eyebrow="Records"
           title={`Meaningful records — ${recordPreview.length} shown`}
           action={
-            onNavigate ? (
-              <button type="button" className="ghost-button" onClick={() => go('records')}>
-                All records
-              </button>
-            ) : undefined
+            <Link to={recordsPath(saveId)} className="ghost-button">
+              All records
+            </Link>
           }
         >
           {recordPreview.length === 0 ? (
@@ -596,14 +530,7 @@ export function DashboardPage({
                           record.holders.slice(0, 3).map((holder, index) => (
                             <span key={holder.athleteId}>
                               {index > 0 ? ', ' : ''}
-                              <button
-                                type="button"
-                                className="card-name card-link"
-                                title={`Open career profile for ${holder.athleteName}`}
-                                onClick={() => openAthlete(holder.athleteId)}
-                              >
-                                {holder.athleteName}
-                              </button>
+                              <AthleteLink saveId={saveId} athleteId={holder.athleteId} name={holder.athleteName} />
                             </span>
                           ))
                         )}
@@ -635,14 +562,7 @@ export function DashboardPage({
                     <tr key={row.athleteId}>
                       <td className="numeric">{row.rank}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="card-name card-link"
-                          title={`Open career profile for ${row.athleteName}`}
-                          onClick={() => openAthlete(row.athleteId)}
-                        >
-                          {row.athleteName}
-                        </button>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                       </td>
                       <td className="numeric">{row.totalTitles}</td>
                       <td className="numeric">{formatBonus(row.currentEffectiveBonusThousandths)}</td>
@@ -666,14 +586,7 @@ export function DashboardPage({
             {stories.map((story) => (
               <li key={story.id}>
                 <span className="badge badge-ready">{story.eventType}</span>{' '}
-                <button
-                  type="button"
-                  className="card-name card-link"
-                  title={`Open career profile for ${story.athleteName}`}
-                  onClick={() => openAthlete(story.athleteId)}
-                >
-                  {story.athleteName}
-                </button>{' '}
+                <AthleteLink saveId={saveId} athleteId={story.athleteId} name={story.athleteName} />{' '}
                 <span>{story.text}</span>
               </li>
             ))}
