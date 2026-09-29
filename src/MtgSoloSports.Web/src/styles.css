@@ -43,6 +43,32 @@ body {
   min-height: 100vh;
 }
 
+/* MSS-038: Live spans the usable desktop width with modest gutters instead of
+   the centered 1760px column. Other pages keep the constrained width.
+   Live chrome is also tightened (scoped) so the reveal board starts higher
+   and the first full card row fits at 1536x806 without touching other pages. */
+.app:has(.live-layout) {
+  max-width: none;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.app:has(.live-layout) .topbar {
+  padding: 12px 16px;
+}
+
+.app:has(.live-layout) .brand-title {
+  font-size: 1.35rem;
+}
+
+.app:has(.live-layout) .catalog-strip {
+  padding: 8px 12px;
+}
+
+.app:has(.live-layout) .content {
+  gap: 12px;
+}
+
 .topbar {
   display: flex;
   flex-wrap: wrap;
