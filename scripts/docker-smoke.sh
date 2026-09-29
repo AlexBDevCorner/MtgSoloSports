@@ -25,9 +25,10 @@ fail() {
 }
 
 echo "docker-smoke: waiting for ${BASE_URL}/api/health (up to ${TIMEOUT_SECONDS}s)..."
-deadline=$((SECONDS + TIMEOUT_SECONDS))
+start_now="$(date +%s)"
+deadline=$((start_now + TIMEOUT_SECONDS))
 until curl -fsS "${BASE_URL}/api/health" >/dev/null 2>&1; do
-  if [ "$SECONDS" -ge "$deadline" ]; then
+  if [ "$(date +%s)" -ge "$deadline" ]; then
     fail "${BASE_URL}/api/health never became ready within ${TIMEOUT_SECONDS}s"
   fi
   sleep 2

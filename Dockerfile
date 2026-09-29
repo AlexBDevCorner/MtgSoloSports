@@ -37,7 +37,10 @@ FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /repo
 
 # Restore first for better layer caching (exact-case project paths).
-COPY MtgSoloSports.slnx Directory.Build.props Directory.Packages.props NuGet.Config ./
+# .editorconfig travels too: it marks EF migrations as generated code and
+# tunes analyzer severities, so the image build must see the same rules as
+# host CI (missing it breaks the build with analyzer errors).
+COPY MtgSoloSports.slnx Directory.Build.props Directory.Packages.props NuGet.Config .editorconfig ./
 COPY src/MtgSoloSports/MtgSoloSports.csproj ./src/MtgSoloSports/
 COPY tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj ./tests/MtgSoloSports.Tests/
 COPY src/MtgSoloSports/packages.lock.json ./src/MtgSoloSports/
