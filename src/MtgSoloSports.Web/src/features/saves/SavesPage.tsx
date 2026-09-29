@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { Link, removeLastSelectedSave } from '../routing/router';
+import { dashboardPath } from '../routing/routes';
 import { CatalogCounts } from '../catalog/CatalogCounts';
 import type { CatalogStats } from '../catalog/catalogApi';
 import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
@@ -28,15 +30,16 @@ function toSaveSummary(result: {
 
 export function SavesPage({
   saves,
-  selectedSaveId,
-  onSelect,
+  activeSaveId,
+  onOpenSave,
   catalogSufficient,
   catalogStats,
   onCatalogImported,
 }: {
   saves: SavesState;
-  selectedSaveId: string | null;
-  onSelect: (saveId: string) => void;
+  /** Last-opened save for display only; never overrides an explicit URL. */
+  activeSaveId: string | null;
+  onOpenSave: (saveId: string) => void;
   catalogSufficient: boolean;
   catalogStats: CatalogStats | null;
   onCatalogImported: () => void;
@@ -75,7 +78,7 @@ export function SavesPage({
       setName('');
       setSeed('');
       setStream('');
-      onSelect(created.saveId);
+      onOpenSave(created.saveId);
     } catch (failure) {
       setCreateError(apiErrorMessage(failure));
     } finally {
@@ -100,7 +103,7 @@ export function SavesPage({
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      onSelect(imported.saveId);
+      onOpenSave(imported.saveId);
     } catch (failure) {
       setImportError(apiErrorMessage(failure));
     } finally {
@@ -128,24 +131,21 @@ export function SavesPage({
         ) : (
           <ul className="save-list">
             {saves.saves.map((save) => {
-              const active = save.saveId === selectedSaveId;
+              const active = save.saveId === activeSaveId;
               const deleting = saves.deletingId === save.saveId;
               return (
                 <li key={save.saveId} className={active ? 'save-row active' : 'save-row'}>
-                  <button
-                    type="button"
+                  <Link
+                    to={dashboardPath(save.saveId)}
                     className="save-open"
-                    onClick={() => {
-                      onSelect(save.saveId);
-                    }}
-                    aria-current={active ? 'true' : undefined}
+                    ariaCurrent={active ? 'page' : undefined}
                   >
                     <span className="save-name">{save.name}</span>
                     <span className="save-meta">
                       Season {save.currentSeason} · {save.phase} ·{' '}
                       {new Date(save.createdUtc).toLocaleDateString()}
                     </span>
-                  </button>
+                  </Link>
                   <span className="save-row-actions">
                     {active ? <span className="badge">Open</span> : null}
                     <a className="ghost-button" href={exportSaveUrl(save.saveId)} download>
@@ -156,9 +156,16 @@ export function SavesPage({
                       className="danger-link"
                       disabled={deleting}
                       onClick={() => {
-                        void saves.remove(save.saveId).catch(() => {
-                          // remove() already filters on success; list refresh surfaces failures
-                        });
+                        void saves
+                          .remove(save.saveId)
+                          .then(() => {
+                            if (save.saveId === activeSaveId) {
+                              removeLastSelectedSave();
+                            }
+                          })
+                          .catch(() => {
+                            // remove() already filters on success; list refresh surfaces failures
+                          });
                       }}
                     >
                       {deleting ? 'Deleting…' : 'Delete'}

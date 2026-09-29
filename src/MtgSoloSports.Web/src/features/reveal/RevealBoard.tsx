@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { cardCaption, formatMovement, formatPoints } from './format';
 import { describeTile, tileMovementGlyph } from './revealBoardHelpers';
 import type { ProgressiveStandingRow } from './revealOrder';
+import { AthleteLink } from '../routing/router';
 import './RevealBoard.css';
 
 export interface RevealBoardProps {
   standings: readonly ProgressiveStandingRow[];
   latestAthleteId: number | null;
-  onSelectAthlete?: (athleteId: number) => void;
+  /** Save context for profile links; when absent the name renders as text. */
+  saveId?: string | null;
 }
 
 function movementClass(rankDelta: number): string {
@@ -20,25 +22,10 @@ function movementClass(rankDelta: number): string {
   return 'move-flat';
 }
 
-function TileName({
-  row,
-  onSelectAthlete,
-}: {
-  row: ProgressiveStandingRow;
-  onSelectAthlete?: (athleteId: number) => void;
-}) {
-  if (onSelectAthlete) {
+function TileName({ row, saveId }: { row: ProgressiveStandingRow; saveId?: string | null }) {
+  if (saveId) {
     return (
-      <button
-        type="button"
-        className="card-name card-link reveal-tile-name"
-        title={`Open career profile for ${row.name}`}
-        onClick={() => {
-          onSelectAthlete(row.athleteId);
-        }}
-      >
-        {row.name}
-      </button>
+      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} className="card-name card-link reveal-tile-name" />
     );
   }
   return <span className="card-name reveal-tile-name">{row.name}</span>;
@@ -97,7 +84,7 @@ function TileArt({ row, showArtwork }: { row: ProgressiveStandingRow; showArtwor
  * render artwork or current-round awards; revealed tiles show the full
  * portrait plus awarded/stage-score/move from the existing progressive row.
  */
-export function RevealBoard({ standings, latestAthleteId, onSelectAthlete }: RevealBoardProps) {
+export function RevealBoard({ standings, latestAthleteId, saveId }: RevealBoardProps) {
   return (
     <ol className="reveal-board" aria-label="Stage standings as revealed">
       {standings.map((row) => {
@@ -128,7 +115,7 @@ export function RevealBoard({ standings, latestAthleteId, onSelectAthlete }: Rev
             </div>
             <div className="reveal-tile-body">
               <div className="reveal-tile-identity">
-                <TileName row={row} onSelectAthlete={onSelectAthlete} />
+                <TileName row={row} saveId={saveId} />
                 {caption ? <span className="card-sub reveal-tile-caption">{caption}</span> : null}
               </div>
               <dl className="reveal-tile-metrics">

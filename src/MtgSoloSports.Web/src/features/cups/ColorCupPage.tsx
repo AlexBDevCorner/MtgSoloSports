@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { AthleteLink, Link } from '../routing/router';
+import { savesPath } from '../routing/routes';
 import {
   fetchColorCupIndividual,
   fetchColorCupTeam,
@@ -29,17 +31,7 @@ function medalBadge(medal: string): string {
   return '—';
 }
 
-export function ColorCupPage({
-  saveId,
-  hasSelection,
-  onGoToSaves,
-  onSelectAthlete,
-}: {
-  saveId: string | null;
-  hasSelection: boolean;
-  onGoToSaves: () => void;
-  onSelectAthlete: (athleteId: number) => void;
-}) {
+export function ColorCupPage({ saveId }: { saveId: string }) {
   const [result, setResult] = useState<ColorCupIndividualResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -173,19 +165,6 @@ export function ColorCupPage({
     }
   }, [saveId, loadTeam]);
 
-  if (!hasSelection || !saveId) {
-    return (
-      <Notice tone="empty" title="No save selected">
-        <p>Pick a universe on the Saves tab to view the Color Cup.</p>
-        <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
-        </p>
-      </Notice>
-    );
-  }
-
   if (loading && !result) {
     return <Loading label="Loading Color Cup…" />;
   }
@@ -237,16 +216,7 @@ export function ColorCupPage({
                       <td>{medalBadge(row.medal)}</td>
                       <td className="numeric">{row.cupRank}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="card-name card-link"
-                          title={`Open career profile for ${row.name}`}
-                          onClick={() => {
-                            onSelectAthlete(row.athleteId);
-                          }}
-                        >
-                          {row.name}
-                        </button>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                         <span className="card-sub">
                           {' '}
                           · {row.sportingColor} · #{row.selectionRank}
@@ -306,16 +276,7 @@ export function ColorCupPage({
                   <tr key={row.athleteId}>
                     <td className="numeric">{row.cupRank}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.name}`}
-                        onClick={() => {
-                          onSelectAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.name}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                       <span className="card-sub">
                         {' '}
                         · {row.sportingColor} · #{row.selectionRank}
@@ -436,16 +397,7 @@ export function ColorCupPage({
                     <td className="numeric">#{leg.groupNumber}</td>
                     <td className="numeric">{leg.groupRank}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${leg.name}`}
-                        onClick={() => {
-                          onSelectAthlete(leg.athleteId);
-                        }}
-                      >
-                        {leg.name}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={leg.athleteId} name={leg.name} />
                       <span className="card-sub">
                         {' '}
                         · {leg.sportingColor} · #{leg.selectionRank}

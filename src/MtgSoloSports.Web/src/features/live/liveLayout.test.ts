@@ -30,7 +30,8 @@ describe('MSS-038 live above-the-fold composition', () => {
     assert.ok(!livePage.includes('className="dashboard"'), 'vertical stacked dashboard wrapper is gone on Live');
     assert.ok(livePage.includes('gateReason'), 'gate/disabled explanations stay near actions');
     assert.ok(livePage.includes('actionError'), 'action errors stay near actions');
-    assert.ok(livePage.includes('onSelectAthlete'), 'athlete profile navigation is preserved');
+    assert.ok(livePage.includes('AthleteLink'), 'athlete profiles use correct-save links (MSS-040)');
+    assert.ok(livePage.includes('urlLeagueId'), 'live league selection is URL-backed (MSS-040)');
   });
 
   it('opens live rounds manual-paused and steps with the same +1 control', () => {

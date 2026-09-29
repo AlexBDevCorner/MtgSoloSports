@@ -26,6 +26,8 @@ import {
 } from '../cups/colorCupApi';
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
 import { RoundReveal } from '../reveal/RoundReveal';
+import { AthleteLink, Link } from '../routing/router';
+import { cupsPath, savesPath } from '../routing/routes';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -78,21 +80,51 @@ function useAsync<T>(
   return { data, loading, error };
 }
 
+export interface HistorySelection {
+  season: number | null;
+  competition: number | null;
+  stage: number | null;
+  round: number | null;
+}
+
 export function HistoryPage({
   saveId,
-  hasSelection,
-  onGoToSaves,
-  onSelectAthlete,
+  urlSeason,
+  urlCompetition,
+  urlStage,
+  urlRound,
+  onHistoryChange,
 }: {
-  saveId: string | null;
-  hasSelection: boolean;
-  onGoToSaves: () => void;
-  onSelectAthlete: (athleteId: number) => void;
+  saveId: string;
+  /** Shareable selections from `?season=&competition=&stage=&round=`; null means latest fallback. */
+  urlSeason: number | null;
+  urlCompetition: number | null;
+  urlStage: number | null;
+  urlRound: number | null;
+  onHistoryChange: (selection: HistorySelection) => void;
 }) {
-  const [seasonNumber, setSeasonNumber] = useState<number | null>(null);
-  const [leagueId, setLeagueId] = useState<number | null>(null);
-  const [stageNumber, setStageNumber] = useState<number | null>(null);
-  const [roundNumber, setRoundNumber] = useState<number | null>(null);
+  const [seasonNumber, setSeasonNumber] = useState<number | null>(urlSeason);
+  const [leagueId, setLeagueId] = useState<number | null>(urlCompetition);
+  const [stageNumber, setStageNumber] = useState<number | null>(urlStage);
+  const [roundNumber, setRoundNumber] = useState<number | null>(urlRound);
+
+  // Sync Back/Forward navigation of the shareable query into local selection.
+  useEffect(() => {
+    setSeasonNumber(urlSeason);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlSeason, saveId]);
+  useEffect(() => {
+    setLeagueId(urlCompetition);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlCompetition, saveId]);
+  useEffect(() => {
+    setStageNumber(urlStage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlStage, saveId]);
+  useEffect(() => {
+    setRoundNumber(urlRound);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlRound, saveId]);
 
   const seasonsState = useAsync<HistorySeasons>(saveId, (signal) =>
     fetchHistorySeasons(saveId as string, signal),
@@ -101,16 +133,19 @@ export function HistoryPage({
 
   useEffect(() => {
     if (seasons.length === 0) {
-      setSeasonNumber(null);
       return;
     }
     setSeasonNumber((current) => {
+      // Explicit shareable `?season=` wins when it names a persisted season.
+      if (urlSeason !== null && seasons.some((row) => row.seasonNumber === urlSeason)) {
+        return urlSeason;
+      }
       if (current !== null && seasons.some((row) => row.seasonNumber === current)) {
         return current;
       }
       return seasons[seasons.length - 1]!.seasonNumber;
     });
-  }, [seasons]);
+  }, [seasons, urlSeason]);
 
   const competitionsKey =
     saveId && seasonNumber !== null ? `${saveId}/s${seasonNumber}` : null;
@@ -121,16 +156,21 @@ export function HistoryPage({
 
   useEffect(() => {
     if (competitions.length === 0) {
-      setLeagueId(null);
       return;
     }
     setLeagueId((current) => {
+      if (
+        urlCompetition !== null &&
+        competitions.some((row) => row.leagueId === urlCompetition)
+      ) {
+        return urlCompetition;
+      }
       if (current !== null && competitions.some((row) => row.leagueId === current)) {
         return current;
       }
       return [...competitions].sort((a, b) => a.leagueId - b.leagueId)[0]!.leagueId;
     });
-  }, [competitions]);
+  }, [competitions, urlCompetition]);
 
   const stagesKey =
     saveId && seasonNumber !== null && leagueId !== null
@@ -143,16 +183,18 @@ export function HistoryPage({
 
   useEffect(() => {
     if (stages.length === 0) {
-      setStageNumber(null);
       return;
     }
     setStageNumber((current) => {
+      if (urlStage !== null && stages.some((row) => row.stageNumber === urlStage)) {
+        return urlStage;
+      }
       if (current !== null && stages.some((row) => row.stageNumber === current)) {
         return current;
       }
       return stages[stages.length - 1]!.stageNumber;
     });
-  }, [stages]);
+  }, [stages, urlStage]);
 
   const roundsKey =
     saveId && seasonNumber !== null && leagueId !== null && stageNumber !== null
@@ -171,10 +213,15 @@ export function HistoryPage({
 
   useEffect(() => {
     if (roundSummaries.length === 0) {
-      setRoundNumber(null);
       return;
     }
     setRoundNumber((current) => {
+      if (
+        urlRound !== null &&
+        roundSummaries.some((row) => row.roundNumber === urlRound)
+      ) {
+        return urlRound;
+      }
       if (
         current !== null &&
         roundSummaries.some((row) => row.roundNumber === current)
@@ -183,7 +230,7 @@ export function HistoryPage({
       }
       return roundSummaries[roundSummaries.length - 1]!.roundNumber;
     });
-  }, [roundSummaries]);
+  }, [roundSummaries, urlRound]);
 
   const replayKey =
     saveId && seasonNumber !== null && leagueId !== null && stageNumber !== null && roundNumber !== null
@@ -246,19 +293,6 @@ export function HistoryPage({
     fetchTypeCupTeam(saveId as string, seasonNumber as number, signal),
   );
 
-  if (!hasSelection || !saveId) {
-    return (
-      <Notice tone="empty" title="No save selected">
-        <p>Pick a universe on the Saves tab to browse its history.</p>
-        <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
-        </p>
-      </Notice>
-    );
-  }
-
   if (seasonsState.loading && seasons.length === 0) {
     return <Loading label="Loading history…" />;
   }
@@ -267,6 +301,11 @@ export function HistoryPage({
     return (
       <Notice tone="error" title="History unavailable">
         <p>{seasonsState.error}</p>
+        <p>
+          <Link to={savesPath()} className="ghost-button">
+            Back to saves
+          </Link>
+        </p>
       </Notice>
     );
   }
@@ -282,6 +321,10 @@ export function HistoryPage({
   const replay = replayState.data;
   const stageStandings = standingsState.data;
   const seasonTable = tableState.data;
+
+  function pushSelection(next: HistorySelection): void {
+    onHistoryChange(next);
+  }
 
   return (
     <div className="dashboard">
@@ -299,10 +342,12 @@ export function HistoryPage({
               value={seasonNumber ?? ''}
               onChange={(event) => {
                 const next = Number.parseInt(event.target.value, 10);
-                setSeasonNumber(Number.isNaN(next) ? null : next);
+                const season = Number.isNaN(next) ? null : next;
+                setSeasonNumber(season);
                 setLeagueId(null);
                 setStageNumber(null);
                 setRoundNumber(null);
+                pushSelection({ season, competition: null, stage: null, round: null });
               }}
             >
               {seasons.map((row) => (
@@ -320,9 +365,11 @@ export function HistoryPage({
               disabled={competitions.length === 0}
               onChange={(event) => {
                 const next = Number.parseInt(event.target.value, 10);
-                setLeagueId(Number.isNaN(next) ? null : next);
+                const competition = Number.isNaN(next) ? null : next;
+                setLeagueId(competition);
                 setStageNumber(null);
                 setRoundNumber(null);
+                pushSelection({ season: seasonNumber, competition, stage: null, round: null });
               }}
             >
               {competitions.map((row) => (
@@ -339,8 +386,10 @@ export function HistoryPage({
               disabled={stages.length === 0}
               onChange={(event) => {
                 const next = Number.parseInt(event.target.value, 10);
-                setStageNumber(Number.isNaN(next) ? null : next);
+                const stage = Number.isNaN(next) ? null : next;
+                setStageNumber(stage);
                 setRoundNumber(null);
+                pushSelection({ season: seasonNumber, competition: leagueId, stage, round: null });
               }}
             >
               {stages.map((row) => (
@@ -358,7 +407,9 @@ export function HistoryPage({
               disabled={roundSummaries.length === 0}
               onChange={(event) => {
                 const next = Number.parseInt(event.target.value, 10);
-                setRoundNumber(Number.isNaN(next) ? null : next);
+                const round = Number.isNaN(next) ? null : next;
+                setRoundNumber(round);
+                pushSelection({ season: seasonNumber, competition: leagueId, stage: stageNumber, round });
               }}
             >
               {roundSummaries.map((row) => (
@@ -372,7 +423,9 @@ export function HistoryPage({
         <p className="muted small">
           Season, competition and stage lists plus round summaries come from normalized
           tables only; the exact round payload is decompressed only when that round is
-          requested. Replay never consumes RNG and never mutates save state.
+          requested. Replay never consumes RNG and never mutates save state. The
+          current selection is reflected in the URL (`?season=&amp;competition=&amp;stage=&amp;round=`)
+          so it can be copied or opened in another tab.
         </p>
         {competitionsState.error ? (
           <p className="muted small">Competitions: {competitionsState.error}</p>
@@ -405,15 +458,11 @@ export function HistoryPage({
             ) : colorIndividualState.data ? (
               <p>
                 Individual champion{' '}
-                <button
-                  type="button"
-                  className="card-name card-link"
-                  onClick={() => {
-                    onSelectAthlete(colorIndividualState.data!.championAthleteId);
-                  }}
-                >
-                  {colorIndividualState.data!.championName}
-                </button>{' '}
+                <AthleteLink
+                  saveId={saveId}
+                  athleteId={colorIndividualState.data!.championAthleteId}
+                  name={colorIndividualState.data!.championName}
+                />{' '}
                 · {colorIndividualState.data!.cupSize} athletes ·{' '}
                 {colorIndividualState.data!.rounds} rounds.
               </p>
@@ -432,7 +481,8 @@ export function HistoryPage({
               <p className="muted">No Color Cup team result for this season yet.</p>
             )}
             <p className="muted small">
-              Open the Cups tab for the full field, standings and replay payloads.
+              Open the <Link to={cupsPath(saveId)} className="card-name card-link">Cups tab</Link> for
+              the full field, standings and replay payloads.
             </p>
           </>
         ) : (
@@ -454,7 +504,8 @@ export function HistoryPage({
               <p className="muted">No Type Cup team result for this season yet.</p>
             )}
             <p className="muted small">
-              Open the Cups tab for the full allocation, standings and replay payloads.
+              Open the <Link to={cupsPath(saveId)} className="card-name card-link">Cups tab</Link> for
+              the full allocation, standings and replay payloads.
             </p>
           </>
         )}
@@ -482,7 +533,7 @@ export function HistoryPage({
           revealKey={`${replay.seasonNumber}:${replay.leagueId}:${replay.stageNumber}:${replay.roundNumber}:${replay.payloadChecksum}`}
           roundLabel={`Season ${replay.seasonNumber} · ${replay.leagueName} · Stage ${replay.stageNumber} · Round ${replay.roundNumber}`}
           meta={`Rules v${replay.rulesVersion} · checksum ${replay.payloadChecksum.length > 12 ? `${replay.payloadChecksum.slice(0, 12)}…` : replay.payloadChecksum} · same presentation model as live results. Replay never consumes RNG and never mutates save state.`}
-          onSelectAthlete={onSelectAthlete}
+          saveId={saveId}
         />
       )}
 
@@ -521,16 +572,7 @@ export function HistoryPage({
                   <tr key={row.athleteId}>
                     <td className="numeric">{row.stageRank}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.name}`}
-                        onClick={() => {
-                          onSelectAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.name}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                     </td>
                     <td className="numeric">{formatPoints(row.stageScoreThousandths)}</td>
                     <td className="numeric">
@@ -583,16 +625,7 @@ export function HistoryPage({
                   <tr key={row.athleteId}>
                     <td className="numeric">{row.seasonRank}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.name}`}
-                        onClick={() => {
-                          onSelectAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.name}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                       {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
                     </td>
                     <td className="numeric">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { AthleteLink } from '../routing/router';
 import {
   fetchHallOfFame,
   fetchHonours,
@@ -62,17 +63,7 @@ function useSaveData<T>(
   return { data, loading, error };
 }
 
-export function RecordsPage({
-  saveId,
-  hasSelection,
-  onGoToSaves,
-  onSelectAthlete,
-}: {
-  saveId: string | null;
-  hasSelection: boolean;
-  onGoToSaves: () => void;
-  onSelectAthlete: (athleteId: number) => void;
-}) {
+export function RecordsPage({ saveId }: { saveId: string }) {
   const recordsState = useSaveData<Records>(saveId, (id, signal) =>
     fetchRecords(id, signal),
   );
@@ -82,19 +73,6 @@ export function RecordsPage({
   const honoursState = useSaveData<Honours>(saveId, (id, signal) =>
     fetchHonours(id, signal),
   );
-
-  if (!hasSelection || !saveId) {
-    return (
-      <Notice tone="empty" title="No save selected">
-        <p>Pick a universe on the Saves tab to browse records and honours.</p>
-        <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
-        </p>
-      </Notice>
-    );
-  }
 
   const loading =
     (recordsState.loading && !recordsState.data) ||
@@ -151,16 +129,7 @@ export function RecordsPage({
                   <tr key={row.athleteId}>
                     <td className="numeric">{row.rank}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.athleteName}`}
-                        onClick={() => {
-                          onSelectAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.athleteName}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                       <span className="card-sub">
                         {' '}
                         · {row.sportingColorName}
@@ -216,16 +185,7 @@ export function RecordsPage({
                         record.holders.map((holder, index) => (
                           <span key={holder.athleteId}>
                             {index > 0 ? ', ' : ''}
-                            <button
-                              type="button"
-                              className="card-name card-link"
-                              title={`Open career profile for ${holder.athleteName}`}
-                              onClick={() => {
-                                onSelectAthlete(holder.athleteId);
-                              }}
-                            >
-                              {holder.athleteName}
-                            </button>
+                            <AthleteLink saveId={saveId} athleteId={holder.athleteId} name={holder.athleteName} />
                           </span>
                         ))
                       )}
@@ -253,16 +213,7 @@ export function RecordsPage({
             {history.map((item, index) => (
               <li key={`${item.recordKey}-${item.athleteId}-${item.seasonNumber}-${index}`}>
                 <span className="badge badge-ready">{item.recordKey}</span>{' '}
-                <button
-                  type="button"
-                  className="card-name card-link"
-                  title={`Open career profile for ${item.athleteName}`}
-                  onClick={() => {
-                    onSelectAthlete(item.athleteId);
-                  }}
-                >
-                  {item.athleteName}
-                </button>{' '}
+                <AthleteLink saveId={saveId} athleteId={item.athleteId} name={item.athleteName} />{' '}
                 <span>{item.text}</span>
               </li>
             ))}
@@ -295,16 +246,7 @@ export function RecordsPage({
                     <td className="numeric">{row.seasonNumber}</td>
                     <td>{row.leagueName}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="card-name card-link"
-                        title={`Open career profile for ${row.athleteName}`}
-                        onClick={() => {
-                          onSelectAthlete(row.athleteId);
-                        }}
-                      >
-                        {row.athleteName}
-                      </button>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                     </td>
                     <td>{row.honourKind}</td>
                   </tr>

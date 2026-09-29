@@ -8,6 +8,8 @@ import {
 } from '../athletes/athleteApi';
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
+import { AthleteLink, Link } from '../routing/router';
+import { savesPath } from '../routing/routes';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 import { colorComposition, zoneLabelForRank } from '../standings/zones';
@@ -41,21 +43,29 @@ export function LivePage({
   saveId,
   progress,
   progressLoading,
-  hasSelection,
+  progressNotFound,
+  progressError,
   onMutated,
-  onGoToSaves,
-  onSelectAthlete,
+  urlLeagueId,
+  urlRound,
+  onLeagueChange,
+  onRoundChange,
 }: {
-  saveId: string | null;
+  saveId: string;
   progress: SeasonProgress | null;
   progressLoading: boolean;
-  hasSelection: boolean;
+  progressNotFound: boolean;
+  progressError: string | null;
   onMutated: () => void;
-  onGoToSaves: () => void;
-  onSelectAthlete: (athleteId: number) => void;
+  /** Shareable league selection from `?league=`; null means stored/default fallback. */
+  urlLeagueId: number | null;
+  /** Shareable round selection from `?round=`; null means latest persisted round. */
+  urlRound: number | null;
+  onLeagueChange: (leagueId: number) => void;
+  onRoundChange: (round: number | null) => void;
 }) {
-  const [leagueId, setLeagueId] = useState<number | null>(null);
-  const [selectedRound, setSelectedRound] = useState<number | null>(null);
+  const [leagueId, setLeagueId] = useState<number | null>(urlLeagueId);
+  const [selectedRound, setSelectedRound] = useState<number | null>(urlRound);
   const [advancing, setAdvancing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -68,9 +78,35 @@ export function LivePage({
   const stageNumber = league?.currentStage ?? progress?.globalStage ?? null;
   const effectiveStage = league?.isLeagueComplete ? null : stageNumber;
 
+  // Sync Back/Forward navigation of `?league=` into local selection.
+  useEffect(() => {
+    if (urlLeagueId !== null && urlLeagueId !== leagueId) {
+      setLeagueId(urlLeagueId);
+      setSelectedRound(urlRound);
+    } else if (urlLeagueId === null && urlRound !== selectedRound && urlRound !== null) {
+      setSelectedRound(urlRound);
+    }
+    // Sync only on URL changes; local edits push the URL via callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlLeagueId, urlRound]);
+
   useEffect(() => {
     if (!saveId || !progress) {
-      setLeagueId(null);
+      if (!progress) {
+        setLeagueId((current) => (urlLeagueId !== null ? urlLeagueId : current));
+      }
+      return;
+    }
+    // An explicit shareable `?league=` wins when it names a league in this save.
+    if (urlLeagueId !== null) {
+      const match = progress.leagues.find((entry) => entry.leagueId === urlLeagueId);
+      if (match) {
+        setLeagueId(match.leagueId);
+        return;
+      }
+      // Invalid league query falls back below without clobbering the URL.
+    }
+    if (leagueId !== null && progress.leagues.some((entry) => entry.leagueId === leagueId)) {
       return;
     }
     const stored = readStored(`${LEAGUE_KEY_PREFIX}${saveId}`);
@@ -82,7 +118,7 @@ export function LivePage({
     }
     const first = [...progress.leagues].sort((a, b) => a.leagueId - b.leagueId)[0];
     setLeagueId(first ? first.leagueId : null);
-  }, [saveId, progress]);
+  }, [saveId, progress, urlLeagueId, leagueId]);
 
   const stageRounds = useStageRounds(saveId, leagueId, effectiveStage);
   const completedRounds = stageRounds.rounds?.completedRounds ?? 0;
@@ -137,30 +173,38 @@ export function LivePage({
 
   useEffect(() => {
     if (!stageRounds.rounds) {
-      setSelectedRound(null);
       return;
     }
     const total = stageRounds.rounds.completedRounds;
     if (total === 0) {
-      setSelectedRound(null);
+      if (selectedRound !== null) {
+        setSelectedRound(null);
+      }
       return;
     }
     setSelectedRound((current) => {
+      // An explicit shareable `?round=` wins when it names a persisted round.
+      if (urlRound !== null) {
+        const exists = stageRounds.rounds?.rounds.some((row) => row.roundNumber === urlRound);
+        if (exists) {
+          return urlRound;
+        }
+      }
       if (current === null || current > total) {
         return total;
       }
       return current;
     });
-  }, [stageRounds.rounds]);
+  }, [stageRounds.rounds, urlRound, selectedRound]);
 
-  if (!hasSelection || !saveId) {
+  if (progressNotFound) {
     return (
-      <Notice tone="empty" title="No save selected">
-        <p>Pick a universe on the Saves tab to run live rounds.</p>
+      <Notice tone="error" title="Save unavailable">
+        <p>That save no longer exists. Pick another universe on the Saves page.</p>
         <p>
-          <button type="button" className="primary-button" onClick={onGoToSaves}>
-            Go to saves
-          </button>
+          <Link to={savesPath()} className="primary-button">
+            Back to saves
+          </Link>
         </p>
       </Notice>
     );
@@ -173,7 +217,12 @@ export function LivePage({
   if (!progress) {
     return (
       <Notice tone="error" title="Competition unavailable">
-        <p>Sporting progress could not be loaded for this save.</p>
+        <p>{progressError ?? 'Sporting progress could not be loaded for this save.'}</p>
+        <p>
+          <Link to={savesPath()} className="ghost-button">
+            Back to saves
+          </Link>
+        </p>
       </Notice>
     );
   }
@@ -214,6 +263,7 @@ export function LivePage({
     try {
       const result = await advanceRound(saveId, leagueId);
       setSelectedRound(result.roundNumber);
+      onRoundChange(result.roundNumber);
       stageRounds.refresh();
       onMutated();
     } catch (failure) {
@@ -232,6 +282,7 @@ export function LivePage({
     try {
       await completeStage(saveId, leagueId);
       setSelectedRound(null);
+      onRoundChange(null);
       stageRounds.refresh();
       onMutated();
     } catch (failure) {
@@ -239,10 +290,6 @@ export function LivePage({
     } finally {
       setCompleting(false);
     }
-  }
-
-  function openAthlete(athleteId: number): void {
-    onSelectAthlete(athleteId);
   }
 
   const revealKey = visibleRound
@@ -270,11 +317,13 @@ export function LivePage({
                 disabled={leagues.length === 0 || busy}
                 onChange={(event) => {
                   const next = Number.parseInt(event.target.value, 10);
-                  setLeagueId(Number.isNaN(next) ? null : next);
-                  setSelectedRound(null);
-                  if (saveId && !Number.isNaN(next)) {
-                    writeStored(`${LEAGUE_KEY_PREFIX}${saveId}`, String(next));
+                  if (Number.isNaN(next)) {
+                    return;
                   }
+                  setLeagueId(next);
+                  setSelectedRound(null);
+                  writeStored(`${LEAGUE_KEY_PREFIX}${saveId}`, String(next));
+                  onLeagueChange(next);
                 }}
               >
                 {leagues.map((entry) => (
@@ -370,6 +419,7 @@ export function LivePage({
                   disabled={busy}
                   onClick={() => {
                     setSelectedRound(round.roundNumber);
+                    onRoundChange(round.roundNumber);
                   }}
                 >
                   {round.roundNumber}
@@ -389,7 +439,7 @@ export function LivePage({
             meta={revealMeta}
             autoPlayOnStart={false}
             layout="live"
-            onSelectAthlete={openAthlete}
+            saveId={saveId}
           />
         ) : stageRounds.error && !stageRounds.rounds ? (
           <Notice tone="error" title="Rounds unavailable">
@@ -477,16 +527,7 @@ export function LivePage({
                               </span>
                             )}
                             <span className="card-identity">
-                              <button
-                                type="button"
-                                className="card-name card-link"
-                                title={`Open career profile for ${row.name}`}
-                                onClick={() => {
-                                  openAthlete(row.athleteId);
-                                }}
-                              >
-                                {row.name}
-                              </button>
+                              <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                               {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
                             </span>
                           </div>
