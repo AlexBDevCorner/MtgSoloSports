@@ -1,0 +1,39 @@
+# MSS-043: Docker build context exclusions.
+#
+# Goal: keep Linux image layers hermetic and small. In particular the default
+# Compose mode must never inherit host node_modules, build output, local
+# SQLite files or the read-only control checkout. Every COPY source in the
+# Dockerfile must still exist with exact case; scripts/check-casing.py guards
+# that, so do not add exclusions for files the image build needs.
+
+.git
+control/
+
+# Frontend: container installs/builds its own deterministic dependencies.
+**/node_modules
+**/dist
+
+# .NET build artifacts (the image restores/publishes from source).
+**/bin
+**/obj
+**/TestResults
+
+# Locally built frontend copied into the ASP.NET host: the web-build stage
+# regenerates this from source, so host output must not enter the context.
+src/MtgSoloSports/wwwroot
+
+# Runtime data: per-save SQLite files, catalog DB, WAL/SHM sidecars.
+# User data lives in the named Compose volume, never in the image.
+*.db
+*.db-shm
+*.db-wal
+/data/
+/saves/
+/catalog/
+
+# IDE / OS noise.
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

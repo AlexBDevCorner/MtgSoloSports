@@ -27,24 +27,109 @@ See:
 - [Autonomous development](docs/autonomous-development.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
 
-## Standard local run
+## Recommended local run (Docker)
 
-Prerequisites: .NET 10 SDK and Node.js 20+.
+Prerequisites:
 
-1. Start the backend (serves the API on localhost):
+- Linux: Docker Engine plus the Compose plugin (`docker compose version` works).
+- Windows: Docker Desktop with **Linux containers** and the WSL2 backend enabled.
+
+The default mode builds Linux images from a copy of the source and serves the
+compiled React UI and the API from one container. No host .NET SDK or Node.js
+installation is required.
+
+> Windows checkout placement matters. Clone the repository **inside the WSL2
+> Linux filesystem** (for example `~/src/MtgSoloSports`), not under
+> `/mnt/c/...`. NTFS bind mounts keep Windows case-insensitivity, so a
+> Windows-side checkout can hide import-casing bugs that break the Linux
+> image build. The default mode below copies source into image layers (it
+> never bind-mounts host source, `node_modules` or build output), but your
+> checkout still needs exact-case files — run
+> `python3 scripts/check-casing.py` if you suspect a mixed tree.
+
+1. Start everything (builds the Linux images on first run):
 
 ```bash
-dotnet run --project src/MtgSoloSports
+docker compose up --build
 ```
 
-2. In a second terminal, start the frontend. The Vite server proxies `/api` to the backend:
+2. Open http://localhost:8080 in a desktop browser and continue with
+   [First-time onboarding](#first-time-onboarding-scryfall-catalog--first-universe)
+   below (Scryfall import, universe creation, Dashboard/Live/History and more).
+
+Useful commands from the repository root:
 
 ```bash
-npm install --prefix src/MtgSoloSports.Web
-npm run dev --prefix src/MtgSoloSports.Web
+docker compose up --build -d   # same startup, detached
+docker compose logs -f app     # follow backend logs (Ctrl+C stops following)
+docker compose ps              # container status
+docker compose up --build      # restart after source changes (rebuilds images)
+docker compose down            # stop containers; saves + catalog are KEPT
+docker compose down -v         # DESTRUCTIVE: deletes the saves + catalog volume
 ```
 
-3. Open the Vite URL in a desktop browser and use the Saves tab:
+Persistence: per-save SQLite files live at `/data/saves` and the shared
+catalog at `/data/catalog/catalog.db` inside the named Docker volume
+`mtgsolosports-data`. `docker compose down`, container rebuilds and image
+rebuilds preserve cards and existing universes; only
+`docker compose down -v` removes them. User data and credentials are never
+baked into the image.
+
+Validating a local run (same checks CI performs):
+
+```bash
+docker compose config -q
+docker compose up -d --build
+sh scripts/docker-smoke.sh http://localhost:8080 180
+```
+
+The smoke script polls `/api/health` with retries (no arbitrary sleeps),
+checks the public `GET /api/catalog/stats` endpoint (needs no imported
+catalog or created save), and confirms a save-scoped deep link serves the
+React shell via the SPA fallback.
+
+### Optional live frontend reload (dev profile)
+
+For fast React iteration without rebuilding the image on every edit, an
+opt-in Vite dev server with hot-module replacement is available. The backend
+(`app`) still runs from the built Linux image, so backend changes still need
+`docker compose up --build`; only the frontend refreshes live.
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml --profile dev up --build
+```
+
+Then open the Vite URL http://localhost:5173 in the browser. The Vite
+container proxies `/api` to `http://app:8080` via Compose service DNS, so
+browsers keep using localhost while containers talk service-to-service.
+
+Requirements and tradeoffs for this mode:
+
+- The repository **must** be checked out inside the WSL2 Linux filesystem
+  (for example `~/src/MtgSoloSports`, not `/mnt/c/...`) on Windows. HMR
+  bind-mounts the source tree, and NTFS mounts do not guarantee Linux case
+  sensitivity — they can hide the exact import-casing bugs that
+  `scripts/check-casing.py` and Linux CI are designed to catch.
+- Container `node_modules` are isolated from any host install via a dedicated
+  volume, so host dependencies can never shadow the Linux module graph.
+- If you cannot meet the WSL-native checkout requirement, skip this file and
+  use the reliable default loop instead: edit locally, then
+  `docker compose up --build`.
+
+What containerization does **not** do: building/running in Linux surfaces and
+prevents environment differences, but it does not silently correct bad
+imports and cannot recover case-only files already lost by a
+case-insensitive checkout. A Linux image built from a collapsed Windows tree
+inherits the damage. The safeguards are exact-case source, the
+`scripts/check-casing.py` CI guard, and the existing Linux frontend
+`typecheck`/`build` gates — never clearing the Vite cache indiscriminately
+or flipping `git config core.ignorecase` as a supposed universal remedy.
+
+## First-time onboarding (Scryfall catalog + first universe)
+
+Works identically in Docker (`http://localhost:8080`) and host
+(`http://localhost:5173`) modes. Open the app URL in a desktop browser and
+use the Saves tab:
 
 - Click **Import cards from Scryfall** on the Saves screen (also shown in the catalog
   banner when the catalog is empty or incomplete) and wait for verified quota:
@@ -70,6 +155,28 @@ npm run dev --prefix src/MtgSoloSports.Web
 
 Sporting simulation is deterministic (versioned RNG, fixed-point integers) and the UI
 only replays persisted results; refreshing or changing reveal speed never resimulates.
+
+## Alternative local run without Docker
+
+The original host-based workflow still works and needs .NET 10 SDK and
+Node.js 20+ installed locally:
+
+1. Start the backend (serves the API on localhost):
+
+```bash
+dotnet run --project src/MtgSoloSports
+```
+
+2. In a second terminal, start the frontend. The Vite server proxies `/api` to the backend:
+
+```bash
+npm install --prefix src/MtgSoloSports.Web
+npm run dev --prefix src/MtgSoloSports.Web
+```
+
+3. Open the Vite URL in a desktop browser and follow
+   [First-time onboarding](#first-time-onboarding-scryfall-catalog--first-universe)
+   above.
 
 ### Troubleshooting: blank page with a `RevealBoard` missing-export error
 
