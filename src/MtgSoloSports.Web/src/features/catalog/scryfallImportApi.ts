@@ -23,6 +23,7 @@ export interface ScryfallImportResult {
   countsBySportingColor: Record<string, number>;
   skippedTokens: number;
   skippedNonCreature: number;
+  skippedAmbiguousColor?: number;
   isSufficientForSave: boolean;
   sourceType: string;
   sourceName: string | null;

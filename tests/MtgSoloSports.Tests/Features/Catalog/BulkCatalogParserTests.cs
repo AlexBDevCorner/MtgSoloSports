@@ -152,12 +152,13 @@ public sealed class BulkCatalogParserTests
         athletes.Count.ShouldBe(1);
         athletes[0].Name.ShouldBe("Serra Angel");
 
-        (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature) = BulkCatalogParser.CountCollapse(records);
+        (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature, int skippedAmbiguous) = BulkCatalogParser.CountCollapse(records);
         total.ShouldBe(3);
         eligible.ShouldBe(1);
         unique.ShouldBe(1);
         skippedTokens.ShouldBe(1);
         skippedNonCreature.ShouldBe(1);
+        skippedAmbiguous.ShouldBe(0);
     }
 
     [Fact]
@@ -176,10 +177,11 @@ public sealed class BulkCatalogParserTests
         athletes[0].ImageUrl.ShouldBe("https://img/serra-m10.jpg");
         athletes[0].SetCode.ShouldBe("m10");
 
-        (int total, int eligible, int unique, _, _) = BulkCatalogParser.CountCollapse(records);
+        (int total, int eligible, int unique, _, _, int skippedAmbiguous) = BulkCatalogParser.CountCollapse(records);
         total.ShouldBe(2);
         eligible.ShouldBe(2);
         unique.ShouldBe(1);
+        skippedAmbiguous.ShouldBe(0);
     }
 
     [Fact]

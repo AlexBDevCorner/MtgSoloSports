@@ -140,6 +140,7 @@ public sealed class ImportFromScryfallHandler
             result.CountsBySportingColor,
             result.SkippedTokens,
             result.SkippedNonCreature,
+            result.SkippedAmbiguousColor,
             result.IsSufficientForSave,
             source.Type,
             source.Name,

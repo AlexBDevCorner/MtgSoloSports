@@ -12,13 +12,15 @@ namespace MtgSoloSports.Features.Catalog.ImportCatalog;
 /// <param name="CountsBySportingColor">Persisted unique athletes per sporting color.</param>
 /// <param name="SkippedTokens">Raw entries rejected as tokens.</param>
 /// <param name="SkippedNonCreature">Raw entries rejected as non-creature.</param>
+/// <param name="SkippedAmbiguousColor">Creature candidates skipped because printed colors were absent/ambiguous (never defaulted to Colorless).</param>
 public sealed record CatalogImportResult(
     int TotalPrintings,
     int EligiblePrintings,
     int UniqueAthletes,
     IReadOnlyDictionary<SportingColor, int> CountsBySportingColor,
     int SkippedTokens,
-    int SkippedNonCreature)
+    int SkippedNonCreature,
+    int SkippedAmbiguousColor)
 {
     /// <summary>
     /// True when every sporting color reaches <see cref="CatalogQuotas.RequiredPerColor"/>.

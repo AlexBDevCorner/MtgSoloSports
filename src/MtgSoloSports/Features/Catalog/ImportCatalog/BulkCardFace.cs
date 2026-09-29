@@ -23,6 +23,9 @@ public sealed class BulkCardFace
     [JsonPropertyName("colors")]
     public IReadOnlyList<string>? Colors { get; set; }
 
+    [JsonPropertyName("color_indicator")]
+    public IReadOnlyList<string>? ColorIndicator { get; set; }
+
     [JsonPropertyName("keywords")]
     public IReadOnlyList<string>? Keywords { get; set; }
 

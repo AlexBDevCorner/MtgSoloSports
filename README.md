@@ -110,6 +110,44 @@ Safe recovery (never deletes uncommitted work):
    transform cache with `rm -rf src/MtgSoloSports.Web/node_modules/.vite`,
    then start Vite again.
 
+### Troubleshooting: Colorless league contains colored cards (MSS-039, fixed)
+
+Affected versions imported multi-face Scryfall cards by reading only
+`card_faces[0].colors` and treating a missing field as empty (`Colorless`).
+For `split`/`flip`/`adventure`/`prepare` layouts Scryfall omits face-level
+`colors` while the top-level `colors` carries the front-face color, so cards
+such as **Defacing Duskmage // Vandal's Edit** (Multicolor),
+**Honorbound Page** (White) and **Sasaya, Orochi Ascendant** (Green) were
+misclassified into Colorless. Legitimate Colorless entries (Devoid creatures
+such as Brood Butcher / Kozilek's Sentinel, Prototype artifacts such as Arcane
+Proxy / Phyrexian Fleshgorger, ordinary colorless artifacts) were and remain
+Colorless.
+
+The fix resolves printed colors with layout-specific Scryfall semantics
+(per-face colors for `transform`/`modal_dfc`/double-sided; top-level colors
+for single-sided multi-part cards), unions `color_indicator`, and **rejects**
+(a new `skippedAmbiguousColor` import counter) any creature printing whose
+colors are absent on both levels instead of defaulting it to Colorless.
+A malformed first printing can no longer win duplicate collapse over a later
+valid printing.
+
+Recovery:
+
+1. Refresh the catalog: Saves tab → **Import cards from Scryfall** (or
+   `POST /api/catalog/import` for offline bulk JSON). Both paths share the
+   corrected normalization.
+2. Confirm: `/api/catalog/stats` per-color `count/256` breakdown, and the
+   import response `skippedAmbiguousColor` (ambiguous creature printings
+   skipped, not hidden inside Colorless).
+3. Create a **new** universe after the refresh. New saves draw Colorless only
+   from genuinely colorless athletes under `docs/game-rules.md`.
+
+Existing saves are **unchanged**: a catalog refresh replaces only the shared
+catalog; saves keep their own athlete snapshots, leagues, round results,
+history, bonuses and immutable payloads. Refreshing does **not** repair
+universes already created with bad snapshots — finish or discard those saves
+and start a new universe for correctly classified leagues.
+
 ### Troubleshooting: NuGet restore with extra package sources (NU1507)
 
 All .NET dependencies come from `nuget.org`. The repository-root `NuGet.Config`

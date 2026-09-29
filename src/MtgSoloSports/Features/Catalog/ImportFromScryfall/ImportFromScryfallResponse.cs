@@ -13,6 +13,7 @@ namespace MtgSoloSports.Features.Catalog.ImportFromScryfall;
 /// <param name="CountsBySportingColor">Persisted unique athletes per sporting color.</param>
 /// <param name="SkippedTokens">Raw entries rejected as tokens.</param>
 /// <param name="SkippedNonCreature">Raw entries rejected as non-creature.</param>
+/// <param name="SkippedAmbiguousColor">Creature candidates skipped for absent/ambiguous printed colors.</param>
 /// <param name="IsSufficientForSave">True when every color reaches 256 athletes.</param>
 /// <param name="SourceType">Bulk type used, normally <c>default_cards</c>.</param>
 /// <param name="SourceName">Human-readable dataset name from Scryfall metadata.</param>
@@ -25,6 +26,7 @@ public sealed record ImportFromScryfallResponse(
     IReadOnlyDictionary<SportingColor, int> CountsBySportingColor,
     int SkippedTokens,
     int SkippedNonCreature,
+    int SkippedAmbiguousColor,
     bool IsSufficientForSave,
     string SourceType,
     string? SourceName,
