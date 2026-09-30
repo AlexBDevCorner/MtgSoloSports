@@ -88,5 +88,6 @@ describe('design rules: flat, square, dark', () => {
     const baseAt = main.indexOf('./shared/ui/base.css');
     assert.ok(tokensAt >= 0 && baseAt > tokensAt, 'tokens load first');
     assert.ok(!main.includes('./styles.css'), 'styles.css is no longer imported');
+    assert.ok(baseAt < main.indexOf("import App"), 'base styles load before feature styles so features win ties');
   });
 });

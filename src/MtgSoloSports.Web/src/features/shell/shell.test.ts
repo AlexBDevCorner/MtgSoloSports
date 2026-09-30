@@ -104,3 +104,28 @@ describe('filter toolbar', () => {
     assert.match(css, /\.toolbar \.segmented\s*\{[^}]*flex-wrap:\s*nowrap/);
   });
 });
+
+describe('final review fixes', () => {
+  it('moves keyboard focus into the opened drawer and back to the toggle on dismiss', () => {
+    assert.ok(drawer.includes('toggleRef'), 'hook keeps a handle on the toggle');
+    assert.ok(drawer.includes("querySelector<HTMLElement>('a[href]')"), 'first rail link receives focus on open');
+    assert.ok(drawer.includes('toggleRef.current?.focus()'), 'focus returns to the toggle on Escape/backdrop');
+    assert.ok(drawer.includes('matchMedia'), 'drawer closes when the layout widens past the breakpoint');
+    assert.ok(button.includes('ref={toggleRef}'), 'toggle button is wired to the hook');
+    assert.ok(shell.includes('inert={drawer.open}'), 'page behind the open drawer is inert');
+  });
+
+  it('does not pin the filter toolbar on phones', () => {
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 640px)'));
+    assert.match(phone, /\.toolbar\s*\{[^}]*position:\s*static/);
+  });
+
+  it('lets .numeric and centred cells override the default table alignment', () => {
+    assert.match(css, /:where\(\.data-table, \.mini-table\) :where\(th, td\)\s*\{[^}]*text-align:\s*left/);
+    assert.doesNotMatch(css, /\.data-table th,\s*\.data-table td,[^{]*\{[^}]*text-align/);
+  });
+
+  it('keeps rail focus rings inside the scrolling rail', () => {
+    assert.match(css, /\.rail-link:focus-visible\s*\{[^}]*outline-offset:\s*-2px/);
+  });
+});

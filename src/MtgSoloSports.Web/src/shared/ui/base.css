@@ -157,6 +157,10 @@ select {
   text-decoration: none;
 }
 
+.rail-link:focus-visible {
+  outline-offset: -2px;
+}
+
 a.rail-link:hover {
   color: var(--text);
   background: var(--hover);
@@ -845,6 +849,10 @@ a.ghost-button:visited {
 .mini-table td {
   padding: 6px 10px;
   border-bottom: 1px solid var(--line);
+}
+
+/* Zero-specificity default so .numeric and feature alignment always win. */
+:where(.data-table, .mini-table) :where(th, td) {
   text-align: left;
 }
 
@@ -1226,6 +1234,11 @@ code {
 @media (max-width: 640px) {
   .content {
     padding: var(--space-4);
+  }
+
+  /* Wrapped filters would pin a large share of a phone screen. */
+  .toolbar {
+    position: static;
   }
 
   .page-header {

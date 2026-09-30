@@ -148,10 +148,10 @@ export function AppShell({
           </p>
         </div>
       </aside>
-      <div className="rail-backdrop" aria-hidden="true" onClick={drawer.close} />
-      <div className="main">
+      <div className="rail-backdrop" aria-hidden="true" onClick={drawer.dismiss} />
+      <div className="main" inert={drawer.open}>
         <div className="topbar-mobile">
-          <MenuButton open={drawer.open} onToggle={drawer.toggle} />
+          <MenuButton open={drawer.open} onToggle={drawer.toggle} toggleRef={drawer.toggleRef} />
           <span className="topbar-mobile-brand">MTG Solo Sports</span>
           {saveName ? (
             <span className="topbar-mobile-save" title={saveName}>

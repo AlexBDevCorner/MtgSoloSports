@@ -1,8 +1,18 @@
+import type { RefObject } from 'react';
 import { RAIL_ID } from './useRailDrawer';
 
-export function MenuButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+export function MenuButton({
+  open,
+  onToggle,
+  toggleRef,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  toggleRef: RefObject<HTMLButtonElement | null>;
+}) {
   return (
     <button
+      ref={toggleRef}
       type="button"
       className="menu-button"
       aria-expanded={open}
