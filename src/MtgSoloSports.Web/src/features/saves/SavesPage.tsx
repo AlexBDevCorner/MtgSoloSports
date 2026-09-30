@@ -9,6 +9,7 @@ import type { CatalogStats } from '../catalog/catalogApi';
 import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
 import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
 import type { SavesState } from './useSaves';
+import './SavesPage.css';
 
 function toSaveSummary(result: {
   saveId: string;
@@ -112,7 +113,7 @@ export function SavesPage({
   }
 
   return (
-    <div className="page-grid">
+    <div className="saves-layout">
       <Card eyebrow="Saves" title="Select a universe" action={
         <button type="button" className="ghost-button" onClick={saves.refresh} disabled={saves.loading}>
           Refresh
@@ -178,141 +179,148 @@ export function SavesPage({
         )}
       </Card>
 
-      <Card eyebrow="New save" title="Create a universe">
-        {!catalogSufficient ? (
-          <>
-            <Notice tone="warn" title="Catalog quota not met">
-              <p>
-                Creation is disabled until every sporting color has 256 catalog athletes. Import
-                cards from Scryfall below — no file download or API call needed.
+      <div className="saves-side">
+        <Card eyebrow="New save" title="Create a universe">
+          {!catalogSufficient ? (
+            <>
+              <Notice tone="warn" title="Catalog quota not met">
+                <p>
+                  Creation is disabled until every sporting color has 256 catalog athletes. Import
+                  cards from Scryfall below — no file download or API call needed.
+                </p>
+                {catalogStats ? <CatalogCounts stats={catalogStats} /> : null}
+              </Notice>
+              <ScryfallImportPanel
+                stats={catalogStats}
+                onImported={onCatalogImported}
+                idPrefix="saves-create"
+              />
+            </>
+          ) : null}
+          <form className="form" onSubmit={(event) => void handleCreate(event)}>
+            <label className="field">
+              <span>Name</span>
+              <input
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
+                placeholder="My sporting universe"
+                maxLength={120}
+                required
+              />
+            </label>
+            <details className="advanced">
+              <summary>Advanced: deterministic seed (optional)</summary>
+              <p className="muted small">
+                Leave blank for a random universe. Provide both values only to reproduce an
+                exact universe for testing.
               </p>
-              {catalogStats ? <CatalogCounts stats={catalogStats} /> : null}
-            </Notice>
-            <ScryfallImportPanel
-              stats={catalogStats}
-              onImported={onCatalogImported}
-              idPrefix="saves-create"
-            />
-          </>
-        ) : null}
-        <form className="form" onSubmit={(event) => void handleCreate(event)}>
-          <label className="field">
-            <span>Name</span>
-            <input
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-              placeholder="My sporting universe"
-              maxLength={120}
-              required
-            />
-          </label>
-          <details className="advanced">
-            <summary>Advanced: deterministic seed (optional)</summary>
-            <p className="muted small">
-              Leave blank for a random universe. Provide both values only to reproduce an
-              exact universe for testing.
+              <div className="field-row">
+                <label className="field">
+                  <span>Seed</span>
+                  <input
+                    value={seed}
+                    onChange={(event) => {
+                      setSeed(event.target.value);
+                    }}
+                    inputMode="numeric"
+                    placeholder="Blank = random"
+                  />
+                </label>
+                <label className="field">
+                  <span>Stream</span>
+                  <input
+                    value={stream}
+                    onChange={(event) => {
+                      setStream(event.target.value);
+                    }}
+                    inputMode="numeric"
+                    placeholder="Blank = random"
+                  />
+                </label>
+              </div>
+            </details>
+            {createError ? (
+              <Notice tone="error" title="Could not create save">
+                <p>{createError}</p>
+              </Notice>
+            ) : null}
+            <button
+              type="submit"
+              className="primary-button"
+              disabled={creating || name.trim() === '' || !catalogSufficient}
+            >
+              {creating ? 'Creating…' : 'Create save'}
+            </button>
+          </form>
+        </Card>
+
+        <Card eyebrow="Portability" title="Import a save">
+          <form className="form" onSubmit={(event) => void handleImport(event)}>
+            <label className="field">
+              <span>Save bundle (.mtgsave.zip)</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip,application/zip"
+                onChange={(event) => {
+                  setImportFile(event.target.files?.[0] ?? null);
+                  setImportedName(null);
+                }}
+                required
+              />
+            </label>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={overwrite}
+                onChange={(event) => {
+                  setOverwrite(event.target.checked);
+                }}
+              />
+              <span>Replace the existing save with the same id (creates a verified recovery checkpoint first)</span>
+            </label>
+            {importError ? (
+              <Notice tone="error" title="Could not import save">
+                <p>{importError}</p>
+              </Notice>
+            ) : null}
+            {importedName ? (
+              <Notice tone="empty" title="Import complete">
+                <p>Imported “{importedName}”. Incompatible or corrupt bundles are rejected without touching existing saves.</p>
+              </Notice>
+            ) : null}
+            <button type="submit" className="primary-button" disabled={importing || !importFile}>
+              {importing ? 'Importing…' : 'Import save'}
+            </button>
+          </form>
+        </Card>
+
+        <Card
+          eyebrow="Card catalog"
+          title="Refresh from Scryfall"
+          info={
+            <p>
+              The shared catalog feeds new universes only. Refreshing replaces the shared catalog
+              and never modifies existing saves.
             </p>
-            <div className="field-row">
-              <label className="field">
-                <span>Seed</span>
-                <input
-                  value={seed}
-                  onChange={(event) => {
-                    setSeed(event.target.value);
-                  }}
-                  inputMode="numeric"
-                  placeholder="Blank = random"
-                />
-              </label>
-              <label className="field">
-                <span>Stream</span>
-                <input
-                  value={stream}
-                  onChange={(event) => {
-                    setStream(event.target.value);
-                  }}
-                  inputMode="numeric"
-                  placeholder="Blank = random"
-                />
-              </label>
-            </div>
+          }
+        >
+          <ScryfallImportPanel
+            stats={catalogStats}
+            onImported={onCatalogImported}
+            idPrefix="saves-catalog"
+          />
+          <details className="advanced">
+            <summary>Advanced/offline import</summary>
+            <p className="muted small">
+              Automatic import needs an internet connection. For offline use you can still POST a
+              Scryfall bulk JSON array to <code>/api/catalog/import</code>.
+            </p>
           </details>
-          {createError ? (
-            <Notice tone="error" title="Could not create save">
-              <p>{createError}</p>
-            </Notice>
-          ) : null}
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={creating || name.trim() === '' || !catalogSufficient}
-          >
-            {creating ? 'Creating…' : 'Create save'}
-          </button>
-        </form>
-      </Card>
-
-      <Card eyebrow="Card catalog" title="Refresh from Scryfall">
-        <p className="muted small">
-          The shared catalog feeds new universes only. Refreshing replaces the shared catalog and
-          never modifies existing saves.
-        </p>
-        <ScryfallImportPanel
-          stats={catalogStats}
-          onImported={onCatalogImported}
-          idPrefix="saves-catalog"
-        />
-        <details className="advanced">
-          <summary>Advanced/offline import</summary>
-          <p className="muted small">
-            Automatic import needs an internet connection. For offline use you can still POST a
-            Scryfall bulk JSON array to <code>/api/catalog/import</code>.
-          </p>
-        </details>
-      </Card>
-
-      <Card eyebrow="Portability" title="Import a save">
-        <form className="form" onSubmit={(event) => void handleImport(event)}>
-          <label className="field">
-            <span>Save bundle (.mtgsave.zip)</span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip,application/zip"
-              onChange={(event) => {
-                setImportFile(event.target.files?.[0] ?? null);
-                setImportedName(null);
-              }}
-              required
-            />
-          </label>
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={overwrite}
-              onChange={(event) => {
-                setOverwrite(event.target.checked);
-              }}
-            />
-            <span>Replace the existing save with the same id (creates a verified recovery checkpoint first)</span>
-          </label>
-          {importError ? (
-            <Notice tone="error" title="Could not import save">
-              <p>{importError}</p>
-            </Notice>
-          ) : null}
-          {importedName ? (
-            <Notice tone="empty" title="Import complete">
-              <p>Imported “{importedName}”. Incompatible or corrupt bundles are rejected without touching existing saves.</p>
-            </Notice>
-          ) : null}
-          <button type="submit" className="primary-button" disabled={importing || !importFile}>
-            {importing ? 'Importing…' : 'Import save'}
-          </button>
-        </form>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

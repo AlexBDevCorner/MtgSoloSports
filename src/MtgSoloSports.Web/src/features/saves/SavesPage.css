@@ -1,0 +1,21 @@
+/* Saves: list-first layout with management forms in a side column. */
+
+.saves-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.saves-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+@media (max-width: 1020px) {
+  .saves-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
