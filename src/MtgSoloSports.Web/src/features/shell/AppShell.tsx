@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { CatalogStatus } from '../catalog/catalogStatus';
 import { Link } from '../routing/router';
 import {
   cupsPath,
@@ -12,172 +13,135 @@ import {
 
 export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'history' | 'records' | 'cups' | 'athlete';
 
+const VIEW_TITLES: Record<View, string> = {
+  saves: 'Saves',
+  dashboard: 'Dashboard',
+  live: 'Live',
+  standings: 'Standings',
+  history: 'History',
+  records: 'Records',
+  cups: 'Cups',
+  athlete: 'Athlete',
+};
+
+/** Rail entry: a real link when its target exists, otherwise a disabled label. */
+function RailLink({
+  href,
+  current,
+  title,
+  children,
+}: {
+  href: string | null;
+  current: boolean;
+  title: string;
+  children: ReactNode;
+}) {
+  if (!href) {
+    return (
+      <span className="rail-link" aria-disabled="true" title="Select a save first">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      to={href}
+      className={current ? 'rail-link current' : 'rail-link'}
+      ariaCurrent={current ? 'page' : undefined}
+      title={title}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function AppShell({
   view,
   saveId,
-  dashboardEnabled,
   saveName,
   seasonLabel,
   stageLabel,
+  catalog,
   children,
 }: {
   view: View;
   /** Save-scoped navigation target; null on Saves/landing with no save context. */
   saveId?: string | null;
-  dashboardEnabled: boolean;
   saveName: string | null;
   seasonLabel: string | null;
   stageLabel: string | null;
+  catalog: CatalogStatus;
   children: ReactNode;
 }) {
-  const dashboardHref = saveId ? dashboardPath(saveId) : null;
-  const liveHref = saveId ? livePath(saveId) : null;
-  const standingsHref = saveId ? standingsPath(saveId) : null;
-  const historyHref = saveId ? historyPath(saveId) : null;
-  const recordsHref = saveId ? recordsPath(saveId) : null;
-  const cupsHref = saveId ? cupsPath(saveId) : null;
+  const scoped = (build: (id: string) => string): string | null => (saveId ? build(saveId) : null);
+  const saveMeta = [seasonLabel, stageLabel].filter((part): part is string => part !== null).join(' · ');
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <p className="eyebrow">MTG Solo Sports</p>
-          <h1 className="brand-title">Sports database</h1>
+      <aside className="rail" aria-label="Application">
+        <div className="rail-brand">
+          <span className="rail-brand-mark" aria-hidden="true" />
+          MTG Solo Sports
         </div>
-        <nav className="nav" aria-label="Main">
-          <Link
-            to={savesPath()}
-            className={view === 'saves' ? 'nav-item current' : 'nav-item'}
-            ariaCurrent={view === 'saves' ? 'page' : undefined}
-          >
-            Saves
-          </Link>
-          {dashboardHref ? (
-            <Link
-              to={dashboardHref}
-              className={view === 'dashboard' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'dashboard' ? 'page' : undefined}
-              title="Open dashboard"
-            >
-              Dashboard
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              Dashboard
-            </span>
-          )}
-          {liveHref ? (
-            <Link
-              to={liveHref}
-              className={view === 'live' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'live' ? 'page' : undefined}
-              title="Open the current live event"
-            >
-              Live event
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              Live event
-            </span>
-          )}
-          {standingsHref ? (
-            <Link
-              to={standingsHref}
-              className={view === 'standings' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'standings' ? 'page' : undefined}
-              title="Open league tables and stage placements"
-            >
-              Standings
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              Standings
-            </span>
-          )}
-          {historyHref ? (
-            <Link
-              to={historyHref}
-              className={view === 'history' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'history' ? 'page' : undefined}
-              title="Browse history"
-            >
-              History
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              History
-            </span>
-          )}
-          {recordsHref ? (
-            <Link
-              to={recordsHref}
-              className={view === 'records' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'records' ? 'page' : undefined}
-              title="Browse records and Hall of Fame"
-            >
-              Records / HoF
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              Records / HoF
-            </span>
-          )}
-          {cupsHref ? (
-            <Link
-              to={cupsHref}
-              className={view === 'cups' ? 'nav-item current' : 'nav-item'}
-              ariaCurrent={view === 'cups' ? 'page' : undefined}
-              title="Browse cups"
-            >
-              Cups
-            </Link>
-          ) : (
-            <span
-              className="nav-item"
-              aria-disabled="true"
-              title="Select a save first"
-            >
-              Cups
-            </span>
-          )}
-        </nav>
-        <div className="save-strip" aria-live="polite">
+        <div className="rail-save" aria-live="polite">
           {saveName ? (
             <>
-              <span className="save-pill" title={saveName}>
+              <span className="rail-save-name" title={saveName}>
                 {saveName}
               </span>
-              {seasonLabel ? <span className="meta-pill">{seasonLabel}</span> : null}
-              {stageLabel ? <span className="meta-pill">{stageLabel}</span> : null}
+              {saveMeta ? <span className="rail-save-meta">{saveMeta}</span> : null}
+              <Link to={savesPath()} className="rail-save-switch">
+                Switch save
+              </Link>
             </>
           ) : (
-            <span className="meta-pill muted">No save open</span>
+            <>
+              <span className="rail-save-name muted">No save open</span>
+              <Link to={savesPath()} className="rail-save-switch">
+                Open a save
+              </Link>
+            </>
           )}
         </div>
-      </header>
-      <main className="content">{children}</main>
-      <footer className="foot">
-        <span>Local single-user simulation · deterministic engine · dark board</span>
-      </footer>
+        <nav className="rail-nav" aria-label="Main">
+          <RailLink href={scoped(dashboardPath)} current={view === 'dashboard'} title="Open dashboard">
+            Dashboard
+          </RailLink>
+          <RailLink href={scoped(livePath)} current={view === 'live'} title="Open the current live event">
+            Live
+          </RailLink>
+          <RailLink
+            href={scoped(standingsPath)}
+            current={view === 'standings'}
+            title="Open league tables and stage placements"
+          >
+            Standings
+          </RailLink>
+          <RailLink href={scoped(historyPath)} current={view === 'history'} title="Browse history">
+            History
+          </RailLink>
+          <RailLink href={scoped(recordsPath)} current={view === 'records'} title="Browse records and Hall of Fame">
+            Records
+          </RailLink>
+          <RailLink href={scoped(cupsPath)} current={view === 'cups'} title="Browse cups">
+            Cups
+          </RailLink>
+        </nav>
+        <div className="rail-nav rail-nav-bottom">
+          <RailLink href={savesPath()} current={view === 'saves'} title="Manage saves">
+            Saves
+          </RailLink>
+          <p className="rail-catalog" role="status">
+            <span className={`dot dot-${catalog.tone}`} aria-hidden="true" />
+            {catalog.label}
+          </p>
+        </div>
+      </aside>
+      <div className="main">
+        <header className="page-header">
+          <h1 className="page-title">{VIEW_TITLES[view]}</h1>
+        </header>
+        <main className="content">{children}</main>
+      </div>
     </div>
   );
 }

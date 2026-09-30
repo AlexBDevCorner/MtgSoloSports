@@ -12,18 +12,15 @@ export function CatalogBanner({
   loading: boolean;
   onImported: () => void;
 }) {
-  if (loading) {
-    return (
-      <div className="catalog-strip" role="status" aria-live="polite">
-        <span className="spinner" aria-hidden="true" />
-        <span>Checking card catalog…</span>
-      </div>
-    );
+  // The rail shows catalog status; keep any actionable notice visible while
+  // a refresh (e.g. right after an import) is in flight.
+  if (loading && !stats) {
+    return null;
   }
 
   if (!stats || stats.totalAthletes === 0) {
     return (
-      <Notice tone="empty" title="No card catalog yet">
+      <Notice tone="warn" title="No card catalog yet">
         <p>
           A save needs 256 athletes per sporting color. Import cards directly from Scryfall with
           one action — no file download or API call needed.
@@ -46,12 +43,5 @@ export function CatalogBanner({
     );
   }
 
-  return (
-    <div className="catalog-strip catalog-ready">
-      <span className="dot dot-ok" aria-hidden="true" />
-      <span>
-        Catalog ready — <strong>{stats.totalAthletes}</strong> athletes, 8 colors at quota.
-      </span>
-    </div>
-  );
+  return null;
 }

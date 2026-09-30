@@ -3,6 +3,7 @@ import { AthleteProfilePage } from './features/athletes/AthleteProfilePage';
 import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
+import { catalogStatus } from './features/catalog/catalogStatus';
 import { ColorCupPage } from './features/cups/ColorCupPage';
 import { TypeCupPage } from './features/cups/TypeCupPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -114,7 +115,7 @@ export default function App() {
   const stageLabel = dashboard.data
     ? dashboard.data.progress.isSeasonComplete
       ? 'Stage complete'
-      : `Stage ${dashboard.data.progress.globalStage}`
+      : `Stage ${dashboard.data.progress.globalStage}/32`
     : null;
 
   const saveKnownMissing =
@@ -313,10 +314,10 @@ export default function App() {
     <AppShell
       view={viewForRoute(route)}
       saveId={routeSaveId ?? lastSelected}
-      dashboardEnabled={(routeSaveId ?? lastSelected) !== null}
       saveName={dashboard.data?.detail.name ?? selectedSave?.name ?? null}
       seasonLabel={seasonLabel}
       stageLabel={stageLabel}
+      catalog={catalogStatus(catalog.stats, catalog.loading)}
     >
       <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
       {renderBody()}

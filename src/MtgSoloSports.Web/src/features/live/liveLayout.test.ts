@@ -9,7 +9,7 @@ const livePage = readFileSync(join(here, 'LivePage.tsx'), 'utf8');
 const liveCss = readFileSync(join(here, 'LivePage.css'), 'utf8');
 const reveal = readFileSync(join(here, '..', 'reveal', 'RoundReveal.tsx'), 'utf8');
 const historyPage = readFileSync(join(here, '..', 'history', 'HistoryPage.tsx'), 'utf8');
-const shellCss = readFileSync(join(here, '..', '..', 'styles.css'), 'utf8');
+const shellCss = readFileSync(join(here, '..', '..', 'shared', 'ui', 'base.css'), 'utf8');
 const boardCss = readFileSync(join(here, '..', 'reveal', 'RevealBoard.css'), 'utf8');
 
 describe('MSS-038 live above-the-fold composition', () => {
@@ -56,8 +56,12 @@ describe('MSS-038 live above-the-fold composition', () => {
   });
 
   it('uses the full desktop width with a dominant main column', () => {
-    assert.ok(shellCss.includes('.app:has(.live-layout)'), 'app shell releases the centered column for Live only');
-    assert.ok(shellCss.includes('max-width: none'), 'live spans the usable viewport with gutters');
+    assert.match(
+      shellCss,
+      /\.app\s*\{[^}]*grid-template-columns:\s*var\(--rail-width\)\s+minmax\(0,\s*1fr\)/,
+      'shell is a rail plus a full-width content column on every page',
+    );
+    assert.ok(!/\.app\s*\{[^}]*max-width/.test(shellCss), 'no page is confined to a centered column');
     assert.ok(liveCss.includes('clamp(240px'), 'sidebar stays narrow while the board dominates');
     assert.ok(liveCss.includes('minmax(0, 1fr)'), 'board owns the flexible main column');
   });

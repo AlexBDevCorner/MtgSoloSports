@@ -1,0 +1,45 @@
+/* Design tokens: the only place raw colors live. Dark theme, one amber accent,
+   square corners, flat surfaces. */
+:root {
+  color-scheme: dark;
+
+  --bg: #0c0d0f;
+  --surface: #141518;
+  --surface-2: #1a1c20;
+  --hover: #202227;
+  --line: #24262b;
+  --line-strong: #33363d;
+
+  --text: #e6e6e3;
+  --text-dim: #8b8f98;
+  --text-faint: #5c6069;
+
+  --accent: #e8b44a;
+  --accent-hover: #f2c566;
+  --accent-ink: #14100a;
+  --accent-soft: rgba(232, 180, 74, 0.12);
+  --ok: #4cc38a;
+  --bad: #e5534b;
+  --warn: var(--accent);
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --radius: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --rail-width: 200px;
+  --topbar-h: 48px;
+  --control-h: 32px;
+
+  --font: Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Transitional aliases for feature stylesheets that still use the old
+     names; remove once they reference the tokens above. */
+  --panel: var(--surface);
+  --panel-2: var(--surface-2);
+  --accent-2: var(--accent);
+}
