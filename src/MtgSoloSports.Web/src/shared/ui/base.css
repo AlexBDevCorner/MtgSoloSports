@@ -718,6 +718,54 @@ a.ghost-button:visited {
   font-weight: 600;
 }
 
+/* ---------- Info disclosure ---------- */
+
+.info {
+  position: relative;
+}
+
+.info > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.info > summary::-webkit-details-marker {
+  display: none;
+}
+
+.info > summary:hover,
+.info[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.info-body {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(360px, 80vw);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ---------- Tables ---------- */
 
 .table-wrap {
