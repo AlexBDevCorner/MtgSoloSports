@@ -5,7 +5,8 @@ import { livePath } from '../routing/routes';
 
 /**
  * Cup events are played round by round on Live. Shown while this event is the
- * next lifecycle step: in-progress position (never results) and a link to
+ * next lifecycle step, even when the page still shows an older Cup's result:
+ * the season it will play, in-progress position (never results) and a link to
  * play it on Live.
  */
 export function EventLiveAction({
@@ -23,7 +24,10 @@ export function EventLiveAction({
   }
   return (
     <>
-      {progress.roundsPlayed > 0 ? <p className="muted">In progress — {progressLabel(progress)}.</p> : null}
+      <p className="muted">
+        Season {progress.sourceSeasonNumber}:{' '}
+        {progress.roundsPlayed > 0 ? `In progress — ${progressLabel(progress)}.` : 'ready to play.'}
+      </p>
       <p>
         <Link to={livePath(saveId, { event: eventKey, season: progress.sourceSeasonNumber })} className="primary-button">
           Play on Live

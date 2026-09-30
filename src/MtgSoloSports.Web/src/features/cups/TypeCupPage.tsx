@@ -154,7 +154,7 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
             completed even season first, then run the four 8-round rank groups.
           </p>
         ) : null}
-        {team ? null : <EventLiveAction saveId={saveId} eventKey="type-cup-team" status={status} />}
+        <EventLiveAction saveId={saveId} eventKey="type-cup-team" status={status} />
       </Card>
 
       <Card

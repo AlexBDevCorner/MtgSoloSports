@@ -197,7 +197,7 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
             individual event.
           </p>
         ) : null}
-        {result ? null : <EventLiveAction saveId={saveId} eventKey="color-cup-individual" status={status} />}
+        <EventLiveAction saveId={saveId} eventKey="color-cup-individual" status={status} />
       </Card>
 
       <Card
@@ -309,7 +309,7 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
             groups.
           </p>
         ) : null}
-        {team ? null : <EventLiveAction saveId={saveId} eventKey="color-cup-team" status={status} />}
+        <EventLiveAction saveId={saveId} eventKey="color-cup-team" status={status} />
       </Card>
 
       <Card

@@ -25,4 +25,11 @@ describe('cups are played on Live', () => {
     assert.ok(action.includes('In progress'), 'in-progress state is explicit');
     assert.ok(action.includes('progressLabel('));
   });
+
+  it('offers the next Cup even while an older Cup result is on the page', () => {
+    for (const page of [color, type]) {
+      assert.ok(!/(result|team) \? null : <EventLiveAction/.test(page), 'Live action is not hidden behind an older result');
+    }
+    assert.ok(action.includes('Season {progress.sourceSeasonNumber}'), 'the action names the season it will play');
+  });
 });
