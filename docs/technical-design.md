@@ -181,6 +181,46 @@ Keep postseason movement split into focused slices such as:
 
 The core identity is always `16 safe + 8 champions + 8 qualifier = 32`.
 
+### Postseason events played round by round
+
+The qualifier (`qualifier`, 32 × 16 rounds), Color Cup individual
+(`color-cup-individual`, 32 × 16), Color Cup team (`color-cup-team`, 4 groups ×
+8 rounds) and Type Cup team (`type-cup-team`, 4 groups × 8 rounds) can be
+played one round at a time, exactly like league rounds:
+
+- Step slices `POST …/superleague/qualifier/rounds/next`,
+  `…/cups/color/individual/rounds/next`, `…/cups/color/team/rounds/next` and
+  `…/cups/type/team/rounds/next` play exactly one round under the per-save
+  lock and commit the round payload with the RNG-after state in one
+  transaction. For team events, the step that plays a group's last round (other
+  than the final group) also draws that group's leg tie-break, so the next
+  group starts from the same RNG state as a one-shot run. The step that plays
+  the event's final round runs the normal completion (ranking with tie-break,
+  standings/results, medals and titles, next-roster application, stories,
+  persisted phase) in the same transaction, deriving results from the stored
+  payloads.
+- The existing one-shot runners (and `AdvanceToNextEvent`/`SimulateSeasons`)
+  play all remaining rounds and complete, so they resume a partly played
+  event. Stepping, one-shot and mixed runs produce byte-identical payloads,
+  checksums, results, stories and final RNG state (tests pin this, including
+  golden values from the pre-stepping runners).
+- A partly played event is a validated in-progress state: rounds contiguous in
+  (group, round) order and fewer than the total, no results rows, each round's
+  RNG-before equal to the previous RNG-after (or the recomputed group
+  tie-break state at a group boundary), and the save RNG row equal to the
+  state after the last step. Any violation aborts.
+- Season status and `AdvanceToNextEvent` responses carry `eventProgress`
+  (`event`, `sourceSeasonNumber`, `roundsPlayed`, `totalRounds`, `groupCount`,
+  `roundsPerGroup`, next `group`/`roundInGroup`) when the next legal action is
+  one of these events; once rounds exist the computed phase is
+  `QualifierInProgress`, `ColorCupIndividualInProgress`,
+  `ColorCupTeamInProgress` or `TypeCupTeamInProgress` (computed only; the
+  persisted phase changes at completion). Legal actions are unchanged.
+- History reads (no lock): `GET …/history/seasons/{n}/events`,
+  `…/events/{event}/rounds`, `…/events/{event}/rounds/{round}?group=` (league
+  replay shape) and `…/events/{event}/team-standings` (persisted final ranking,
+  or a provisional display sum of stored points over completed groups).
+
 ## 16. Color Cup selection
 
 Calculate the 35/30/25/10 selection formula with fixed-point normalized values. Recent form uses the most recent ten league stages with simple increasing recency weights 1..10. Career-prestige constants belong in the save rules snapshot and can be calibrated before rules v1 is frozen for production saves.
