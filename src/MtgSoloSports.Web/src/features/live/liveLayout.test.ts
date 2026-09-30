@@ -68,10 +68,14 @@ describe('MSS-038 live above-the-fold composition', () => {
 
   it('keeps eight legible tiles per row on wide desktops and reflows on narrow screens', () => {
     assert.ok(boardCss.includes('repeat(8'), '32-card board supports 8 across where space permits');
-    assert.ok(boardCss.includes('1600px'), 'eight-across breakpoint is preserved from MSS-035');
+    assert.match(boardCss, /\.reveal-board-frame\s*\{[^}]*container-type:\s*inline-size/, 'columns follow the board width, not the viewport');
+    assert.ok(boardCss.includes('@container (min-width: 1364px)'), 'eight across only when tiles stay at least 160px wide');
+    assert.ok(!/@media \(min-width: \d+px\)[^{]*\{\s*\.reveal-board\s*\{/.test(boardCss), 'no viewport breakpoints for board columns');
     assert.ok(liveCss.includes('max-width: 1020px'), 'tablet collapses the side layout');
     assert.ok(liveCss.includes('max-width: 640px'), 'phones get a touch-friendly single column');
     assert.ok(liveCss.includes('order: -1'), 'reveal stays prominent on narrow layouts');
+    const tablet = liveCss.slice(liveCss.indexOf('@media (max-width: 1020px)'));
+    assert.match(tablet, /\.live-layout\s*\{[^}]*align-items:\s*stretch/, 'stacked columns fill the width instead of sizing to content');
   });
 
   it('leaves History replay semantics and presentation untouched', () => {

@@ -1,6 +1,12 @@
 /* Feature-scoped reveal board: dedicated large-portrait tile styles.
    The global .card-thumb stays a 40px thumbnail for compact tables elsewhere. */
 
+/* Columns follow the board's own width (the rail and Live sidebar take part of
+   the viewport), keeping every tile at least ~160px wide. */
+.reveal-board-frame {
+  container-type: inline-size;
+}
+
 .reveal-board {
   display: grid;
   gap: 12px;
@@ -11,25 +17,31 @@
   align-items: stretch;
 }
 
-@media (min-width: 640px) {
+@container (min-width: 504px) {
   .reveal-board {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 900px) {
+@container (min-width: 676px) {
   .reveal-board {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1200px) {
+@container (min-width: 848px) {
+  .reveal-board {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1020px) {
   .reveal-board {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 1600px) {
+@container (min-width: 1364px) {
   .reveal-board {
     grid-template-columns: repeat(8, minmax(0, 1fr));
   }
