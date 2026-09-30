@@ -30,6 +30,16 @@ img {
   max-width: 100%;
 }
 
+/* Zero-specificity defaults so component classes always win. */
+:where(a) {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+:where(a:visited) {
+  color: var(--accent);
+}
+
 h1,
 h2,
 h3,
@@ -225,7 +235,7 @@ a.rail-link:hover {
 
 .page-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr));
   gap: var(--space-4);
   align-items: start;
 }
@@ -798,6 +808,14 @@ a.ghost-button:visited {
 
 .toolbar .field {
   flex: 0 1 220px;
+}
+
+.toolbar .field:has(> .segmented) {
+  flex: 0 0 auto;
+}
+
+.toolbar .segmented {
+  flex-wrap: nowrap;
 }
 
 .toolbar-end {

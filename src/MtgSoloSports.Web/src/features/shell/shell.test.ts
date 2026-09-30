@@ -50,7 +50,12 @@ describe('left-rail shell', () => {
   });
 
   it('lets grids collapse to one column on phones without horizontal scroll', () => {
-    assert.ok(css.includes('minmax(min(380px, 100%), 1fr)'));
+    assert.ok(css.includes('minmax(min(440px, 100%), 1fr)'), 'columns stay wide enough for 5-column tables');
+  });
+
+  it('colors plain links from the tokens instead of browser blue/purple', () => {
+    assert.match(css, /:where\(a\)\s*\{[^}]*color:\s*var\(--accent\)/);
+    assert.match(css, /:where\(a:visited\)\s*\{[^}]*color:\s*var\(--accent\)/);
   });
 
   it('shows catalog status in the rail instead of a content strip', () => {
@@ -92,5 +97,10 @@ describe('filter toolbar', () => {
     assert.match(css, /\.toolbar\s*\{[^}]*position:\s*sticky/);
     const mobile = css.slice(css.indexOf('@media (max-width: 1020px)'));
     assert.match(mobile, /\.toolbar\s*\{[^}]*top:\s*var\(--topbar-h\)/);
+  });
+
+  it('keeps segmented controls on one line inside the toolbar', () => {
+    assert.match(css, /\.toolbar \.field:has\(> \.segmented\)\s*\{[^}]*flex:\s*0 0 auto/);
+    assert.match(css, /\.toolbar \.segmented\s*\{[^}]*flex-wrap:\s*nowrap/);
   });
 });
