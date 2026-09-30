@@ -1,9 +1,10 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, historyPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
+import { cupsPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
 import { describeNextAction, type DashboardData } from './useDashboard';
 import { FastForwardSeason } from './FastForwardSeason';
+import './DashboardPage.css';
 
 function shortChecksum(value: string): string {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
@@ -78,176 +79,161 @@ export function DashboardPage({
 
   return (
     <div className="dashboard">
-      <div className="page-grid cards-3">
-        <Card eyebrow="Competition" title={`Season ${detail.currentSeason}`}>
-          <dl className="stats">
-            <div>
-              <dt>Phase</dt>
-              <dd>{detail.phase}</dd>
-            </div>
-            <div>
-              <dt>Global stage</dt>
-              <dd>{progress.isSeasonComplete ? 'Complete (32/32)' : `${progress.globalStage} / 32`}</dd>
-            </div>
-            <div>
-              <dt>Completed league-stages</dt>
-              <dd>{completedTotal} / {progress.leagues.length * 32}</dd>
-            </div>
-            <div>
-              <dt>Active leagues</dt>
-              <dd>{progress.leagues.length}</dd>
-            </div>
-          </dl>
-          {progress.isSeasonComplete ? (
-            <p className="muted">Season final tables are persisted and stable.</p>
-          ) : (
-            <p className="muted">
-              Stage {progress.globalStage} cannot advance until every active league completes
-              it.
-            </p>
-          )}
-        </Card>
+      <dl className="kpis" aria-label="Season summary">
+        <div className="kpi">
+          <dt>Season</dt>
+          <dd>{detail.currentSeason}</dd>
+        </div>
+        <div className="kpi">
+          <dt>Stage</dt>
+          <dd>{progress.isSeasonComplete ? 'Complete' : `${progress.globalStage} / 32`}</dd>
+        </div>
+        <div className="kpi">
+          <dt>Phase</dt>
+          <dd title={detail.phase}>{detail.phase}</dd>
+        </div>
+        <div className="kpi">
+          <dt>Leagues</dt>
+          <dd>{progress.leagues.length}</dd>
+        </div>
+        <div className="kpi">
+          <dt>League-stages</dt>
+          <dd>
+            {completedTotal} / {progress.leagues.length * 32}
+          </dd>
+        </div>
+        <div className="kpi">
+          <dt>Active athletes</dt>
+          <dd>{rosters ? rosters.activeAthletes : '—'}</dd>
+        </div>
+        <div className="kpi">
+          <dt>Common pool</dt>
+          <dd>{rosters ? rosters.poolAthletes : '—'}</dd>
+        </div>
+      </dl>
 
-        <Card eyebrow="Roster" title="League & pool">
-          {rosters ? (
-            <>
-              <dl className="stats">
-                <div>
-                  <dt>Active athletes</dt>
-                  <dd>{rosters.activeAthletes}</dd>
-                </div>
-                <div>
-                  <dt>Common pool</dt>
-                  <dd>{rosters.poolAthletes}</dd>
-                </div>
-                <div>
-                  <dt>Draw checksum</dt>
-                  <dd>
-                    <code title={rosters.drawChecksum}>{shortChecksum(rosters.drawChecksum)}</code>
-                  </dd>
-                </div>
-              </dl>
-              <table className="mini-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Color pool</th>
-                    <th scope="col">Count</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rosters.poolCounts.map((pool) => (
-                    <tr key={pool.sportingColor}>
-                      <td>{pool.sportingColor}</td>
-                      <td className="numeric">{pool.count}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
-          ) : (
-            <Notice tone="info" title="Roster snapshot unavailable">
-              <p>
-                Season 1 draw details are only available for saves that completed the
-                inaugural draw. Progress below still reflects live backend state.
-              </p>
-            </Notice>
-          )}
-        </Card>
-
-        <Card
-          eyebrow="Next action"
-          title="Available simulation"
-          action={
-            <button type="button" className="ghost-button" onClick={onRefresh}>
-              Refresh
-            </button>
-          }
-        >
-          <p className="next-headline">{next.headline}</p>
-          <p className="muted">{next.detail}</p>
-          {status ? (
-            <dl className="stats">
-              <div>
-                <dt>Lifecycle phase</dt>
-                <dd>{status.computedPhase}</dd>
-              </div>
-              <div>
-                <dt>Legal next action</dt>
-                <dd>{status.legalNextActions.join(', ')}</dd>
-              </div>
-              <div>
-                <dt>Expected Cup</dt>
-                <dd>{status.expectedCup}</dd>
-              </div>
-              <div>
-                <dt>Cup selection</dt>
-                <dd>{status.cupSelectionResolved ? 'Resolved' : 'Pending'}</dd>
-              </div>
-              <div>
-                <dt>Cup individual</dt>
-                <dd>
-                  {status.expectedCup === 'TypeCup'
-                    ? 'N/A (team-only)'
-                    : status.cupIndividualResolved
-                      ? 'Resolved'
-                      : 'Pending'}
-                </dd>
-              </div>
-              <div>
-                <dt>Cup team</dt>
-                <dd>{status.cupTeamResolved ? 'Resolved' : 'Pending'}</dd>
-              </div>
-              <div>
-                <dt>Cup complete</dt>
-                <dd>{status.cupComplete ? 'Complete' : 'Pending'}</dd>
-              </div>
-            </dl>
-          ) : null}
-          {status?.sourceSeasonNumber !== null && status?.sourceSeasonNumber !== undefined ? (
-            <p className="muted small">
-              Post-season {status.expectedCup} for Season {status.sourceSeasonNumber} runs after
-              feeder rebalancing and before bonus aging. Each Cup step is an explicit Next
-              Event: inspect the field on the Cups tab before running the events.
-            </p>
-          ) : null}
-          <p className="muted small">
+      <Card
+        eyebrow="Next action"
+        title="Available simulation"
+        className="next-action"
+        action={
+          <button type="button" className="ghost-button" onClick={onRefresh}>
+            Refresh
+          </button>
+        }
+        info={
+          <p>
             Simulation itself runs on the backend; this board only replays persisted results
             and never resimulates.
           </p>
-          <FastForwardSeason
-            saveId={saveId}
-            progress={progress}
-            status={status}
-            onCompleted={onRefresh}
-          />
-        </Card>
-      </div>
-
-      <Card eyebrow="Navigate" title="Competitions · live event · history · records">
-        <div className="live-buttons" role="group" aria-label="Competition navigation">
+        }
+      >
+        <div className="next-action-row">
+          <div className="next-action-text">
+            <p className="next-headline">{next.headline}</p>
+            <p className="muted">{next.detail}</p>
+            {progress.isSeasonComplete ? null : (
+              <p className="muted small">
+                Stage {progress.globalStage} cannot advance until every active league completes it.
+              </p>
+            )}
+          </div>
           <Link to={livePath(saveId)} className="primary-button">
-            Current live event
-          </Link>
-          <Link to={standingsPath(saveId)} className="ghost-button">
-            Standings
-          </Link>
-          <Link to={historyPath(saveId)} className="ghost-button">
-            History
-          </Link>
-          <Link to={recordsPath(saveId)} className="ghost-button">
-            Records / Hall of Fame
-          </Link>
-          <Link to={cupsPath(saveId)} className="ghost-button">
-            Cups
+            Go to Live
           </Link>
         </div>
-        <p className="muted small">
-          Live event runs the current stage rounds. Standings opens the dedicated
-          league tables and stage-placement matrix at any point in the season.
-          History replays any persisted season, competition, stage and round.
-          Records tracks career leaders and Hall of Fame. Athlete profiles open
-          from any card name.
-        </p>
+        {status?.sourceSeasonNumber !== null && status?.sourceSeasonNumber !== undefined ? (
+          <p className="muted small">
+            Post-season {status.expectedCup} for Season {status.sourceSeasonNumber} runs after
+            feeder rebalancing and before bonus aging. Each Cup step is an explicit Next
+            Event: inspect the field on the Cups tab before running the events.
+          </p>
+        ) : null}
+        <FastForwardSeason
+          saveId={saveId}
+          progress={progress}
+          status={status}
+          onCompleted={onRefresh}
+        />
+        <div className="next-action-details">
+          {status ? (
+            <details className="advanced">
+              <summary>Status details</summary>
+              <dl className="stats">
+                <div>
+                  <dt>Lifecycle phase</dt>
+                  <dd>{status.computedPhase}</dd>
+                </div>
+                <div>
+                  <dt>Legal next action</dt>
+                  <dd>{status.legalNextActions.join(', ')}</dd>
+                </div>
+                <div>
+                  <dt>Expected Cup</dt>
+                  <dd>{status.expectedCup}</dd>
+                </div>
+                <div>
+                  <dt>Cup selection</dt>
+                  <dd>{status.cupSelectionResolved ? 'Resolved' : 'Pending'}</dd>
+                </div>
+                <div>
+                  <dt>Cup individual</dt>
+                  <dd>
+                    {status.expectedCup === 'TypeCup'
+                      ? 'N/A (team-only)'
+                      : status.cupIndividualResolved
+                        ? 'Resolved'
+                        : 'Pending'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Cup team</dt>
+                  <dd>{status.cupTeamResolved ? 'Resolved' : 'Pending'}</dd>
+                </div>
+                <div>
+                  <dt>Cup complete</dt>
+                  <dd>{status.cupComplete ? 'Complete' : 'Pending'}</dd>
+                </div>
+              </dl>
+            </details>
+          ) : null}
+          <details className="advanced">
+            <summary>Roster details</summary>
+            {rosters ? (
+              <>
+                <dl className="stats">
+                  <div>
+                    <dt>Draw checksum</dt>
+                    <dd>
+                      <code title={rosters.drawChecksum}>{shortChecksum(rosters.drawChecksum)}</code>
+                    </dd>
+                  </div>
+                </dl>
+                <table className="mini-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Color pool</th>
+                      <th scope="col">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rosters.poolCounts.map((pool) => (
+                      <tr key={pool.sportingColor}>
+                        <td>{pool.sportingColor}</td>
+                        <td className="numeric">{pool.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="muted small">
+                Season 1 draw details are only available for saves that completed the inaugural
+                draw.
+              </p>
+            )}
+          </details>
+        </div>
       </Card>
 
       <div className="page-grid">
@@ -258,6 +244,13 @@ export function DashboardPage({
             <Link to={livePath(saveId)} className="ghost-button">
               Open live
             </Link>
+          }
+          info={
+            <p>
+              Superleague has no color quotas. Composition is informational only; zones are
+              1–16 safe, 17–24 qualifier, 25–32 relegated. Full zone badges live on the Live
+              tab.
+            </p>
           }
         >
           {!superleagueBoard ? (
@@ -315,11 +308,6 @@ export function DashboardPage({
                   </li>
                 ))}
               </ul>
-              <p className="muted small">
-                Superleague has no color quotas. Composition is informational only; zones are
-                1–16 safe, 17–24 qualifier, 25–32 relegated. Full zone badges live on the Live
-                tab.
-              </p>
             </>
           ) : null}
         </Card>
@@ -331,6 +319,12 @@ export function DashboardPage({
             <Link to={livePath(saveId)} className="ghost-button">
               Open live
             </Link>
+          }
+          info={
+            <p>
+              Feeder champion is auto-promoted; places 2–4 enter the qualifier. Zones are visual
+              only and never change selection math.
+            </p>
           }
         >
           {feederBoards.length === 0 ? (
@@ -368,60 +362,64 @@ export function DashboardPage({
               </table>
             </div>
           )}
-          <p className="muted small">
-            Feeder champion is auto-promoted; places 2–4 enter the qualifier. Zones are visual
-            only and never change selection math.
-          </p>
         </Card>
-      </div>
 
-      <Card eyebrow="Leagues" title={`Stage gate — Season ${progress.seasonNumber}`}>
-        {error ? (
-          <Notice tone="warn" title="Showing last loaded state">
-            <p>{error}</p>
-          </Notice>
-        ) : null}
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">League</th>
-                <th scope="col">Kind</th>
-                <th scope="col">Current stage</th>
-                <th scope="col">Completed</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...progress.leagues]
-                .sort((a, b) => a.leagueId - b.leagueId)
-                .map((league) => (
-                  <tr key={league.leagueId}>
-                    <td>{league.leagueName}</td>
-                    <td>{league.leagueKind}</td>
-                    <td className="numeric">{league.currentStage ?? '—'}</td>
-                    <td className="numeric">{league.completedStages} / 32</td>
-                    <td>
-                      {league.isLeagueComplete ? (
-                        <span className="badge badge-done">Complete</span>
-                      ) : league.currentStage === progress.globalStage ? (
-                        <span className="badge badge-ready">Ready</span>
-                      ) : (
-                        <span className="badge badge-wait">Waiting</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small">
-          Superleague zones are 1–16 safe, 17–24 qualifier and 25–32 relegated. Feeder zones
-          are champion auto-promoted plus 2–4 qualifier. Zones never apply color quotas.
-        </p>
-      </Card>
+        <Card
+          eyebrow="Leagues"
+          title={`Stage gate — Season ${progress.seasonNumber}`}
+          action={
+            <Link to={standingsPath(saveId)} className="ghost-button">
+              Standings
+            </Link>
+          }
+          info={
+            <p>
+              Superleague zones are 1–16 safe, 17–24 qualifier and 25–32 relegated. Feeder zones
+              are champion auto-promoted plus 2–4 qualifier. Zones never apply color quotas.
+            </p>
+          }
+        >
+          {error ? (
+            <Notice tone="warn" title="Showing last loaded state">
+              <p>{error}</p>
+            </Notice>
+          ) : null}
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">League</th>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Current stage</th>
+                  <th scope="col">Completed</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...progress.leagues]
+                  .sort((a, b) => a.leagueId - b.leagueId)
+                  .map((league) => (
+                    <tr key={league.leagueId}>
+                      <td>{league.leagueName}</td>
+                      <td>{league.leagueKind}</td>
+                      <td className="numeric">{league.currentStage ?? '—'}</td>
+                      <td className="numeric">{league.completedStages} / 32</td>
+                      <td>
+                        {league.isLeagueComplete ? (
+                          <span className="badge badge-done">Complete</span>
+                        ) : league.currentStage === progress.globalStage ? (
+                          <span className="badge badge-ready">Ready</span>
+                        ) : (
+                          <span className="badge badge-wait">Waiting</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
 
-      <div className="page-grid">
         <Card
           eyebrow="Winners"
           title={`Recent champions — ${leagueHonours.length} shown`}
@@ -506,9 +504,7 @@ export function DashboardPage({
             </Link>
           </p>
         </Card>
-      </div>
 
-      <div className="page-grid">
         <Card
           eyebrow="Records"
           title={`Meaningful records — ${recordPreview.length} shown`}
@@ -585,30 +581,35 @@ export function DashboardPage({
             </div>
           )}
         </Card>
-      </div>
 
-      <Card eyebrow="Stories" title="Recent sporting stories">
-        {stories.length === 0 ? (
-          <p className="muted">
-            No stories yet. Stage wins, titles, promotions and pool returns appear here
-            once the backend simulates them.
-          </p>
-        ) : (
-          <ul className="story-list">
-            {stories.map((story) => (
-              <li key={story.id}>
-                <span className="badge badge-ready">{story.eventType}</span>{' '}
-                <AthleteLink saveId={saveId} athleteId={story.athleteId} name={story.athleteName} />{' '}
-                <span>{story.text}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="muted small">
-          Stories are structured backend events with deterministic wording; the reveal
-          only replays persisted facts.
-        </p>
-      </Card>
+        <Card
+          eyebrow="Stories"
+          title="Recent sporting stories"
+          info={
+            <p>
+              Stories are structured backend events with deterministic wording; the reveal only
+              replays persisted facts.
+            </p>
+          }
+        >
+          {stories.length === 0 ? (
+            <p className="muted">
+              No stories yet. Stage wins, titles, promotions and pool returns appear here
+              once the backend simulates them.
+            </p>
+          ) : (
+            <ul className="story-list">
+              {stories.map((story) => (
+                <li key={story.id}>
+                  <span className="badge badge-ready">{story.eventType}</span>{' '}
+                  <AthleteLink saveId={saveId} athleteId={story.athleteId} name={story.athleteName} />{' '}
+                  <span>{story.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
