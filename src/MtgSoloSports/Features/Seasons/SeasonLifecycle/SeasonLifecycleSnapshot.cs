@@ -28,4 +28,5 @@ public sealed record SeasonLifecycleSnapshot(
     bool ReadyToStartNextSeason,
     string ExpectedCup,
     IReadOnlyList<string> LegalNextActions,
-    string NextActionDetail);
+    string NextActionDetail,
+    PostseasonEvents.SeasonEventProgress? EventProgress = null);

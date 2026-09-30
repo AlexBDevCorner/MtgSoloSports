@@ -45,12 +45,10 @@ public static class SeasonLifecycleEvaluator
             .ConfigureAwait(false);
         ValidateSeasonChain(allSeasons, current);
 
-        if (!current.IsComplete)
-        {
-            return await EvaluateInProgressAsync(context, saveId, metadata, current, allSeasons, rules, persistedPhase, cancellationToken).ConfigureAwait(false);
-        }
-
-        return await EvaluateCompletedAsync(context, saveId, metadata, current, allSeasons, rules, persistedPhase, cancellationToken).ConfigureAwait(false);
+        SeasonLifecycleSnapshot snapshot = !current.IsComplete
+            ? await EvaluateInProgressAsync(context, saveId, metadata, current, allSeasons, rules, persistedPhase, cancellationToken).ConfigureAwait(false)
+            : await EvaluateCompletedAsync(context, saveId, metadata, current, allSeasons, rules, persistedPhase, cancellationToken).ConfigureAwait(false);
+        return await PostseasonEvents.WithEventProgressAsync(context, snapshot, rules, cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task<SaveMetadataEntity> LoadMetadataAsync(

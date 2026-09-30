@@ -53,6 +53,7 @@ public sealed class GetSeasonStatusHandler
             snapshot.ReadyToStartNextSeason,
             snapshot.ExpectedCup,
             snapshot.LegalNextActions,
-            snapshot.NextActionDetail);
+            snapshot.NextActionDetail,
+            snapshot.EventProgress);
     }
 }

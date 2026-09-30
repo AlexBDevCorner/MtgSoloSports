@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -26,6 +28,21 @@ public static class PostseasonEvents
     }
 
     public sealed record PlayedRoundLink(int Group, int Round, Pcg32State Before, Pcg32State After);
+
+    /// <summary>
+    /// Progress of the round-based event that is the next legal lifecycle
+    /// action. <see cref="Group"/>/<see cref="RoundInGroup"/> are the position of
+    /// the next round to play (null for single-stage events).
+    /// </summary>
+    public sealed record SeasonEventProgress(
+        string Event,
+        int SourceSeasonNumber,
+        int RoundsPlayed,
+        int TotalRounds,
+        int GroupCount,
+        int RoundsPerGroup,
+        int? Group,
+        int? RoundInGroup);
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key, StringComparer.Ordinal);
 
@@ -137,5 +154,61 @@ public static class PostseasonEvents
         {
             throw new InvalidOperationException($"{title} is in progress but the save RNG moved since its last round; sporting state is corrupt.");
         }
+    }
+
+    /// <summary>
+    /// Adds event progress (and the computed in-progress phase once at least
+    /// one round is stored) when the next legal action is a round-based event.
+    /// Read-only; never repairs.
+    /// </summary>
+    public static async Task<SeasonLifecycleSnapshot> WithEventProgressAsync(
+        SaveDbContext context,
+        SeasonLifecycleSnapshot snapshot,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(rules);
+        string? key = snapshot.LegalNextActions.Count > 0 ? KeyForAction(snapshot.LegalNextActions[0]) : null;
+        if (key is null || snapshot.SourceSeasonNumber is not int sourceNumber)
+        {
+            return snapshot;
+        }
+
+        SeasonEntity source = await context.Seasons.AsNoTracking()
+            .SingleAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
+        int played = key switch
+        {
+            Qualifier => await CountQualifierRoundsAsync(context, source, cancellationToken).ConfigureAwait(false),
+            ColorCupIndividual => await context.ColorCupIndividualRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+            ColorCupTeam => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+            _ => await context.TypeCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+        };
+        EventShape shape = Shape(key, rules);
+        (int group, int round) = Cursor(Math.Min(played, shape.TotalRounds - 1), shape);
+        SeasonEventProgress progress = new(
+            key,
+            sourceNumber,
+            played,
+            shape.TotalRounds,
+            shape.GroupCount,
+            shape.RoundsPerGroup,
+            shape.IsGrouped ? group : null,
+            shape.IsGrouped ? round : null);
+        return snapshot with
+        {
+            EventProgress = progress,
+            ComputedPhase = played > 0 ? InProgressPhase(key) : snapshot.ComputedPhase,
+        };
+    }
+
+    private static async Task<int> CountQualifierRoundsAsync(SaveDbContext context, SeasonEntity source, CancellationToken cancellationToken)
+    {
+        SeasonEntity? next = await context.Seasons.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonNumber == source.SeasonNumber + 1, cancellationToken).ConfigureAwait(false);
+        return next is null
+            ? 0
+            : await context.QualifierRounds.CountAsync(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
     }
 }

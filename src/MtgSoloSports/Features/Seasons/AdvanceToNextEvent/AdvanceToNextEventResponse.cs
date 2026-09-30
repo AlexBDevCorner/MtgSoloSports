@@ -1,3 +1,5 @@
+using MtgSoloSports.Features.Seasons.SeasonLifecycle;
+
 namespace MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 
 /// <summary>
@@ -31,4 +33,5 @@ public sealed record AdvanceToNextEventResponse(
     bool ReadyToStartNextSeason,
     string ExpectedCup,
     IReadOnlyList<string> LegalNextActions,
-    string NextActionDetail);
+    string NextActionDetail,
+    PostseasonEvents.SeasonEventProgress? EventProgress);

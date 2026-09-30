@@ -6,6 +6,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
+using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
@@ -46,6 +48,32 @@ internal static class PostseasonTestSaves
         await InsertSyntheticSeasonTwoStandingsAsync(store, saveId).ConfigureAwait(false);
         await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         return (store, root, saveId);
+    }
+
+    /// <summary>
+    /// Lifecycle-valid save driven only through advance-next-event until
+    /// <paramref name="action"/> is the next legal action (e.g. RunQualifier
+    /// after Season 2 league play and automatic movement).
+    /// </summary>
+    internal static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareLifecycleAsync(ulong seed, ulong stream, string action)
+    {
+        var (store, root) = CreateStore();
+        SaveStore.CreationRecord created = await store.CreateAsync("Lifecycle Step", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
+        Guid saveId = created.Detail.SaveId;
+        GetSeasonStatusHandler status = new(store);
+        AdvanceToNextEventHandler advance = new(store);
+        for (int guard = 0; guard < 200; guard++)
+        {
+            GetSeasonStatusResponse current = await status.HandleAsync(saveId).ConfigureAwait(false);
+            if (current.LegalNextActions.Count > 0 && string.Equals(current.LegalNextActions[0], action, StringComparison.Ordinal))
+            {
+                return (store, root, saveId);
+            }
+
+            await advance.HandleAsync(saveId).ConfigureAwait(false);
+        }
+
+        throw new InvalidOperationException($"Lifecycle never reached {action}.");
     }
 
     /// <summary>Season 1 complete with the Color Cup field selected.</summary>
