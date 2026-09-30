@@ -358,7 +358,18 @@ export function LivePage({
               </button>
             </div>
           </div>
-          {gateReason ? <p className="muted small">{gateReason}</p> : null}
+          {progress.isSeasonComplete ? (
+            <Notice tone="info" title="League season complete">
+              <p>Movement, the qualifier and the Cup run one step at a time.</p>
+              <p>
+                <Link to={dashboardPath(saveId)} className="primary-button">
+                  Continue the postseason on the Dashboard
+                </Link>
+              </p>
+            </Notice>
+          ) : gateReason ? (
+            <p className="muted small">{gateReason}</p>
+          ) : null}
           <p className="muted small live-count">
             Completed rounds in this stage: {completedRounds} / {roundsPerStage}
             {isStageComplete ? ' · stage complete' : ''}

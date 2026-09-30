@@ -2,8 +2,9 @@ import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink, Link } from '../routing/router';
 import { cupsPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
-import { describeNextAction, type DashboardData } from './useDashboard';
+import type { DashboardData } from './useDashboard';
 import { FastForwardSeason } from './FastForwardSeason';
+import { SeasonFlow } from './SeasonFlow';
 import './DashboardPage.css';
 
 function shortChecksum(value: string): string {
@@ -67,7 +68,6 @@ export function DashboardPage({
     records,
     hallOfFame,
   } = data;
-  const next = describeNextAction(progress, status);
   const completedTotal = progress.leagues.reduce((sum, league) => sum + league.completedStages, 0);
   const superleagueBoard = leaders.find((board) => board.leagueKind === 'Superleague') ?? null;
   const feederBoards = leaders
@@ -113,8 +113,8 @@ export function DashboardPage({
       </dl>
 
       <Card
-        eyebrow="Next action"
-        title="Available simulation"
+        eyebrow={`Season ${status?.sourceSeasonNumber ?? progress.seasonNumber}`}
+        title="Next step"
         className="next-action"
         action={
           <button type="button" className="ghost-button" onClick={onRefresh}>
@@ -128,33 +128,15 @@ export function DashboardPage({
           </p>
         }
       >
-        <div className="next-action-row">
-          <div className="next-action-text">
-            <p className="next-headline">{next.headline}</p>
-            <p className="muted">{next.detail}</p>
-            {progress.isSeasonComplete ? null : (
-              <p className="muted small">
-                Stage {progress.globalStage} cannot advance until every active league completes it.
-              </p>
-            )}
-          </div>
-          <Link to={livePath(saveId)} className="primary-button">
-            Go to Live
-          </Link>
-        </div>
-        {status?.sourceSeasonNumber !== null && status?.sourceSeasonNumber !== undefined ? (
-          <p className="muted small">
-            Post-season {status.expectedCup} for Season {status.sourceSeasonNumber} runs after
-            feeder rebalancing and before bonus aging. Each Cup step is an explicit Next
-            Event: inspect the field on the Cups tab before running the events.
-          </p>
-        ) : null}
-        <FastForwardSeason
-          saveId={saveId}
-          progress={progress}
-          status={status}
-          onCompleted={onRefresh}
-        />
+        <SeasonFlow saveId={saveId} progress={progress} status={status} onAdvanced={onRefresh} />
+        {progress.isSeasonComplete ? null : (
+          <FastForwardSeason
+            saveId={saveId}
+            progress={progress}
+            status={status}
+            onCompleted={onRefresh}
+          />
+        )}
         <div className="next-action-details">
           {status ? (
             <details className="advanced">

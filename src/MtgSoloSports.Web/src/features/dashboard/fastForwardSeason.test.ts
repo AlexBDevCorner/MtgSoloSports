@@ -232,11 +232,11 @@ describe('MSS-042 fast-forward wiring', () => {
     assert.ok(helpers.includes('CompleteNextGlobalStage'), 'postseason gate reuses lifecycle actions');
   });
 
-  it('mounts the shortcut inside Available simulation on the save dashboard', () => {
+  it('mounts the shortcut inside the Next step panel on the save dashboard', () => {
     assert.ok(dashboardPage.includes('FastForwardSeason'), 'dashboard renders the shortcut');
     assert.ok(
-      dashboardPage.includes('Available simulation'),
-      'shortcut sits near current-season progress',
+      dashboardPage.includes('title="Next step"') && dashboardPage.includes('<SeasonFlow'),
+      'shortcut sits next to the season flow',
     );
     assert.ok(
       dashboardPage.includes('progress={progress}') && dashboardPage.includes('status={status}'),

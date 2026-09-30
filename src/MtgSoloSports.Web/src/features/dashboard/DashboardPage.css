@@ -39,7 +39,88 @@
   border-left: 3px solid var(--accent);
 }
 
-.next-action-row {
+/* Season flow: league play and each postseason event as one row of steps. */
+
+.season-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.flow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  border: 1px solid var(--line);
+}
+
+.flow-step {
+  display: flex;
+  flex: 1 1 140px;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0 -1px -1px 0;
+  padding: var(--space-2) var(--space-3);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.flow-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.flow-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.flow-detail {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-step.is-done {
+  color: var(--text-dim);
+}
+
+.flow-step.is-done .flow-mark {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: var(--bg);
+}
+
+.flow-step.is-current {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.flow-step.is-current .flow-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.flow-step.is-current .flow-label {
+  font-weight: 600;
+}
+
+.flow-next {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -47,12 +128,17 @@
   gap: var(--space-3) var(--space-5);
 }
 
-.next-action-text {
+.flow-next-text {
   display: flex;
   flex: 1 1 320px;
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
+}
+
+.flow-done {
+  color: var(--ok);
+  font-size: 13px;
 }
 
 .next-action-details {

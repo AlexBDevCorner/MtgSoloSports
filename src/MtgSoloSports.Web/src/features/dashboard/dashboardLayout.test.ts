@@ -16,8 +16,8 @@ describe('dashboard layout', () => {
 
   it('leads with a KPI strip and a single next-action panel', () => {
     assert.ok(page.includes('className="kpis"'), 'KPI strip renders');
-    assert.ok(page.includes('Available simulation'), 'next-action panel keeps its title');
-    assert.ok(page.includes('Go to Live'), 'primary action links to Live');
+    assert.ok(page.includes('title="Next step"'), 'next-action panel is titled plainly');
+    assert.ok(page.includes('<SeasonFlow'), 'season flow drives the primary action');
     assert.ok(page.includes('Status details'), 'lifecycle rows collapse');
     assert.ok(page.includes('Roster details'), 'pool/checksum collapse');
   });
