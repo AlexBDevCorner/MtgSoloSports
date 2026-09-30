@@ -157,6 +157,7 @@ describe('season flow steps', () => {
       action: 'SomethingNew',
       label: 'Run next event',
       explanation: 'Backend detail.',
+      liveEvent: null,
     });
   });
 
@@ -167,6 +168,40 @@ describe('season flow steps', () => {
     const finished = seasonFlow(progress({ isSeasonComplete: true }), null);
     assert.equal(finished.steps[0].state, 'done');
     assert.equal(finished.next, null);
+  });
+});
+
+describe('round-based events', () => {
+  it('sends round-based events to Live with progress detail', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 2, isSeasonComplete: true }),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        movementResolved: true,
+        expectedCup: 'TypeCup',
+        legalNextActions: ['RunQualifier'],
+        eventProgress: {
+          event: 'qualifier',
+          sourceSeasonNumber: 2,
+          roundsPlayed: 5,
+          totalRounds: 16,
+          groupCount: 1,
+          roundsPerGroup: 16,
+          group: null,
+          roundInGroup: null,
+        },
+      }),
+    );
+    assert.equal(flow.next?.kind, 'event');
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : null, 'qualifier');
+    assert.equal(flow.steps.find((s) => s.state === 'current')?.detail, 'Round 5 / 16');
+  });
+
+  it('keeps single-step events off Live', () => {
+    const flow = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['RebalanceFeeders'] }));
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : 'x', null);
   });
 });
 

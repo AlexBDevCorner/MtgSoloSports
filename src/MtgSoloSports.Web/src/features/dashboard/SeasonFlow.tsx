@@ -84,6 +84,23 @@ export function SeasonFlow({
             <Link to={livePath(saveId)} className="primary-button">
               Go to Live
             </Link>
+          ) : next.liveEvent ? (
+            <div className="live-buttons">
+              <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
+                Play on Live
+              </Link>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={running}
+                aria-busy={running}
+                onClick={() => {
+                  void runNext();
+                }}
+              >
+                {running ? 'Running…' : 'Run all rounds'}
+              </button>
+            </div>
           ) : (
             <button
               type="button"

@@ -7,11 +7,11 @@ import { savesPath } from '../routing/routes';
 import {
   fetchColorCupIndividual,
   fetchColorCupTeam,
-  runColorCupIndividual,
-  runColorCupTeam,
   type ColorCupIndividualResult,
   type ColorCupTeamResult,
 } from './colorCupApi';
+import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi';
+import { EventLiveAction } from './EventLiveAction';
 
 /** Display-only projection of fixed-point thousandths (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -34,12 +34,11 @@ function medalBadge(medal: string): string {
 export function ColorCupPage({ saveId }: { saveId: string }) {
   const [result, setResult] = useState<ColorCupIndividualResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [team, setTeam] = useState<ColorCupTeamResult | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
-  const [teamRunning, setTeamRunning] = useState(false);
+  const [status, setStatus] = useState<SeasonStatus | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [teamNotFound, setTeamNotFound] = useState(false);
 
@@ -114,56 +113,13 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
     const controller = new AbortController();
     void load(controller.signal);
     void loadTeam(controller.signal);
+    fetchSeasonStatus(saveId, controller.signal)
+      .then(setStatus)
+      .catch(() => setStatus(null));
     return () => {
       controller.abort();
     };
   }, [saveId, load, loadTeam]);
-
-  const handleRun = useCallback(async () => {
-    if (!saveId) {
-      return;
-    }
-    setRunning(true);
-    setError(null);
-    try {
-      const completed = await runColorCupIndividual(saveId, null);
-      setResult(completed);
-      setNotFound(false);
-    } catch (failure: unknown) {
-      if (failure instanceof ApiError && failure.status === 409) {
-        setError(apiErrorMessage(failure));
-        const controller = new AbortController();
-        await load(controller.signal);
-      } else {
-        setError(apiErrorMessage(failure));
-      }
-    } finally {
-      setRunning(false);
-    }
-  }, [saveId, load]);
-
-  const handleRunTeam = useCallback(async () => {
-    if (!saveId) {
-      return;
-    }
-    setTeamRunning(true);
-    setTeamError(null);
-    try {
-      const completed = await runColorCupTeam(saveId, null);
-      setTeam(completed);
-      setTeamNotFound(false);
-    } catch (failure: unknown) {
-      if (failure instanceof ApiError && failure.status === 409) {
-        setTeamError(apiErrorMessage(failure));
-        const controller = new AbortController();
-        await loadTeam(controller.signal);
-      } else {
-        setTeamError(apiErrorMessage(failure));
-      }
-    } finally {
-      setTeamRunning(false);
-    }
-  }, [saveId, loadTeam]);
 
   if (loading && !result) {
     return <Loading label="Loading Color Cup…" />;
@@ -241,18 +197,7 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
             individual event.
           </p>
         ) : null}
-        <p>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={running}
-            onClick={() => {
-              void handleRun();
-            }}
-          >
-            {running ? 'Running…' : 'Run Color Cup individual'}
-          </button>
-        </p>
+        {result ? null : <EventLiveAction saveId={saveId} eventKey="color-cup-individual" status={status} />}
       </Card>
 
       <Card
@@ -364,18 +309,7 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
             groups.
           </p>
         ) : null}
-        <p>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={teamRunning}
-            onClick={() => {
-              void handleRunTeam();
-            }}
-          >
-            {teamRunning ? 'Running…' : 'Run Color Cup team'}
-          </button>
-        </p>
+        {team ? null : <EventLiveAction saveId={saveId} eventKey="color-cup-team" status={status} />}
       </Card>
 
       <Card

@@ -5,9 +5,10 @@ import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { AthleteLink } from '../routing/router';
 import {
   fetchTypeCupTeam,
-  runTypeCupTeam,
   type TypeCupTeamResult,
 } from './typeCupApi';
+import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi';
+import { EventLiveAction } from './EventLiveAction';
 
 /** Display-only projection of fixed-point thousandths (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -30,7 +31,7 @@ function medalBadge(medal: string): string {
 export function TypeCupPage({ saveId }: { saveId: string }) {
   const [team, setTeam] = useState<TypeCupTeamResult | null>(null);
   const [teamLoading, setTeamLoading] = useState(false);
-  const [teamRunning, setTeamRunning] = useState(false);
+  const [status, setStatus] = useState<SeasonStatus | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [teamNotFound, setTeamNotFound] = useState(false);
 
@@ -72,32 +73,12 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
     }
     const controller = new AbortController();
     void loadTeam(controller.signal);
+    fetchSeasonStatus(saveId, controller.signal)
+      .then(setStatus)
+      .catch(() => setStatus(null));
     return () => {
       controller.abort();
     };
-  }, [saveId, loadTeam]);
-
-  const handleRunTeam = useCallback(async () => {
-    if (!saveId) {
-      return;
-    }
-    setTeamRunning(true);
-    setTeamError(null);
-    try {
-      const completed = await runTypeCupTeam(saveId, null);
-      setTeam(completed);
-      setTeamNotFound(false);
-    } catch (failure: unknown) {
-      if (failure instanceof ApiError && failure.status === 409) {
-        setTeamError(apiErrorMessage(failure));
-        const controller = new AbortController();
-        await loadTeam(controller.signal);
-      } else {
-        setTeamError(apiErrorMessage(failure));
-      }
-    } finally {
-      setTeamRunning(false);
-    }
   }, [saveId, loadTeam]);
 
   if (teamLoading && !team) {
@@ -173,18 +154,7 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
             completed even season first, then run the four 8-round rank groups.
           </p>
         ) : null}
-        <p>
-          <button
-            type="button"
-            className="primary-button"
-            disabled={teamRunning}
-            onClick={() => {
-              void handleRunTeam();
-            }}
-          >
-            {teamRunning ? 'Running…' : 'Run Type Cup team'}
-          </button>
-        </p>
+        {team ? null : <EventLiveAction saveId={saveId} eventKey="type-cup-team" status={status} />}
       </Card>
 
       <Card

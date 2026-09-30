@@ -1,4 +1,5 @@
 import type { SeasonProgress, SeasonStatus } from './dashboardApi';
+import { progressLabel, type EventKey } from '../events/eventModel.ts';
 
 /**
  * Plain-language view of the season lifecycle for the Dashboard: league play,
@@ -18,7 +19,7 @@ export interface FlowStep {
 
 export type FlowNext =
   | { kind: 'live'; label: string; explanation: string }
-  | { kind: 'event'; action: string; label: string; explanation: string };
+  | { kind: 'event'; action: string; label: string; explanation: string; liveEvent: EventKey | null };
 
 export interface SeasonFlowView {
   seasonNumber: number;
@@ -182,12 +183,12 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
     ? definitions.findIndex((step) => step.actions.includes(legalAction))
     : definitions.findIndex((step) => !step.done);
 
+  const eventDetail = status?.eventProgress ? progressLabel(status.eventProgress) : undefined;
   const steps = definitions.map((step, index): FlowStep => {
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';
-    return step.detail
-      ? { key: step.key, label: step.label, detail: step.detail, state }
-      : { key: step.key, label: step.label, state };
+    const detail = state === 'current' && eventDetail ? eventDetail : step.detail;
+    return detail ? { key: step.key, label: step.label, detail, state } : { key: step.key, label: step.label, state };
   });
 
   return { seasonNumber: season, steps, next: nextFor(progress, status, season, legalAction) };
@@ -210,11 +211,12 @@ function nextFor(
   if (!status || !legalAction) {
     return null;
   }
+  const liveEvent = status.eventProgress ? status.eventProgress.event : null;
   const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1);
   if (!copy) {
-    return { kind: 'event', action: legalAction, label: 'Run next event', explanation: status.nextActionDetail };
+    return { kind: 'event', action: legalAction, label: 'Run next event', explanation: status.nextActionDetail, liveEvent };
   }
-  return { kind: 'event', action: legalAction, label: copy.label, explanation: copy.explanation };
+  return { kind: 'event', action: legalAction, label: copy.label, explanation: copy.explanation, liveEvent };
 }
 
 /** One-line confirmation shown after a step runs, plus where its results live. */

@@ -34,6 +34,12 @@ describe('season flow panel', () => {
     assert.ok(!hook.includes('/api/saves/{saveId}'), 'no backend routes in user-facing copy');
   });
 
+  it('offers Play on Live and Run all rounds for round-based events', () => {
+    assert.ok(component.includes('Play on Live'));
+    assert.ok(component.includes('Run all rounds'));
+    assert.ok(component.includes('livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })'));
+  });
+
   it('points Live to the dashboard once league play is over', () => {
     assert.ok(live.includes('Continue the postseason on the Dashboard'));
   });
