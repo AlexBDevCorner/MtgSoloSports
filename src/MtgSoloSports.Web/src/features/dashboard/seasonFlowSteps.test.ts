@@ -37,6 +37,7 @@ function status(overrides?: Partial<SeasonStatus>): SeasonStatus {
     expectedCup: 'ColorCup',
     legalNextActions: ['CompleteNextGlobalStage'],
     nextActionDetail: 'Backend detail.',
+    eventProgress: null,
     ...overrides,
   };
 }

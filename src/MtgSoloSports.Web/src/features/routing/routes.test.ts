@@ -61,12 +61,18 @@ describe('MSS-040 route shapes', () => {
       saveId: SAVE,
       leagueId: 7,
       round: 3,
+      event: null,
+      eventSeason: null,
+      group: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, ''), {
       name: 'live',
       saveId: SAVE,
       leagueId: null,
       round: null,
+      event: null,
+      eventSeason: null,
+      group: null,
     });
     assert.equal(livePath(SAVE, { league: 7, round: 3 }), `/saves/${SAVE}/live?league=7&round=3`);
     assert.equal(livePath(SAVE, { league: 7 }), `/saves/${SAVE}/live?league=7`);
@@ -82,6 +88,8 @@ describe('MSS-040 route shapes', () => {
         competitionId: 5,
         stage: 3,
         round: 7,
+        event: null,
+        group: null,
       },
     );
     assert.equal(
@@ -105,6 +113,9 @@ describe('MSS-040 route shapes', () => {
       saveId: SAVE,
       leagueId: null,
       round: null,
+      event: null,
+      eventSeason: null,
+      group: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/history`, '?season=0&competition=x'), {
       name: 'history',
@@ -113,7 +124,48 @@ describe('MSS-040 route shapes', () => {
       competitionId: null,
       stage: null,
       round: null,
+      event: null,
+      group: null,
     });
+  });
+
+  it('round-trips postseason event selections for Live and History', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=qualifier&season=2&round=5'), {
+      name: 'live',
+      saveId: SAVE,
+      leagueId: null,
+      round: 5,
+      event: 'qualifier',
+      eventSeason: 2,
+      group: null,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=bogus&round=5'), {
+      name: 'live',
+      saveId: SAVE,
+      leagueId: null,
+      round: 5,
+      event: null,
+      eventSeason: null,
+      group: null,
+    });
+    assert.equal(
+      livePath(SAVE, { event: 'color-cup-team', season: 3, group: 2, round: 4 }),
+      `/saves/${SAVE}/live?round=4&event=color-cup-team&season=3&group=2`,
+    );
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/history`, '?season=3&event=type-cup-team&group=1&round=8'), {
+      name: 'history',
+      saveId: SAVE,
+      season: 3,
+      competitionId: null,
+      stage: null,
+      round: 8,
+      event: 'type-cup-team',
+      group: 1,
+    });
+    assert.equal(
+      historyPath(SAVE, { season: 3, event: 'type-cup-team', group: 1, round: 8 }),
+      `/saves/${SAVE}/history?season=3&round=8&event=type-cup-team&group=1`,
+    );
   });
 
   it('treats unknown paths as notFound without a white screen', () => {

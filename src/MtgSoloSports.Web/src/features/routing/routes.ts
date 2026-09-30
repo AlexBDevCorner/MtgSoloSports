@@ -36,13 +36,23 @@
  * entry flow and never overrides an explicit save-scoped URL.
  */
 
+import { isEventKey, type EventKey } from '../events/eventModel.ts';
+
 export type StandingsView = 'season' | 'matrix';
 
 export type Route =
   | { name: 'root' }
   | { name: 'saves' }
   | { name: 'dashboard'; saveId: string }
-  | { name: 'live'; saveId: string; leagueId: number | null; round: number | null }
+  | {
+      name: 'live';
+      saveId: string;
+      leagueId: number | null;
+      round: number | null;
+      event: EventKey | null;
+      eventSeason: number | null;
+      group: number | null;
+    }
   | {
       name: 'history';
       saveId: string;
@@ -50,6 +60,8 @@ export type Route =
       competitionId: number | null;
       stage: number | null;
       round: number | null;
+      event: EventKey | null;
+      group: number | null;
     }
   | {
       name: 'standings';
@@ -74,7 +86,13 @@ export function dashboardPath(saveId: string): string {
 
 export function livePath(
   saveId: string,
-  query?: { league?: number | null; round?: number | null },
+  query?: {
+    league?: number | null;
+    round?: number | null;
+    event?: EventKey | null;
+    season?: number | null;
+    group?: number | null;
+  },
 ): string {
   const params = new URLSearchParams();
   if (query?.league !== undefined && query.league !== null) {
@@ -82,6 +100,15 @@ export function livePath(
   }
   if (query?.round !== undefined && query.round !== null) {
     params.set('round', String(query.round));
+  }
+  if (query?.event !== undefined && query.event !== null) {
+    params.set('event', query.event);
+  }
+  if (query?.season !== undefined && query.season !== null) {
+    params.set('season', String(query.season));
+  }
+  if (query?.group !== undefined && query.group !== null) {
+    params.set('group', String(query.group));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/live${suffix}`;
@@ -94,6 +121,8 @@ export function historyPath(
     competition?: number | null;
     stage?: number | null;
     round?: number | null;
+    event?: EventKey | null;
+    group?: number | null;
   },
 ): string {
   const params = new URLSearchParams();
@@ -108,6 +137,12 @@ export function historyPath(
   }
   if (query?.round !== undefined && query.round !== null) {
     params.set('round', String(query.round));
+  }
+  if (query?.event !== undefined && query.event !== null) {
+    params.set('event', query.event);
+  }
+  if (query?.group !== undefined && query.group !== null) {
+    params.set('group', String(query.group));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/history${suffix}`;
@@ -224,6 +259,11 @@ function parseOptionalPositiveInt(params: URLSearchParams, key: string): number 
   return parsed;
 }
 
+function parseEvent(params: URLSearchParams): EventKey | null {
+  const value = params.get('event');
+  return isEventKey(value) ? value : null;
+}
+
 function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
     return pathname.slice(0, -1);
@@ -271,6 +311,9 @@ export function parseRoute(pathname: string, search: string): Route {
         saveId,
         leagueId: parseOptionalPositiveInt(params, 'league'),
         round: parseOptionalPositiveInt(params, 'round'),
+        event: parseEvent(params),
+        eventSeason: parseEvent(params) ? parseOptionalPositiveInt(params, 'season') : null,
+        group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
       };
     case 'history':
       if (segments.length !== 3) {
@@ -283,6 +326,8 @@ export function parseRoute(pathname: string, search: string): Route {
         competitionId: parseOptionalPositiveInt(params, 'competition'),
         stage: parseOptionalPositiveInt(params, 'stage'),
         round: parseOptionalPositiveInt(params, 'round'),
+        event: parseEvent(params),
+        group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
       };
     case 'records':
       if (segments.length !== 3) {

@@ -1,3 +1,4 @@
+import type { EventProgress } from '../events/eventsApi';
 import { fetchJson } from '../../shared/api/http';
 import type { SaveDetail } from '../saves/savesApi';
 
@@ -40,6 +41,7 @@ export interface SeasonStatus {
   expectedCup: string;
   legalNextActions: string[];
   nextActionDetail: string;
+  eventProgress: EventProgress | null;
 }
 
 export interface AdvanceNextEventResult {
@@ -66,6 +68,7 @@ export interface AdvanceNextEventResult {
   expectedCup: string;
   legalNextActions: string[];
   nextActionDetail: string;
+  eventProgress: EventProgress | null;
 }
 
 export interface CompleteSeasonProgress {
