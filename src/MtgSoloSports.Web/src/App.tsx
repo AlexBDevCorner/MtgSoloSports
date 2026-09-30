@@ -9,6 +9,7 @@ import { TypeCupPage } from './features/cups/TypeCupPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
 import { HistoryPage } from './features/history/HistoryPage';
+import { LiveEventView } from './features/live/LiveEventView';
 import { LivePage } from './features/live/LivePage';
 import { RecordsPage } from './features/records/RecordsPage';
 import { StandingsPage } from './features/standings/StandingsPage';
@@ -202,7 +203,28 @@ export default function App() {
             onRefresh={dashboard.refresh}
           />
         );
-      case 'live':
+      case 'live': {
+        const status = dashboard.data?.status ?? null;
+        const liveEvent = route.event ?? dashboard.data?.status?.eventProgress?.event ?? null;
+        const eventSeason =
+          route.eventSeason ?? status?.eventProgress?.sourceSeasonNumber ?? status?.sourceSeasonNumber ?? null;
+        if (liveEvent && eventSeason !== null) {
+          return (
+            <LiveEventView
+              key={`${liveEvent}:${eventSeason}`}
+              saveId={saveId}
+              event={liveEvent}
+              season={eventSeason}
+              progress={status?.eventProgress?.event === liveEvent ? status.eventProgress : null}
+              urlGroup={route.group}
+              urlRound={route.round}
+              onSelectRound={(group, round) => {
+                navigate(livePath(saveId, { event: liveEvent, season: eventSeason, group, round }), { replace: true });
+              }}
+              onMutated={dashboard.refresh}
+            />
+          );
+        }
         return (
           <LivePage
             saveId={saveId}
@@ -226,6 +248,7 @@ export default function App() {
             }}
           />
         );
+      }
       case 'history':
         return (
           <HistoryPage
