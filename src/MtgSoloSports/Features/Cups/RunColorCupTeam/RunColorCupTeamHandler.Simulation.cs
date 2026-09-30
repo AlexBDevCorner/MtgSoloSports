@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Cups;
@@ -19,83 +20,112 @@ public sealed partial class RunColorCupTeamHandler
         Pcg32State RngAfter,
         string Checksum);
 
-    internal static TeamSimulation SimulateTeam(
-        Dictionary<int, List<ColorCupSelectionEntity>> groups,
-        Dictionary<int, List<AdvanceRoundHandler.MemberRow>> rosters,
-        Dictionary<int, Bonus> activeBonuses,
-        Pcg32State rngBefore,
-        SeasonEntity source,
-        RulesV1 rules)
+    internal sealed record TeamState(
+        RulesV1 Rules,
+        SaveMetadataEntity Metadata,
+        SeasonEntity Source,
+        Dictionary<int, List<ColorCupSelectionEntity>> Groups,
+        Dictionary<int, List<AdvanceRoundHandler.MemberRow>> Rosters,
+        Dictionary<int, Bonus> ActiveBonuses,
+        List<ColorCupTeamRoundPayloadDocument> Played,
+        Pcg32State Rng,
+        int StageCountBefore,
+        int SeasonCountBefore,
+        int RoundCountBefore,
+        long LifetimeBefore,
+        long EffectiveBefore,
+        long ChampionshipBefore)
     {
-        List<ColorCupTeamRoundPayloadDocument> payloads = new(rules.ColorCupTeamSize * rules.ColorCupTeamGroupRounds);
-        List<TeamEvent.TeamLegRanked> allLegs = new(rules.ColorCupColorCount * rules.ColorCupTeamSize);
-        Pcg32State current = rngBefore;
-
-        foreach (int groupNumber in Enumerable.Range(1, rules.ColorCupTeamSize).ToList())
-        {
-            current = SimulateSingleGroup(
-                groups[groupNumber],
-                rosters[groupNumber],
-                activeBonuses,
-                current,
-                source,
-                rules,
-                groupNumber,
-                payloads,
-                allLegs);
-        }
-
-        IReadOnlyList<TeamEvent.TeamScoreInput> teamInputs = TeamEvent.BuildTeamInputs(allLegs, rules.ColorCupColorCount);
-        Pcg32V1 teamRng = Pcg32V1.Restore(current);
-        IReadOnlyList<TeamEvent.TeamRanked> ranked = TeamEvent.RankTeams(teamInputs, teamRng);
-        ColorCupTeamInvariants.ValidateTeams(ranked, allLegs, rules);
-        Pcg32State rngAfter = teamRng.Snapshot();
-        string checksum = ComputeChecksum(ranked);
-        return new TeamSimulation(payloads, allLegs, ranked, rngAfter, checksum);
+        public PostseasonEvents.EventShape Shape => PostseasonEvents.Shape(PostseasonEvents.ColorCupTeam, Rules);
     }
 
-    internal static Pcg32State SimulateSingleGroup(
-        List<ColorCupSelectionEntity> members,
-        List<AdvanceRoundHandler.MemberRow> roster,
-        Dictionary<int, Bonus> activeBonuses,
-        Pcg32State rngBefore,
-        SeasonEntity source,
-        RulesV1 rules,
-        int groupNumber,
-        List<ColorCupTeamRoundPayloadDocument> payloads,
-        List<TeamEvent.TeamLegRanked> allLegs)
+    /// <summary>
+    /// Plays exactly one group round. When it is the last round of a group other
+    /// than the final group, the group's leg tie-break is drawn immediately so
+    /// the returned RNG is where the next group starts in a one-shot run.
+    /// </summary>
+    internal static (ColorCupTeamRoundPayloadDocument Payload, Pcg32State RngAfterStep) PlayRound(
+        TeamState state,
+        IReadOnlyList<ColorCupTeamRoundPayloadDocument> played,
+        Pcg32State rngBefore)
     {
+        PostseasonEvents.EventShape shape = state.Shape;
+        (int group, int round) = PostseasonEvents.Cursor(played.Count, shape);
+        List<AdvanceRoundHandler.MemberRow> roster = state.Rosters[group];
         Dictionary<int, Points> cumulative = new(roster.Count);
-        List<List<TeamEvent.TeamGroupRoundEntry>> groupRounds = new(rules.ColorCupTeamGroupRounds);
-        Pcg32State current = rngBefore;
-
-        for (int roundNumber = 1; roundNumber <= rules.ColorCupTeamGroupRounds; roundNumber++)
+        if (round > 1)
         {
-            RoundSimulationResult simulation = SimulateGroupRound(roster, cumulative, activeBonuses, current, rules);
-            ColorCupTeamRoundPayloadDocument payload = BuildGroupPayload(
-                members, source, rules, groupNumber, roundNumber, current, simulation);
-            ColorCupTeamInvariants.ValidateRound(payload, rules, current.State, current.Stream);
-            payloads.Add(payload);
-            groupRounds.Add(ToGroupEntries(payload, members));
-            foreach (RoundPayloadEntry entry in payload.Placements)
+            foreach (RoundPayloadEntry entry in played[^1].Placements)
             {
                 cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
             }
-
-            current = simulation.RngAfter;
         }
 
-        IReadOnlyList<TeamEvent.TeamLegTotals> totals = TeamEvent.AccumulateLeg(
-            groupRounds, rules.ColorCupColorCount, rules.ColorCupTeamGroupRounds, rules);
-        Pcg32V1 legRng = Pcg32V1.Restore(current);
-        IReadOnlyList<TeamEvent.TeamLegRanked> ranked = TeamEvent.RankLeg(totals, legRng, rules, rules.ColorCupColorCount);
-        ColorCupTeamInvariants.ValidateCompletedLeg(ranked, totals, groupNumber, rules);
-        foreach (TeamEvent.TeamLegRanked leg in ranked)
+        RoundSimulationResult simulation = SimulateGroupRound(roster, cumulative, state.ActiveBonuses, rngBefore, state.Rules);
+        ColorCupTeamRoundPayloadDocument payload = BuildGroupPayload(
+            state.Groups[group], state.Source, state.Rules, group, round, rngBefore, simulation);
+        ColorCupTeamInvariants.ValidateRound(payload, state.Rules, rngBefore.State, rngBefore.Stream);
+
+        Pcg32State after = simulation.RngAfter;
+        if (round == shape.RoundsPerGroup && group < shape.GroupCount)
         {
-            allLegs.Add(leg);
+            List<ColorCupTeamRoundPayloadDocument> groupPayloads = [.. played.Where(p => p.GroupNumber == group), payload];
+            after = RankGroupLeg(state, group, groupPayloads).RngAfter;
         }
 
-        return legRng.Snapshot();
+        return (payload, after);
+    }
+
+    /// <summary>Ranks one completed group leg from its stored payloads with the group's tie-break RNG.</summary>
+    internal static (IReadOnlyList<TeamEvent.TeamLegRanked> Legs, Pcg32State RngAfter) RankGroupLeg(
+        TeamState state,
+        int group,
+        IReadOnlyList<ColorCupTeamRoundPayloadDocument> groupPayloads)
+    {
+        List<ColorCupSelectionEntity> members = state.Groups[group];
+        List<ColorCupTeamRoundPayloadDocument> ordered = groupPayloads.OrderBy(p => p.RoundNumber).ToList();
+        List<List<TeamEvent.TeamGroupRoundEntry>> groupRounds = ordered
+            .Select(p => ToGroupEntries(p, members))
+            .ToList();
+        IReadOnlyList<TeamEvent.TeamLegTotals> totals = TeamEvent.AccumulateLeg(
+            groupRounds, state.Rules.ColorCupColorCount, state.Rules.ColorCupTeamGroupRounds, state.Rules);
+        ColorCupTeamRoundPayloadDocument last = ordered[^1];
+        Pcg32V1 legRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
+        IReadOnlyList<TeamEvent.TeamLegRanked> ranked = TeamEvent.RankLeg(totals, legRng, state.Rules, state.Rules.ColorCupColorCount);
+        ColorCupTeamInvariants.ValidateCompletedLeg(ranked, totals, group, state.Rules);
+        return (ranked, legRng.Snapshot());
+    }
+
+    /// <summary>Completes the team event from all stored payloads (the source of truth).</summary>
+    internal static TeamSimulation FinishTeam(TeamState state, List<ColorCupTeamRoundPayloadDocument> payloads)
+    {
+        PostseasonEvents.EventShape shape = state.Shape;
+        List<TeamEvent.TeamLegRanked> allLegs = new(state.Rules.ColorCupColorCount * shape.GroupCount);
+        Pcg32State current = default;
+        for (int group = 1; group <= shape.GroupCount; group++)
+        {
+            List<ColorCupTeamRoundPayloadDocument> groupPayloads = payloads.Where(p => p.GroupNumber == group).ToList();
+            (IReadOnlyList<TeamEvent.TeamLegRanked> legs, Pcg32State after) = RankGroupLeg(state, group, groupPayloads);
+            allLegs.AddRange(legs);
+            if (group < shape.GroupCount)
+            {
+                ColorCupTeamRoundPayloadDocument nextStart = payloads.Single(p => p.GroupNumber == group + 1 && p.RoundNumber == 1);
+                if (after != new Pcg32State(nextStart.RngBeforeState, nextStart.RngBeforeStream))
+                {
+                    throw new InvalidOperationException($"Color Cup team RNG chain is broken at the start of group {group + 1}.");
+                }
+            }
+
+            current = after;
+        }
+
+        IReadOnlyList<TeamEvent.TeamScoreInput> teamInputs = TeamEvent.BuildTeamInputs(allLegs, state.Rules.ColorCupColorCount);
+        Pcg32V1 teamRng = Pcg32V1.Restore(current);
+        IReadOnlyList<TeamEvent.TeamRanked> ranked = TeamEvent.RankTeams(teamInputs, teamRng);
+        ColorCupTeamInvariants.ValidateTeams(ranked, allLegs, state.Rules);
+        Pcg32State rngAfter = teamRng.Snapshot();
+        string checksum = ComputeChecksum(ranked);
+        return new TeamSimulation(payloads, allLegs, ranked, rngAfter, checksum);
     }
 
     internal static RoundSimulationResult SimulateGroupRound(

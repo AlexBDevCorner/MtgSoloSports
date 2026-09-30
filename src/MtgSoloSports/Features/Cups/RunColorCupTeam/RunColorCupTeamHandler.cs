@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
@@ -74,10 +75,36 @@ public sealed partial class RunColorCupTeamHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        TeamState state = await LoadStateAsync(context, saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+        List<ColorCupTeamRoundPayloadDocument> payloads = new(state.Played);
+        Pcg32State current = state.Rng;
+        while (payloads.Count < state.Shape.TotalRounds)
+        {
+            (ColorCupTeamRoundPayloadDocument payload, Pcg32State after) = PlayRound(state, payloads, current);
+            payloads.Add(payload);
+            current = after;
+        }
+
+        TeamSimulation simulation = await CompleteAsync(context, state, payloads, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(_store, saveId, state.Source, simulation, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads everything a team round needs from persisted state and validates
+    /// any partly played event (contiguous group rounds, unbroken RNG chain
+    /// including group tie-break boundaries, RNG row untouched since the last
+    /// step). Aborts on corruption.
+    /// </summary>
+    internal static async Task<TeamState> LoadStateAsync(
+        SaveDbContext context,
+        Guid saveId,
+        int? sourceSeasonNumber,
+        CancellationToken cancellationToken)
+    {
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
-        Pcg32State rngBefore = rngRow.ToState();
 
         SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         EnsureOddSeason(source);
@@ -86,7 +113,7 @@ public sealed partial class RunColorCupTeamHandler
         ColorCupTeamInvariants.ValidateField(selection, rules);
         Dictionary<int, List<ColorCupSelectionEntity>> groups = PartitionGroups(selection, rules);
         ColorCupTeamInvariants.ValidateGroups(groups, rules);
-        await EnsureTeamAbsentAsync(context, source, cancellationToken).ConfigureAwait(false);
+        await EnsureTeamUnresolvedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         (int stageCountBefore, int seasonCountBefore, int roundCountBefore, long lifetimeBefore, long effectiveBefore, long championshipBefore) =
             await CapturePreservationAsync(context, cancellationToken).ConfigureAwait(false);
@@ -95,22 +122,58 @@ public sealed partial class RunColorCupTeamHandler
         Dictionary<int, Bonus> activeBonuses = await LoadCupActiveBonusesAsync(
             context, rosters, source, rules, cancellationToken).ConfigureAwait(false);
 
-        TeamSimulation simulation = SimulateTeam(groups, rosters, activeBonuses, rngBefore, source, rules);
+        List<ColorCupTeamRoundEntity> rows = await context.ColorCupTeamRounds
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .OrderBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<ColorCupTeamRoundPayloadDocument> played = rows.Select(r => ColorCupTeamRoundPayloadDocument.FromStored(r.PayloadJson)).ToList();
+        Pcg32State rng = rngRow.ToState();
+        TeamState state = new(
+            rules, metadata, source, groups, rosters, activeBonuses, played, rng,
+            stageCountBefore, seasonCountBefore, roundCountBefore, lifetimeBefore, effectiveBefore, championshipBefore);
+        foreach (ColorCupTeamRoundPayloadDocument payload in played)
+        {
+            ColorCupTeamInvariants.ValidateRound(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
+        }
 
-        await PersistTeamAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
+        PostseasonEvents.ValidateInProgress(
+            PostseasonEvents.ColorCupTeam,
+            played.Select(p => new PostseasonEvents.PlayedRoundLink(
+                p.GroupNumber,
+                p.RoundNumber,
+                new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
+                new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
+            state.Shape,
+            group => RankGroupLeg(state, group, played.Where(p => p.GroupNumber == group).ToList()).RngAfter,
+            rng);
+        return state;
+    }
+
+    /// <summary>
+    /// Completes the team event from all payloads (the source of truth) in the
+    /// caller's transaction, in the same order as the one-shot run.
+    /// </summary>
+    internal static async Task<TeamSimulation> CompleteAsync(
+        SaveDbContext context,
+        TeamState state,
+        List<ColorCupTeamRoundPayloadDocument> payloads,
+        CancellationToken cancellationToken)
+    {
+        TeamSimulation simulation = FinishTeam(state, payloads);
+        await PersistTeamAsync(context, state.Source, simulation, state.Played.Count, cancellationToken).ConfigureAwait(false);
         context.ApplyRngState(simulation.RngAfter);
-        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupComplete);
+        state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupComplete);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(
-            context, source, simulation, rules,
-            stageCountBefore, seasonCountBefore, roundCountBefore,
-            lifetimeBefore, effectiveBefore, championshipBefore,
+            context, state.Source, simulation, state.Rules,
+            state.StageCountBefore, state.SeasonCountBefore, state.RoundCountBefore,
+            state.LifetimeBefore, state.EffectiveBefore, state.ChampionshipBefore,
             cancellationToken).ConfigureAwait(false);
-        await EmitTeamStoriesAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return await BuildResponseAsync(_store, saveId, source, simulation, cancellationToken).ConfigureAwait(false);
+        await EmitTeamStoriesAsync(context, state.Source, simulation, cancellationToken).ConfigureAwait(false);
+        return simulation;
     }
 
     internal static async Task<SeasonEntity> LoadSourceSeasonAsync(
@@ -208,7 +271,7 @@ public sealed partial class RunColorCupTeamHandler
         return groups;
     }
 
-    internal static async Task EnsureTeamAbsentAsync(
+    internal static async Task EnsureTeamUnresolvedAsync(
         SaveDbContext context,
         SeasonEntity source,
         CancellationToken cancellationToken)
@@ -226,13 +289,6 @@ public sealed partial class RunColorCupTeamHandler
         if (hasLegs)
         {
             throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
-        }
-
-        bool hasRounds = await context.ColorCupTeamRounds.AnyAsync(
-            e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
-        if (hasRounds)
-        {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial rounds.");
         }
 
         bool hasHonour = await context.Honours.AnyAsync(

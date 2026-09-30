@@ -15,9 +15,10 @@ public sealed partial class RunColorCupTeamHandler
         SaveDbContext context,
         SeasonEntity source,
         TeamSimulation simulation,
+        int alreadyPersisted,
         CancellationToken cancellationToken)
     {
-        PersistRoundRows(context, source, simulation);
+        PersistRoundRows(context, source, simulation, alreadyPersisted);
         await PersistLegRowsAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
         PersistTeamRows(context, source, simulation);
         PersistChampionHonours(context, source, simulation);
@@ -27,9 +28,10 @@ public sealed partial class RunColorCupTeamHandler
     internal static void PersistRoundRows(
         SaveDbContext context,
         SeasonEntity source,
-        TeamSimulation simulation)
+        TeamSimulation simulation,
+        int alreadyPersisted)
     {
-        foreach (ColorCupTeamRoundPayloadDocument payload in simulation.Payloads)
+        foreach (ColorCupTeamRoundPayloadDocument payload in simulation.Payloads.Skip(alreadyPersisted))
         {
             context.ColorCupTeamRounds.Add(new ColorCupTeamRoundEntity
             {
