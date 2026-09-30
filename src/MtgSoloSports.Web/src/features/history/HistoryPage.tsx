@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
+import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import {
@@ -328,188 +329,108 @@ export function HistoryPage({
 
   return (
     <div className="dashboard">
-      <Card
-        eyebrow="History navigation"
-        title="Season · competition · stage · round"
-        action={
-          seasonsState.loading ? <span className="muted small">Refreshing…</span> : undefined
-        }
-      >
-        <div className="live-controls">
-          <label className="field">
-            <span>Season</span>
-            <select
-              value={seasonNumber ?? ''}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const season = Number.isNaN(next) ? null : next;
-                setSeasonNumber(season);
-                setLeagueId(null);
-                setStageNumber(null);
-                setRoundNumber(null);
-                pushSelection({ season, competition: null, stage: null, round: null });
-              }}
-            >
-              {seasons.map((row) => (
-                <option key={row.seasonNumber} value={row.seasonNumber}>
-                  Season {row.seasonNumber}
-                  {row.isComplete ? '' : ' (in progress)'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Competition</span>
-            <select
-              value={leagueId ?? ''}
-              disabled={competitions.length === 0}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const competition = Number.isNaN(next) ? null : next;
-                setLeagueId(competition);
-                setStageNumber(null);
-                setRoundNumber(null);
-                pushSelection({ season: seasonNumber, competition, stage: null, round: null });
-              }}
-            >
-              {competitions.map((row) => (
-                <option key={row.leagueId} value={row.leagueId}>
-                  {row.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Stage</span>
-            <select
-              value={stageNumber ?? ''}
-              disabled={stages.length === 0}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const stage = Number.isNaN(next) ? null : next;
-                setStageNumber(stage);
-                setRoundNumber(null);
-                pushSelection({ season: seasonNumber, competition: leagueId, stage, round: null });
-              }}
-            >
-              {stages.map((row) => (
-                <option key={row.stageNumber} value={row.stageNumber}>
-                  Stage {row.stageNumber}
-                  {row.isComplete ? '' : ` (${row.completedRounds}/16)`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Round</span>
-            <select
-              value={roundNumber ?? ''}
-              disabled={roundSummaries.length === 0}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const round = Number.isNaN(next) ? null : next;
-                setRoundNumber(round);
-                pushSelection({ season: seasonNumber, competition: leagueId, stage: stageNumber, round });
-              }}
-            >
-              {roundSummaries.map((row) => (
-                <option key={row.roundNumber} value={row.roundNumber}>
-                  Round {row.roundNumber}
-                </option>
-              ))}
-            </select>
-          </label>
+      <div className="toolbar" role="group" aria-label="History filters">
+        <label className="field">
+          <span>Season</span>
+          <select
+            value={seasonNumber ?? ''}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const season = Number.isNaN(next) ? null : next;
+              setSeasonNumber(season);
+              setLeagueId(null);
+              setStageNumber(null);
+              setRoundNumber(null);
+              pushSelection({ season, competition: null, stage: null, round: null });
+            }}
+          >
+            {seasons.map((row) => (
+              <option key={row.seasonNumber} value={row.seasonNumber}>
+                Season {row.seasonNumber}
+                {row.isComplete ? '' : ' (in progress)'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Competition</span>
+          <select
+            value={leagueId ?? ''}
+            disabled={competitions.length === 0}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const competition = Number.isNaN(next) ? null : next;
+              setLeagueId(competition);
+              setStageNumber(null);
+              setRoundNumber(null);
+              pushSelection({ season: seasonNumber, competition, stage: null, round: null });
+            }}
+          >
+            {competitions.map((row) => (
+              <option key={row.leagueId} value={row.leagueId}>
+                {row.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Stage</span>
+          <select
+            value={stageNumber ?? ''}
+            disabled={stages.length === 0}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const stage = Number.isNaN(next) ? null : next;
+              setStageNumber(stage);
+              setRoundNumber(null);
+              pushSelection({ season: seasonNumber, competition: leagueId, stage, round: null });
+            }}
+          >
+            {stages.map((row) => (
+              <option key={row.stageNumber} value={row.stageNumber}>
+                Stage {row.stageNumber}
+                {row.isComplete ? '' : ` (${row.completedRounds}/16)`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Round</span>
+          <select
+            value={roundNumber ?? ''}
+            disabled={roundSummaries.length === 0}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const round = Number.isNaN(next) ? null : next;
+              setRoundNumber(round);
+              pushSelection({ season: seasonNumber, competition: leagueId, stage: stageNumber, round });
+            }}
+          >
+            {roundSummaries.map((row) => (
+              <option key={row.roundNumber} value={row.roundNumber}>
+                Round {row.roundNumber}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="toolbar-end">
+          {seasonsState.loading ? <span className="muted small">Refreshing…</span> : null}
+          <InfoDisclosure>
+            <p>
+              Season, competition and stage lists plus round summaries come from normalized
+              tables only; the exact round payload is decompressed only when that round is
+              requested. Replay never consumes RNG and never mutates save state. The current
+              selection is reflected in the URL (`?season=&amp;competition=&amp;stage=&amp;round=`)
+              so it can be copied or opened in another tab.
+            </p>
+          </InfoDisclosure>
         </div>
-        <p className="muted small">
-          Season, competition and stage lists plus round summaries come from normalized
-          tables only; the exact round payload is decompressed only when that round is
-          requested. Replay never consumes RNG and never mutates save state. The
-          current selection is reflected in the URL (`?season=&amp;competition=&amp;stage=&amp;round=`)
-          so it can be copied or opened in another tab.
-        </p>
-        {competitionsState.error ? (
-          <p className="muted small">Competitions: {competitionsState.error}</p>
-        ) : null}
-        {stagesState.error ? <p className="muted small">Stages: {stagesState.error}</p> : null}
-        {roundsState.error ? <p className="muted small">Rounds: {roundsState.error}</p> : null}
-      </Card>
-
-      <Card
-        eyebrow="Post-season Cup"
-        title={
-          seasonNumber !== null
-            ? seasonNumber % 2 === 1
-              ? `Season ${seasonNumber} · Color Cup`
-              : `Season ${seasonNumber} · Type Cup`
-            : 'Post-season Cup'
-        }
-      >
-        {seasonNumber === null ? (
-          <p className="muted">Select a season to see its post-season Cup outcome.</p>
-        ) : seasonNumber % 2 === 1 ? (
-          <>
-            <p className="muted small">
-              Odd seasons run the Color Cup after feeder rebalancing and before bonus
-              aging: 32 selected athletes in a 16-round individual plus four 8-round
-              rank groups for the team title. Honours and stories persist with the Cup.
-            </p>
-            {colorIndividualState.loading && !colorIndividualState.data ? (
-              <Loading label="Loading Color Cup…" />
-            ) : colorIndividualState.data ? (
-              <p>
-                Individual champion{' '}
-                <AthleteLink
-                  saveId={saveId}
-                  athleteId={colorIndividualState.data!.championAthleteId}
-                  name={colorIndividualState.data!.championName}
-                />{' '}
-                · {colorIndividualState.data!.cupSize} athletes ·{' '}
-                {colorIndividualState.data!.rounds} rounds.
-              </p>
-            ) : (
-              <p className="muted">No Color Cup individual result for this season yet.</p>
-            )}
-            {colorTeamState.loading && !colorTeamState.data ? (
-              <Loading label="Loading Color Cup team…" />
-            ) : colorTeamState.data ? (
-              <p>
-                Team champion {colorTeamState.data!.championTeamName} ·{' '}
-                {colorTeamState.data!.teamCount} teams · {colorTeamState.data!.groupCount}{' '}
-                groups × {colorTeamState.data!.groupRounds} rounds.
-              </p>
-            ) : (
-              <p className="muted">No Color Cup team result for this season yet.</p>
-            )}
-            <p className="muted small">
-              Open the <Link to={cupsPath(saveId)} className="card-name card-link">Cups tab</Link> for
-              the full field, standings and replay payloads.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="muted small">
-              Even seasons run the team-only Type Cup after feeder rebalancing and before
-              bonus aging. Permanent nationality is set on participation. Honours and
-              stories persist with the Cup.
-            </p>
-            {typeTeamState.loading && !typeTeamState.data ? (
-              <Loading label="Loading Type Cup…" />
-            ) : typeTeamState.data ? (
-              <p>
-                Team champion {typeTeamState.data!.championTeamName} ·{' '}
-                {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
-                groups × {typeTeamState.data!.groupRounds} rounds.
-              </p>
-            ) : (
-              <p className="muted">No Type Cup team result for this season yet.</p>
-            )}
-            <p className="muted small">
-              Open the <Link to={cupsPath(saveId)} className="card-name card-link">Cups tab</Link> for
-              the full allocation, standings and replay payloads.
-            </p>
-          </>
-        )}
-      </Card>
+      </div>
+      {competitionsState.error ? (
+        <p className="muted small">Competitions: {competitionsState.error}</p>
+      ) : null}
+      {stagesState.error ? <p className="muted small">Stages: {stagesState.error}</p> : null}
+      {roundsState.error ? <p className="muted small">Rounds: {roundsState.error}</p> : null}
 
       {replayState.loading && !replay ? (
         <Card eyebrow="Exact replay" title="Exact replay">
@@ -537,120 +458,201 @@ export function HistoryPage({
         />
       )}
 
-      <Card
-        eyebrow="Standings"
-        title={
-          stageStandings && stageStandings.standings.length > 0
-            ? `${stageStandings.leagueName} — Stage ${stageStandings.stageNumber} standings`
-            : 'Stage standings'
-        }
-      >
-        {standingsState.loading && !stageStandings ? (
-          <Loading label="Loading stage standings…" />
-        ) : standingsState.error ? (
-          <Notice tone="error" title="Stage standings unavailable">
-            <p>{standingsState.error}</p>
-          </Notice>
-        ) : !stageStandings || stageStandings.standings.length === 0 ? (
-          <Notice tone="empty" title="No stage standings yet">
-            <p>Complete the stage on the Live tab to persist normalized standings.</p>
-          </Notice>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Card</th>
-                  <th scope="col">Stage score</th>
-                  <th scope="col">Champ pts</th>
-                  <th scope="col">Round W</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stageStandings.standings.map((row) => (
-                  <tr key={row.athleteId}>
-                    <td className="numeric">{row.stageRank}</td>
-                    <td>
-                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                    </td>
-                    <td className="numeric">{formatPoints(row.stageScoreThousandths)}</td>
-                    <td className="numeric">
-                      {formatPoints(row.championshipPointsThousandths)}
-                    </td>
-                    <td className="numeric">{row.roundWins}</td>
+      <div className="page-grid">
+        <Card
+          eyebrow="Standings"
+          title={
+            stageStandings && stageStandings.standings.length > 0
+              ? `${stageStandings.leagueName} — Stage ${stageStandings.stageNumber} standings`
+              : 'Stage standings'
+          }
+        >
+          {standingsState.loading && !stageStandings ? (
+            <Loading label="Loading stage standings…" />
+          ) : standingsState.error ? (
+            <Notice tone="error" title="Stage standings unavailable">
+              <p>{standingsState.error}</p>
+            </Notice>
+          ) : !stageStandings || stageStandings.standings.length === 0 ? (
+            <Notice tone="empty" title="No stage standings yet">
+              <p>Complete the stage on the Live tab to persist normalized standings.</p>
+            </Notice>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Stage score</th>
+                    <th scope="col">Champ pts</th>
+                    <th scope="col">Round W</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {stageStandings.standings.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.stageRank}</td>
+                      <td>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                      </td>
+                      <td className="numeric">{formatPoints(row.stageScoreThousandths)}</td>
+                      <td className="numeric">
+                        {formatPoints(row.championshipPointsThousandths)}
+                      </td>
+                      <td className="numeric">{row.roundWins}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
 
-      <Card
-        eyebrow="Season table"
-        title={
-          seasonTable && seasonTable.standings.length > 0
-            ? `${seasonTable.leagueName} — Season ${seasonTable.seasonNumber} final`
-            : 'Season final table'
-        }
-        action={
-          seasonNumber !== null && leagueId !== null ? (
-            <Link
-              to={standingsLeaguePath(saveId, leagueId, { season: seasonNumber, view: 'matrix' })}
-              className="ghost-button"
-              title="Open this league in the dedicated standings matrix"
-            >
-              Open matrix
-            </Link>
-          ) : undefined
-        }
-      >
-        {tableState.loading && !seasonTable ? (
-          <Loading label="Loading season table…" />
-        ) : tableState.error ? (
-          <Notice tone="error" title="Season table unavailable">
-            <p>{tableState.error}</p>
-          </Notice>
-        ) : !seasonTable || seasonTable.standings.length === 0 ? (
-          <Notice tone="empty" title="No final table yet">
-            <p>
-              Season final tables persist only when all 32 stages are complete for every
-              active league.
-            </p>
-          </Notice>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Card</th>
-                  <th scope="col">Champ pts</th>
-                  <th scope="col">Stage W</th>
-                  <th scope="col">Round W</th>
-                </tr>
-              </thead>
-              <tbody>
-                {seasonTable.standings.map((row) => (
-                  <tr key={row.athleteId}>
-                    <td className="numeric">{row.seasonRank}</td>
-                    <td>
-                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                      {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
-                    </td>
-                    <td className="numeric">
-                      {formatPoints(row.totalChampionshipPointsThousandths)}
-                    </td>
-                    <td className="numeric">{row.stageWins}</td>
-                    <td className="numeric">{row.roundWins}</td>
+        <Card
+          eyebrow="Season table"
+          title={
+            seasonTable && seasonTable.standings.length > 0
+              ? `${seasonTable.leagueName} — Season ${seasonTable.seasonNumber} final`
+              : 'Season final table'
+          }
+          action={
+            seasonNumber !== null && leagueId !== null ? (
+              <Link
+                to={standingsLeaguePath(saveId, leagueId, { season: seasonNumber, view: 'matrix' })}
+                className="ghost-button"
+                title="Open this league in the dedicated standings matrix"
+              >
+                Open matrix
+              </Link>
+            ) : undefined
+          }
+        >
+          {tableState.loading && !seasonTable ? (
+            <Loading label="Loading season table…" />
+          ) : tableState.error ? (
+            <Notice tone="error" title="Season table unavailable">
+              <p>{tableState.error}</p>
+            </Notice>
+          ) : !seasonTable || seasonTable.standings.length === 0 ? (
+            <Notice tone="empty" title="No final table yet">
+              <p>
+                Season final tables persist only when all 32 stages are complete for every
+                active league.
+              </p>
+            </Notice>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Champ pts</th>
+                    <th scope="col">Stage W</th>
+                    <th scope="col">Round W</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {seasonTable.standings.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.seasonRank}</td>
+                      <td>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                        {row.isChampion ? <span className="card-sub"> · Champion</span> : null}
+                      </td>
+                      <td className="numeric">
+                        {formatPoints(row.totalChampionshipPointsThousandths)}
+                      </td>
+                      <td className="numeric">{row.stageWins}</td>
+                      <td className="numeric">{row.roundWins}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          eyebrow="Post-season Cup"
+          title={
+            seasonNumber !== null
+              ? seasonNumber % 2 === 1
+                ? `Season ${seasonNumber} · Color Cup`
+                : `Season ${seasonNumber} · Type Cup`
+              : 'Post-season Cup'
+          }
+          action={
+            <Link to={cupsPath(saveId)} className="ghost-button">
+              Open Cups
+            </Link>
+          }
+          info={
+            seasonNumber === null ? undefined : seasonNumber % 2 === 1 ? (
+              <p>
+                Odd seasons run the Color Cup after feeder rebalancing and before bonus aging: 32
+                selected athletes in a 16-round individual plus four 8-round rank groups for the
+                team title. Honours and stories persist with the Cup.
+              </p>
+            ) : (
+              <p>
+                Even seasons run the team-only Type Cup after feeder rebalancing and before bonus
+                aging. Permanent nationality is set on participation. Honours and stories persist
+                with the Cup.
+              </p>
+            )
+          }
+        >
+          {seasonNumber === null ? (
+            <p className="muted">Select a season to see its post-season Cup outcome.</p>
+          ) : seasonNumber % 2 === 1 ? (
+            <>
+              {colorIndividualState.loading && !colorIndividualState.data ? (
+                <Loading label="Loading Color Cup…" />
+              ) : colorIndividualState.data ? (
+                <p>
+                  Individual champion{' '}
+                  <AthleteLink
+                    saveId={saveId}
+                    athleteId={colorIndividualState.data!.championAthleteId}
+                    name={colorIndividualState.data!.championName}
+                  />{' '}
+                  · {colorIndividualState.data!.cupSize} athletes ·{' '}
+                  {colorIndividualState.data!.rounds} rounds.
+                </p>
+              ) : (
+                <p className="muted">No Color Cup individual result for this season yet.</p>
+              )}
+              {colorTeamState.loading && !colorTeamState.data ? (
+                <Loading label="Loading Color Cup team…" />
+              ) : colorTeamState.data ? (
+                <p>
+                  Team champion {colorTeamState.data!.championTeamName} ·{' '}
+                  {colorTeamState.data!.teamCount} teams · {colorTeamState.data!.groupCount}{' '}
+                  groups × {colorTeamState.data!.groupRounds} rounds.
+                </p>
+              ) : (
+                <p className="muted">No Color Cup team result for this season yet.</p>
+              )}
+            </>
+          ) : (
+            <>
+              {typeTeamState.loading && !typeTeamState.data ? (
+                <Loading label="Loading Type Cup…" />
+              ) : typeTeamState.data ? (
+                <p>
+                  Team champion {typeTeamState.data!.championTeamName} ·{' '}
+                  {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
+                  groups × {typeTeamState.data!.groupRounds} rounds.
+                </p>
+              ) : (
+                <p className="muted">No Type Cup team result for this season yet.</p>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

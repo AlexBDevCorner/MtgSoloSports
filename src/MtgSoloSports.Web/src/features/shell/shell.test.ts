@@ -86,3 +86,11 @@ describe('narrow-screen drawer', () => {
     assert.match(css, /prefers-reduced-motion[\s\S]*\.rail[\s\S]*transition:\s*none/, 'drawer motion can be disabled');
   });
 });
+
+describe('filter toolbar', () => {
+  it('sticks to the top of the viewport and clears the mobile top bar', () => {
+    assert.match(css, /\.toolbar\s*\{[^}]*position:\s*sticky/);
+    const mobile = css.slice(css.indexOf('@media (max-width: 1020px)'));
+    assert.match(mobile, /\.toolbar\s*\{[^}]*top:\s*var\(--topbar-h\)/);
+  });
+});

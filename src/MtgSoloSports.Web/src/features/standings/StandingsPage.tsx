@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
+import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { fetchCurrentStandings, type CurrentStandings } from '../athletes/athleteApi';
@@ -382,134 +383,117 @@ export function StandingsPage({
 
   return (
     <div className="dashboard standings-page">
-      <Card
-        eyebrow="Standings navigation"
-        title="League · season · view"
-        action={
-          seasonsState.loading || competitionsState.loading ? (
+      <div className="toolbar" role="group" aria-label="Standings filters">
+        <label className="field">
+          <span>League</span>
+          <select
+            value={leagueId ?? ''}
+            disabled={leagueOptions.length === 0}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const league = Number.isNaN(next) ? null : next;
+              setLeagueId(league);
+              pushSelection({ league, season: seasonNumber, view });
+            }}
+          >
+            {leagueOptions.map((row) => (
+              <option key={row.leagueId} value={row.leagueId}>
+                {row.name}
+                {row.kind === 'Superleague' ? ' · Superleague' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Season</span>
+          <select
+            value={seasonNumber ?? ''}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10);
+              const season = Number.isNaN(next) ? null : next;
+              setSeasonNumber(season);
+              setLeagueId(null);
+              pushSelection({ league: null, season, view });
+            }}
+          >
+            {seasonOptions.map((row) => (
+              <option key={row.seasonNumber} value={row.seasonNumber}>
+                Season {row.seasonNumber}
+                {row.isComplete ? '' : ' (in progress)'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="field">
+          <span>View</span>
+          <div className="segmented" role="group" aria-label="Table views">
+            <button
+              type="button"
+              className={view === 'season' ? 'nav-item current' : 'nav-item'}
+              aria-pressed={view === 'season'}
+              onClick={() => {
+                setView('season');
+                pushSelection({ league: leagueId, season: seasonNumber, view: 'season' });
+              }}
+            >
+              Season table
+            </button>
+            <button
+              type="button"
+              className={view === 'matrix' ? 'nav-item current' : 'nav-item'}
+              aria-pressed={view === 'matrix'}
+              onClick={() => {
+                setView('matrix');
+                pushSelection({ league: leagueId, season: seasonNumber, view: 'matrix' });
+              }}
+            >
+              Stage placements
+            </button>
+          </div>
+        </div>
+        <label className="field">
+          <span>Sort rows by</span>
+          <select
+            value={sortKey}
+            onChange={(event) => {
+              const next = event.target.value;
+              setSortKey(next === 'wins' || next === 'points' ? next : 'rank');
+            }}
+          >
+            <option value="rank">Season rank</option>
+            <option value="wins">Stage wins</option>
+            <option value="points">Championship points</option>
+          </select>
+        </label>
+        <div className="toolbar-end">
+          {seasonsState.loading || competitionsState.loading ? (
             <span className="muted small">Refreshing…</span>
-          ) : undefined
-        }
-      >
-        <div className="live-controls">
-          <label className="field">
-            <span>League</span>
-            <select
-              value={leagueId ?? ''}
-              disabled={leagueOptions.length === 0}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const league = Number.isNaN(next) ? null : next;
-                setLeagueId(league);
-                pushSelection({ league, season: seasonNumber, view });
-              }}
-            >
-              {leagueOptions.map((row) => (
-                <option key={row.leagueId} value={row.leagueId}>
-                  {row.name}
-                  {row.kind === 'Superleague' ? ' · Superleague' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Season</span>
-            <select
-              value={seasonNumber ?? ''}
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                const season = Number.isNaN(next) ? null : next;
-                setSeasonNumber(season);
-                setLeagueId(null);
-                pushSelection({ league: null, season, view });
-              }}
-            >
-              {seasonOptions.map((row) => (
-                <option key={row.seasonNumber} value={row.seasonNumber}>
-                  Season {row.seasonNumber}
-                  {row.isComplete ? '' : ' (in progress)'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>View</span>
-            <select
-              value={view}
-              onChange={(event) => {
-                const next = event.target.value === 'matrix' ? 'matrix' : 'season';
-                setView(next);
-                pushSelection({ league: leagueId, season: seasonNumber, view: next });
-              }}
-            >
-              <option value="season">Season table</option>
-              <option value="matrix">Stage placements</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Sort rows by</span>
-            <select
-              value={sortKey}
-              onChange={(event) => {
-                const next = event.target.value;
-                setSortKey(next === 'wins' || next === 'points' ? next : 'rank');
-              }}
-            >
-              <option value="rank">Season rank</option>
-              <option value="wins">Stage wins</option>
-              <option value="points">Championship points</option>
-            </select>
-          </label>
-        </div>
-        <div className="live-buttons" role="group" aria-label="Table views">
-          <button
-            type="button"
-            className={view === 'season' ? 'nav-item current' : 'nav-item'}
-            aria-pressed={view === 'season'}
-            onClick={() => {
-              setView('season');
-              pushSelection({ league: leagueId, season: seasonNumber, view: 'season' });
-            }}
-          >
-            Season table
-          </button>
-          <button
-            type="button"
-            className={view === 'matrix' ? 'nav-item current' : 'nav-item'}
-            aria-pressed={view === 'matrix'}
-            onClick={() => {
-              setView('matrix');
-              pushSelection({ league: leagueId, season: seasonNumber, view: 'matrix' });
-            }}
-          >
-            Stage placements
-          </button>
-        </div>
-        <p className="muted small">
-          League, season and view are reflected in the URL (`?league=&amp;season=&amp;view=` or{' '}
-          `/leagues/:leagueId/standings`) so the table can be copied or opened in another
-          tab. Each tab keeps its own save context.{' '}
+          ) : null}
           {leagueId !== null && seasonNumber !== null ? (
             <>
-              Open the same table in{' '}
               <Link
                 to={historyPath(saveId, { season: seasonNumber, competition: leagueId })}
-                className="card-name card-link"
+                className="ghost-button"
               >
                 History
-              </Link>{' '}
-              or run the next rounds on the{' '}
-              <Link to={livePath(saveId, { league: leagueId })} className="card-name card-link">
-                Live tab
               </Link>
-              .
+              <Link to={livePath(saveId, { league: leagueId })} className="ghost-button">
+                Live
+              </Link>
             </>
           ) : null}
-        </p>
-        {competitionsState.error ? (
-          <p className="muted small">Leagues: {competitionsState.error}</p>
-        ) : null}
-      </Card>
+          <InfoDisclosure>
+            <p>
+              League, season and view are reflected in the URL (`?league=&amp;season=&amp;view=`
+              or `/leagues/:leagueId/standings`) so the table can be copied or opened in another
+              tab. Each tab keeps its own save context.
+            </p>
+          </InfoDisclosure>
+        </div>
+      </div>
+      {competitionsState.error ? (
+        <p className="muted small">Leagues: {competitionsState.error}</p>
+      ) : null}
 
       <Card
         eyebrow="Progress"
