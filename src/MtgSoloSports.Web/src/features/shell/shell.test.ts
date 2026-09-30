@@ -11,9 +11,14 @@ function read(rel: string): string {
   return readFileSync(join(srcRoot, rel), 'utf8');
 }
 
+// Read at module scope: a missing file must fail the run, and Node's test
+// runner does not count exceptions thrown inside a describe body as failures.
+const shell = read('features/shell/AppShell.tsx');
+const css = read('shared/ui/base.css');
+const drawer = read('features/shell/useRailDrawer.ts');
+const button = read('features/shell/MenuButton.tsx');
+
 describe('left-rail shell', () => {
-  const shell = read('features/shell/AppShell.tsx');
-  const css = read('shared/ui/base.css');
 
   it('renders a rail with brand, save context, main nav and pinned saves/catalog', () => {
     for (const token of [
@@ -54,5 +59,30 @@ describe('left-rail shell', () => {
     const banner = read('features/catalog/CatalogBanner.tsx');
     assert.ok(!banner.includes('catalog-strip'), 'the always-on catalog strip is gone');
     assert.ok(banner.includes('loading && !stats'), 'refreshes keep the actionable notice visible');
+  });
+});
+
+describe('narrow-screen drawer', () => {
+
+  it('toggle exposes its state and controls the rail', () => {
+    assert.ok(button.includes('aria-expanded={open}'), 'toggle announces open state');
+    assert.ok(button.includes('aria-controls={RAIL_ID}'), 'toggle names the rail it controls');
+    assert.ok(shell.includes('id={RAIL_ID}'), 'rail carries the controlled id');
+    assert.ok(shell.includes('<MenuButton'), 'mobile bar renders the toggle');
+  });
+
+  it('closes on Escape, backdrop click and navigation', () => {
+    assert.ok(drawer.includes("'Escape'"), 'Escape closes');
+    assert.ok(drawer.includes('removeEventListener'), 'key listener is cleaned up');
+    assert.ok(shell.includes('rail-backdrop'), 'backdrop exists');
+    assert.ok(shell.includes('onClickCapture'), 'link clicks inside the rail close it');
+    assert.ok(shell.includes("closest('a')"), 'only link activations close the drawer');
+  });
+
+  it('hides the closed drawer from keyboard focus and respects reduced motion', () => {
+    const mobile = css.slice(css.indexOf('@media (max-width: 1020px)'));
+    assert.match(mobile, /\.rail\s*\{[^}]*visibility:\s*hidden/, 'closed rail is not focusable');
+    assert.ok(mobile.includes('.app.rail-open .rail'), 'open state reveals the rail');
+    assert.match(css, /prefers-reduced-motion[\s\S]*\.rail[\s\S]*transition:\s*none/, 'drawer motion can be disabled');
   });
 });

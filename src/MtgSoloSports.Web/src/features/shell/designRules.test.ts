@@ -17,11 +17,12 @@ function stripComments(css: string): string {
 
 const TOKENS = 'shared/ui/tokens.css';
 const STYLESHEETS = [TOKENS, 'shared/ui/base.css'];
+// Read at module scope: a missing file must fail the run, and Node's test
+// runner does not count exceptions thrown inside a describe body as failures.
+const SOURCES = new Map(STYLESHEETS.map((file) => [file, stripComments(read(file))]));
 
 describe('design rules: flat, square, dark', () => {
-  for (const file of STYLESHEETS) {
-    const css = stripComments(read(file));
-
+  for (const [file, css] of SOURCES) {
     it(`${file} has no gradients or shadows`, () => {
       assert.ok(!/gradient\(/i.test(css), 'no gradients');
       assert.ok(!/box-shadow/i.test(css), 'no shadows');

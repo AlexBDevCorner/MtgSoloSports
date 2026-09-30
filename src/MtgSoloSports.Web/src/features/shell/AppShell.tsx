@@ -10,6 +10,8 @@ import {
   savesPath,
   standingsPath,
 } from '../routing/routes';
+import { MenuButton } from './MenuButton';
+import { RAIL_ID, useRailDrawer } from './useRailDrawer';
 
 export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'history' | 'records' | 'cups' | 'athlete';
 
@@ -73,11 +75,21 @@ export function AppShell({
   catalog: CatalogStatus;
   children: ReactNode;
 }) {
+  const drawer = useRailDrawer();
   const scoped = (build: (id: string) => string): string | null => (saveId ? build(saveId) : null);
   const saveMeta = [seasonLabel, stageLabel].filter((part): part is string => part !== null).join(' · ');
   return (
-    <div className="app">
-      <aside className="rail" aria-label="Application">
+    <div className={drawer.open ? 'app rail-open' : 'app'}>
+      <aside
+        id={RAIL_ID}
+        className="rail"
+        aria-label="Application"
+        onClickCapture={(event) => {
+          if ((event.target as HTMLElement).closest('a')) {
+            drawer.close();
+          }
+        }}
+      >
         <div className="rail-brand">
           <span className="rail-brand-mark" aria-hidden="true" />
           MTG Solo Sports
@@ -136,7 +148,17 @@ export function AppShell({
           </p>
         </div>
       </aside>
+      <div className="rail-backdrop" aria-hidden="true" onClick={drawer.close} />
       <div className="main">
+        <div className="topbar-mobile">
+          <MenuButton open={drawer.open} onToggle={drawer.toggle} />
+          <span className="topbar-mobile-brand">MTG Solo Sports</span>
+          {saveName ? (
+            <span className="topbar-mobile-save" title={saveName}>
+              {saveName}
+            </span>
+          ) : null}
+        </div>
         <header className="page-header">
           <h1 className="page-title">{VIEW_TITLES[view]}</h1>
         </header>
