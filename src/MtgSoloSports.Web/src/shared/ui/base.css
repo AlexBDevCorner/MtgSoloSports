@@ -230,6 +230,21 @@ a.rail-link:hover {
   align-items: start;
 }
 
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.section-title {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* ---------- Panels ---------- */
 
 .card {

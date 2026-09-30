@@ -273,10 +273,20 @@ export default function App() {
         return <RecordsPage saveId={saveId} />;
       case 'cups':
         return (
-          <>
-            <ColorCupPage saveId={saveId} />
-            <TypeCupPage saveId={saveId} />
-          </>
+          <div className="dashboard">
+            <section className="page-section" aria-labelledby="cups-color">
+              <h2 id="cups-color" className="section-title">
+                Color Cup
+              </h2>
+              <ColorCupPage saveId={saveId} />
+            </section>
+            <section className="page-section" aria-labelledby="cups-type">
+              <h2 id="cups-type" className="section-title">
+                Type Cup
+              </h2>
+              <TypeCupPage saveId={saveId} />
+            </section>
+          </div>
         );
       case 'athlete':
         return (

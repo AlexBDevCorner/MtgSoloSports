@@ -173,7 +173,7 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
   const podium = standings.slice(0, 3);
 
   return (
-    <div className="dashboard">
+    <div className="page-grid">
       <Card
         eyebrow="Color Cup · individual"
         title={
@@ -183,6 +183,12 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
         }
         action={
           loading ? <span className="muted small">Refreshing…</span> : undefined
+        }
+        info={
+          <p>
+            Runs the 32 selected athletes through one standard 16-round stage. Exact round
+            payloads persist for replay; career bonus never changes.
+          </p>
         }
       >
         {error ? (
@@ -247,10 +253,6 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
             {running ? 'Running…' : 'Run Color Cup individual'}
           </button>
         </p>
-        <p className="muted small">
-          Runs the 32 selected athletes through one standard 16-round stage.
-          Exact round payloads persist for replay; career bonus never changes.
-        </p>
       </Card>
 
       <Card
@@ -304,6 +306,13 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
         }
         action={
           teamLoading ? <span className="muted small">Refreshing…</span> : undefined
+        }
+        info={
+          <p>
+            Runs four rank groups (#1 vs #1 through #4 vs #4) with 8 rounds each. Team score is
+            the sum of the four legs; exact group payloads persist for replay and career bonus
+            never changes.
+          </p>
         }
       >
         {teamError ? (
@@ -366,11 +375,6 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
           >
             {teamRunning ? 'Running…' : 'Run Color Cup team'}
           </button>
-        </p>
-        <p className="muted small">
-          Runs four rank groups (#1 vs #1 through #4 vs #4) with 8 rounds each.
-          Team score is the sum of the four legs; exact group payloads persist
-          for replay and career bonus never changes.
         </p>
       </Card>
 

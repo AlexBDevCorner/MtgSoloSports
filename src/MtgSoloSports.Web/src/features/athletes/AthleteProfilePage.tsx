@@ -93,6 +93,12 @@ export function AthleteProfilePage({
             </Link>
           </span>
         }
+        info={
+          <p>
+            Card artwork is referenced by URL from the save snapshot and never downloaded by the
+            simulation. When artwork is unavailable the initials fallback keeps the layout stable.
+          </p>
+        }
       >
         <div className="athlete-hero">
           {card.imageUrl ? (
@@ -115,10 +121,6 @@ export function AthleteProfilePage({
             </span>
           </span>
         </div>
-        <p className="muted small">
-          Card artwork is referenced by URL from the save snapshot and never downloaded by the
-          simulation. When artwork is unavailable the initials fallback keeps the layout stable.
-        </p>
         {state.error ? (
           <Notice tone="warn" title="Showing last loaded state">
             <p>{state.error}</p>
@@ -126,7 +128,7 @@ export function AthleteProfilePage({
         ) : null}
       </Card>
 
-      <div className="page-grid cards-3">
+      <div className="page-grid">
         <Card eyebrow="Career" title={`${career.seasonsActive} season(s) active`}>
           <dl className="stats">
             <div>
@@ -159,7 +161,16 @@ export function AthleteProfilePage({
           </dl>
         </Card>
 
-        <Card eyebrow="Bonus" title="Effective vs lifetime">
+        <Card
+          eyebrow="Bonus"
+          title="Effective vs lifetime"
+          info={
+            <p>
+              Effective bonus activates from the next stage; Stage 32 bonus enters the next season
+              at 80% weight. Lifetime earned never decays.
+            </p>
+          }
+        >
           <dl className="stats">
             <div>
               <dt>Current effective</dt>
@@ -176,13 +187,18 @@ export function AthleteProfilePage({
               </dd>
             </div>
           </dl>
-          <p className="muted small">
-            Effective bonus activates from the next stage; Stage 32 bonus enters the next
-            season at 80% weight. Lifetime earned never decays.
-          </p>
         </Card>
 
-        <Card eyebrow="Identity" title="Sporting metadata">
+        <Card
+          eyebrow="Identity"
+          title="Sporting metadata"
+          info={
+            <p>
+              Once an athlete appears in a Type Cup for a type, that nationality is permanent and
+              the athlete can never represent another type.
+            </p>
+          }
+        >
           <dl className="stats">
             <div>
               <dt>Sporting color</dt>
@@ -205,14 +221,8 @@ export function AthleteProfilePage({
               <dd>{card.creatureTypes.join(', ') || '—'}</dd>
             </div>
           </dl>
-          <p className="muted small">
-            Once an athlete appears in a Type Cup for a type, that nationality is permanent
-            and the athlete can never represent another type.
-          </p>
         </Card>
-      </div>
 
-      <div className="page-grid">
         <Card eyebrow="Honours" title={`Career honours — ${honours.length}`}>
           {honours.length === 0 ? (
             <p className="muted">
@@ -281,10 +291,12 @@ export function AthleteProfilePage({
             </div>
           )}
         </Card>
-      </div>
 
-      <div className="page-grid">
-        <Card eyebrow="Selections" title={`Cup selections — ${cupSelections.length}`}>
+        <Card
+          eyebrow="Selections"
+          title={`Cup selections — ${cupSelections.length}`}
+          info={<p>Selection order is #1–#4 by rating within each color or creature-type team.</p>}
+        >
           {cupSelections.length === 0 ? (
             <p className="muted">
               No Cup selections yet. Color Cup picks four athletes per sporting color; Type Cup
@@ -314,12 +326,13 @@ export function AthleteProfilePage({
               </table>
             </div>
           )}
-          <p className="muted small">
-            Selection order is #1–#4 by rating within each color or creature-type team.
-          </p>
         </Card>
 
-        <Card eyebrow="Records" title={`Record context — ${state.recordHoldings.length} held`}>
+        <Card
+          eyebrow="Records"
+          title={`Record context — ${state.recordHoldings.length} held`}
+          info={<p>Computed from normalized projections without decompressing round payloads.</p>}
+        >
           {state.recordHoldings.length === 0 ? (
             <p className="muted">
               Holds no outright career records right now. Ties share records; only an outright
@@ -345,73 +358,75 @@ export function AthleteProfilePage({
               </table>
             </div>
           )}
-          <p className="muted small">
-            Computed from normalized projections without decompressing round payloads.
-          </p>
+        </Card>
+
+        <Card
+          eyebrow="History"
+          title={`Season-by-season — ${seasons.length} season(s)`}
+          info={
+            <p>
+              Season summaries are transactional projections rebuilt from authoritative stage and
+              season standings; round-by-round replay stays in Live rounds.
+            </p>
+          }
+        >
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Season</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Finish</th>
+                  <th scope="col">Round W</th>
+                  <th scope="col">Stage W</th>
+                  <th scope="col">2nd/3rd</th>
+                  <th scope="col">Earned</th>
+                  <th scope="col">Champ pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seasons.map((season) => (
+                  <tr key={season.seasonNumber}>
+                    <td className="numeric">{season.seasonNumber}</td>
+                    <td>{season.wasActive ? (season.leagueName ?? 'Active') : 'Pool'}</td>
+                    <td className="numeric">
+                      {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
+                      {season.isChampion ? ' · Champion' : ''}
+                    </td>
+                    <td className="numeric">{season.roundWins}</td>
+                    <td className="numeric">{season.stageWins}</td>
+                    <td className="numeric">
+                      {season.stageSeconds}/{season.stageThirds}
+                    </td>
+                    <td className="numeric">{formatBonus(season.earnedBonusThousandths)}</td>
+                    <td className="numeric">
+                      {formatPoints(season.totalChampionshipPointsThousandths)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card eyebrow="Stories" title="Sporting stories">
+          {state.stories.length === 0 ? (
+            <p className="muted">
+              No stories yet for this athlete. First stage wins, titles, Superleague
+              milestones and pool returns appear here.
+            </p>
+          ) : (
+            <ul className="story-list">
+              {state.stories.map((story) => (
+                <li key={story.id}>
+                  <span className="badge badge-ready">{story.eventType}</span>{' '}
+                  <span>{story.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Card>
       </div>
-
-      <Card eyebrow="History" title={`Season-by-season — ${seasons.length} season(s)`}>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Season</th>
-                <th scope="col">Status</th>
-                <th scope="col">Finish</th>
-                <th scope="col">Round W</th>
-                <th scope="col">Stage W</th>
-                <th scope="col">2nd/3rd</th>
-                <th scope="col">Earned</th>
-                <th scope="col">Champ pts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {seasons.map((season) => (
-                <tr key={season.seasonNumber}>
-                  <td className="numeric">{season.seasonNumber}</td>
-                  <td>{season.wasActive ? (season.leagueName ?? 'Active') : 'Pool'}</td>
-                  <td className="numeric">
-                    {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
-                    {season.isChampion ? ' · Champion' : ''}
-                  </td>
-                  <td className="numeric">{season.roundWins}</td>
-                  <td className="numeric">{season.stageWins}</td>
-                  <td className="numeric">
-                    {season.stageSeconds}/{season.stageThirds}
-                  </td>
-                  <td className="numeric">{formatBonus(season.earnedBonusThousandths)}</td>
-                  <td className="numeric">
-                    {formatPoints(season.totalChampionshipPointsThousandths)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted small">
-          Season summaries are transactional projections rebuilt from authoritative stage
-          and season standings; round-by-round replay stays in Live rounds.
-        </p>
-      </Card>
-
-      <Card eyebrow="Stories" title="Sporting stories">
-        {state.stories.length === 0 ? (
-          <p className="muted">
-            No stories yet for this athlete. First stage wins, titles, Superleague
-            milestones and pool returns appear here.
-          </p>
-        ) : (
-          <ul className="story-list">
-            {state.stories.map((story) => (
-              <li key={story.id}>
-                <span className="badge badge-ready">{story.eventType}</span>{' '}
-                <span>{story.text}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
     </div>
   );
 }

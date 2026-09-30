@@ -96,7 +96,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
   const honours = honoursState.data?.honours ?? [];
 
   return (
-    <div className="dashboard">
+    <div className="page-grid">
       <Card
         eyebrow="Hall of Fame"
         title={`Career leaders — ${leaders.length} shown`}
@@ -104,6 +104,13 @@ export function RecordsPage({ saveId }: { saveId: string }) {
           fameState.loading ? (
             <span className="muted small">Refreshing…</span>
           ) : undefined
+        }
+        info={
+          <p>
+            Ordered by total titles, Superleague titles, stage wins, round wins, then name.
+            Computed from normalized honours and career projections without decompressing round
+            payloads.
+          </p>
         }
       >
         {leaders.length === 0 ? (
@@ -153,14 +160,18 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             </table>
           </div>
         )}
-        <p className="muted small">
-          Ordered by total titles, Superleague titles, stage wins, round wins, then
-          name. Computed from normalized honours and career projections without
-          decompressing round payloads.
-        </p>
       </Card>
 
-      <Card eyebrow="Records" title={`Career records — ${records.length}`}>
+      <Card
+        eyebrow="Records"
+        title={`Career records — ${records.length}`}
+        info={
+          <p>
+            Ties share the record; only an outright higher value replaces holders and emits a
+            new-record story.
+          </p>
+        }
+      >
         {records.length === 0 ? (
           <p className="muted">No records yet.</p>
         ) : (
@@ -196,10 +207,6 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             </table>
           </div>
         )}
-        <p className="muted small">
-          Ties share the record; only an outright higher value replaces holders and
-          emits a new-record story.
-        </p>
       </Card>
 
       <Card eyebrow="History" title={`Record breaks — ${history.length} recent`}>

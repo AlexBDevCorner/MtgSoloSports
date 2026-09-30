@@ -105,7 +105,7 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
   }
 
   return (
-    <div className="dashboard">
+    <div className="page-grid">
       <Card
         eyebrow="Type Cup · team"
         title={
@@ -115,6 +115,13 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
         }
         action={
           teamLoading ? <span className="muted small">Refreshing…</span> : undefined
+        }
+        info={
+          <p>
+            Runs four rank groups (#1 vs #1 through #4 vs #4) with 8 rounds each for every
+            allocated creature-type team. Team score is the sum of the four legs; exact group
+            payloads persist for replay and career bonus never changes.
+          </p>
         }
       >
         {teamError ? (
@@ -177,12 +184,6 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
           >
             {teamRunning ? 'Running…' : 'Run Type Cup team'}
           </button>
-        </p>
-        <p className="muted small">
-          Runs four rank groups (#1 vs #1 through #4 vs #4) with 8 rounds each
-          for every allocated creature-type team. Team score is the sum of the
-          four legs; exact group payloads persist for replay and career bonus
-          never changes.
         </p>
       </Card>
 
