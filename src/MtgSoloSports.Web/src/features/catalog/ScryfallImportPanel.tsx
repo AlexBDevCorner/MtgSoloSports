@@ -90,17 +90,20 @@ export function ScryfallImportPanel({
 
   return (
     <div className="scryfall-import" aria-live="polite">
-      <p className="muted small">
-        Cards are downloaded from Scryfall&apos;s MTG bulk data. We keep eligible creature cards,
-        exclude tokens and group different printings of the same card into one athlete. Each of the
-        eight sporting colors needs 256 athletes before a universe can be created.{' '}
-        <a href={SCRYFALL_BULK_DOCS_URL} target="_blank" rel="noreferrer">
-          Scryfall bulk-data documentation
-        </a>
-        . An internet connection is needed for automatic import. Existing saves keep their own
-        athlete snapshots and are never modified by catalog updates. Card data and images are
-        courtesy of Scryfall.
-      </p>
+      <p className="muted small">Card data and images courtesy of Scryfall.</p>
+      <details className="advanced">
+        <summary>How catalog import works</summary>
+        <p className="muted small">
+          Cards are downloaded from Scryfall&apos;s MTG bulk data. We keep eligible creature cards,
+          exclude tokens and group different printings of the same card into one athlete. Each of
+          the eight sporting colors needs 256 athletes before a universe can be created.{' '}
+          <a href={SCRYFALL_BULK_DOCS_URL} target="_blank" rel="noreferrer">
+            Scryfall bulk-data documentation
+          </a>
+          . An internet connection is needed for automatic import. Existing saves keep their own
+          athlete snapshots and are never modified by catalog updates.
+        </p>
+      </details>
 
       {populated ? (
         <p className="muted small">
