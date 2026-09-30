@@ -16,9 +16,10 @@ public sealed partial class RunTypeCupTeamHandler
         List<TypeCupSelectionEntity> selection,
         TeamSimulation simulation,
         int teamCount,
+        int alreadyPersisted,
         CancellationToken cancellationToken)
     {
-        PersistRoundRows(context, source, simulation);
+        PersistRoundRows(context, source, simulation, alreadyPersisted);
         await PersistLegRowsAsync(context, source, selection, simulation, teamCount, cancellationToken).ConfigureAwait(false);
         PersistTeamRows(context, source, simulation);
         PersistChampionHonours(context, source, simulation);
@@ -29,9 +30,10 @@ public sealed partial class RunTypeCupTeamHandler
     internal static void PersistRoundRows(
         SaveDbContext context,
         SeasonEntity source,
-        TeamSimulation simulation)
+        TeamSimulation simulation,
+        int alreadyPersisted)
     {
-        foreach (TypeCupTeamRoundPayloadDocument payload in simulation.Payloads)
+        foreach (TypeCupTeamRoundPayloadDocument payload in simulation.Payloads.Skip(alreadyPersisted))
         {
             context.TypeCupTeamRounds.Add(new TypeCupTeamRoundEntity
             {
