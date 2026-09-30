@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +16,21 @@ function stripComments(css: string): string {
 }
 
 const TOKENS = 'shared/ui/tokens.css';
-const STYLESHEETS = [TOKENS, 'shared/ui/base.css'];
+
+function listCss(rel = ''): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(join(srcRoot, rel), { withFileTypes: true })) {
+    const child = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      found.push(...listCss(child));
+    } else if (entry.name.endsWith('.css')) {
+      found.push(child);
+    }
+  }
+  return found;
+}
+
+const STYLESHEETS = listCss();
 // Read at module scope: a missing file must fail the run, and Node's test
 // runner does not count exceptions thrown inside a describe body as failures.
 const SOURCES = new Map(STYLESHEETS.map((file) => [file, stripComments(read(file))]));
@@ -48,6 +62,24 @@ describe('design rules: flat, square, dark', () => {
     assert.match(tokens, /--bg:\s*#0c0d0f/i);
     assert.match(tokens, /--accent:\s*#e8b44a/i);
     assert.match(tokens, /--radius:\s*0\s*;/);
+  });
+
+  it('discovers every stylesheet', () => {
+    for (const file of [
+      TOKENS,
+      'shared/ui/base.css',
+      'features/live/LivePage.css',
+      'features/reveal/RevealBoard.css',
+      'features/standings/StandingsPage.css',
+    ]) {
+      assert.ok(STYLESHEETS.includes(file), `${file} is guarded`);
+    }
+  });
+
+  it('no stylesheet uses the retired variable names', () => {
+    for (const [file, css] of SOURCES) {
+      assert.ok(!/--panel\b|--panel-2\b|--accent-2\b/.test(css), `${file} uses tokens, not legacy names`);
+    }
   });
 
   it('main.tsx loads tokens before base and the old global sheet is gone', () => {

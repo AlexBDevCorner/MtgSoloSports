@@ -36,25 +36,24 @@
 }
 
 .reveal-tile {
-  background: var(--panel-2);
+  background: var(--surface-2);
   border: 1px solid var(--line);
-  border-radius: 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  animation: reveal-pop 0.25s ease;
+  animation: reveal-pop 0.15s ease;
 }
 
 .reveal-tile.is-pending {
   border-style: dashed;
-  background: #101724;
+  background: var(--surface);
 }
 
 .reveal-tile.is-latest {
   border-color: var(--accent);
   border-style: solid;
-  box-shadow: 0 0 0 1px var(--accent);
+  outline: 1px solid var(--accent);
 }
 
 .reveal-tile-top {
@@ -75,8 +74,7 @@
 .reveal-latest-badge {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #14100a;
-  border-radius: 999px;
+  color: var(--accent-ink);
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -87,7 +85,6 @@
 .reveal-pending-badge {
   border: 1px solid var(--line);
   color: var(--text-dim);
-  border-radius: 999px;
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -97,9 +94,9 @@
 
 .reveal-tile-art {
   aspect-ratio: 5 / 7;
-  background: #0e1420;
-  border-top: 1px solid #1c2540;
-  border-bottom: 1px solid #1c2540;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -111,7 +108,7 @@
   height: 100%;
   aspect-ratio: 5 / 7;
   object-fit: contain;
-  background: #0e1420;
+  background: var(--bg);
   display: block;
 }
 
@@ -135,9 +132,7 @@ img.reveal-card-portrait {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background:
-    radial-gradient(220px 220px at 50% 30%, #1c2a4d 0%, transparent 70%),
-    repeating-linear-gradient(135deg, #111a2e 0 10px, #0d1322 10px 20px);
+  background: var(--surface-2);
   color: var(--text-dim);
   padding: 12px;
   text-align: center;
@@ -145,7 +140,7 @@ img.reveal-card-portrait {
 
 .reveal-card-back-motif {
   font-size: 1.8rem;
-  color: #3b4a73;
+  color: var(--line-strong);
 }
 
 .reveal-card-back-text {
@@ -204,7 +199,7 @@ button.reveal-tile-name {
   justify-content: space-between;
   gap: 8px;
   padding: 3px 0;
-  border-top: 1px dashed #232d45;
+  border-top: 1px solid var(--line);
   min-width: 0;
 }
 
@@ -241,9 +236,8 @@ button.reveal-tile-name {
   width: 96px;
   flex: 0 0 96px;
   aspect-ratio: 5 / 7;
-  border-radius: 8px;
   overflow: hidden;
-  background: #0e1420;
+  background: var(--bg);
   border: 1px solid var(--line);
   display: flex;
 }
@@ -254,7 +248,7 @@ button.reveal-tile-name {
   aspect-ratio: 5 / 7;
   object-fit: contain;
   display: block;
-  background: #0e1420;
+  background: var(--bg);
 }
 
 .reveal-spotlight-fallback {
@@ -296,10 +290,9 @@ button.reveal-tile-name {
 
 /* Secondary detailed data stays discoverable but collapsed by default. */
 .reveal-details {
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-  padding: 10px 12px;
   margin-top: 4px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
 }
 
 .reveal-details summary {

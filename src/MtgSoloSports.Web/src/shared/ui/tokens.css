@@ -36,10 +36,4 @@
 
   --font: Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  /* Transitional aliases for feature stylesheets that still use the old
-     names; remove once they reference the tokens above. */
-  --panel: var(--surface);
-  --panel-2: var(--surface-2);
-  --accent-2: var(--accent);
 }
