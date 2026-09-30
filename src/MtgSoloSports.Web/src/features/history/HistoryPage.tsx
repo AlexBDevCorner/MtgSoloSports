@@ -26,7 +26,10 @@ import {
   type ColorCupTeamResult,
 } from '../cups/colorCupApi';
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
+import { fetchSeasonEvents, type SeasonEventSummary } from '../events/eventsApi';
+import { isEventKey, type EventKey } from '../events/eventModel';
 import { RoundReveal } from '../reveal/RoundReveal';
+import { HistoryEventView } from './HistoryEventView';
 import { AthleteLink, Link } from '../routing/router';
 import { cupsPath, savesPath, standingsLeaguePath } from '../routing/routes';
 
@@ -86,6 +89,8 @@ export interface HistorySelection {
   competition: number | null;
   stage: number | null;
   round: number | null;
+  event: EventKey | null;
+  group: number | null;
 }
 
 export function HistoryPage({
@@ -94,6 +99,8 @@ export function HistoryPage({
   urlCompetition,
   urlStage,
   urlRound,
+  urlEvent,
+  urlGroup,
   onHistoryChange,
 }: {
   saveId: string;
@@ -102,6 +109,9 @@ export function HistoryPage({
   urlCompetition: number | null;
   urlStage: number | null;
   urlRound: number | null;
+  /** Postseason event replay (`?event=&group=`); null shows league competitions. */
+  urlEvent: EventKey | null;
+  urlGroup: number | null;
   onHistoryChange: (selection: HistorySelection) => void;
 }) {
   const [seasonNumber, setSeasonNumber] = useState<number | null>(urlSeason);
@@ -154,6 +164,11 @@ export function HistoryPage({
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
   const competitions = competitionsState.data?.competitions ?? [];
+  const eventsState = useAsync<SeasonEventSummary[]>(
+    competitionsKey ? `${competitionsKey}/events` : null,
+    (signal) => fetchSeasonEvents(saveId as string, seasonNumber as number, signal),
+  );
+  const seasonEvents = eventsState.data ?? [];
 
   useEffect(() => {
     if (competitions.length === 0) {
@@ -341,7 +356,7 @@ export function HistoryPage({
               setLeagueId(null);
               setStageNumber(null);
               setRoundNumber(null);
-              pushSelection({ season, competition: null, stage: null, round: null });
+              pushSelection({ season, competition: null, stage: null, round: null, event: null, group: null });
             }}
           >
             {seasons.map((row) => (
@@ -355,15 +370,23 @@ export function HistoryPage({
         <label className="field">
           <span>Competition</span>
           <select
-            value={leagueId ?? ''}
-            disabled={competitions.length === 0}
+            value={urlEvent ? `event:${urlEvent}` : (leagueId ?? '')}
+            disabled={competitions.length === 0 && seasonEvents.length === 0}
             onChange={(event) => {
-              const next = Number.parseInt(event.target.value, 10);
+              const value = event.target.value;
+              if (value.startsWith('event:')) {
+                const key = value.slice('event:'.length);
+                if (isEventKey(key)) {
+                  pushSelection({ season: seasonNumber, competition: null, stage: null, round: null, event: key, group: null });
+                }
+                return;
+              }
+              const next = Number.parseInt(value, 10);
               const competition = Number.isNaN(next) ? null : next;
               setLeagueId(competition);
               setStageNumber(null);
               setRoundNumber(null);
-              pushSelection({ season: seasonNumber, competition, stage: null, round: null });
+              pushSelection({ season: seasonNumber, competition, stage: null, round: null, event: null, group: null });
             }}
           >
             {competitions.map((row) => (
@@ -371,9 +394,19 @@ export function HistoryPage({
                 {row.name}
               </option>
             ))}
+            {seasonEvents.length > 0 ? (
+              <optgroup label="Postseason">
+                {seasonEvents.map((row) => (
+                  <option key={row.event} value={`event:${row.event}`}>
+                    {row.title}
+                    {row.isComplete ? '' : ` (${row.roundsPlayed}/${row.totalRounds})`}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
         </label>
-        <label className="field">
+        <label className="field" hidden={urlEvent !== null}>
           <span>Stage</span>
           <select
             value={stageNumber ?? ''}
@@ -383,7 +416,7 @@ export function HistoryPage({
               const stage = Number.isNaN(next) ? null : next;
               setStageNumber(stage);
               setRoundNumber(null);
-              pushSelection({ season: seasonNumber, competition: leagueId, stage, round: null });
+              pushSelection({ season: seasonNumber, competition: leagueId, stage, round: null, event: null, group: null });
             }}
           >
             {stages.map((row) => (
@@ -394,7 +427,7 @@ export function HistoryPage({
             ))}
           </select>
         </label>
-        <label className="field">
+        <label className="field" hidden={urlEvent !== null}>
           <span>Round</span>
           <select
             value={roundNumber ?? ''}
@@ -403,7 +436,7 @@ export function HistoryPage({
               const next = Number.parseInt(event.target.value, 10);
               const round = Number.isNaN(next) ? null : next;
               setRoundNumber(round);
-              pushSelection({ season: seasonNumber, competition: leagueId, stage: stageNumber, round });
+              pushSelection({ season: seasonNumber, competition: leagueId, stage: stageNumber, round, event: null, group: null });
             }}
           >
             {roundSummaries.map((row) => (
@@ -432,6 +465,19 @@ export function HistoryPage({
       {stagesState.error ? <p className="muted small">Stages: {stagesState.error}</p> : null}
       {roundsState.error ? <p className="muted small">Rounds: {roundsState.error}</p> : null}
 
+      {urlEvent && seasonNumber !== null ? (
+        <HistoryEventView
+          saveId={saveId}
+          season={seasonNumber}
+          event={urlEvent}
+          urlGroup={urlGroup}
+          urlRound={urlRound}
+          onChange={(group, round) =>
+            pushSelection({ season: seasonNumber, competition: null, stage: null, round, event: urlEvent, group })
+          }
+        />
+      ) : (
+        <>
       {replayState.loading && !replay ? (
         <Card eyebrow="Exact replay" title="Exact replay">
           <Loading label="Loading replay…" />
@@ -653,6 +699,8 @@ export function HistoryPage({
           )}
         </Card>
       </div>
+        </>
+      )}
     </div>
   );
 }

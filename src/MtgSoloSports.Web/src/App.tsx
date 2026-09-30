@@ -257,6 +257,8 @@ export default function App() {
             urlCompetition={route.competitionId}
             urlStage={route.stage}
             urlRound={route.round}
+            urlEvent={route.event}
+            urlGroup={route.group}
             onHistoryChange={(selection) => {
               navigate(
                 historyPath(saveId, {
@@ -264,6 +266,8 @@ export default function App() {
                   competition: selection.competition,
                   stage: selection.stage,
                   round: selection.round,
+                  event: selection.event,
+                  group: selection.group,
                 }),
               );
             }}
