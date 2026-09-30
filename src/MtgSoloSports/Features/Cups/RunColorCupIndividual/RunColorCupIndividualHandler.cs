@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
@@ -75,17 +76,42 @@ public sealed class RunColorCupIndividualHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        CupState state = await LoadStateAsync(context, saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+        List<ColorCupIndividualRoundPayloadDocument> payloads = new(state.Played);
+        Pcg32State current = state.Rng;
+        while (payloads.Count < state.Rules.ColorCupIndividualRounds)
+        {
+            ColorCupIndividualRoundPayloadDocument payload = PlayRound(state, payloads, current);
+            payloads.Add(payload);
+            current = new Pcg32State(payload.RngAfterState, payload.RngAfterStream);
+        }
+
+        CupSimulation simulation = await CompleteAsync(context, state, payloads, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(_store, saveId, state.Source, simulation, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads everything an individual Cup round needs from persisted state and
+    /// validates any partly played event (contiguous rounds, unbroken RNG chain,
+    /// RNG row untouched since the last round). Aborts on corruption.
+    /// </summary>
+    internal static async Task<CupState> LoadStateAsync(
+        SaveDbContext context,
+        Guid saveId,
+        int? sourceSeasonNumber,
+        CancellationToken cancellationToken)
+    {
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
-        Pcg32State rngBefore = rngRow.ToState();
 
         SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         EnsureOddSeason(source);
         List<ColorCupSelectionEntity> selection = await LoadSelectionAsync(context, source, cancellationToken).ConfigureAwait(false);
         ColorCupSelectionInvariants.ValidatePersisted(source, selection, rules);
         ColorCupIndividualInvariants.ValidateField(selection, rules);
-        await EnsureCupAbsentAsync(context, source, cancellationToken).ConfigureAwait(false);
+        await EnsureCupUnresolvedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         (int stageCountBefore, int seasonCountBefore, int roundCountBefore, long lifetimeBefore, long effectiveBefore, long championshipBefore) =
             await CapturePreservationAsync(context, cancellationToken).ConfigureAwait(false);
@@ -94,23 +120,123 @@ public sealed class RunColorCupIndividualHandler
         Dictionary<int, Bonus> activeBonuses = await LoadCupActiveBonusesAsync(
             context, roster, source, rules, cancellationToken).ConfigureAwait(false);
 
-        CupSimulation simulation = SimulateCup(selection, roster, activeBonuses, rngBefore, source, rules);
+        List<ColorCupIndividualRoundEntity> rows = await context.ColorCupIndividualRounds
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .OrderBy(e => e.RoundNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<ColorCupIndividualRoundPayloadDocument> played = rows
+            .Select(r => ColorCupIndividualRoundPayloadDocument.FromStored(r.PayloadJson))
+            .ToList();
+        Pcg32State rng = rngRow.ToState();
+        foreach (ColorCupIndividualRoundPayloadDocument payload in played)
+        {
+            ColorCupIndividualInvariants.ValidateRound(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
+        }
 
-        await PersistCupAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
+        PostseasonEvents.ValidateInProgress(
+            PostseasonEvents.ColorCupIndividual,
+            played.Select(p => new PostseasonEvents.PlayedRoundLink(
+                1,
+                p.RoundNumber,
+                new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
+                new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
+            PostseasonEvents.Shape(PostseasonEvents.ColorCupIndividual, rules),
+            _ => throw new InvalidOperationException("The Color Cup individual event has a single stage."),
+            rng);
+
+        return new CupState(
+            rules, metadata, source, selection, roster, activeBonuses, played, rng,
+            stageCountBefore, seasonCountBefore, roundCountBefore, lifetimeBefore, effectiveBefore, championshipBefore);
+    }
+
+    /// <summary>Simulates exactly one Color Cup individual round from <paramref name="rngBefore"/>.</summary>
+    internal static ColorCupIndividualRoundPayloadDocument PlayRound(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore)
+    {
+        Dictionary<int, Points> cumulative = new(state.Roster.Count);
+        if (played.Count > 0)
+        {
+            foreach (RoundPayloadEntry entry in played[^1].Placements)
+            {
+                cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
+            }
+        }
+
+        int roundNumber = played.Count + 1;
+        RoundSimulationResult simulation = AdvanceRoundHandler.SimulateRound(
+            state.Roster, cumulative, state.ActiveBonuses, rngBefore, state.Rules);
+        ColorCupIndividualRoundPayloadDocument payload = new(
+            ColorCupIndividualRoundPayloadDocument.PayloadVersion,
+            state.Rules.Version,
+            state.Source.SeasonNumber,
+            roundNumber,
+            rngBefore.State,
+            rngBefore.Stream,
+            simulation.RngAfter.State,
+            simulation.RngAfter.Stream,
+            simulation.Checksum,
+            ToPayloadEntries(simulation));
+        ColorCupIndividualInvariants.ValidateRound(payload, state.Rules, rngBefore.State, rngBefore.Stream);
+        return payload;
+    }
+
+    /// <summary>
+    /// Completes the event from all 16 payloads (the source of truth) in the
+    /// caller's transaction, in the same order as the one-shot run.
+    /// </summary>
+    internal static async Task<CupSimulation> CompleteAsync(
+        SaveDbContext context,
+        CupState state,
+        List<ColorCupIndividualRoundPayloadDocument> payloads,
+        CancellationToken cancellationToken)
+    {
+        CupSimulation simulation = Finish(payloads, state.Rules);
+        await PersistCupAsync(context, state.Source, simulation, state.Played.Count, cancellationToken).ConfigureAwait(false);
         context.ApplyRngState(simulation.RngAfter);
-        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupIndividualResolved);
+        state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupIndividualResolved);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await ValidatePersistedAsync(
-            context, source, simulation, rules,
-            stageCountBefore, seasonCountBefore, roundCountBefore,
-            lifetimeBefore, effectiveBefore, championshipBefore,
+            context, state.Source, simulation, state.Rules,
+            state.StageCountBefore, state.SeasonCountBefore, state.RoundCountBefore,
+            state.LifetimeBefore, state.EffectiveBefore, state.ChampionshipBefore,
             cancellationToken).ConfigureAwait(false);
-        await EmitCupStoriesAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return await BuildResponseAsync(_store, saveId, source, simulation, cancellationToken).ConfigureAwait(false);
+        await EmitCupStoriesAsync(context, state.Source, simulation, cancellationToken).ConfigureAwait(false);
+        return simulation;
     }
+
+    internal static CupSimulation Finish(List<ColorCupIndividualRoundPayloadDocument> payloads, RulesV1 rules)
+    {
+        List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
+        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
+        ColorCupIndividualRoundPayloadDocument last = payloads[^1];
+        Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
+        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, isSuperleague: false);
+        ColorCupIndividualInvariants.ValidateCompletedCup(ranked, totals, rules);
+        Pcg32State rngAfter = tieBreakRng.Snapshot();
+        string checksum = ComputeChecksum(ranked);
+        return new CupSimulation(payloads, totals, ranked, rngAfter, checksum);
+    }
+
+    internal sealed record CupState(
+        RulesV1 Rules,
+        SaveMetadataEntity Metadata,
+        SeasonEntity Source,
+        List<ColorCupSelectionEntity> Selection,
+        List<AdvanceRoundHandler.MemberRow> Roster,
+        Dictionary<int, Bonus> ActiveBonuses,
+        List<ColorCupIndividualRoundPayloadDocument> Played,
+        Pcg32State Rng,
+        int StageCountBefore,
+        int SeasonCountBefore,
+        int RoundCountBefore,
+        long LifetimeBefore,
+        long EffectiveBefore,
+        long ChampionshipBefore);
 
     internal sealed record CupSimulation(
         List<ColorCupIndividualRoundPayloadDocument> Payloads,
@@ -189,7 +315,7 @@ public sealed class RunColorCupIndividualHandler
         return rows;
     }
 
-    internal static async Task EnsureCupAbsentAsync(
+    internal static async Task EnsureCupUnresolvedAsync(
         SaveDbContext context,
         SeasonEntity source,
         CancellationToken cancellationToken)
@@ -200,13 +326,6 @@ public sealed class RunColorCupIndividualHandler
         {
             throw new RunColorCupIndividualConflictException(
                 $"Color Cup individual event for Season {source.SeasonNumber} has already been resolved.");
-        }
-
-        bool hasRounds = await context.ColorCupIndividualRounds.AnyAsync(
-            e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
-        if (hasRounds)
-        {
-            throw new InvalidOperationException($"Color Cup individual event for Season {source.SeasonNumber} has corrupt partial rounds.");
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
@@ -278,52 +397,6 @@ public sealed class RunColorCupIndividualHandler
         // Cup uses the next-season Stage 1 boundary, identical to the selection
         // bonus component: source-season Stage 32 bonus enters at 80% decay.
         return AdvanceRoundHandler.ComputeStageStartBonuses(roster, contributions, cupSeason, 1, rules);
-    }
-
-    internal static CupSimulation SimulateCup(
-        List<ColorCupSelectionEntity> selection,
-        List<AdvanceRoundHandler.MemberRow> roster,
-        Dictionary<int, Bonus> activeBonuses,
-        Pcg32State rngBefore,
-        SeasonEntity source,
-        RulesV1 rules)
-    {
-        Dictionary<int, Points> cumulative = new(roster.Count);
-        List<ColorCupIndividualRoundPayloadDocument> payloads = new(rules.ColorCupIndividualRounds);
-        Pcg32State current = rngBefore;
-
-        for (int roundNumber = 1; roundNumber <= rules.ColorCupIndividualRounds; roundNumber++)
-        {
-            RoundSimulationResult simulation = AdvanceRoundHandler.SimulateRound(roster, cumulative, activeBonuses, current, rules);
-            ColorCupIndividualRoundPayloadDocument payload = new(
-                ColorCupIndividualRoundPayloadDocument.PayloadVersion,
-                rules.Version,
-                source.SeasonNumber,
-                roundNumber,
-                current.State,
-                current.Stream,
-                simulation.RngAfter.State,
-                simulation.RngAfter.Stream,
-                simulation.Checksum,
-                ToPayloadEntries(simulation));
-            ColorCupIndividualInvariants.ValidateRound(payload, rules, current.State, current.Stream);
-            payloads.Add(payload);
-            foreach (RoundPayloadEntry entry in payload.Placements)
-            {
-                cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
-            }
-
-            current = simulation.RngAfter;
-        }
-
-        List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
-        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
-        Pcg32V1 tieBreakRng = Pcg32V1.Restore(current);
-        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, isSuperleague: false);
-        ColorCupIndividualInvariants.ValidateCompletedCup(ranked, totals, rules);
-        Pcg32State rngAfter = tieBreakRng.Snapshot();
-        string checksum = ComputeChecksum(ranked);
-        return new CupSimulation(payloads, totals, ranked, rngAfter, checksum);
     }
 
     internal static IReadOnlyList<RoundPayloadEntry> ToPayloadEntries(RoundSimulationResult simulation)
@@ -404,9 +477,10 @@ public sealed class RunColorCupIndividualHandler
         SaveDbContext context,
         SeasonEntity source,
         CupSimulation simulation,
+        int alreadyPersisted,
         CancellationToken cancellationToken)
     {
-        PersistRoundRows(context, source, simulation);
+        PersistRoundRows(context, source, simulation, alreadyPersisted);
         await PersistStandingRowsAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
         PersistChampionHonour(context, source, simulation);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -415,9 +489,10 @@ public sealed class RunColorCupIndividualHandler
     internal static void PersistRoundRows(
         SaveDbContext context,
         SeasonEntity source,
-        CupSimulation simulation)
+        CupSimulation simulation,
+        int alreadyPersisted)
     {
-        foreach (ColorCupIndividualRoundPayloadDocument payload in simulation.Payloads)
+        foreach (ColorCupIndividualRoundPayloadDocument payload in simulation.Payloads.Skip(alreadyPersisted))
         {
             context.ColorCupIndividualRounds.Add(new ColorCupIndividualRoundEntity
             {
