@@ -24,6 +24,13 @@ describe('live event mode', () => {
     assert.ok(view.includes('onMutated()'), 'dashboard status refreshes after each action');
   });
 
+  it("offers play controls only for the save's next event and season", () => {
+    assert.ok(view.includes('const playable = progress !== null && progress.sourceSeasonNumber === season;'));
+    assert.ok(view.includes('complete ? ('), 'completion notice first');
+    assert.ok(view.includes(') : playable ? ('), 'Next Round and Run remaining only when playable');
+    assert.ok(view.includes('Not the next event'), 'otherwise points back to the Dashboard');
+  });
+
   it('shows team standings and a completion notice', () => {
     assert.ok(view.includes('fetchEventTeamStandings'));
     assert.ok(view.includes('Continue on the Dashboard'));

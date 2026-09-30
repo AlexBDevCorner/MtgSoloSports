@@ -35,6 +35,8 @@ share them instead of hand-rolling URLs.
   selects a played round (latest when absent). Without `event`, Live shows the
   event when it is the next lifecycle step, otherwise leagues. The URL keeps
   the event after it completes, so the completed event stays on screen.
+  Next Round and Run remaining appear only while the URL's event and season
+  are the save's next step; any other event shows its rounds read-only.
 - History postseason: `event` and `group` (with `season` and `round`) replay a
   postseason event's stored rounds; unknown event keys are ignored.
 

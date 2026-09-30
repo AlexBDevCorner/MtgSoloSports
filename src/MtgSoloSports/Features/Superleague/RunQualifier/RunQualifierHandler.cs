@@ -1033,6 +1033,13 @@ public sealed class RunQualifierHandler
             throw new RunQualifierConflictException(
                 $"Qualifier for Season {source.SeasonNumber} has already been resolved.");
         }
+
+        string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.Qualifier, source.Id, cancellationToken).ConfigureAwait(false);
+        if (other is not null)
+        {
+            throw new RunQualifierConflictException(
+                $"{other} is partly played; finish it before playing the {PostseasonEvents.Title(PostseasonEvents.Qualifier)}.");
+        }
     }
 
     internal static async Task<List<LeagueEntity>> LoadSourceFeedersAsync(

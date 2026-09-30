@@ -114,6 +114,10 @@ export function LiveEventView({
   const roundsPerGroup = shape?.roundsPerGroup ?? (team ? 8 : 16);
   const groupCount = shape?.groupCount ?? (team ? 4 : 1);
   const complete = summary?.isComplete ?? false;
+  // Rounds may only be played for the save's next lifecycle event; playing any
+  // other event would move the RNG under a partly played one (the backend
+  // refuses it too).
+  const playable = progress !== null && progress.sourceSeasonNumber === season;
   const progressText = progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
 
   const refreshAfter = useCallback(() => {
@@ -179,7 +183,7 @@ export function LiveEventView({
                 </Link>
               </p>
             </Notice>
-          ) : (
+          ) : playable ? (
             <div className="live-manage-controls">
               <div className="live-buttons">
                 <button
@@ -206,6 +210,15 @@ export function LiveEventView({
               </div>
               <p className="muted small">{"Each round is saved and can't be undone."}</p>
             </div>
+          ) : (
+            <Notice tone="info" title="Not the next event">
+              <p>This event can be played once it is the next step of the season.</p>
+              <p className="live-buttons">
+                <Link to={dashboardPath(saveId)} className="primary-button">
+                  Continue on the Dashboard
+                </Link>
+              </p>
+            </Notice>
           )}
           {error ? (
             <Notice tone="error" title="The round did not complete">

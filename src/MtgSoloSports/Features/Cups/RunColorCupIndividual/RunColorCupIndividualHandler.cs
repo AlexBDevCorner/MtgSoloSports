@@ -335,6 +335,13 @@ public sealed class RunColorCupIndividualHandler
         {
             throw new InvalidOperationException($"Color Cup individual event for Season {source.SeasonNumber} has corrupt partial honours.");
         }
+
+        string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.ColorCupIndividual, source.Id, cancellationToken).ConfigureAwait(false);
+        if (other is not null)
+        {
+            throw new RunColorCupIndividualConflictException(
+                $"{other} is partly played; finish it before playing the {PostseasonEvents.Title(PostseasonEvents.ColorCupIndividual)}.");
+        }
     }
 
     internal static List<AdvanceRoundHandler.MemberRow> BuildRoster(

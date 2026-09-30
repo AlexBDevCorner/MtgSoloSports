@@ -318,6 +318,13 @@ public sealed partial class RunTypeCupTeamHandler
         {
             throw new InvalidOperationException($"Type Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
         }
+
+        string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.TypeCupTeam, source.Id, cancellationToken).ConfigureAwait(false);
+        if (other is not null)
+        {
+            throw new RunTypeCupTeamConflictException(
+                $"{other} is partly played; finish it before playing the {PostseasonEvents.Title(PostseasonEvents.TypeCupTeam)}.");
+        }
     }
 
     internal static Dictionary<int, List<AdvanceRoundHandler.MemberRow>> BuildRosters(

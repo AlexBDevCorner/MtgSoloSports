@@ -203,6 +203,55 @@ public static class PostseasonEvents
         };
     }
 
+    /// <summary>
+    /// Title of a partly played postseason event other than <paramref name="key"/>
+    /// for <paramref name="sourceSeasonId"/>, or null. A partly played event
+    /// owns the save RNG until it completes: playing anything else in between
+    /// would move the RNG under it and leave it unable to resume.
+    /// </summary>
+    public static async Task<string?> FindOtherInProgressAsync(
+        SaveDbContext context,
+        string key,
+        int sourceSeasonId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        int? qualifier = Except(key, Qualifier, sourceSeasonId);
+        int? individual = Except(key, ColorCupIndividual, sourceSeasonId);
+        int? colorTeam = Except(key, ColorCupTeam, sourceSeasonId);
+        int? typeTeam = Except(key, TypeCupTeam, sourceSeasonId);
+
+        if (await context.QualifierRounds.AnyAsync(
+                r => r.FromSeasonId != qualifier && !context.QualifierStandings.Any(s => s.FromSeasonId == r.FromSeasonId),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Title(Qualifier);
+        }
+
+        if (await context.ColorCupIndividualRounds.AnyAsync(
+                r => r.SourceSeasonId != individual && !context.ColorCupIndividualStandings.Any(s => s.SourceSeasonId == r.SourceSeasonId),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Title(ColorCupIndividual);
+        }
+
+        if (await context.ColorCupTeamRounds.AnyAsync(
+                r => r.SourceSeasonId != colorTeam && !context.ColorCupTeamStandings.Any(s => s.SourceSeasonId == r.SourceSeasonId),
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Title(ColorCupTeam);
+        }
+
+        return await context.TypeCupTeamRounds.AnyAsync(
+                r => r.SourceSeasonId != typeTeam && !context.TypeCupTeamStandings.Any(s => s.SourceSeasonId == r.SourceSeasonId),
+                cancellationToken).ConfigureAwait(false)
+            ? Title(TypeCupTeam)
+            : null;
+    }
+
+    private static int? Except(string key, string candidate, int sourceSeasonId) =>
+        string.Equals(key, candidate, StringComparison.Ordinal) ? sourceSeasonId : null;
+
     private static async Task<int> CountQualifierRoundsAsync(SaveDbContext context, SeasonEntity source, CancellationToken cancellationToken)
     {
         SeasonEntity? next = await context.Seasons.AsNoTracking()

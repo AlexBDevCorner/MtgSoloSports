@@ -209,6 +209,9 @@ played one round at a time, exactly like league rounds:
   RNG-before equal to the previous RNG-after (or the recomputed group
   tie-break state at a group boundary), and the save RNG row equal to the
   state after the last step. Any violation aborts.
+- A partly played event owns the save RNG until it completes: a step or
+  one-shot run of any other postseason event is refused as a conflict while
+  one is partly played, so nothing can move the RNG under it.
 - Season status and `AdvanceToNextEvent` responses carry `eventProgress`
   (`event`, `sourceSeasonNumber`, `roundsPlayed`, `totalRounds`, `groupCount`,
   `roundsPerGroup`, next `group`/`roundInGroup`) when the next legal action is
