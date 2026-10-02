@@ -23,14 +23,15 @@ public sealed class ScoringCalculatorTests
     }
 
     [Fact]
-    public void ApplyBonus_TechnicalDesignExample_IsExact()
+    public void ApplyBonus_TreatsBonusAsPercent()
     {
         Points basePoints = Points.FromPoints(77);
-        Bonus bonus = Bonus.FromThousandths(370);
+        Bonus bonus = Bonus.FromThousandths(7552);
 
         Points finalPoints = ScoringCalculator.ApplyBonus(basePoints, bonus);
 
-        finalPoints.Thousandths.ShouldBe(105490);
+        // 77 x 1.07552 = 82.81504, truncated to thousandths.
+        finalPoints.Thousandths.ShouldBe(82815);
     }
 
     [Fact]
@@ -38,7 +39,7 @@ public sealed class ScoringCalculatorTests
     {
         Points finalPoints = ScoringCalculator.FinalRoundPointsForPosition(1, Bonus.FromThousandths(100), Rules);
 
-        finalPoints.Thousandths.ShouldBe(84700);
+        finalPoints.Thousandths.ShouldBe(77077);
     }
 
     [Fact]

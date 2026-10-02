@@ -14,6 +14,10 @@ public sealed class RulesV1
     public const int FixedScale = 1000;
     public const int CupWeightScale = 1000;
 
+    // Active bonus is a percentage held in thousandths of a percent (7552 == +7.552%),
+    // so final = base x (BonusPercentScale + bonus) / BonusPercentScale.
+    public const int BonusPercentScale = 100_000;
+
     private static readonly int[] DefaultScoringTable =
         [77, 67, 58, 50, 43, 37, 32, 28, 25, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 

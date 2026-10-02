@@ -53,7 +53,7 @@ public sealed class RoundSimulatorTests
 
         foreach (RoundPlacement placement in result.Placements)
         {
-            long expected = (long)placement.BasePoints.Thousandths * (1000 + placement.ActiveBonus.Thousandths) / 1000;
+            long expected = (long)placement.BasePoints.Thousandths * (RulesV1.BonusPercentScale + placement.ActiveBonus.Thousandths) / RulesV1.BonusPercentScale;
             placement.FinalPoints.Thousandths.ShouldBe((int)expected);
         }
 

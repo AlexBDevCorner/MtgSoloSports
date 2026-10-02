@@ -97,13 +97,13 @@ public sealed class ScoringTableBoundariesTests
     }
 
     [Theory]
-    [InlineData(1, 100, 84700)]
-    [InlineData(10, 10, 23230)]
+    [InlineData(1, 100, 77077)]
+    [InlineData(10, 10, 23002)]
     [InlineData(32, 0, 1000)]
-    [InlineData(32, 10, 1010)]
-    [InlineData(1, 1, 77077)]
-    [InlineData(11, 370, 30140)]
-    public void FinalRoundPoints_RetainFractionsExactly(int position, int bonusThousandths, int expectedThousandths)
+    [InlineData(32, 10, 1000)]
+    [InlineData(1, 1, 77000)]
+    [InlineData(11, 370, 22081)]
+    public void FinalRoundPoints_TruncateToThousandths(int position, int bonusThousandths, int expectedThousandths)
     {
         ScoringCalculator.FinalRoundPointsForPosition(position, Bonus.FromThousandths(bonusThousandths), Rules)
             .Thousandths.ShouldBe(expectedThousandths);

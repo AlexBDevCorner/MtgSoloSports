@@ -40,8 +40,9 @@ public sealed class QualifierStepTests
     }
 
     /// <summary>
-    /// Golden values captured from the pre-stepping one-shot runner (commit
-    /// ff73e98) for the same seed: the refactor must not change any result.
+    /// Golden values for the one-shot runner and this seed. The RNG state dates from
+    /// the pre-stepping runner (commit ff73e98); the checksum was re-captured when
+    /// bonus became a percentage.
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -50,7 +51,7 @@ public sealed class QualifierStepTests
         try
         {
             RunQualifierResponse response = await new RunQualifierHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("019fdbf7aa2ef453f40665aabc5da8216a433e1b4ac274a72c9bdd97ad4639ad");
+            response.Checksum.ShouldBe("a5394e936536530e55f79040a54d52a22fb27ab63df5afa04650642f378cfbb0");
             (await LoadRngAsync(store, saveId)).ShouldBe((7116585901650728893L, 6161L));
         }
         finally

@@ -6,7 +6,7 @@ export function formatPoints(thousandths: number): string {
 /** Display-only projection of a fixed-point bonus (no sporting math). */
 export function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
+  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
 }
 
 export function formatMovement(movement: number): string {

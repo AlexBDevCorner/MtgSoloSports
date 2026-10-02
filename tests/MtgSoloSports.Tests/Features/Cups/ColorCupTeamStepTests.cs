@@ -10,7 +10,10 @@ namespace MtgSoloSports.Tests.Features.Cups;
 
 public sealed class ColorCupTeamStepTests
 {
-    /// <summary>Golden values from the pre-stepping runner (commit ff73e98) for the same seed.</summary>
+    /// <summary>
+    /// Golden values for the one-shot runner and this seed. The RNG state dates from the
+    /// pre-stepping runner (commit ff73e98); the checksum was re-captured when bonus became a percentage.
+    /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
     {
@@ -18,7 +21,7 @@ public sealed class ColorCupTeamStepTests
         try
         {
             RunColorCupTeamResponse response = await new RunColorCupTeamHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("ee83d20d186c8e216e942f7788cae6078c2588af0d532997478f33e07c1c1e90");
+            response.Checksum.ShouldBe("49e93049472867a3d6e4e77af021fa3ef2bd5e78395cdf31f9533c87dcc36dc8");
             (await LoadRngAsync(store, saveId)).ShouldBe((-6031596366428605271L, 9292L));
         }
         finally

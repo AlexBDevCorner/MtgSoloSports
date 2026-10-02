@@ -12,7 +12,7 @@ function formatPoints(thousandths: number): string {
 /** Display-only projection of a fixed-point bonus (no sporting math). */
 function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
+  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
 }
 
 export function AthleteProfilePage({

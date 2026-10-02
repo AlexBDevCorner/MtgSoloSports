@@ -362,7 +362,7 @@ public static class ColorCupTeamInvariants
             throw new InvalidOperationException($"Color Cup team payload active bonus for '{entry.Name}' cannot be negative.");
         }
 
-        long expectedFinal = (long)entry.BaseThousandths * (RulesV1.FixedScale + entry.ActiveBonusThousandths) / RulesV1.FixedScale;
+        long expectedFinal = (long)entry.BaseThousandths * (RulesV1.BonusPercentScale + entry.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
         if (entry.FinalThousandths != expectedFinal)
         {
             throw new InvalidOperationException($"Color Cup team payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");

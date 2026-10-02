@@ -38,7 +38,7 @@ export function formatPoints(thousandths: number): string {
 /** Display-only bonus with explicit sign (no sporting math). */
 export function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
+  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
 }
 
 export function placeLabel(stageRank: number): string {

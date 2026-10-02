@@ -5,7 +5,7 @@ namespace MtgSoloSports.SimulationKernel.Scoring;
 
 /// <summary>
 /// Pure fixed-point sporting mathematics. All inputs and outputs are integers.
-/// Final round points: base points x (1 + active bonus), retained exactly in thousandths.
+/// Final round points: base points x (1 + active bonus%), retained in thousandths.
 /// </summary>
 public static class ScoringCalculator
 {
@@ -33,14 +33,15 @@ public static class ScoringCalculator
 
     /// <summary>
     /// Applies active bonus to base points using integer arithmetic:
-    /// final = baseThousandths x (1000 + bonusThousandths) / 1000.
+    /// final = baseThousandths x (100000 + bonusThousandths) / 100000,
+    /// truncated to thousandths. Bonus is a percentage: 7552 is +7.552%.
     /// </summary>
     public static Points ApplyBonus(Points basePoints, Bonus activeBonus)
     {
         checked
         {
-            long product = (long)basePoints.Thousandths * (RulesV1.FixedScale + activeBonus.Thousandths);
-            return Points.FromThousandths((int)(product / RulesV1.FixedScale));
+            long product = (long)basePoints.Thousandths * (RulesV1.BonusPercentScale + activeBonus.Thousandths);
+            return Points.FromThousandths((int)(product / RulesV1.BonusPercentScale));
         }
     }
 

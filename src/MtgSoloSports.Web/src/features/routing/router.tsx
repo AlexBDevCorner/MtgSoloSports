@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useMemo, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
 import { athletePath, parseRoute, type Route } from './routes';
 
 export const SELECTED_SAVE_KEY = 'mtg-solo-sports:selected-save';
@@ -41,20 +41,26 @@ export function navigate(to: string, options?: { replace?: boolean }): void {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
+function subscribeToLocation(onChange: () => void): () => void {
+  window.addEventListener('popstate', onChange);
+  return () => {
+    window.removeEventListener('popstate', onChange);
+  };
+}
+
+function getLocationSnapshot(): string {
+  return window.location.pathname + window.location.search;
+}
+
+/**
+ * Current route, derived from the browser location. Backed by
+ * `useSyncExternalStore` so a `navigate()` fired by a child effect before this
+ * hook's subscription is attached (child effects run first) is still picked
+ * up: React re-reads the snapshot after subscribing.
+ */
 export function useBrowserRoute(): Route {
-  const [route, setRoute] = useState<Route>(() => getCurrentRoute());
-
-  useEffect(() => {
-    const onPopState = () => {
-      setRoute(getCurrentRoute());
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => {
-      window.removeEventListener('popstate', onPopState);
-    };
-  }, []);
-
-  return route;
+  const location = useSyncExternalStore(subscribeToLocation, getLocationSnapshot);
+  return useMemo(() => getCurrentRoute(), [location]);
 }
 
 export function useNavigate(): (to: string, options?: { replace?: boolean }) => void {

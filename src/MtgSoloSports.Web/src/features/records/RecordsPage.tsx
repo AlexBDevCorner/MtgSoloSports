@@ -15,7 +15,7 @@ import {
 /** Display-only projection of a fixed-point bonus (no sporting math). */
 function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}`;
+  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
 }
 
 function useSaveData<T>(

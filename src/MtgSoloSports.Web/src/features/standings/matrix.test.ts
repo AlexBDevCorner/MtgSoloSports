@@ -153,8 +153,8 @@ describe('standings matrix presentation', () => {
 
   it('formats fixed-point points and bonus for display only', () => {
     assert.equal(formatPoints(77000), '77.000');
-    assert.equal(formatBonus(200), '+0.200');
-    assert.equal(formatBonus(0), '+0.000');
+    assert.equal(formatBonus(200), '+0.200%');
+    assert.equal(formatBonus(0), '+0.000%');
   });
 
   it('offers a compact stage window without hiding the feature', () => {

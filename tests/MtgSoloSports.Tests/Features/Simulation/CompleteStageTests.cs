@@ -158,7 +158,7 @@ public sealed class CompleteStageTests
             foreach (AdvanceRoundPlacement placement in next.Placements)
             {
                 placement.ActiveBonusThousandths.ShouldBe(earnedByAthlete[placement.AthleteId]);
-                long expectedFinal = (long)placement.BaseThousandths * (1000 + placement.ActiveBonusThousandths) / 1000;
+                long expectedFinal = (long)placement.BaseThousandths * (RulesV1.BonusPercentScale + placement.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
                 placement.FinalThousandths.ShouldBe((int)expectedFinal);
             }
         }

@@ -74,9 +74,9 @@ All 32 league athletes are randomly shuffled to create the base finishing order.
 
 Final round points:
 
-`base points × (1 + active bonus)`
+`base points × (1 + active bonus / 100)`
 
-Fractional results are retained exactly by the implementation using fixed-point integers.
+Active bonus is a percentage: an athlete on +7.552% who wins a round scores 77 × 1.07552 = 82.815 points. Results are computed with fixed-point integers and truncated to thousandths of a point.
 
 ## 7. Stage and season standings
 
@@ -92,11 +92,11 @@ Bonus affects future point value, never shuffle probability.
 
 Regular-league round bonus for places 1-10:
 
-`+0.10, +0.09, +0.08, +0.07, +0.06, +0.05, +0.04, +0.03, +0.02, +0.01`
+`+0.10%, +0.09%, +0.08%, +0.07%, +0.06%, +0.05%, +0.04%, +0.03%, +0.02%, +0.01%`
 
 Regular-league stage bonus for places 1-10:
 
-`+0.20, +0.18, +0.16, +0.14, +0.12, +0.10, +0.08, +0.06, +0.04, +0.02`
+`+0.20%, +0.18%, +0.16%, +0.14%, +0.12%, +0.10%, +0.08%, +0.06%, +0.04%, +0.02%`
 
 Superleague awards double these bonus amounts.
 

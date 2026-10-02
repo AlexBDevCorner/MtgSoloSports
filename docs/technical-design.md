@@ -80,10 +80,10 @@ Do not use `double`/`float` for sporting calculations.
 
 Recommended representation:
 
-- bonus in thousandths (`100 == 0.100`);
+- bonus in thousandths of a percent (`100 == 0.100%`);
 - points in thousandths (`77 points == 77_000`).
 
-Example: `77_000 * 1370 / 1000 = 105_490` for a 0.370 bonus.
+Example: `77_000 * 100_370 / 100_000 = 77_284` for a 0.370% bonus (truncated to thousandths).
 
 This keeps simulation deterministic across runtime/database behavior.
 
