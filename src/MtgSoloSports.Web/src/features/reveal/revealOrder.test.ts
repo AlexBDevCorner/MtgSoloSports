@@ -66,6 +66,7 @@ describe('computeProgressiveStandings', () => {
     assert.equal(rows[0]!.athleteId, 2);
     assert.equal(rows[0]!.displayedScoreThousandths, 9000);
     assert.equal(rows[0]!.awardedThousandths, 0);
+    assert.equal(rows[0]!.baseThousandths, 0);
     assert.equal(rows[0]!.isRevealed, false);
     assert.equal(rows[1]!.athleteId, 1);
   });
@@ -96,11 +97,12 @@ describe('computeProgressiveStandings', () => {
 
   it('keeps every sporting value as exact integer thousandths', () => {
     const placements = [
-      makePlacement({ athleteId: 7, position: 5, cumulativeBeforeThousandths: 105490, cumulativeAfterThousandths: 148490, finalThousandths: 43000, rankBefore: 3, rankAfter: 3 }),
+      makePlacement({ athleteId: 7, position: 5, cumulativeBeforeThousandths: 105490, cumulativeAfterThousandths: 148490, baseThousandths: 41000, activeBonusThousandths: 2000, finalThousandths: 43000, rankBefore: 3, rankAfter: 3 }),
     ];
     const order = buildRevealOrder(placements);
     const rows = computeProgressiveStandings(indexPlacementsByAthlete(placements), order, 1);
     assert.equal(rows[0]!.displayedScoreThousandths, 148490);
+    assert.equal(rows[0]!.baseThousandths, 41000);
     assert.equal(rows[0]!.awardedThousandths, 43000);
     assert.ok(Number.isInteger(rows[0]!.displayedScoreThousandths));
   });

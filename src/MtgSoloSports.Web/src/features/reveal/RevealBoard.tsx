@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { cardCaption, formatMovement, formatPoints } from './format';
+import { formatMovement, formatPoints } from './format';
 import { describeTile, tileMovementGlyph } from './revealBoardHelpers';
 import type { ProgressiveStandingRow } from './revealOrder';
 import { AthleteLink } from '../routing/router';
@@ -82,7 +82,7 @@ function TileArt({ row, showArtwork }: { row: ProgressiveStandingRow; showArtwor
  * Ordered by the current progressive stage standings (rank 1 onward) with a
  * stable React identity per athlete. Pending tiles stay face-down and never
  * render artwork or current-round awards; revealed tiles show the full
- * portrait plus awarded/stage-score/move from the existing progressive row.
+ * portrait plus base/awarded/stage-score/move from the existing progressive row.
  */
 export function RevealBoard({ standings, latestAthleteId, saveId }: RevealBoardProps) {
   return (
@@ -90,7 +90,6 @@ export function RevealBoard({ standings, latestAthleteId, saveId }: RevealBoardP
       <ol className="reveal-board" aria-label="Stage standings as revealed">
         {standings.map((row) => {
           const tile = describeTile(row);
-          const caption = cardCaption(row.setCode, row.typeLine);
           const isLatest = latestAthleteId !== null && latestAthleteId === row.athleteId;
           const tileClass = `reveal-tile${tile.isRevealed ? '' : ' is-pending'}${isLatest ? ' is-latest' : ''}`;
           return (
@@ -115,11 +114,14 @@ export function RevealBoard({ standings, latestAthleteId, saveId }: RevealBoardP
                 <TileArt row={row} showArtwork={tile.showArtwork} />
               </div>
               <div className="reveal-tile-body">
-                <div className="reveal-tile-identity">
-                  <TileName row={row} saveId={saveId} />
-                  {caption ? <span className="card-sub reveal-tile-caption">{caption}</span> : null}
-                </div>
+                <TileName row={row} saveId={saveId} />
                 <dl className="reveal-tile-metrics">
+                  <div className="reveal-metric">
+                    <dt>Base</dt>
+                    <dd className="numeric">
+                      {tile.isRevealed ? formatPoints(row.baseThousandths) : '—'}
+                    </dd>
+                  </div>
                   <div className="reveal-metric">
                     <dt>Awarded</dt>
                     <dd className="numeric">

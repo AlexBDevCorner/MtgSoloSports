@@ -12,10 +12,9 @@ function makeRow(overrides: Partial<ProgressiveStandingRow> & { athleteId: numbe
   return {
     name: `Card ${overrides.athleteId}`,
     imageUrl: null,
-    setCode: null,
-    typeLine: 'Creature',
     position: overrides.athleteId,
     isRevealed: false,
+    baseThousandths: 0,
     awardedThousandths: 0,
     displayedScoreThousandths: 5000,
     startRank: 1,

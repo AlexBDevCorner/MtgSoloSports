@@ -18,12 +18,12 @@ export interface ProgressiveStandingRow {
   athleteId: number;
   name: string;
   imageUrl: string | null;
-  setCode: string | null;
-  typeLine: string;
   /** Finishing position in this round (1 = winner). */
   position: number;
   /** True once this card has been revealed in the current progression. */
   isRevealed: boolean;
+  /** Base points for the finishing position before the bonus, once revealed, otherwise 0 (integer thousandths). */
+  baseThousandths: number;
   /** +awarded final points once revealed, otherwise 0 (integer thousandths). */
   awardedThousandths: number;
   /** Displayed cumulative stage score at this progression step (thousandths). */
@@ -69,10 +69,9 @@ export function computeProgressiveStandings(
       athleteId: placement.athleteId,
       name: placement.name,
       imageUrl: placement.imageUrl,
-      setCode: placement.setCode,
-      typeLine: placement.typeLine,
       position: placement.position,
       isRevealed,
+      baseThousandths: isRevealed ? placement.baseThousandths : 0,
       awardedThousandths: isRevealed ? placement.finalThousandths : 0,
       displayedScoreThousandths: isRevealed
         ? placement.cumulativeAfterThousandths

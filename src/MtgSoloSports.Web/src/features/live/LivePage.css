@@ -259,7 +259,7 @@
   margin-top: 6px;
 }
 
-/* Live-only tile tightening: artwork and AWARDED / STAGE SCORE / MOVE are
+/* Live-only tile tightening: artwork and BASE / AWARDED / STAGE SCORE / MOVE are
    untouched; only paddings and name clamp shrink so the first full row fits
    at 1536x806 without becoming thumbnails. */
 .reveal-live .reveal-tile-top {

@@ -169,13 +169,6 @@ img.reveal-card-portrait {
   min-width: 0;
 }
 
-.reveal-tile-identity {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
 .reveal-tile-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -190,12 +183,6 @@ img.reveal-card-portrait {
 
 button.reveal-tile-name {
   cursor: pointer;
-}
-
-.reveal-tile-caption {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .reveal-tile-metrics {
