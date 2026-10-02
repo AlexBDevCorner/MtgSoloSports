@@ -32,6 +32,42 @@ public static class ScoringCalculator
     public static Points BaseRoundPointsForPosition(int position, RulesV1 rules) => ChampionshipPointsForPosition(position, rules);
 
     /// <summary>
+    /// Type Cup team-event base points for a 1-based finishing position (Game Rules §15).
+    /// Positions 1..32 use the snapshot scoring table exactly, so every field of
+    /// 2–32 teams scores identically to <see cref="BaseRoundPointsForPosition"/>.
+    /// Positions beyond the 32-entry league table score the table minimum (1 point):
+    /// the extension is deterministic, integer-only, monotonic non-increasing, and
+    /// additive, so existing saves and persisted replays for 2–32-team fields are
+    /// byte-identical and no rules-version bump is required.
+    /// </summary>
+    public static Points TypeCupBasePointsForPosition(int position, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        if (position < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(position), "Position must be at least 1.");
+        }
+
+        checked
+        {
+            int points = position <= rules.ScoringTable.Count
+                ? rules.ScoringTable[position - 1]
+                : rules.ScoringTable[rules.ScoringTable.Count - 1];
+            return Points.FromPoints(points);
+        }
+    }
+
+    /// <summary>
+    /// Type Cup team-event final points for a 1-based finishing position with the
+    /// given active bonus, using <see cref="TypeCupBasePointsForPosition"/>.
+    /// </summary>
+    public static Points TypeCupFinalPointsForPosition(int position, Bonus activeBonus, RulesV1 rules)
+    {
+        Points basePoints = TypeCupBasePointsForPosition(position, rules);
+        return ApplyBonus(basePoints, activeBonus);
+    }
+
+    /// <summary>
     /// Applies active bonus to base points using integer arithmetic:
     /// final = baseThousandths x (1000 + bonusThousandths) / 1000.
     /// </summary>

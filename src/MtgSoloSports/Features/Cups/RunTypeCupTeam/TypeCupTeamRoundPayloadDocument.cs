@@ -16,8 +16,9 @@ namespace MtgSoloSports.Features.Cups.RunTypeCupTeam;
 /// <c>TypeCupTeamRoundEntity.PayloadJson</c> via <c>RoundPayloadCodec</c>,
 /// matching normal league round history; readers must decode via
 /// <see cref="FromStored"/>. The group size is the dynamically varying team
-/// count N, so placements cover positions 1..N with the first N scoring-table
-/// entries.
+/// count N, so placements cover positions 1..N: positions 1..32 use the
+/// snapshot scoring table exactly and positions beyond 32 score the table
+/// minimum (1 point) per the Game Rules §15 Type Cup extension.
 /// </summary>
 public sealed record TypeCupTeamRoundPayloadDocument(
     [property: JsonPropertyName("version")] int Version,

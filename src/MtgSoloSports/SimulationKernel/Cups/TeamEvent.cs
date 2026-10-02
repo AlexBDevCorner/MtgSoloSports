@@ -8,12 +8,18 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 
 /// <summary>
 /// Pure generic team-event scoring shared by the Color Cup team event
-/// (Game Rules §14) and the future Type Cup team event (Game Rules §15).
+/// (Game Rules §14) and the Type Cup team event (Game Rules §15).
 /// Teams are identified only by <c>TeamId</c>/<c>TeamName</c>; this kernel
 /// knows nothing about sporting colors, creature types, selection ranks or
 /// permanent nationality. Callers pre-partition athletes into groups (for
-/// example Color Cup selection ranks #1..#4) and map scoring positions
-/// 1..N to the first N entries of the snapshot scoring table.
+/// example selection ranks #1..#4) with N athletes per group, where N is the
+/// dynamically varying team count. Scoring positions 1..32 use the snapshot
+/// scoring table exactly; Type Cup positions beyond 32 score the table minimum
+/// (1 point) via <see cref="ScoringCalculator.TypeCupBasePointsForPosition"/>,
+/// so Color Cup (N=8) and 2–32-team Type Cup outputs are unchanged.
+/// Group-size upper bounds are intentionally absent here: the Color Cup slice
+/// enforces its genuine fixed 8-team field and the Type Cup slice enforces at
+/// least two whole four-athlete teams, with no artificial maximum.
 /// All arithmetic is checked fixed-point integers; the only randomness is the
 /// caller-supplied <see cref="Pcg32V1"/>, consumed only for exactly tied
 /// groups. No clock, GUID ordering, database ordering or ambient randomness.
@@ -98,10 +104,13 @@ public static class TeamEvent
     /// <summary>
     /// Simulates one team-group round: deterministic shuffle with only the
     /// supplied RNG, base points from the snapshot scoring table by shuffled
-    /// position (positions 1..N use the first N table entries), final points
-    /// with only the supplied active bonus. The input roster order is the
-    /// shuffle input order; callers must sort deterministically (for example
-    /// by name ordinal) before calling.
+    /// position (positions 1..32 use the table exactly; positions beyond 32
+    /// score the table minimum of 1 point), final points with only the
+    /// supplied active bonus. The input roster order is the shuffle input
+    /// order; callers must sort deterministically (for example by name
+    /// ordinal) before calling. No artificial upper bound is enforced here;
+    /// slice invariants enforce genuine field rules (Color Cup exactly eight,
+    /// Type Cup at least two teams).
     /// </summary>
     public static RoundSimulationResult SimulateGroupRound(
         IReadOnlyList<RoundAthleteInput> roster,
@@ -113,9 +122,9 @@ public static class TeamEvent
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
-        if (groupSize < 2 || groupSize > rules.LeagueSize)
+        if (groupSize < 2)
         {
-            throw new InvalidOperationException($"Team group size must be 2..{rules.LeagueSize}, was {groupSize}.");
+            throw new InvalidOperationException($"Team group size must be at least 2, was {groupSize}.");
         }
 
         if (roster.Count != groupSize)
@@ -145,9 +154,9 @@ public static class TeamEvent
         ArgumentNullException.ThrowIfNull(rounds);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
-        if (expectedAthletes < 2 || expectedAthletes > rules.LeagueSize)
+        if (expectedAthletes < 2)
         {
-            throw new InvalidOperationException($"Team group must hold 2..{rules.LeagueSize} athletes, was {expectedAthletes}.");
+            throw new InvalidOperationException($"Team group must hold at least 2 athletes, was {expectedAthletes}.");
         }
 
         if (expectedRounds < 1)
@@ -213,9 +222,9 @@ public static class TeamEvent
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
-        if (groupSize < 2 || groupSize > rules.LeagueSize)
+        if (groupSize < 2)
         {
-            throw new InvalidOperationException($"Team group size must be 2..{rules.LeagueSize}, was {groupSize}.");
+            throw new InvalidOperationException($"Team group size must be at least 2, was {groupSize}.");
         }
 
         if (totals.Count != groupSize)
@@ -514,7 +523,7 @@ public static class TeamEvent
                 throw new InvalidOperationException($"Team group position {position} exceeds group size {groupSize}.");
             }
 
-            Points basePoints = ScoringCalculator.BaseRoundPointsForPosition(position, rules);
+            Points basePoints = ScoringCalculator.TypeCupBasePointsForPosition(position, rules);
             Points finalPoints = ScoringCalculator.ApplyBonus(basePoints, shuffled[i].ActiveBonus);
             Points cumulativeAfter = checked(shuffled[i].CumulativeBefore + finalPoints);
             placements.Add(new RoundPlacement(
@@ -579,7 +588,7 @@ public static class TeamEvent
                 throw new InvalidOperationException($"Team group result contains duplicate athlete id {placement.AthleteId}.");
             }
 
-            Points expectedBase = ScoringCalculator.BaseRoundPointsForPosition(placement.Position, rules);
+            Points expectedBase = ScoringCalculator.TypeCupBasePointsForPosition(placement.Position, rules);
             if (expectedBase.Thousandths != placement.BasePoints.Thousandths)
             {
                 throw new InvalidOperationException($"Team group result base points for position {placement.Position} are corrupt.");
@@ -673,7 +682,7 @@ public static class TeamEvent
             throw new InvalidOperationException($"Team group round points for '{entry.Name}' cannot be negative.");
         }
 
-        int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
+        int expectedBase = ScoringCalculator.TypeCupBasePointsForPosition(entry.Position, rules).Thousandths;
         if (entry.BaseThousandths != expectedBase)
         {
             throw new InvalidOperationException(

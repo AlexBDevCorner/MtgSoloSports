@@ -194,6 +194,8 @@ Once an athlete actually appears in a Type Cup for a type, that becomes its perm
 
 Competition uses the same #1/#2/#3/#4 team-group model as the Color Cup team event, with 8 rounds per group. Active bonus applies; no bonus is generated.
 
+Type Cup scoring uses the §6 32-position table exactly for positions 1–32. Positions beyond 32 (possible because there is no artificial team limit) score the table minimum of 1 point before the active-bonus multiplier, applied with the same fixed-point arithmetic. Fields of 2–32 teams are unaffected.
+
 ## 16. Season lifecycle
 
 1. Stages 1-32
