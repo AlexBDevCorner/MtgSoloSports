@@ -26,7 +26,8 @@ public static class TypeCupTeamInvariants
     /// <summary>
     /// Validates the allocated selection before simulation: whole teams of four with
     /// selection ranks 1..4 per creature type, all athletes distinct, at least two
-    /// participating teams. Returns the dynamically varying team count.
+    /// participating teams. Returns the dynamically varying team count. There is
+    /// no artificial upper bound (Game Rules §15): 35 valid teams means 35 teams.
     /// </summary>
     public static int ValidateField(
         IReadOnlyList<TypeCupSelectionEntity> selection,
@@ -47,12 +48,6 @@ public static class TypeCupTeamInvariants
                 $"Type Cup team event requires at least two participating creature-type teams, was {teamCount}.");
         }
 
-        if (teamCount > rules.LeagueSize)
-        {
-            throw new InvalidOperationException(
-                $"Type Cup team event supports at most {rules.LeagueSize} teams, was {teamCount}.");
-        }
-
         ValidateFieldGroups(selection, rules);
         return teamCount;
     }
@@ -69,7 +64,7 @@ public static class TypeCupTeamInvariants
     {
         ArgumentNullException.ThrowIfNull(groups);
         ArgumentNullException.ThrowIfNull(rules);
-        if (teamCount < 2 || teamCount > rules.LeagueSize)
+        if (teamCount < 2)
         {
             throw new InvalidOperationException($"Type Cup team count {teamCount} is out of range.");
         }
@@ -385,7 +380,7 @@ public static class TypeCupTeamInvariants
             throw new InvalidOperationException($"Type Cup team payload position {entry.Position} is out of range.");
         }
 
-        int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
+        int expectedBase = SimulationKernel.Scoring.ScoringCalculator.TypeCupBasePointsForPosition(entry.Position, rules).Thousandths;
         if (entry.BaseThousandths != expectedBase)
         {
             throw new InvalidOperationException($"Type Cup team payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
