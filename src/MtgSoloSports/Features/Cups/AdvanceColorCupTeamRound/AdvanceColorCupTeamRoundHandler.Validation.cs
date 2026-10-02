@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
@@ -6,7 +7,6 @@ using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
-using System.Text.Json;
 
 namespace MtgSoloSports.Features.Cups.AdvanceColorCupTeamRound;
 
