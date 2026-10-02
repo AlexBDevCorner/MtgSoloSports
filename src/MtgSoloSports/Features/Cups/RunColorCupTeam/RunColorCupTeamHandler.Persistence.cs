@@ -11,60 +11,6 @@ namespace MtgSoloSports.Features.Cups.RunColorCupTeam;
 
 public sealed partial class RunColorCupTeamHandler
 {
-    internal static async Task PersistTeamAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        TeamSimulation simulation,
-        CancellationToken cancellationToken)
-    {
-        PersistRoundRows(context, source, simulation);
-        await PersistLegRowsAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
-        PersistTeamRows(context, source, simulation);
-        PersistChampionHonours(context, source, simulation);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    internal static void PersistRoundRows(
-        SaveDbContext context,
-        SeasonEntity source,
-        TeamSimulation simulation)
-    {
-        foreach (ColorCupTeamRoundPayloadDocument payload in simulation.Payloads)
-        {
-            context.ColorCupTeamRounds.Add(new ColorCupTeamRoundEntity
-            {
-                SourceSeasonId = source.Id,
-                SourceSeasonNumber = source.SeasonNumber,
-                GroupNumber = payload.GroupNumber,
-                RoundNumber = payload.RoundNumber,
-                RulesVersion = payload.RulesVersion,
-                RngBeforeState = unchecked((long)payload.RngBeforeState),
-                RngBeforeStream = unchecked((long)payload.RngBeforeStream),
-                RngAfterState = unchecked((long)payload.RngAfterState),
-                RngAfterStream = unchecked((long)payload.RngAfterStream),
-                PayloadJson = payload.ToStored(),
-                PayloadChecksum = payload.Checksum,
-            });
-        }
-    }
-
-    internal static async Task PersistLegRowsAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        TeamSimulation simulation,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<int, ColorCupSelectionEntity> selectionByAthlete = (await context.ColorCupSelections
-            .AsNoTracking()
-            .Where(e => e.SourceSeasonId == source.Id)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false)).ToDictionary(e => e.SaveAthleteId);
-        foreach (TeamEvent.TeamLegRanked leg in simulation.Legs)
-        {
-            PersistSingleLeg(context, source, leg, selectionByAthlete);
-        }
-    }
-
     internal static void PersistSingleLeg(
         SaveDbContext context,
         SeasonEntity source,
