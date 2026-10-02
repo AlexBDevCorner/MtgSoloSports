@@ -1,0 +1,26 @@
+/* MSS-045 round-by-round Cup team live layout: standings sidebar plus controls. */
+.cup-live-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.cup-live-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.cup-live-table td.numeric,
+.cup-live-table th.numeric {
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .cup-live-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

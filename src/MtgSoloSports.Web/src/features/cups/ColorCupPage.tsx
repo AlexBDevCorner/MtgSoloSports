@@ -12,6 +12,9 @@ import {
   type ColorCupIndividualResult,
   type ColorCupTeamResult,
 } from './colorCupApi';
+import { TeamLiveBoard } from './TeamLiveBoard';
+import { useTeamLive } from './useTeamLive';
+import './teamLive.css';
 
 /** Display-only projection of fixed-point thousandths (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -42,6 +45,19 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
   const [teamRunning, setTeamRunning] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [teamNotFound, setTeamNotFound] = useState(false);
+  const teamLive = useTeamLive('color', saveId, null);
+
+  // Once the round-by-round team event completes, pull the official result
+  // table so it appears alongside the final live board without a manual
+  // refresh. The individual event above is independent and unchanged.
+  useEffect(() => {
+    if (teamLive.data?.isComplete) {
+      const controller = new AbortController();
+      void loadTeam(controller.signal);
+    }
+    // Re-run only when completion flips; loadTeam is stable per save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamLive.data?.isComplete]);
 
   const load = useCallback(
     async (signal: AbortSignal) => {
@@ -294,6 +310,75 @@ export function ColorCupPage({ saveId }: { saveId: string }) {
           </div>
         )}
       </Card>
+
+      <div className="cup-live-layout">
+        <aside aria-label="Live team standings">
+          <TeamLiveBoard
+            data={teamLive.data}
+            loading={teamLive.loading}
+            error={teamLive.error}
+            onRetry={teamLive.refresh}
+          />
+        </aside>
+        <Card
+          eyebrow="Color Cup · rounds"
+          title="Play the team event round by round"
+          action={
+            teamLive.loading ? <span className="muted small">Refreshing…</span> : undefined
+          }
+        >
+          <p className="muted small">
+            Each Next Round simulates one persisted group round on the backend — Group 1
+            Round 1 through Group 4 Round 8 — and the sidebar totals refresh from those
+            persisted results immediately, without waiting for the eight-round group to
+            finish. Run remaining rounds plays every scheduled round in order with the
+            same per-round refresh. The individual event above is unaffected.
+          </p>
+          <div className="cup-live-controls" role="group" aria-label="Team round controls">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={teamLive.advancing || teamLive.runningAll || teamLive.data?.isComplete === true}
+              title={
+                teamLive.data?.isComplete
+                  ? 'The team event is complete; final totals are persisted.'
+                  : 'Simulate the next persisted team round and refresh live totals.'
+              }
+              onClick={() => {
+                void teamLive.advance();
+              }}
+            >
+              {teamLive.advancing ? 'Simulating…' : 'Next Round'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={teamLive.advancing || teamLive.runningAll || teamLive.data?.isComplete === true}
+              title="Simulate every remaining scheduled team round in order, refreshing the sidebar at each persisted round."
+              onClick={() => {
+                void teamLive.runRemaining();
+              }}
+            >
+              {teamLive.runningAll ? 'Running…' : 'Run remaining rounds'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={teamLive.loading || teamLive.advancing || teamLive.runningAll}
+              title="Re-read the authoritative persisted totals."
+              onClick={teamLive.refresh}
+            >
+              Refresh
+            </button>
+          </div>
+          {teamLive.notFound && !teamLive.data ? (
+            <p className="muted small">
+              No team selection yet. Resolve the Color Cup team selection for a completed
+              odd season first, then play rounds here.
+            </p>
+          ) : null}
+        </Card>
+      </div>
 
       <Card
         eyebrow="Color Cup · team"

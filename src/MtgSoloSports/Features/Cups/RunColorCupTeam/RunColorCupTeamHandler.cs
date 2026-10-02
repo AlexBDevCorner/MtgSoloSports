@@ -70,47 +70,40 @@ public sealed partial class RunColorCupTeamHandler
         int? sourceSeasonNumber,
         CancellationToken cancellationToken)
     {
+        // Resume-capable full run (MSS-045): loops the same single-round advance
+        // core as the Next Round endpoint, so an unfinished round-by-round event
+        // completes with byte-identical results instead of failing on its own
+        // partial progress. Each round commits with its RNG state in its own
+        // transaction; finalization (official standings, honours, stories)
+        // happens exactly once inside the final round's transaction.
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        AdvanceColorCupTeamRound.AdvanceColorCupTeamRoundHandler advance = new(_store);
+        AdvanceColorCupTeamRound.AdvanceColorCupTeamRoundHandler.AdvanceOutcome? outcome = null;
+        for (int attempt = 0; ; attempt++)
+        {
+            outcome = await advance.AdvanceCoreAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            if (outcome.CompletedSimulation is not null)
+            {
+                break;
+            }
+
+            if (attempt + 1 >= outcome.TotalRounds)
+            {
+                throw new InvalidOperationException("Color Cup team event did not complete after simulating all scheduled rounds.");
+            }
+        }
+
         using SaveDbContext context = _store.OpenDbContext(saveId);
-        using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        SeasonEntity? source = await context.Seasons
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == outcome.SourceSeasonId, cancellationToken)
+            .ConfigureAwait(false);
+        if (source is null)
+        {
+            throw new InvalidOperationException("Color Cup team event references an unknown season.");
+        }
 
-        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
-        RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
-        Pcg32State rngBefore = rngRow.ToState();
-
-        SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
-        EnsureOddSeason(source);
-        List<ColorCupSelectionEntity> selection = await LoadSelectionAsync(context, source, cancellationToken).ConfigureAwait(false);
-        ColorCupSelectionInvariants.ValidatePersisted(source, selection, rules);
-        ColorCupTeamInvariants.ValidateField(selection, rules);
-        Dictionary<int, List<ColorCupSelectionEntity>> groups = PartitionGroups(selection, rules);
-        ColorCupTeamInvariants.ValidateGroups(groups, rules);
-        await EnsureTeamAbsentAsync(context, source, cancellationToken).ConfigureAwait(false);
-
-        (int stageCountBefore, int seasonCountBefore, int roundCountBefore, long lifetimeBefore, long effectiveBefore, long championshipBefore) =
-            await CapturePreservationAsync(context, cancellationToken).ConfigureAwait(false);
-
-        Dictionary<int, List<AdvanceRoundHandler.MemberRow>> rosters = BuildRosters(context, groups);
-        Dictionary<int, Bonus> activeBonuses = await LoadCupActiveBonusesAsync(
-            context, rosters, source, rules, cancellationToken).ConfigureAwait(false);
-
-        TeamSimulation simulation = SimulateTeam(groups, rosters, activeBonuses, rngBefore, source, rules);
-
-        await PersistTeamAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
-        context.ApplyRngState(simulation.RngAfter);
-        metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupComplete);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await ValidatePersistedAsync(
-            context, source, simulation, rules,
-            stageCountBefore, seasonCountBefore, roundCountBefore,
-            lifetimeBefore, effectiveBefore, championshipBefore,
-            cancellationToken).ConfigureAwait(false);
-        await EmitTeamStoriesAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return await BuildResponseAsync(_store, saveId, source, simulation, cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(_store, saveId, source, outcome.CompletedSimulation, cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task<SeasonEntity> LoadSourceSeasonAsync(
@@ -206,42 +199,6 @@ public sealed partial class RunColorCupTeamHandler
         }
 
         return groups;
-    }
-
-    internal static async Task EnsureTeamAbsentAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        CancellationToken cancellationToken)
-    {
-        bool hasTeams = await context.ColorCupTeamStandings.AnyAsync(
-            e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
-        if (hasTeams)
-        {
-            throw new RunColorCupTeamConflictException(
-                $"Color Cup team event for Season {source.SeasonNumber} has already been resolved.");
-        }
-
-        bool hasLegs = await context.ColorCupTeamGroupStandings.AnyAsync(
-            e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
-        if (hasLegs)
-        {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
-        }
-
-        bool hasRounds = await context.ColorCupTeamRounds.AnyAsync(
-            e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
-        if (hasRounds)
-        {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial rounds.");
-        }
-
-        bool hasHonour = await context.Honours.AnyAsync(
-            e => e.SeasonId == source.Id && e.Kind == (int)Features.Records.HonourKind.ColorCupTeamChampion,
-            cancellationToken).ConfigureAwait(false);
-        if (hasHonour)
-        {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
-        }
     }
 
     internal static Dictionary<int, List<AdvanceRoundHandler.MemberRow>> BuildRosters(

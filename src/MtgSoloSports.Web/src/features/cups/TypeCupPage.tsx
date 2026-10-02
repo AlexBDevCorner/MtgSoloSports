@@ -8,6 +8,9 @@ import {
   runTypeCupTeam,
   type TypeCupTeamResult,
 } from './typeCupApi';
+import { TeamLiveBoard } from './TeamLiveBoard';
+import { useTeamLive } from './useTeamLive';
+import './teamLive.css';
 
 /** Display-only projection of fixed-point thousandths (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -100,12 +103,101 @@ export function TypeCupPage({ saveId }: { saveId: string }) {
     }
   }, [saveId, loadTeam]);
 
+  const live = useTeamLive('type', saveId, null);
+
+  // Once the round-by-round event completes, pull the official result table so
+  // it appears alongside the final live board without a manual refresh.
+  useEffect(() => {
+    if (live.data?.isComplete) {
+      const controller = new AbortController();
+      void loadTeam(controller.signal);
+    }
+    // Re-run only when completion flips; loadTeam is stable per save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.data?.isComplete]);
+
+  const handleAdvanceRound = useCallback(async () => {
+    await live.advance();
+  }, [live]);
+
+  const handleRunRemaining = useCallback(async () => {
+    await live.runRemaining();
+  }, [live]);
+
   if (teamLoading && !team) {
     return <Loading label="Loading Type Cup…" />;
   }
 
   return (
     <div className="dashboard">
+      <div className="cup-live-layout">
+        <aside aria-label="Live team standings">
+          <TeamLiveBoard
+            data={live.data}
+            loading={live.loading}
+            error={live.error}
+            onRetry={live.refresh}
+          />
+        </aside>
+        <Card
+          eyebrow="Type Cup · rounds"
+          title="Play the team event round by round"
+          action={
+            live.loading ? <span className="muted small">Refreshing…</span> : undefined
+          }
+        >
+          <p className="muted small">
+            Each Next Round simulates one persisted group round on the backend — Group 1
+            Round 1 through Group 4 Round 8 — and the sidebar totals refresh from those
+            persisted results immediately, without waiting for the eight-round group to
+            finish. Run remaining rounds plays every scheduled round in order with the
+            same per-round refresh.
+          </p>
+          <div className="cup-live-controls" role="group" aria-label="Round controls">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={live.advancing || live.runningAll || live.data?.isComplete === true}
+              title={
+                live.data?.isComplete
+                  ? 'The team event is complete; final totals are persisted.'
+                  : 'Simulate the next persisted round and refresh live totals.'
+              }
+              onClick={() => {
+                void handleAdvanceRound();
+              }}
+            >
+              {live.advancing ? 'Simulating…' : 'Next Round'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={live.advancing || live.runningAll || live.data?.isComplete === true}
+              title="Simulate every remaining scheduled round in order, refreshing the sidebar at each persisted round."
+              onClick={() => {
+                void handleRunRemaining();
+              }}
+            >
+              {live.runningAll ? 'Running…' : 'Run remaining rounds'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={live.loading || live.advancing || live.runningAll}
+              title="Re-read the authoritative persisted totals."
+              onClick={live.refresh}
+            >
+              Refresh
+            </button>
+          </div>
+          {live.notFound && !live.data ? (
+            <p className="muted small">
+              No team selection yet. Resolve the Type Cup allocation for a completed even
+              season first, then play rounds here.
+            </p>
+          ) : null}
+        </Card>
+      </div>
       <Card
         eyebrow="Type Cup · team"
         title={
