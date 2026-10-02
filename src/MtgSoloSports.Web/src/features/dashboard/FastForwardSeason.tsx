@@ -14,7 +14,7 @@ import {
   fastForwardConfirmationText,
   postFastForwardNextStep,
   summarizeCompleteSeason,
-} from './fastForwardSeason';
+} from './fastForwardSeasonHelpers';
 
 type Phase = 'idle' | 'confirming' | 'running' | 'success' | 'error';
 

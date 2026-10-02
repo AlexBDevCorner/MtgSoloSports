@@ -9,7 +9,7 @@ import {
   postFastForwardNextStep,
   remainingGlobalStages,
   summarizeCompleteSeason,
-} from './fastForwardSeason.ts';
+} from './fastForwardSeasonHelpers.ts';
 import type {
   CompleteSeasonResult,
   SeasonProgress,
@@ -19,7 +19,7 @@ import type {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const component = readFileSync(join(here, 'FastForwardSeason.tsx'), 'utf8');
-const helpers = readFileSync(join(here, 'fastForwardSeason.ts'), 'utf8');
+const helpers = readFileSync(join(here, 'fastForwardSeasonHelpers.ts'), 'utf8');
 const api = readFileSync(join(here, 'dashboardApi.ts'), 'utf8');
 const dashboardPage = readFileSync(join(here, 'DashboardPage.tsx'), 'utf8');
 const livePage = readFileSync(join(here, '..', 'live', 'LivePage.tsx'), 'utf8');
