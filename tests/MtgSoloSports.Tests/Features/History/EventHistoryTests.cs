@@ -126,6 +126,12 @@ public sealed class EventHistoryTests
             provisional.Teams.ShouldAllBe(t => t.Rank == null);
             provisional.Teams.Select(t => t.ScoreThousandths).ShouldBe(provisional.Teams.Select(t => t.ScoreThousandths).OrderByDescending(v => v));
 
+            await PlayTeamRoundsAsync(store, saveId, 1);
+            HistoryEventTeamStandingsResponse midGroup = await standings.HandleAsync(saveId, 1, "color-cup-team");
+            midGroup.IsFinal.ShouldBeFalse();
+            midGroup.GroupsCompleted.ShouldBe(1);
+            midGroup.Teams.Sum(t => (long)t.ScoreThousandths).ShouldBeGreaterThan(provisional.Teams.Sum(t => (long)t.ScoreThousandths));
+
             await new RunColorCupTeamHandler(store).HandleAsync(saveId);
             HistoryEventTeamStandingsResponse final = await standings.HandleAsync(saveId, 1, "color-cup-team");
             final.IsFinal.ShouldBeTrue();

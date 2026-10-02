@@ -11,8 +11,8 @@ namespace MtgSoloSports.Features.History.GetEventTeamStandings;
 /// <summary>
 /// Endpoint -&gt; Handler direct call. Team standings of a team Cup event: the
 /// persisted final ranking once the event is complete, otherwise a provisional
-/// display projection summing each team's stored round points over completed
-/// groups (no ranking, no tie-break, no RNG). Read-only; never resimulates.
+/// display projection summing each team's stored round points over every round
+/// played so far (no ranking, no tie-break, no RNG). Read-only; never resimulates.
 /// </summary>
 public sealed class GetHistoryEventTeamStandingsHandler
 {
@@ -74,7 +74,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
             .ToList();
     }
 
-    /// <summary>Sums each team's stored round points over completed groups (display only).</summary>
+    /// <summary>Sums each team's stored round points over every round played so far (display only).</summary>
     internal static async Task<(int GroupsCompleted, List<HistoryEventTeamRow> Teams)> ProjectProvisionalAsync(
         SaveDbContext context,
         SeasonEntity season,
@@ -100,7 +100,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
         List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
         int groupsCompleted = rows.Count / shape.RoundsPerGroup;
         Dictionary<string, long> totals = teamByAthlete.Values.Distinct(StringComparer.Ordinal).ToDictionary(team => team, _ => 0L, StringComparer.Ordinal);
-        foreach (HistoryEventRows.StoredRound row in rows.Where(r => r.Group <= groupsCompleted))
+        foreach (HistoryEventRows.StoredRound row in rows)
         {
             foreach (RoundPayloadEntry placement in HistoryEventRows.DecodePlacements(eventKey, row.PayloadJson))
             {

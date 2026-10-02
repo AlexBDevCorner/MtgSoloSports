@@ -222,7 +222,7 @@ played one round at a time, exactly like league rounds:
 - History reads (no lock): `GET …/history/seasons/{n}/events`,
   `…/events/{event}/rounds`, `…/events/{event}/rounds/{round}?group=` (league
   replay shape) and `…/events/{event}/team-standings` (persisted final ranking,
-  or a provisional display sum of stored points over completed groups).
+  or a provisional display sum of stored points over every round played so far).
 
 ## 16. Color Cup selection
 
