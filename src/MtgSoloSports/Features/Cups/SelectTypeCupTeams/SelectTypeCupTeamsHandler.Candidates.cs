@@ -141,8 +141,12 @@ public sealed partial class SelectTypeCupTeamsHandler
         Dictionary<int, int> map = [];
         foreach (HonourEntity honour in inputs.Honours)
         {
-            if (honour.Kind == (int)Features.Records.HonourKind.FeederTitle
-                || honour.Kind == (int)Features.Records.HonourKind.SuperleagueTitle)
+            // MSS-047: prestige stays win-only. Only champion/title honours count
+            // as other majors; runner-up and third-place podium honours do not
+            // affect selection ratings or sporting outcomes.
+            if (honour.Kind != (int)Features.Records.HonourKind.ColorCupIndividualChampion
+                && honour.Kind != (int)Features.Records.HonourKind.ColorCupTeamChampion
+                && honour.Kind != (int)Features.Records.HonourKind.TypeCupTeamChampion)
             {
                 continue;
             }

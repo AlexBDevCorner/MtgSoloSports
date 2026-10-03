@@ -123,8 +123,8 @@ public static class ColorCupTeamInvariants
 
     /// <summary>
     /// Validates persisted team state: 32 round rows (4 groups x 8 rounds),
-    /// 32 leg rows, 8 team rows with medals on ranks 1..3, and exactly four
-    /// championship honours (one per winning-team member).
+    /// 32 leg rows, 8 team rows with medals on ranks 1..3, and twelve
+    /// podium honours (four members each for ranks 1/2/3).
     /// </summary>
     public static void ValidatePersisted(
         SeasonEntity source,
@@ -991,40 +991,52 @@ public static class ColorCupTeamInvariants
         IReadOnlyList<HonourEntity> honours)
     {
         List<HonourEntity> teamHonours = honours
-            .Where(h => h.SeasonId == source.Id && h.Kind == (int)Features.Records.HonourKind.ColorCupTeamChampion)
+            .Where(h => h.SeasonId == source.Id && (h.Kind == (int)Features.Records.HonourKind.ColorCupTeamChampion
+                || h.Kind == (int)Features.Records.HonourKind.ColorCupTeamRunnerUp
+                || h.Kind == (int)Features.Records.HonourKind.ColorCupTeamThirdPlace))
             .ToList();
-        if (teamHonours.Count != 4)
+        if (teamHonours.Count != 12)
         {
             throw new InvalidOperationException(
-                $"Color Cup team for Season {source.SeasonNumber} must persist exactly four team championship honours, was {teamHonours.Count}.");
+                $"Color Cup team for Season {source.SeasonNumber} must persist exactly twelve team podium honours, was {teamHonours.Count}.");
         }
 
-        ColorCupTeamStandingEntity champion = teams.Single(s => s.TeamRank == 1);
-        HashSet<int> championAthletes = legs
-            .Where(l => l.SportingColor == champion.SportingColor)
-            .Select(l => l.SaveAthleteId)
-            .ToHashSet();
-        if (championAthletes.Count != 4)
+        foreach (int rank in new[] { 1, 2, 3 })
         {
-            throw new InvalidOperationException("Color Cup team champion must field exactly four legs.");
-        }
-
-        HashSet<int> honourAthletes = new();
-        foreach (HonourEntity honour in teamHonours)
-        {
-            if (honour.SeasonNumber != source.SeasonNumber)
+            Features.Records.HonourKind expectedKind = Features.Records.HonourKindMapper.FromColorCupTeamRank(rank);
+            ColorCupTeamStandingEntity team = teams.Single(s => s.TeamRank == rank);
+            HashSet<int> teamAthletes = legs
+                .Where(l => l.SportingColor == team.SportingColor)
+                .Select(l => l.SaveAthleteId)
+                .ToHashSet();
+            if (teamAthletes.Count != 4)
             {
-                throw new InvalidOperationException("Color Cup team championship honour has corrupt season linkage.");
+                throw new InvalidOperationException($"Color Cup team rank {rank} must field exactly four legs.");
             }
 
-            if (!championAthletes.Contains(honour.SaveAthleteId))
+            List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
+            if (rankHonours.Count != 4)
             {
-                throw new InvalidOperationException("Color Cup team championship honour does not match a champion-team leg.");
+                throw new InvalidOperationException($"Color Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
             }
 
-            if (!honourAthletes.Add(honour.SaveAthleteId))
+            HashSet<int> honourAthletes = new();
+            foreach (HonourEntity honour in rankHonours)
             {
-                throw new InvalidOperationException("Color Cup team championship honours must cover four distinct athletes.");
+                if (honour.SeasonNumber != source.SeasonNumber)
+                {
+                    throw new InvalidOperationException("Color Cup team podium honour has corrupt season linkage.");
+                }
+
+                if (!teamAthletes.Contains(honour.SaveAthleteId))
+                {
+                    throw new InvalidOperationException($"Color Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
+                }
+
+                if (!honourAthletes.Add(honour.SaveAthleteId))
+                {
+                    throw new InvalidOperationException($"Color Cup team rank-{rank} podium honours must cover four distinct athletes.");
+                }
             }
         }
     }

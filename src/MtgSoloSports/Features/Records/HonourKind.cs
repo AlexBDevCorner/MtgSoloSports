@@ -12,6 +12,11 @@ namespace MtgSoloSports.Features.Records;
 /// team (game-rules §15/§17). Stages are statistics and
 /// the qualifier is a career event. Stored as an integer so future Cup kinds
 /// extend without rewriting rows.
+/// MSS-047 expands honours to competition podiums: 1st, 2nd and 3rd places
+/// each contribute exactly one honour. Champion/title kinds (values 0-4)
+/// remain win-only for prestige, records and title stories; runner-up and
+/// third-place kinds (values 5-14) represent Silver/2nd and Bronze/3rd honours
+/// for the same competitions.
 /// </summary>
 public enum HonourKind
 {
@@ -20,4 +25,14 @@ public enum HonourKind
     ColorCupIndividualChampion = 2,
     ColorCupTeamChampion = 3,
     TypeCupTeamChampion = 4,
+    FeederRunnerUp = 5,
+    FeederThirdPlace = 6,
+    SuperleagueRunnerUp = 7,
+    SuperleagueThirdPlace = 8,
+    ColorCupIndividualRunnerUp = 9,
+    ColorCupIndividualThirdPlace = 10,
+    ColorCupTeamRunnerUp = 11,
+    ColorCupTeamThirdPlace = 12,
+    TypeCupTeamRunnerUp = 13,
+    TypeCupTeamThirdPlace = 14,
 }

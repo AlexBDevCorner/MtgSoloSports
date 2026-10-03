@@ -22,8 +22,8 @@ namespace MtgSoloSports.Features.Cups.RunColorCupTeam;
 /// with deterministic tie-breaking (group-rank counts, aggregated round-place
 /// counts, raw base totals, seeded draw). Persists 32 Cup round payloads plus
 /// 32 leg standings plus 8 team standings (Gold for rank 1, Silver for rank 2,
-/// Bronze for rank 3) plus four official team championship honours (one per
-/// winning-team member) plus the RNG-after state, in one transaction. Holds
+/// Bronze for rank 3) plus twelve official team podium honours (four members
+/// each for ranks 1/2/3, MSS-047) plus the RNG-after state, in one transaction. Holds
 /// one per-save lock; read-only Cup queries never lock.
 /// </summary>
 public sealed partial class RunColorCupTeamHandler
@@ -292,7 +292,9 @@ public sealed partial class RunColorCupTeamHandler
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
-            e => e.SeasonId == source.Id && e.Kind == (int)Features.Records.HonourKind.ColorCupTeamChampion,
+            e => e.SeasonId == source.Id && (e.Kind == (int)Features.Records.HonourKind.ColorCupTeamChampion
+                || e.Kind == (int)Features.Records.HonourKind.ColorCupTeamRunnerUp
+                || e.Kind == (int)Features.Records.HonourKind.ColorCupTeamThirdPlace),
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {

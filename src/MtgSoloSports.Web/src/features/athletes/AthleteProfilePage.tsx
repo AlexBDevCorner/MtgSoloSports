@@ -226,8 +226,8 @@ export function AthleteProfilePage({
         <Card eyebrow="Honours" title={`Career honours — ${honours.length}`}>
           {honours.length === 0 ? (
             <p className="muted">
-              No official honours yet. Feeder and Superleague championships plus Color Cup and
-              Type Cup team titles persist here.
+              No official honours yet. Feeder and Superleague podiums (1st/2nd/3rd) plus Color Cup
+              and Type Cup podiums persist here.
             </p>
           ) : (
             <div className="table-wrap">

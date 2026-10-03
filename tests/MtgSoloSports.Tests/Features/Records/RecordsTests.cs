@@ -28,55 +28,71 @@ public sealed class RecordsTests
             CompleteSeasonHandler fast = new(store);
             await fast.HandleAsync(created.Detail.SaveId);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
-            List<HonourEntity> honours = await context.Honours.AsNoTracking().ToListAsync();
-            honours.Count.ShouldBe(8);
-            honours.All(h => h.Kind == (int)HonourKind.FeederTitle).ShouldBeTrue();
-            honours.All(h => h.SeasonNumber == 1).ShouldBeTrue();
-
-            List<SeasonStandingEntity> champions = await context.SeasonStandings
-                .AsNoTracking().Where(e => e.IsChampion).ToListAsync();
-            champions.Count.ShouldBe(8);
-            foreach (SeasonStandingEntity champion in champions)
-            {
-                honours.Any(h =>
-                    h.SeasonId == champion.SeasonId &&
-                    h.LeagueId == champion.LeagueId &&
-                    h.SaveAthleteId == champion.SaveAthleteId).ShouldBeTrue();
-            }
-
-            List<StoryEventEntity> stories = await context.StoryEvents.AsNoTracking().ToListAsync();
-            List<StoryEventEntity> recordStories = stories
-                .Where(e => string.Equals(e.EventType, StoryEventType.NewRecord, StringComparison.Ordinal))
-                .ToList();
-            recordStories.Count.ShouldBeGreaterThan(0);
-            recordStories.Any(e => e.ContextJson.Contains(RecordKey.FeederTitles, StringComparison.Ordinal)).ShouldBeTrue();
-
-            ListHonoursHandler honoursHandler = new(store);
-            ListHonoursResponse honoursResponse = await honoursHandler.HandleAsync(created.Detail.SaveId);
-            honoursResponse.Honours.Count.ShouldBe(8);
-
-            GetRecordsHandler recordsHandler = new(store);
-            GetRecordsResponse records = await recordsHandler.HandleAsync(created.Detail.SaveId);
-            records.Records.Count.ShouldBe(RecordKey.All.Count);
-            RecordEntry feeder = records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.FeederTitles, StringComparison.Ordinal));
-            feeder.Value.ShouldBe(1);
-            feeder.Holders.Count.ShouldBe(8);
-            feeder.IsVacant.ShouldBeFalse();
-            records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.SuperleagueTitles, StringComparison.Ordinal)).IsVacant.ShouldBeTrue();
-            records.RecentHistory.Count.ShouldBeGreaterThan(0);
-
-            GetHallOfFameHandler fameHandler = new(store);
-            GetHallOfFameResponse fame = await fameHandler.HandleAsync(created.Detail.SaveId);
-            fame.Leaders.Count.ShouldBeGreaterThan(0);
-            fame.Leaders[0].Rank.ShouldBe(1);
-            fame.Leaders[0].TotalTitles.ShouldBe(1);
-            fame.TotalAthletes.ShouldBeGreaterThan(0);
+            await AssertPodiumHonoursAsync(store, created.Detail.SaveId);
+            await AssertWinOnlyRecordsAsync(store, created.Detail.SaveId);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    private static async Task AssertPodiumHonoursAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        List<HonourEntity> honours = await context.Honours.AsNoTracking().ToListAsync().ConfigureAwait(false);
+        honours.Count.ShouldBe(24);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederTitle).ShouldBe(8);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederRunnerUp).ShouldBe(8);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederThirdPlace).ShouldBe(8);
+        honours.All(h => h.SeasonNumber == 1).ShouldBeTrue();
+
+        List<SeasonStandingEntity> champions = await context.SeasonStandings
+            .AsNoTracking().Where(e => e.IsChampion).ToListAsync().ConfigureAwait(false);
+        champions.Count.ShouldBe(8);
+        foreach (SeasonStandingEntity champion in champions)
+        {
+            honours.Any(h =>
+                h.SeasonId == champion.SeasonId &&
+                h.LeagueId == champion.LeagueId &&
+                h.SaveAthleteId == champion.SaveAthleteId).ShouldBeTrue();
+        }
+
+        List<SeasonStandingEntity> podiums = await context.SeasonStandings
+            .AsNoTracking().Where(e => e.SeasonRank >= 1 && e.SeasonRank <= 3).ToListAsync().ConfigureAwait(false);
+        podiums.Count.ShouldBe(24);
+
+        ListHonoursHandler honoursHandler = new(store);
+        ListHonoursResponse honoursResponse = await honoursHandler.HandleAsync(saveId).ConfigureAwait(false);
+        honoursResponse.Honours.Count.ShouldBe(24);
+    }
+
+    private static async Task AssertWinOnlyRecordsAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        List<StoryEventEntity> stories = await context.StoryEvents.AsNoTracking().ToListAsync().ConfigureAwait(false);
+        List<StoryEventEntity> recordStories = stories
+            .Where(e => string.Equals(e.EventType, StoryEventType.NewRecord, StringComparison.Ordinal))
+            .ToList();
+        recordStories.Count.ShouldBeGreaterThan(0);
+        recordStories.Any(e => e.ContextJson.Contains(RecordKey.FeederTitles, StringComparison.Ordinal)).ShouldBeTrue();
+
+        GetRecordsHandler recordsHandler = new(store);
+        GetRecordsResponse records = await recordsHandler.HandleAsync(saveId).ConfigureAwait(false);
+        records.Records.Count.ShouldBe(RecordKey.All.Count);
+        RecordEntry feeder = records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.FeederTitles, StringComparison.Ordinal));
+        feeder.Value.ShouldBe(1);
+        feeder.Holders.Count.ShouldBe(8);
+        feeder.IsVacant.ShouldBeFalse();
+        records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.SuperleagueTitles, StringComparison.Ordinal)).IsVacant.ShouldBeTrue();
+        records.RecentHistory.Count.ShouldBeGreaterThan(0);
+
+        GetHallOfFameHandler fameHandler = new(store);
+        GetHallOfFameResponse fame = await fameHandler.HandleAsync(saveId).ConfigureAwait(false);
+        fame.Leaders.Count.ShouldBeGreaterThan(0);
+        fame.Leaders[0].Rank.ShouldBe(1);
+        fame.Leaders[0].TotalTitles.ShouldBe(1);
+        fame.TotalAthletes.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -91,7 +107,7 @@ public sealed class RecordsTests
 
             using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
             int before = await context.Honours.CountAsync();
-            before.ShouldBe(8);
+            before.ShouldBe(24);
             await HonourUpdater.RebuildAllAsync(context, CancellationToken.None);
             await context.SaveChangesAsync();
             int after = await context.Honours.CountAsync();

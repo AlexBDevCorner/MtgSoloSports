@@ -23,8 +23,8 @@ namespace MtgSoloSports.Features.Cups.RunColorCupIndividual;
 /// no league <c>StageStanding</c>, <c>SeasonStanding</c> or <c>Round</c> rows
 /// are created, so normal league season totals and career bonus are untouched.
 /// Persists 16 immutable Cup round payloads plus 32 Cup standings (Gold for
-/// rank 1, Silver for rank 2, Bronze for rank 3) plus one official individual
-/// championship honour for rank 1, plus the RNG-after state, in one
+/// rank 1, Silver for rank 2, Bronze for rank 3) plus three official podium
+/// honours (champion/runner-up/third for ranks 1/2/3, MSS-047), plus the RNG-after state, in one
 /// transaction. Holds one per-save lock; read-only Cup queries never lock.
 /// </summary>
 public sealed class RunColorCupIndividualHandler
@@ -329,7 +329,9 @@ public sealed class RunColorCupIndividualHandler
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
-            e => e.SeasonId == source.Id && e.Kind == (int)Features.Records.HonourKind.ColorCupIndividualChampion,
+            e => e.SeasonId == source.Id && (e.Kind == (int)Features.Records.HonourKind.ColorCupIndividualChampion
+                || e.Kind == (int)Features.Records.HonourKind.ColorCupIndividualRunnerUp
+                || e.Kind == (int)Features.Records.HonourKind.ColorCupIndividualThirdPlace),
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {
@@ -572,17 +574,28 @@ public sealed class RunColorCupIndividualHandler
         SeasonEntity source,
         CupSimulation simulation)
     {
-        StageRankedAthlete champion = simulation.Ranked.Single(r => r.StageRank == 1);
-        context.Honours.Add(new HonourEntity
+        PersistPodiumHonours(context, source, simulation);
+    }
+
+    internal static void PersistPodiumHonours(
+        SaveDbContext context,
+        SeasonEntity source,
+        CupSimulation simulation)
+    {
+        foreach (StageRankedAthlete podium in simulation.Ranked.Where(r => r.StageRank >= 1 && r.StageRank <= 3).OrderBy(r => r.StageRank))
         {
-            SeasonId = source.Id,
-            SeasonNumber = source.SeasonNumber,
-            LeagueId = CupLeagueId,
-            LeagueName = CupLeagueName,
-            LeagueKind = CupLeagueKind,
-            SaveAthleteId = champion.AthleteId,
-            Kind = (int)Features.Records.HonourKind.ColorCupIndividualChampion,
-        });
+            Features.Records.HonourKind kind = Features.Records.HonourKindMapper.FromColorCupIndividualRank(podium.StageRank);
+            context.Honours.Add(new HonourEntity
+            {
+                SeasonId = source.Id,
+                SeasonNumber = source.SeasonNumber,
+                LeagueId = CupLeagueId,
+                LeagueName = CupLeagueName,
+                LeagueKind = CupLeagueKind,
+                SaveAthleteId = podium.AthleteId,
+                Kind = (int)kind,
+            });
+        }
     }
 
     internal static async Task<(int StageCount, int SeasonCount, int RoundCount, long Lifetime, long Effective, long Championship)> CapturePreservationAsync(

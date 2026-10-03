@@ -83,7 +83,7 @@ public static class ColorCupIndividualInvariants
     /// <summary>
     /// Validates persisted Cup state: 16 round rows plus 32 standing rows for
     /// the source season, ranks 1..32 exactly once, medals exactly on ranks
-    /// 1..3, no duplicate athletes and one champion honour.
+    /// 1..3, no duplicate athletes and three podium honours (ranks 1/2/3).
     /// </summary>
     public static void ValidatePersisted(
         SeasonEntity source,
@@ -451,18 +451,26 @@ public static class ColorCupIndividualInvariants
         IReadOnlyList<HonourEntity> honours)
     {
         List<HonourEntity> cupHonours = honours
-            .Where(h => h.SeasonId == source.Id && h.Kind == (int)Features.Records.HonourKind.ColorCupIndividualChampion)
+            .Where(h => h.SeasonId == source.Id && (h.Kind == (int)Features.Records.HonourKind.ColorCupIndividualChampion
+                || h.Kind == (int)Features.Records.HonourKind.ColorCupIndividualRunnerUp
+                || h.Kind == (int)Features.Records.HonourKind.ColorCupIndividualThirdPlace))
             .ToList();
-        if (cupHonours.Count != 1)
+        if (cupHonours.Count != 3)
         {
             throw new InvalidOperationException(
-                $"Color Cup for Season {source.SeasonNumber} must persist exactly one individual championship honour, was {cupHonours.Count}.");
+                $"Color Cup for Season {source.SeasonNumber} must persist exactly three individual podium honours, was {cupHonours.Count}.");
         }
 
-        ColorCupIndividualStandingEntity champion = standings.Single(s => s.CupRank == 1);
-        if (cupHonours[0].SaveAthleteId != champion.SaveAthleteId)
+        foreach (int rank in new[] { 1, 2, 3 })
         {
-            throw new InvalidOperationException("Color Cup championship honour does not match the rank-1 athlete.");
+            ColorCupIndividualStandingEntity standing = standings.Single(s => s.CupRank == rank);
+            Features.Records.HonourKind expectedKind = Features.Records.HonourKindMapper.FromColorCupIndividualRank(rank);
+            HonourEntity honour = cupHonours.SingleOrDefault(h => h.Kind == (int)expectedKind)
+                ?? throw new InvalidOperationException($"Color Cup for Season {source.SeasonNumber} is missing rank-{rank} podium honour.");
+            if (honour.SaveAthleteId != standing.SaveAthleteId)
+            {
+                throw new InvalidOperationException($"Color Cup rank-{rank} podium honour does not match the rank-{rank} athlete.");
+            }
         }
     }
 
