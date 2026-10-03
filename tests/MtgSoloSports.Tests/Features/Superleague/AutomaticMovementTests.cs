@@ -113,6 +113,67 @@ public sealed class AutomaticMovementTests
         }
     }
 
+    [Fact]
+    public async Task Resolve_ResponseCarriesCardArtwork_MatchesPersistedAthletes()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Auto Artwork", 4242UL, 8484UL, UniverseTestCatalog.Build());
+            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
+            CreateInauguralSuperleagueHandler inaugural = new(store);
+            await inaugural.HandleAsync(created.Detail.SaveId);
+
+            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId, placeWhiteLast: false);
+
+            ResolveAutomaticMovementHandler handler = new(store);
+            ResolveAutomaticMovementResponse response = await handler.HandleAsync(created.Detail.SaveId);
+
+            // Presentation-only artwork must ride along with authoritative movement
+            // facts; sporting counts stay exactly 8 promotions / 8 relegations.
+            response.Promoted.Count.ShouldBe(8);
+            response.Relegated.Count.ShouldBe(8);
+
+            Dictionary<int, string?> images = await LoadAthleteImagesAsync(store, created.Detail.SaveId);
+            AssertImagesMatch(response.Safe, images);
+            AssertImagesMatch(response.Promoted, images);
+            AssertImagesMatch(response.Relegated, images);
+            AssertImagesMatch(response.QualifierIncumbents, images);
+            AssertImagesMatch(response.QualifierChallengers, images);
+
+            // The historical read model carries the same artwork so revisiting a
+            // completed event renders the same tiles without rederiving leagues.
+            GetAutomaticMovementHandler query = new(store);
+            GetAutomaticMovementResponse historical = await query.HandleAsync(created.Detail.SaveId, fromSeasonNumber: 2);
+            AssertImagesMatch(historical.Promoted, images);
+            AssertImagesMatch(historical.Relegated, images);
+            historical.Promoted.Select(m => m.AthleteId).ShouldBe(response.Promoted.Select(m => m.AthleteId).ToList());
+            historical.Relegated.Select(m => m.AthleteId).ShouldBe(response.Relegated.Select(m => m.AthleteId).ToList());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void AssertImagesMatch(
+        IReadOnlyList<AutomaticMovementMember> members,
+        Dictionary<int, string?> images)
+    {
+        foreach (AutomaticMovementMember member in members)
+        {
+            images.TryGetValue(member.AthleteId, out string? expected);
+            member.ImageUrl.ShouldBe(expected);
+        }
+    }
+
+    private static async Task<Dictionary<int, string?>> LoadAthleteImagesAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        return await context.SaveAthletes.AsNoTracking().ToDictionaryAsync(e => e.Id, e => e.ImageUrl).ConfigureAwait(false);
+    }
+
     private static void AssertBands(ResolveAutomaticMovementResponse response)
     {
         response.FromSeasonNumber.ShouldBe(2);

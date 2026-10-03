@@ -160,6 +160,10 @@ public sealed class GetAutomaticMovementHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        Dictionary<int, string?> images = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
@@ -181,11 +185,11 @@ public sealed class GetAutomaticMovementHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        List<AutomaticMovementMember> safe = MapSafe(names, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
-        List<AutomaticMovementMember> promoted = MapKind(names, leaguesById, nextByAthlete, movements, MovementKind.AutomaticPromotion);
-        List<AutomaticMovementMember> relegated = MapKind(names, leaguesById, nextByAthlete, movements, MovementKind.AutomaticRelegation);
-        List<AutomaticMovementMember> incumbents = MapKind(names, leaguesById, nextByAthlete, movements, MovementKind.QualifierIncumbent);
-        List<AutomaticMovementMember> challengers = MapKind(names, leaguesById, nextByAthlete, movements, MovementKind.QualifierChallenger);
+        List<AutomaticMovementMember> safe = MapSafe(names, images, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
+        List<AutomaticMovementMember> promoted = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticPromotion);
+        List<AutomaticMovementMember> relegated = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticRelegation);
+        List<AutomaticMovementMember> incumbents = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.QualifierIncumbent);
+        List<AutomaticMovementMember> challengers = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.QualifierChallenger);
 
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
@@ -227,6 +231,7 @@ public sealed class GetAutomaticMovementHandler
 
     private static List<AutomaticMovementMember> MapSafe(
         Dictionary<int, string> names,
+        Dictionary<int, string?> images,
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         LeagueEntity sourceSuperleague,
         LeagueEntity nextSuperleague,
@@ -236,6 +241,7 @@ public sealed class GetAutomaticMovementHandler
         foreach (SeasonStandingEntity row in sourceSuperRows.Where(r => r.SeasonRank >= 1 && r.SeasonRank <= 16).OrderBy(r => r.SeasonRank))
         {
             names.TryGetValue(row.SaveAthleteId, out string? name);
+            images.TryGetValue(row.SaveAthleteId, out string? imageUrl);
             nextByAthlete.TryGetValue(row.SaveAthleteId, out SeasonMembershipEntity? nextMembership);
             string color = nextMembership is null ? "Unknown" : ((SportingColor)nextMembership.SportingColor).ToString();
             members.Add(new AutomaticMovementMember(
@@ -247,7 +253,8 @@ public sealed class GetAutomaticMovementHandler
                 row.SeasonRank,
                 nextSuperleague.Id,
                 nextSuperleague.Name,
-                "Safe"));
+                "Safe",
+                imageUrl));
         }
 
         if (members.Count != 16)
@@ -260,6 +267,7 @@ public sealed class GetAutomaticMovementHandler
 
     private static List<AutomaticMovementMember> MapKind(
         Dictionary<int, string> names,
+        Dictionary<int, string?> images,
         Dictionary<int, LeagueEntity> leaguesById,
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         List<MovementEntity> movements,
@@ -272,6 +280,7 @@ public sealed class GetAutomaticMovementHandler
             .ThenBy(m => m.FromSeasonRank))
         {
             names.TryGetValue(movement.SaveAthleteId, out string? name);
+            images.TryGetValue(movement.SaveAthleteId, out string? imageUrl);
             leaguesById.TryGetValue(movement.FromLeagueId, out LeagueEntity? from);
             nextByAthlete.TryGetValue(movement.SaveAthleteId, out SeasonMembershipEntity? nextMembership);
             int toLeague = nextMembership?.LeagueId ?? movement.ToLeagueId;
@@ -290,7 +299,8 @@ public sealed class GetAutomaticMovementHandler
                 movement.FromSeasonRank,
                 toLeague,
                 toName,
-                kind.ToString()));
+                kind.ToString(),
+                imageUrl));
         }
 
         return members;

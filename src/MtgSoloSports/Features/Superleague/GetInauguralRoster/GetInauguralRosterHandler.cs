@@ -145,6 +145,10 @@ public sealed class GetInauguralRosterHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        Dictionary<int, string?> images = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, string> leagueNames = await context.Leagues
             .AsNoTracking()
             .Where(e => e.SeasonId != seasonTwo.Id)
@@ -155,7 +159,7 @@ public sealed class GetInauguralRosterHandler
         List<InauguralRosterMember> members = new(memberships.Count);
         foreach (SeasonMembershipEntity membership in memberships)
         {
-            members.Add(MapSingleMember(membership, movementByAthlete, names, leagueNames));
+            members.Add(MapSingleMember(membership, movementByAthlete, names, images, leagueNames));
         }
 
         return members;
@@ -165,6 +169,7 @@ public sealed class GetInauguralRosterHandler
         SeasonMembershipEntity membership,
         Dictionary<int, MovementEntity> movementByAthlete,
         Dictionary<int, string> names,
+        Dictionary<int, string?> images,
         Dictionary<int, string> leagueNames)
     {
         if (!movementByAthlete.TryGetValue(membership.SaveAthleteId, out MovementEntity? movement))
@@ -174,6 +179,7 @@ public sealed class GetInauguralRosterHandler
         }
 
         names.TryGetValue(membership.SaveAthleteId, out string? name);
+        images.TryGetValue(membership.SaveAthleteId, out string? imageUrl);
         leagueNames.TryGetValue(movement.FromLeagueId, out string? fromName);
         return new InauguralRosterMember(
             membership.SaveAthleteId,
@@ -181,7 +187,8 @@ public sealed class GetInauguralRosterHandler
             ((SportingColor)membership.SportingColor).ToString(),
             movement.FromLeagueId,
             fromName ?? $"League {movement.FromLeagueId}",
-            movement.FromSeasonRank);
+            movement.FromSeasonRank,
+            imageUrl);
     }
 
     internal static void SortRosterMembers(List<InauguralRosterMember> members)

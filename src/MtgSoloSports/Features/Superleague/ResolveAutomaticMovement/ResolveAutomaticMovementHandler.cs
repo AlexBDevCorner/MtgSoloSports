@@ -750,6 +750,10 @@ public sealed class ResolveAutomaticMovementHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        Dictionary<int, string?> images = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
@@ -772,11 +776,11 @@ public sealed class ResolveAutomaticMovementHandler
             .ConfigureAwait(false);
 
         List<AutomaticMovementMember> safe = MapSafe(
-            names, leaguesById, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
-        List<AutomaticMovementMember> promoted = MapPicks(names, leaguesById, nextByAthlete, plan.Promotions);
-        List<AutomaticMovementMember> relegated = MapPicks(names, leaguesById, nextByAthlete, plan.Relegations);
-        List<AutomaticMovementMember> incumbents = MapPicks(names, leaguesById, nextByAthlete, plan.QualifierIncumbents);
-        List<AutomaticMovementMember> challengers = MapPicks(names, leaguesById, nextByAthlete, plan.QualifierChallengers);
+            names, images, leaguesById, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
+        List<AutomaticMovementMember> promoted = MapPicks(names, images, leaguesById, nextByAthlete, plan.Promotions);
+        List<AutomaticMovementMember> relegated = MapPicks(names, images, leaguesById, nextByAthlete, plan.Relegations);
+        List<AutomaticMovementMember> incumbents = MapPicks(names, images, leaguesById, nextByAthlete, plan.QualifierIncumbents);
+        List<AutomaticMovementMember> challengers = MapPicks(names, images, leaguesById, nextByAthlete, plan.QualifierChallengers);
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
             .ConfigureAwait(false);
@@ -801,6 +805,7 @@ public sealed class ResolveAutomaticMovementHandler
 
     private static List<AutomaticMovementMember> MapSafe(
         Dictionary<int, string> names,
+        Dictionary<int, string?> images,
         Dictionary<int, LeagueEntity> leaguesById,
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         LeagueEntity sourceSuperleague,
@@ -812,6 +817,7 @@ public sealed class ResolveAutomaticMovementHandler
         foreach (SeasonStandingEntity row in sourceSuperRows.Where(r => r.SeasonRank >= 1 && r.SeasonRank <= 16).OrderBy(r => r.SeasonRank))
         {
             names.TryGetValue(row.SaveAthleteId, out string? name);
+            images.TryGetValue(row.SaveAthleteId, out string? imageUrl);
             nextByAthlete.TryGetValue(row.SaveAthleteId, out SeasonMembershipEntity? nextMembership);
             string color = nextMembership is null ? "Unknown" : ((SportingColor)nextMembership.SportingColor).ToString();
             members.Add(new AutomaticMovementMember(
@@ -823,7 +829,8 @@ public sealed class ResolveAutomaticMovementHandler
                 row.SeasonRank,
                 nextSuperleague.Id,
                 nextSuperleague.Name,
-                "Safe"));
+                "Safe",
+                imageUrl));
         }
 
         return members;
@@ -831,6 +838,7 @@ public sealed class ResolveAutomaticMovementHandler
 
     private static List<AutomaticMovementMember> MapPicks(
         Dictionary<int, string> names,
+        Dictionary<int, string?> images,
         Dictionary<int, LeagueEntity> leaguesById,
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         IReadOnlyList<AutomaticMovementSelection.AutomaticPick> picks)
@@ -839,6 +847,7 @@ public sealed class ResolveAutomaticMovementHandler
         foreach (AutomaticMovementSelection.AutomaticPick pick in picks.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
         {
             names.TryGetValue(pick.SaveAthleteId, out string? name);
+            images.TryGetValue(pick.SaveAthleteId, out string? imageUrl);
             leaguesById.TryGetValue(pick.FromLeagueId, out LeagueEntity? from);
             nextByAthlete.TryGetValue(pick.SaveAthleteId, out SeasonMembershipEntity? nextMembership);
             int toLeague = nextMembership?.LeagueId ?? 0;
@@ -855,7 +864,8 @@ public sealed class ResolveAutomaticMovementHandler
                 pick.FromSeasonRank,
                 toLeague,
                 toName,
-                pick.Kind.ToString()));
+                pick.Kind.ToString(),
+                imageUrl));
         }
 
         return members;

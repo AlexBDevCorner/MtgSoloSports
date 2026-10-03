@@ -476,25 +476,17 @@ public sealed class CreateInauguralSuperleagueHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        Dictionary<int, string?> images = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, LeagueEntity> feedersOneById = await context.Leagues
             .AsNoTracking()
             .Where(e => e.SeasonId == seasonOne.Id)
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
 
-        List<InauguralSuperleagueMember> members = new(picks.Count);
-        foreach (InauguralSuperleagueSelection.InauguralPick pick in picks.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
-        {
-            names.TryGetValue(pick.SaveAthleteId, out string? name);
-            feedersOneById.TryGetValue(pick.FromLeagueId, out LeagueEntity? source);
-            members.Add(new InauguralSuperleagueMember(
-                pick.SaveAthleteId,
-                name ?? $"Athlete {pick.SaveAthleteId}",
-                ((SportingColor)(source?.SportingColor ?? 0)).ToString(),
-                pick.FromLeagueId,
-                source?.Name ?? $"League {pick.FromLeagueId}",
-                pick.FromSeasonRank));
-        }
+        List<InauguralSuperleagueMember> members = MapMembers(picks, names, images, feedersOneById);
 
         List<InauguralFeederRetention> retention = new(feedersTwo.Count);
         foreach (LeagueEntity feeder in feedersTwo.OrderBy(l => l.SportingColor))
@@ -526,5 +518,30 @@ public sealed class CreateInauguralSuperleagueHandler
             retention,
             pool,
             movements);
+    }
+
+    internal static List<InauguralSuperleagueMember> MapMembers(
+        IReadOnlyList<InauguralSuperleagueSelection.InauguralPick> picks,
+        Dictionary<int, string> names,
+        Dictionary<int, string?> images,
+        Dictionary<int, LeagueEntity> feedersOneById)
+    {
+        List<InauguralSuperleagueMember> members = new(picks.Count);
+        foreach (InauguralSuperleagueSelection.InauguralPick pick in picks.OrderBy(p => p.FromLeagueId).ThenBy(p => p.FromSeasonRank))
+        {
+            names.TryGetValue(pick.SaveAthleteId, out string? name);
+            images.TryGetValue(pick.SaveAthleteId, out string? imageUrl);
+            feedersOneById.TryGetValue(pick.FromLeagueId, out LeagueEntity? source);
+            members.Add(new InauguralSuperleagueMember(
+                pick.SaveAthleteId,
+                name ?? $"Athlete {pick.SaveAthleteId}",
+                ((SportingColor)(source?.SportingColor ?? 0)).ToString(),
+                pick.FromLeagueId,
+                source?.Name ?? $"League {pick.FromLeagueId}",
+                pick.FromSeasonRank,
+                imageUrl));
+        }
+
+        return members;
     }
 }
