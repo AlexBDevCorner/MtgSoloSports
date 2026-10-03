@@ -403,8 +403,8 @@ export function DashboardPage({
         </Card>
 
         <Card
-          eyebrow="Winners"
-          title={`Recent champions — ${leagueHonours.length} shown`}
+          eyebrow="Podiums"
+          title={`Recent honours — ${leagueHonours.length} shown`}
           action={
             <Link to={recordsPath(saveId)} className="ghost-button">
               All honours
@@ -412,7 +412,7 @@ export function DashboardPage({
           }
         >
           {leagueHonours.length === 0 ? (
-            <p className="muted">No league champions yet. Final tables persist at season end.</p>
+            <p className="muted">No league honours yet. Final tables persist at season end.</p>
           ) : (
             <div className="table-wrap">
               <table className="data-table">
@@ -420,17 +420,19 @@ export function DashboardPage({
                   <tr>
                     <th scope="col">Season</th>
                     <th scope="col">League</th>
-                    <th scope="col">Champion</th>
+                    <th scope="col">Athlete</th>
+                    <th scope="col">Honour</th>
                   </tr>
                 </thead>
                 <tbody>
                   {leagueHonours.map((honour, index) => (
-                    <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.athleteId}-${index}`}>
+                    <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.athleteId}-${honour.honourKind}-${index}`}>
                       <td className="numeric">{honour.seasonNumber}</td>
                       <td>{honour.leagueName}</td>
                       <td>
                         <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />
                       </td>
+                      <td>{honour.honourKind}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -466,7 +468,7 @@ export function DashboardPage({
             <p className="muted">Cup lifecycle status is unavailable for this save.</p>
           )}
           {cupHonours.length === 0 ? (
-            <p className="muted">No Cup titles yet. Odd seasons run Color Cup, even seasons run Type Cup.</p>
+            <p className="muted">No Cup honours yet. Odd seasons run Color Cup, even seasons run Type Cup.</p>
           ) : (
             <ul className="story-list">
               {cupHonours.slice(0, 5).map((honour, index) => (

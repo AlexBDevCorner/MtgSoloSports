@@ -336,10 +336,18 @@ public sealed class CupLifecycleIntegrationTests
     {
         ListHonoursHandler honours = new(store);
         ListHonoursResponse response = await honours.HandleAsync(saveId).ConfigureAwait(false);
+        // MSS-047: podiums accumulate across seasons/types without duplication.
+        // Two odd seasons => 2 champions/2 runner-ups/2 thirds for the individual event.
         response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupIndividualChampion), StringComparison.Ordinal)).ShouldBe(2);
+        response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupIndividualRunnerUp), StringComparison.Ordinal)).ShouldBe(2);
+        response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupIndividualThirdPlace), StringComparison.Ordinal)).ShouldBe(2);
         response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupTeamChampion), StringComparison.Ordinal)).ShouldBe(8);
+        response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupTeamRunnerUp), StringComparison.Ordinal)).ShouldBe(8);
+        response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.ColorCupTeamThirdPlace), StringComparison.Ordinal)).ShouldBe(8);
         response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.TypeCupTeamChampion), StringComparison.Ordinal)).ShouldBe(4);
         response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederTitle), StringComparison.Ordinal)).ShouldBeGreaterThan(0);
+        // Wins stay win-only: runner-up/third kinds never counted as titles.
+        response.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederRunnerUp), StringComparison.Ordinal)).ShouldBeGreaterThan(0);
     }
 
     private static async Task AssertCupStoriesAsync(SaveStore store, Guid saveId)

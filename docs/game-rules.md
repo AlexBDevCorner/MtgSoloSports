@@ -215,15 +215,16 @@ Season 1 includes the special inaugural-Superleague creation.
 
 The application retains permanent career and historical data including league positions, stage/round wins, titles, Cup medals, promotion/relegation, Superleague tenure, bonus history, selections and Type Cup nationality.
 
-Official major honours:
+Official major honours (MSS-047: each podium finish counts as one honour):
 
-- eight feeder-league championships;
-- Superleague championship;
-- Color Cup individual championship;
-- Color Cup team championship;
-- Type Cup team championship.
+- eight feeder-league championships plus eight runner-up and eight third-place honours per season;
+- Superleague championship plus runner-up and third-place honours per season from Season 2;
+- Color Cup individual championship plus runner-up and third-place honours;
+- Color Cup team championship plus runner-up and third-place honours (four members each);
+- Type Cup team championship plus runner-up and third-place honours (four members each).
 
-Stages are important statistics, not major trophies. Qualifier success is a career event, not a major title.
+A win/title/championship remains a 1st-place result only; an honour is any top-three
+finish. Stages are important statistics, not major trophies. Qualifier success is a career event, not a major title.
 
 The UI supports both instant simulation and an optional Eurovision-like card-by-card reveal. The engine always calculates and persists the full round first; presentation only replays immutable facts.
 

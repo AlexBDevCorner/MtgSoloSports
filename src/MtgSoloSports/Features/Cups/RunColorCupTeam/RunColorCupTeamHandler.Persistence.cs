@@ -141,28 +141,39 @@ public sealed partial class RunColorCupTeamHandler
         SeasonEntity source,
         TeamSimulation simulation)
     {
-        TeamEvent.TeamRanked champion = simulation.Teams.Single(r => r.TeamRank == 1);
-        List<TeamEvent.TeamLegRanked> championLegs = simulation.Legs
-            .Where(l => l.TeamId == champion.TeamId)
-            .OrderBy(l => l.AthleteId)
-            .ToList();
-        if (championLegs.Count != 4)
-        {
-            throw new InvalidOperationException($"Color Cup champion team '{champion.TeamName}' must field exactly four legs.");
-        }
+        PersistPodiumHonours(context, source, simulation);
+    }
 
-        foreach (TeamEvent.TeamLegRanked leg in championLegs)
+    internal static void PersistPodiumHonours(
+        SaveDbContext context,
+        SeasonEntity source,
+        TeamSimulation simulation)
+    {
+        foreach (TeamEvent.TeamRanked podiumTeam in simulation.Teams.Where(t => t.TeamRank >= 1 && t.TeamRank <= 3).OrderBy(t => t.TeamRank))
         {
-            context.Honours.Add(new HonourEntity
+            Features.Records.HonourKind kind = Features.Records.HonourKindMapper.FromColorCupTeamRank(podiumTeam.TeamRank);
+            List<TeamEvent.TeamLegRanked> legs = simulation.Legs
+                .Where(l => l.TeamId == podiumTeam.TeamId)
+                .OrderBy(l => l.AthleteId)
+                .ToList();
+            if (legs.Count != 4)
             {
-                SeasonId = source.Id,
-                SeasonNumber = source.SeasonNumber,
-                LeagueId = TeamLeagueId,
-                LeagueName = TeamLeagueName,
-                LeagueKind = TeamLeagueKind,
-                SaveAthleteId = leg.AthleteId,
-                Kind = (int)Features.Records.HonourKind.ColorCupTeamChampion,
-            });
+                throw new InvalidOperationException($"Color Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
+            }
+
+            foreach (TeamEvent.TeamLegRanked leg in legs)
+            {
+                context.Honours.Add(new HonourEntity
+                {
+                    SeasonId = source.Id,
+                    SeasonNumber = source.SeasonNumber,
+                    LeagueId = TeamLeagueId,
+                    LeagueName = TeamLeagueName,
+                    LeagueKind = TeamLeagueKind,
+                    SaveAthleteId = leg.AthleteId,
+                    Kind = (int)kind,
+                });
+            }
         }
     }
 

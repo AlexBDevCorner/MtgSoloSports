@@ -204,13 +204,275 @@ public sealed class GetAthleteProfileHandler
             .ThenBy(e => e.LeagueName)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        int leaguePersisted = rows.Count(e => Records.HonourKindMapper.IsLeagueHonourKind(e.Kind));
+        int cupPersisted = rows.Count - leaguePersisted;
+        int expectedLeague = await context.SeasonStandings
+            .AsNoTracking()
+            .CountAsync(e => e.SaveAthleteId == athleteId && e.SeasonRank >= 1 && e.SeasonRank <= 3, cancellationToken)
+            .ConfigureAwait(false);
+        int expectedCups = await CountExpectedCupPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        if (leaguePersisted > expectedLeague || cupPersisted > expectedCups)
+        {
+            throw new InvalidOperationException($"Persisted honours for athlete {athleteId} exceed authoritative podiums; sporting state is corrupt.");
+        }
+
+        if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
+        {
+            return MapPersistedHonours(rows);
+        }
+
+        return await DerivePodiumHonoursAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static List<AthleteHonourDto> MapPersistedHonours(List<HonourEntity> rows)
+    {
         List<AthleteHonourDto> honours = new(rows.Count);
-        foreach (HonourEntity row in rows)
+        foreach (HonourEntity row in rows.OrderBy(e => e.SeasonNumber).ThenBy(e => e.LeagueName, StringComparer.Ordinal))
         {
             string kind = Enum.IsDefined(typeof(Records.HonourKind), row.Kind)
                 ? ((Records.HonourKind)row.Kind).ToString()
                 : $"Honour{row.Kind}";
             honours.Add(new AthleteHonourDto(row.SeasonNumber, row.LeagueName, kind));
+        }
+
+        return honours;
+    }
+
+    internal static async Task<int> CountExpectedCupPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        int individual = await context.ColorCupIndividualStandings
+            .AsNoTracking()
+            .CountAsync(e => e.SaveAthleteId == athleteId && e.CupRank >= 1 && e.CupRank <= 3, cancellationToken)
+            .ConfigureAwait(false);
+        int colorTeams = await CountColorTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        int typeTeams = await CountTypeTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        return checked(individual + colorTeams + typeTeams);
+    }
+
+    internal static async Task<int> CountColorTeamPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<ColorCupTeamGroupStandingEntity> legs = await context.ColorCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (legs.Count == 0)
+        {
+            return 0;
+        }
+
+        HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        List<ColorCupTeamStandingEntity> teams = await context.ColorCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int count = 0;
+        foreach (ColorCupTeamGroupStandingEntity leg in legs)
+        {
+            bool podium = teams.Any(t => t.SourceSeasonId == leg.SourceSeasonId && t.SportingColor == leg.SportingColor);
+            if (podium)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    internal static async Task<int> CountTypeTeamPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (legs.Count == 0)
+        {
+            return 0;
+        }
+
+        HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int count = 0;
+        foreach (TypeCupTeamGroupStandingEntity leg in legs)
+        {
+            bool podium = teams.Any(t => t.SourceSeasonId == leg.SourceSeasonId && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
+            if (podium)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DerivePodiumHonoursAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<AthleteHonourDto> honours = [];
+        honours.AddRange(await DeriveLeaguePodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
+        honours.AddRange(await DeriveIndividualPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
+        honours.AddRange(await DeriveColorTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
+        honours.AddRange(await DeriveTypeTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
+        return honours
+            .OrderBy(e => e.SeasonNumber)
+            .ThenBy(e => e.LeagueName, StringComparer.Ordinal)
+            .ThenBy(e => e.HonourKind, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DeriveLeaguePodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<SeasonStandingEntity> podiums = await context.SeasonStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId && e.SeasonRank >= 1 && e.SeasonRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (podiums.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = podiums.Select(p => p.SeasonId).ToHashSet();
+        HashSet<int> leagueIds = podiums.Select(p => p.LeagueId).ToHashSet();
+        Dictionary<int, SeasonEntity> seasons = await context.Seasons
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => leagueIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = new(podiums.Count);
+        foreach (SeasonStandingEntity podium in podiums)
+        {
+            if (!seasons.TryGetValue(podium.SeasonId, out SeasonEntity? season))
+            {
+                throw new InvalidOperationException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
+            }
+
+            if (!leagues.TryGetValue(podium.LeagueId, out LeagueEntity? league))
+            {
+                throw new InvalidOperationException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
+            }
+
+            Records.HonourKind kind = Records.HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
+            honours.Add(new AthleteHonourDto(season.SeasonNumber, league.Name, kind.ToString()));
+        }
+
+        return honours;
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DeriveIndividualPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<ColorCupIndividualStandingEntity> rows = await context.ColorCupIndividualStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId && e.CupRank >= 1 && e.CupRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = new(rows.Count);
+        foreach (ColorCupIndividualStandingEntity row in rows)
+        {
+            Records.HonourKind kind = Records.HonourKindMapper.FromColorCupIndividualRank(row.CupRank);
+            honours.Add(new AthleteHonourDto(row.SourceSeasonNumber, "Color Cup", kind.ToString()));
+        }
+
+        return honours;
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DeriveColorTeamPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<ColorCupTeamGroupStandingEntity> legs = await context.ColorCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (legs.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        List<ColorCupTeamStandingEntity> teams = await context.ColorCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = [];
+        foreach (ColorCupTeamGroupStandingEntity leg in legs)
+        {
+            ColorCupTeamStandingEntity? team = teams.FirstOrDefault(t => t.SourceSeasonId == leg.SourceSeasonId && t.SportingColor == leg.SportingColor);
+            if (team is null)
+            {
+                continue;
+            }
+
+            Records.HonourKind kind = Records.HonourKindMapper.FromColorCupTeamRank(team.TeamRank);
+            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Color Cup Team", kind.ToString()));
+        }
+
+        return honours;
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DeriveTypeTeamPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (legs.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = [];
+        foreach (TypeCupTeamGroupStandingEntity leg in legs)
+        {
+            TypeCupTeamStandingEntity? team = teams.FirstOrDefault(t => t.SourceSeasonId == leg.SourceSeasonId && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
+            if (team is null)
+            {
+                continue;
+            }
+
+            Records.HonourKind kind = Records.HonourKindMapper.FromTypeCupTeamRank(team.TeamRank);
+            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Type Cup Team", kind.ToString()));
         }
 
         return honours;

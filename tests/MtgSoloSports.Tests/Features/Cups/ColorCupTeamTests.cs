@@ -362,9 +362,15 @@ public sealed class ColorCupTeamTests
         using SaveDbContext context = store.OpenDbContext(saveId);
         SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.SourceSeasonNumber).ConfigureAwait(false);
         List<HonourEntity> teamHonours = await context.Honours.AsNoTracking()
-            .Where(e => e.SeasonId == source.Id && e.Kind == (int)HonourKind.ColorCupTeamChampion)
+            .Where(e => e.SeasonId == source.Id && (e.Kind == (int)HonourKind.ColorCupTeamChampion
+                || e.Kind == (int)HonourKind.ColorCupTeamRunnerUp
+                || e.Kind == (int)HonourKind.ColorCupTeamThirdPlace))
             .ToListAsync().ConfigureAwait(false);
-        teamHonours.Count.ShouldBe(4);
+        // MSS-047: podium teams 1st/2nd/3rd each contribute four honours (one per leg).
+        teamHonours.Count.ShouldBe(12);
+        teamHonours.Count(h => h.Kind == (int)HonourKind.ColorCupTeamChampion).ShouldBe(4);
+        teamHonours.Count(h => h.Kind == (int)HonourKind.ColorCupTeamRunnerUp).ShouldBe(4);
+        teamHonours.Count(h => h.Kind == (int)HonourKind.ColorCupTeamThirdPlace).ShouldBe(4);
         foreach (HonourEntity honour in teamHonours)
         {
             honour.LeagueName.ShouldBe(RunColorCupTeamHandler.TeamLeagueName);
@@ -374,7 +380,19 @@ public sealed class ColorCupTeamTests
             .Where(l => string.Equals(l.SportingColor, response.ChampionTeamName, StringComparison.Ordinal))
             .Select(l => l.AthleteId).ToHashSet();
         championLegs.Count.ShouldBe(4);
-        teamHonours.Select(h => h.SaveAthleteId).OrderBy(id => id).ShouldBe(championLegs.OrderBy(id => id).ToList());
+        teamHonours.Where(h => h.Kind == (int)HonourKind.ColorCupTeamChampion).Select(h => h.SaveAthleteId).OrderBy(id => id).ShouldBe(championLegs.OrderBy(id => id).ToList());
+
+        // Fourth-place team contributes no honour.
+        List<ColorCupTeamStandingEntity> teams = await context.ColorCupTeamStandings.AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id).ToListAsync().ConfigureAwait(false);
+        ColorCupTeamStandingEntity fourth = teams.Single(t => t.TeamRank == 4);
+        List<ColorCupTeamGroupStandingEntity> fourthLegs = await context.ColorCupTeamGroupStandings.AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id && e.SportingColor == fourth.SportingColor).ToListAsync().ConfigureAwait(false);
+        fourthLegs.Count.ShouldBe(4);
+        foreach (ColorCupTeamGroupStandingEntity leg in fourthLegs)
+        {
+            teamHonours.Any(h => h.SaveAthleteId == leg.SaveAthleteId).ShouldBeFalse();
+        }
 
         ListHonoursHandler honoursHandler = new(store);
         ListHonoursResponse honours = await honoursHandler.HandleAsync(saveId).ConfigureAwait(false);

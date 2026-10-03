@@ -108,7 +108,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
         info={
           <p>
             Ordered by total titles, Superleague titles, stage wins, round wins, then name.
-            Computed from normalized honours and career projections without decompressing round
+            Computed from normalized titles and career projections without decompressing round
             payloads.
           </p>
         }
@@ -228,13 +228,13 @@ export function RecordsPage({ saveId }: { saveId: string }) {
         )}
       </Card>
 
-      <Card eyebrow="Honours" title={`Official titles — ${honours.length}`}>
+      <Card eyebrow="Honours" title={`Official honours — ${honours.length}`}>
         {honoursState.loading && honours.length === 0 ? (
           <Loading label="Loading honours…" />
         ) : honours.length === 0 ? (
           <p className="muted">
-            No official honours yet. Feeder and Superleague championships persist at
-            season finalization.
+            No official honours yet. Feeder and Superleague podiums (1st/2nd/3rd) plus Color Cup
+            and Type Cup podiums persist at season finalization.
           </p>
         ) : (
           <div className="table-wrap">
@@ -243,13 +243,13 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                 <tr>
                   <th scope="col">Season</th>
                   <th scope="col">League</th>
-                  <th scope="col">Champion</th>
+                  <th scope="col">Athlete</th>
                   <th scope="col">Honour</th>
                 </tr>
               </thead>
               <tbody>
                 {honours.map((row) => (
-                  <tr key={`${row.seasonNumber}-${row.leagueId}`}>
+                  <tr key={`${row.seasonNumber}-${row.leagueId}-${row.athleteId}-${row.honourKind}`}>
                     <td className="numeric">{row.seasonNumber}</td>
                     <td>{row.leagueName}</td>
                     <td>

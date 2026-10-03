@@ -297,8 +297,10 @@ public sealed class TypeCupOver32Tests
     private static async Task AssertHonoursAsync(SaveDbContext context, SeasonEntity source)
     {
         List<HonourEntity> honours = await context.Honours.AsNoTracking()
-            .Where(e => e.SeasonId == source.Id && e.Kind == (int)HonourKind.TypeCupTeamChampion).ToListAsync().ConfigureAwait(false);
-        honours.Count.ShouldBe(4);
+            .Where(e => e.SeasonId == source.Id && (e.Kind == (int)HonourKind.TypeCupTeamChampion
+                || e.Kind == (int)HonourKind.TypeCupTeamRunnerUp
+                || e.Kind == (int)HonourKind.TypeCupTeamThirdPlace)).ToListAsync().ConfigureAwait(false);
+        honours.Count.ShouldBe(12);
     }
 
     private static async Task AssertQueryAndReopenAsync(SaveStore store, string root, Guid saveId, RunTypeCupTeamResponse response, int teamCount)

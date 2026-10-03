@@ -227,11 +227,34 @@ public sealed class ColorCupIndividualTests
         using SaveDbContext context = store.OpenDbContext(saveId);
         SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.SourceSeasonNumber).ConfigureAwait(false);
         List<HonourEntity> cupHonours = await context.Honours.AsNoTracking()
-            .Where(e => e.SeasonId == source.Id && e.Kind == (int)HonourKind.ColorCupIndividualChampion)
+            .Where(e => e.SeasonId == source.Id && (e.Kind == (int)HonourKind.ColorCupIndividualChampion
+                || e.Kind == (int)HonourKind.ColorCupIndividualRunnerUp
+                || e.Kind == (int)HonourKind.ColorCupIndividualThirdPlace))
             .ToListAsync().ConfigureAwait(false);
-        cupHonours.Count.ShouldBe(1);
-        cupHonours[0].SaveAthleteId.ShouldBe(response.ChampionAthleteId);
-        cupHonours[0].LeagueName.ShouldBe(RunColorCupIndividualHandler.CupLeagueName);
+        // MSS-047: 1st/2nd/3rd each contribute exactly one honour.
+        cupHonours.Count.ShouldBe(3);
+        List<ColorCupIndividualStandingEntity> standings = await context.ColorCupIndividualStandings.AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id && e.CupRank >= 1 && e.CupRank <= 3)
+            .OrderBy(e => e.CupRank).ToListAsync().ConfigureAwait(false);
+        standings.Count.ShouldBe(3);
+        foreach (ColorCupIndividualStandingEntity standing in standings)
+        {
+            HonourKind expectedKind = standing.CupRank switch
+            {
+                1 => HonourKind.ColorCupIndividualChampion,
+                2 => HonourKind.ColorCupIndividualRunnerUp,
+                _ => HonourKind.ColorCupIndividualThirdPlace,
+            };
+            cupHonours.Single(h => h.Kind == (int)expectedKind).SaveAthleteId.ShouldBe(standing.SaveAthleteId);
+        }
+
+        cupHonours.Single(h => h.Kind == (int)HonourKind.ColorCupIndividualChampion).SaveAthleteId.ShouldBe(response.ChampionAthleteId);
+        cupHonours.All(h => string.Equals(h.LeagueName, RunColorCupIndividualHandler.CupLeagueName, StringComparison.Ordinal)).ShouldBeTrue();
+
+        // Fourth place contributes no honour.
+        int fourthAthlete = (await context.ColorCupIndividualStandings.AsNoTracking()
+            .SingleAsync(e => e.SourceSeasonId == source.Id && e.CupRank == 4).ConfigureAwait(false)).SaveAthleteId;
+        cupHonours.Any(h => h.SaveAthleteId == fourthAthlete).ShouldBeFalse();
 
         ListHonoursHandler honoursHandler = new(store);
         ListHonoursResponse honours = await honoursHandler.HandleAsync(saveId).ConfigureAwait(false);

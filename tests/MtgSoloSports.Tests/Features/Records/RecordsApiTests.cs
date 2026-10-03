@@ -27,8 +27,8 @@ public sealed class RecordsApiTests
 
             HonoursPayload honours = await FetchHonoursAsync(client, saveId);
             // Season 1 is odd, so SimulateSeasons now includes the post-season Color Cup:
-            // 8 feeder titles + 1 individual champion + 4 team champions = 13.
-            honours.Honours.Count.ShouldBe(13);
+            // 8 feeder leagues x3 podiums (24) + 3 individual podiums + 12 team podiums = 39.
+            honours.Honours.Count.ShouldBe(39);
 
             RecordsPayload records = await FetchRecordsAsync(client, saveId);
             records.Records.Count.ShouldBe(13);

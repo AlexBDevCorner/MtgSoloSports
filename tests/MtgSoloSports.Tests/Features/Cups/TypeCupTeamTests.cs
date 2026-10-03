@@ -617,9 +617,24 @@ public sealed class TypeCupTeamTests
         using SaveDbContext context = store.OpenDbContext(saveId);
         SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.SourceSeasonNumber).ConfigureAwait(false);
         List<HonourEntity> teamHonours = await context.Honours.AsNoTracking()
-            .Where(e => e.SeasonId == source.Id && e.Kind == (int)HonourKind.TypeCupTeamChampion)
+            .Where(e => e.SeasonId == source.Id && (e.Kind == (int)HonourKind.TypeCupTeamChampion
+                || e.Kind == (int)HonourKind.TypeCupTeamRunnerUp
+                || e.Kind == (int)HonourKind.TypeCupTeamThirdPlace))
             .ToListAsync().ConfigureAwait(false);
-        teamHonours.Count.ShouldBe(4);
+        // MSS-047: podium teams 1st/2nd/3rd (or fewer when the field is small) each contribute four honours.
+        int podiumRanks = Math.Min(3, response.TeamCount);
+        teamHonours.Count.ShouldBe(podiumRanks * 4);
+        teamHonours.Count(h => h.Kind == (int)HonourKind.TypeCupTeamChampion).ShouldBe(4);
+        if (podiumRanks >= 2)
+        {
+            teamHonours.Count(h => h.Kind == (int)HonourKind.TypeCupTeamRunnerUp).ShouldBe(4);
+        }
+
+        if (podiumRanks >= 3)
+        {
+            teamHonours.Count(h => h.Kind == (int)HonourKind.TypeCupTeamThirdPlace).ShouldBe(4);
+        }
+
         foreach (HonourEntity honour in teamHonours)
         {
             honour.LeagueName.ShouldBe(RunTypeCupTeamHandler.TeamLeagueName);
@@ -629,7 +644,21 @@ public sealed class TypeCupTeamTests
             .Where(l => string.Equals(l.CreatureType, response.ChampionTeamName, StringComparison.Ordinal))
             .Select(l => l.AthleteId).ToHashSet();
         championLegs.Count.ShouldBe(4);
-        teamHonours.Select(h => h.SaveAthleteId).OrderBy(id => id).ShouldBe(championLegs.OrderBy(id => id).ToList());
+        teamHonours.Where(h => h.Kind == (int)HonourKind.TypeCupTeamChampion).Select(h => h.SaveAthleteId).OrderBy(id => id).ShouldBe(championLegs.OrderBy(id => id).ToList());
+
+        if (response.TeamCount >= 4)
+        {
+            List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings.AsNoTracking()
+                .Where(e => e.SourceSeasonId == source.Id).ToListAsync().ConfigureAwait(false);
+            TypeCupTeamStandingEntity fourth = teams.Single(t => t.TeamRank == 4);
+            List<TypeCupTeamGroupStandingEntity> fourthLegs = await context.TypeCupTeamGroupStandings.AsNoTracking()
+                .Where(e => e.SourceSeasonId == source.Id && e.CreatureType == fourth.CreatureType).ToListAsync().ConfigureAwait(false);
+            fourthLegs.Count.ShouldBe(4);
+            foreach (TypeCupTeamGroupStandingEntity leg in fourthLegs)
+            {
+                teamHonours.Any(h => h.SaveAthleteId == leg.SaveAthleteId).ShouldBeFalse();
+            }
+        }
 
         ListHonoursHandler honoursHandler = new(store);
         ListHonoursResponse honours = await honoursHandler.HandleAsync(saveId).ConfigureAwait(false);

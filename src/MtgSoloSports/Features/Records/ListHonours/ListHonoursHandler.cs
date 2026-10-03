@@ -5,11 +5,13 @@ namespace MtgSoloSports.Features.Records.ListHonours;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Lists official
-/// league/Superleague honours from the persisted <c>Honours</c> accelerator
-/// when it matches authoritative champions, otherwise falls back to an
-/// in-memory projection from <c>SeasonStandings</c> plus <c>Leagues</c> (still
-/// without round payloads) so saves created before MSS-022 remain readable.
-/// Read-only: no lock, no RNG access, no mutation.
+/// podium honours (1st/2nd/3rd, MSS-047) from the persisted <c>Honours</c> accelerator
+/// when it matches authoritative podiums, otherwise falls back to an
+/// in-memory projection from <c>SeasonStandings</c> plus <c>Leagues</c> and Cup
+/// standings tables (still without round payloads) so saves created before
+/// MSS-022/MSS-047 remain readable. Read-only: no lock, no RNG access, no mutation.
+/// Exactly one honour per qualifying podium result; never double-counts the same
+/// persisted result through multiple projections.
 /// </summary>
 public sealed class ListHonoursHandler
 {
@@ -47,9 +49,6 @@ public sealed class ListHonoursHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
-        int championCount = await context.SeasonStandings
-            .CountAsync(e => e.IsChampion, cancellationToken)
-            .ConfigureAwait(false);
         IQueryable<HonourEntity> honoursQuery = context.Honours.AsNoTracking();
         if (athleteId is not null)
         {
@@ -61,27 +60,22 @@ public sealed class ListHonoursHandler
             .ThenBy(e => e.LeagueName)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        int leaguePersisted = persisted.Count(e =>
-            e.Kind == (int)HonourKind.FeederTitle || e.Kind == (int)HonourKind.SuperleagueTitle);
-        if (athleteId is null && leaguePersisted == championCount)
+        int leaguePersisted = persisted.Count(e => HonourKindMapper.IsLeagueHonourKind(e.Kind));
+        int cupPersisted = persisted.Count - leaguePersisted;
+
+        int expectedLeague = await CountExpectedLeaguePodiumsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        int expectedCups = await CountExpectedCupPodiumsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        if (leaguePersisted > expectedLeague || cupPersisted > expectedCups)
+        {
+            throw new InvalidOperationException($"Persisted honours exceed authoritative podiums; sporting state is corrupt.");
+        }
+
+        if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
         {
             return MapPersisted(persisted, names);
         }
 
-        if (athleteId is not null && persisted.Count > 0)
-        {
-            int expectedForAthlete = await context.SeasonStandings
-                .CountAsync(e => e.IsChampion && e.SaveAthleteId == athleteId.Value, cancellationToken)
-                .ConfigureAwait(false);
-            int leagueForAthlete = persisted.Count(e =>
-                e.Kind == (int)HonourKind.FeederTitle || e.Kind == (int)HonourKind.SuperleagueTitle);
-            if (leagueForAthlete == expectedForAthlete)
-            {
-                return MapPersisted(persisted, names);
-            }
-        }
-
-        return await LoadFallbackAsync(context, names, athleteId, persisted, cancellationToken).ConfigureAwait(false);
+        return await LoadFallbackAsync(context, names, athleteId, cancellationToken).ConfigureAwait(false);
     }
 
     internal static List<HonourEntry> MapPersisted(List<HonourEntity> persisted, Dictionary<int, string> names)
@@ -104,30 +98,55 @@ public sealed class ListHonoursHandler
         return entries;
     }
 
+    internal static async Task<int> CountExpectedLeaguePodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<SeasonStandingEntity> query = context.SeasonStandings.AsNoTracking()
+            .Where(e => e.SeasonRank >= 1 && e.SeasonRank <= 3);
+        if (athleteId is not null)
+        {
+            query = query.Where(e => e.SaveAthleteId == athleteId.Value);
+        }
+
+        return await query.CountAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<int> CountExpectedCupPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<HonourEntry> derived = await DeriveCupPodiumsAsync(context, athleteId, [], cancellationToken).ConfigureAwait(false);
+        return derived.Count;
+    }
+
     internal static async Task<List<HonourEntry>> LoadFallbackAsync(
         SaveDbContext context,
         Dictionary<int, string> names,
         int? athleteId,
-        List<HonourEntity> persistedCupHonours,
         CancellationToken cancellationToken)
     {
-        List<SeasonStandingEntity> champions = await LoadFallbackChampionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        List<SeasonStandingEntity> podiums = await LoadFallbackPodiumsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> seasonNumbers = await LoadFallbackSeasonNumbersAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await LoadFallbackLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
-        List<HonourEntry> entries = MapFallbackChampions(champions, seasonNumbers, leaguesById, names);
-        AppendCupHonours(entries, persistedCupHonours, names);
+        List<HonourEntry> entries = MapFallbackPodiums(podiums, seasonNumbers, leaguesById, names);
+        List<HonourEntry> cupEntries = await DeriveCupPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false);
+        entries.AddRange(cupEntries);
         return entries
             .OrderBy(e => e.SeasonNumber)
             .ThenBy(e => e.LeagueName, StringComparer.Ordinal)
             .ToList();
     }
 
-    internal static async Task<List<SeasonStandingEntity>> LoadFallbackChampionsAsync(
+    internal static async Task<List<SeasonStandingEntity>> LoadFallbackPodiumsAsync(
         SaveDbContext context,
         int? athleteId,
         CancellationToken cancellationToken)
     {
-        IQueryable<SeasonStandingEntity> query = context.SeasonStandings.AsNoTracking().Where(e => e.IsChampion);
+        IQueryable<SeasonStandingEntity> query = context.SeasonStandings.AsNoTracking()
+            .Where(e => e.SeasonRank >= 1 && e.SeasonRank <= 3);
         if (athleteId is not null)
         {
             query = query.Where(e => e.SaveAthleteId == athleteId.Value);
@@ -158,68 +177,229 @@ public sealed class ListHonoursHandler
             .ConfigureAwait(false);
     }
 
-    internal static List<HonourEntry> MapFallbackChampions(
-        List<SeasonStandingEntity> champions,
+    internal static List<HonourEntry> MapFallbackPodiums(
+        List<SeasonStandingEntity> podiums,
         Dictionary<int, int> seasonNumbers,
         Dictionary<int, LeagueEntity> leaguesById,
         Dictionary<int, string> names)
     {
-        List<HonourEntry> entries = new(champions.Count);
-        foreach (SeasonStandingEntity champion in champions)
+        List<HonourEntry> entries = new(podiums.Count);
+        foreach (SeasonStandingEntity podium in podiums)
         {
-            entries.Add(MapSingleFallbackChampion(champion, seasonNumbers, leaguesById, names));
+            entries.Add(MapSingleFallbackPodium(podium, seasonNumbers, leaguesById, names));
         }
 
         return entries;
     }
 
-    internal static HonourEntry MapSingleFallbackChampion(
-        SeasonStandingEntity champion,
+    internal static HonourEntry MapSingleFallbackPodium(
+        SeasonStandingEntity podium,
         Dictionary<int, int> seasonNumbers,
         Dictionary<int, LeagueEntity> leaguesById,
         Dictionary<int, string> names)
     {
-        if (!seasonNumbers.TryGetValue(champion.SeasonId, out int seasonNumber))
+        if (!seasonNumbers.TryGetValue(podium.SeasonId, out int seasonNumber))
         {
-            throw new InvalidOperationException($"Season standing {champion.Id} references unknown season {champion.SeasonId}.");
+            throw new InvalidOperationException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
         }
 
-        if (!leaguesById.TryGetValue(champion.LeagueId, out LeagueEntity? league))
+        if (!leaguesById.TryGetValue(podium.LeagueId, out LeagueEntity? league))
         {
-            throw new InvalidOperationException($"Season standing {champion.Id} references unknown league {champion.LeagueId}.");
+            throw new InvalidOperationException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
         }
 
-        HonourKind kind = HonourKindMapper.FromLeagueKind(league.Kind);
-        names.TryGetValue(champion.SaveAthleteId, out string? name);
+        HonourKind kind = HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
+        names.TryGetValue(podium.SaveAthleteId, out string? name);
         return new HonourEntry(
             seasonNumber,
-            champion.SeasonId,
+            podium.SeasonId,
             league.Id,
             league.Name,
             league.Kind,
             kind.ToString(),
-            champion.SaveAthleteId,
-            name ?? $"Athlete {champion.SaveAthleteId}");
+            podium.SaveAthleteId,
+            name ?? $"Athlete {podium.SaveAthleteId}");
     }
 
-    internal static void AppendCupHonours(
-        List<HonourEntry> entries,
-        List<HonourEntity> persistedCupHonours,
-        Dictionary<int, string> names)
+    /// <summary>
+    /// Derives cup podium honours from authoritative cup standings tables.
+    /// One honour per qualifying result: individual ranks 1..3 each yield one
+    /// honour; team ranks 1..min(3, N) each yield four honours (one per leg).
+    /// Rank 4 or lower yields none. Never touches round payloads.
+    /// Cup LeagueId/Name/Kind constants mirror the Cup slices to avoid
+    /// cross-slice dependencies (0/Color Cup/-1, -1/Color Cup Team/-2,
+    /// -3/Type Cup Team/-4).
+    /// </summary>
+    internal static async Task<List<HonourEntry>> DeriveCupPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
     {
-        foreach (HonourEntity cup in persistedCupHonours.Where(e =>
-            e.Kind != (int)HonourKind.FeederTitle && e.Kind != (int)HonourKind.SuperleagueTitle))
+        List<HonourEntry> entries = [];
+        entries.AddRange(await DeriveIndividualPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
+        entries.AddRange(await DeriveColorTeamPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
+        entries.AddRange(await DeriveTypeTeamPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
+        return entries;
+    }
+
+    internal static async Task<List<HonourEntry>> DeriveIndividualPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<ColorCupIndividualStandingEntity> query = context.ColorCupIndividualStandings
+            .AsNoTracking()
+            .Where(e => e.CupRank >= 1 && e.CupRank <= 3);
+        if (athleteId is not null)
         {
-            names.TryGetValue(cup.SaveAthleteId, out string? name);
-            entries.Add(new HonourEntry(
-                cup.SeasonNumber,
-                cup.SeasonId,
-                cup.LeagueId,
-                cup.LeagueName,
-                cup.LeagueKind,
-                ((HonourKind)cup.Kind).ToString(),
-                cup.SaveAthleteId,
-                name ?? $"Athlete {cup.SaveAthleteId}"));
+            query = query.Where(e => e.SaveAthleteId == athleteId.Value);
         }
+
+        List<ColorCupIndividualStandingEntity> rows = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> resolvedNames = names.Count > 0 ? names : await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<HonourEntry> entries = new(rows.Count);
+        foreach (ColorCupIndividualStandingEntity row in rows)
+        {
+            HonourKind kind = HonourKindMapper.FromColorCupIndividualRank(row.CupRank);
+            resolvedNames.TryGetValue(row.SaveAthleteId, out string? name);
+            entries.Add(new HonourEntry(
+                row.SourceSeasonNumber,
+                row.SourceSeasonId,
+                0,
+                "Color Cup",
+                -1,
+                kind.ToString(),
+                row.SaveAthleteId,
+                name ?? $"Athlete {row.SaveAthleteId}"));
+        }
+
+        return entries;
+    }
+
+    internal static async Task<List<HonourEntry>> DeriveColorTeamPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
+    {
+        List<ColorCupTeamStandingEntity> teams = await context.ColorCupTeamStandings
+            .AsNoTracking()
+            .Where(e => e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (teams.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = teams.Select(t => t.SourceSeasonId).ToHashSet();
+        List<ColorCupTeamGroupStandingEntity> legs = await context.ColorCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> resolvedNames = names.Count > 0 ? names : await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<HonourEntry> entries = [];
+        foreach (ColorCupTeamStandingEntity team in teams.OrderBy(t => t.SourceSeasonNumber).ThenBy(t => t.TeamRank))
+        {
+            HonourKind kind = HonourKindMapper.FromColorCupTeamRank(team.TeamRank);
+            List<ColorCupTeamGroupStandingEntity> members = legs
+                .Where(l => l.SourceSeasonId == team.SourceSeasonId && l.SportingColor == team.SportingColor)
+                .ToList();
+            if (members.Count != 4)
+            {
+                throw new InvalidOperationException($"Color Cup team rank {team.TeamRank} must field exactly four legs.");
+            }
+
+            foreach (ColorCupTeamGroupStandingEntity leg in members.OrderBy(l => l.SaveAthleteId))
+            {
+                if (athleteId is not null && leg.SaveAthleteId != athleteId.Value)
+                {
+                    continue;
+                }
+
+                resolvedNames.TryGetValue(leg.SaveAthleteId, out string? name);
+                entries.Add(new HonourEntry(
+                    team.SourceSeasonNumber,
+                    team.SourceSeasonId,
+                    -1,
+                    "Color Cup Team",
+                    -2,
+                    kind.ToString(),
+                    leg.SaveAthleteId,
+                    name ?? $"Athlete {leg.SaveAthleteId}"));
+            }
+        }
+
+        return entries;
+    }
+
+    internal static async Task<List<HonourEntry>> DeriveTypeTeamPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => e.TeamRank >= 1 && e.TeamRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (teams.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = teams.Select(t => t.SourceSeasonId).ToHashSet();
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.SourceSeasonId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> resolvedNames = names.Count > 0 ? names : await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<HonourEntry> entries = [];
+        foreach (TypeCupTeamStandingEntity team in teams.OrderBy(t => t.SourceSeasonNumber).ThenBy(t => t.TeamRank))
+        {
+            HonourKind kind = HonourKindMapper.FromTypeCupTeamRank(team.TeamRank);
+            List<TypeCupTeamGroupStandingEntity> members = legs
+                .Where(l => l.SourceSeasonId == team.SourceSeasonId && string.Equals(l.CreatureType, team.CreatureType, StringComparison.Ordinal))
+                .ToList();
+            if (members.Count != 4)
+            {
+                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} must field exactly four legs.");
+            }
+
+            foreach (TypeCupTeamGroupStandingEntity leg in members.OrderBy(l => l.SaveAthleteId))
+            {
+                if (athleteId is not null && leg.SaveAthleteId != athleteId.Value)
+                {
+                    continue;
+                }
+
+                resolvedNames.TryGetValue(leg.SaveAthleteId, out string? name);
+                entries.Add(new HonourEntry(
+                    team.SourceSeasonNumber,
+                    team.SourceSeasonId,
+                    -3,
+                    "Type Cup Team",
+                    -4,
+                    kind.ToString(),
+                    leg.SaveAthleteId,
+                    name ?? $"Athlete {leg.SaveAthleteId}"));
+            }
+        }
+
+        return entries;
     }
 }

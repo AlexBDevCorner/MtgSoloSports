@@ -103,12 +103,12 @@ public sealed class DashboardPolishTests
             before.Movements.ShouldBeEmpty();
             before.CupSelections.ShouldBeEmpty();
 
-            // Complete Season 1: honours persist for the eight feeder champions.
+            // Complete Season 1: honours persist for the eight feeder podiums (3 per league).
             CompleteSeasonHandler completeSeason = new(store);
             await completeSeason.HandleAsync(saveId);
             List<HonourAthlete> honours = await LoadHonoursAsync(store, saveId);
-            honours.Count.ShouldBe(8);
-            int champion = honours[0].AthleteId;
+            honours.Count.ShouldBe(24);
+            int champion = honours.First(h => h.Kind == (int)MtgSoloSports.Features.Records.HonourKind.FeederTitle).AthleteId;
             GetAthleteProfileResponse withHonour = await profiles.HandleAsync(saveId, champion);
             withHonour.Honours.Count.ShouldBeGreaterThanOrEqualTo(1);
             withHonour.Honours.Any(h => h.SeasonNumber == 1).ShouldBeTrue();
@@ -136,7 +136,7 @@ public sealed class DashboardPolishTests
         }
     }
 
-    private sealed record HonourAthlete(int AthleteId, int SeasonNumber);
+    private sealed record HonourAthlete(int AthleteId, int SeasonNumber, int Kind);
 
     private static async Task<List<HonourAthlete>> LoadHonoursAsync(SaveStore store, Guid saveId)
     {
@@ -145,7 +145,7 @@ public sealed class DashboardPolishTests
             .AsNoTracking()
             .OrderBy(e => e.SeasonNumber)
             .ThenBy(e => e.LeagueName)
-            .Select(e => new HonourAthlete(e.SaveAthleteId, e.SeasonNumber))
+            .Select(e => new HonourAthlete(e.SaveAthleteId, e.SeasonNumber, e.Kind))
             .ToListAsync()
             .ConfigureAwait(false);
     }

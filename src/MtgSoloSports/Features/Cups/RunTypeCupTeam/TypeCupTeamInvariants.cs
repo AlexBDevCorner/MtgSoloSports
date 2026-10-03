@@ -146,7 +146,7 @@ public static class TypeCupTeamInvariants
     /// <summary>
     /// Validates persisted team state: 32 round rows (4 groups x 8 rounds),
     /// teamCount x 4 leg rows, teamCount team rows with medals on ranks 1..3,
-    /// and exactly four championship honours (one per winning-team member).
+    /// and podium honours (four members each for ranks 1..min(3, teamCount)).
     /// </summary>
     public static void ValidatePersisted(
         SeasonEntity source,
@@ -1039,40 +1039,54 @@ public static class TypeCupTeamInvariants
         IReadOnlyList<HonourEntity> honours)
     {
         List<HonourEntity> teamHonours = honours
-            .Where(h => h.SeasonId == source.Id && h.Kind == (int)Features.Records.HonourKind.TypeCupTeamChampion)
+            .Where(h => h.SeasonId == source.Id && (h.Kind == (int)Features.Records.HonourKind.TypeCupTeamChampion
+                || h.Kind == (int)Features.Records.HonourKind.TypeCupTeamRunnerUp
+                || h.Kind == (int)Features.Records.HonourKind.TypeCupTeamThirdPlace))
             .ToList();
-        if (teamHonours.Count != 4)
+        int podiumRanks = Math.Min(3, teams.Count);
+        int expectedHonours = checked(podiumRanks * 4);
+        if (teamHonours.Count != expectedHonours)
         {
             throw new InvalidOperationException(
-                $"Type Cup team for Season {source.SeasonNumber} must persist exactly four team championship honours, was {teamHonours.Count}.");
+                $"Type Cup team for Season {source.SeasonNumber} must persist exactly {expectedHonours} team podium honours, was {teamHonours.Count}.");
         }
 
-        TypeCupTeamStandingEntity champion = teams.Single(s => s.TeamRank == 1);
-        HashSet<int> championAthletes = legs
-            .Where(l => string.Equals(l.CreatureType, champion.CreatureType, StringComparison.Ordinal))
-            .Select(l => l.SaveAthleteId)
-            .ToHashSet();
-        if (championAthletes.Count != 4)
+        foreach (int rank in Enumerable.Range(1, podiumRanks))
         {
-            throw new InvalidOperationException("Type Cup team champion must field exactly four legs.");
-        }
-
-        HashSet<int> honourAthletes = new();
-        foreach (HonourEntity honour in teamHonours)
-        {
-            if (honour.SeasonNumber != source.SeasonNumber)
+            Features.Records.HonourKind expectedKind = Features.Records.HonourKindMapper.FromTypeCupTeamRank(rank);
+            TypeCupTeamStandingEntity team = teams.Single(s => s.TeamRank == rank);
+            HashSet<int> teamAthletes = legs
+                .Where(l => string.Equals(l.CreatureType, team.CreatureType, StringComparison.Ordinal))
+                .Select(l => l.SaveAthleteId)
+                .ToHashSet();
+            if (teamAthletes.Count != 4)
             {
-                throw new InvalidOperationException("Type Cup team championship honour has corrupt season linkage.");
+                throw new InvalidOperationException($"Type Cup team rank {rank} must field exactly four legs.");
             }
 
-            if (!championAthletes.Contains(honour.SaveAthleteId))
+            List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
+            if (rankHonours.Count != 4)
             {
-                throw new InvalidOperationException("Type Cup team championship honour does not match a champion-team leg.");
+                throw new InvalidOperationException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
             }
 
-            if (!honourAthletes.Add(honour.SaveAthleteId))
+            HashSet<int> honourAthletes = new();
+            foreach (HonourEntity honour in rankHonours)
             {
-                throw new InvalidOperationException("Type Cup team championship honours must cover four distinct athletes.");
+                if (honour.SeasonNumber != source.SeasonNumber)
+                {
+                    throw new InvalidOperationException("Type Cup team podium honour has corrupt season linkage.");
+                }
+
+                if (!teamAthletes.Contains(honour.SaveAthleteId))
+                {
+                    throw new InvalidOperationException($"Type Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
+                }
+
+                if (!honourAthletes.Add(honour.SaveAthleteId))
+                {
+                    throw new InvalidOperationException($"Type Cup team rank-{rank} podium honours must cover four distinct athletes.");
+                }
             }
         }
     }

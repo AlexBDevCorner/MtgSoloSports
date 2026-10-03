@@ -24,8 +24,8 @@ namespace MtgSoloSports.Features.Cups.RunTypeCupTeam;
 /// with deterministic tie-breaking (group-rank counts, aggregated round-place
 /// counts, raw base totals, seeded draw). Persists 32 Cup round payloads plus
 /// N x 4 leg standings plus N team standings (Gold for rank 1, Silver for rank 2,
-/// Bronze for rank 3) plus four official team championship honours (one per
-/// winning-team member) plus permanent nationality for uncapped participants
+/// Bronze for rank 3) plus official team podium honours (four members each for
+/// ranks 1..min(3, N), MSS-047) plus permanent nationality for uncapped participants
 /// plus the RNG-after state, in one transaction. Holds
 /// one per-save lock; read-only Cup queries never lock.
 /// </summary>
@@ -312,7 +312,9 @@ public sealed partial class RunTypeCupTeamHandler
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
-            e => e.SeasonId == source.Id && e.Kind == (int)Features.Records.HonourKind.TypeCupTeamChampion,
+            e => e.SeasonId == source.Id && (e.Kind == (int)Features.Records.HonourKind.TypeCupTeamChampion
+                || e.Kind == (int)Features.Records.HonourKind.TypeCupTeamRunnerUp
+                || e.Kind == (int)Features.Records.HonourKind.TypeCupTeamThirdPlace),
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {
