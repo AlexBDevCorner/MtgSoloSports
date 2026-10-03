@@ -16,6 +16,7 @@ import {
 } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
 import { historyPath, livePath, savesPath, type StandingsView } from '../routing/routes';
+import { MovementSection } from '../movement/MovementSection';
 import { zoneLabelForRank } from './zones';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import {
@@ -543,6 +544,14 @@ export function StandingsPage({
           </>
         )}
       </Card>
+
+      {seasonNumber !== null ? (
+        <MovementSection
+          saveId={saveId}
+          seasonNumber={seasonNumber}
+          isSeasonComplete={seasonEntry?.isComplete ?? false}
+        />
+      ) : null}
 
       {view === 'season' ? (
         <Card

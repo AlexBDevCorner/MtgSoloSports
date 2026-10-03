@@ -1,0 +1,297 @@
+/* Promotion/relegation movement board. Presentation only: the movements and
+   their order come from persisted backend facts; animation state never leaves
+   React. Higher league zones sit above lower league zones so promotion reads
+   upward and relegation reads downward. */
+
+.movement-controls {
+  margin: 12px 0 4px;
+}
+
+.movement-boundaries {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.movement-boundary {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.movement-boundary.is-active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.movement-boundary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.movement-boundary-title {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.movement-board {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.movement-zone {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 10px;
+  min-width: 0;
+}
+
+.movement-zone-upper {
+  border-bottom: none;
+}
+
+.movement-zone-lower {
+  border-top: none;
+}
+
+.movement-zone-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.movement-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.movement-divider-line {
+  flex: 1 1 auto;
+  border-top: 2px dashed var(--line-strong);
+}
+
+.movement-divider-label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.movement-tiles {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.movement-tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Promoted and relegated stay distinct without relying on colour alone:
+   direction glyph + text badge + border treatment differ. */
+.movement-tile.is-promoted {
+  border-top: 3px solid var(--accent);
+}
+
+.movement-tile.is-relegated {
+  border-top: 3px dashed var(--line-strong);
+}
+
+.movement-tile.is-latest {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.movement-tile.is-pending {
+  border-style: dashed;
+  background: transparent;
+}
+
+.movement-tile.is-quiet {
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.movement-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.movement-seq {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.movement-pending-badge {
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+}
+
+.badge-promoted {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.badge-relegated {
+  border: 1px solid var(--line-strong);
+  color: inherit;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.movement-tile-art {
+  aspect-ratio: 5 / 7;
+  max-height: 220px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+}
+
+.movement-tile-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--bg);
+  display: block;
+}
+
+img.movement-tile-portrait {
+  user-select: none;
+}
+
+.movement-portrait-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.movement-card-back {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 12px;
+  text-align: center;
+}
+
+.movement-card-back-motif {
+  font-size: 1.6rem;
+  color: var(--line-strong);
+}
+
+.movement-card-back-text {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.movement-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 12px;
+  min-width: 0;
+}
+
+.movement-leagues {
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+/* Arrival motion reinforces the sporting meaning: promoted tiles slide up
+   into the higher league, relegated tiles slide down into the lower league.
+   Only the latest tile animates so concurrent movements never collide. */
+.movement-tile.is-latest.arrive-up {
+  animation: movement-arrive-up 0.35s ease;
+}
+
+.movement-tile.is-latest.arrive-down {
+  animation: movement-arrive-down 0.35s ease;
+}
+
+@keyframes movement-arrive-up {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes movement-arrive-down {
+  from {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.movement-summary td {
+  vertical-align: middle;
+}
+
+@media (min-width: 720px) {
+  .movement-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .movement-tile.is-latest.arrive-up,
+  .movement-tile.is-latest.arrive-down {
+    animation: none;
+  }
+}
