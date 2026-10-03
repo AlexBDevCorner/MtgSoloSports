@@ -18,6 +18,7 @@
  * - `/saves/:saveId/cups`
  * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type`) -> one Cup edition
  * - `/saves/:saveId/cups/:cup/teams/:teamKey` -> one Cup team's history
+ * - `/saves/:saveId/athletes?{search}` -> athlete search/browse (MSS-052)
  * - `/saves/:saveId/athletes/:athleteId`
  *
  * Query-string scheme (minimal, documented):
@@ -33,6 +34,11 @@
  *   the first league and latest season; an explicit league id that is not
  *   part of the selected season is an error, never a silent substitution.
  *   Present values are authoritative and shareable.
+ * - Athlete search (`/saves/:saveId/athletes`) keeps free-text query,
+ *   sporting filters, sort and pagination in the query string
+ *   (`?q=&colours=&types=&current=&minNonPool=&maxNonPool=&minHonours=&...&sort=&dir=&skip=&take=`).
+ *   Absent values fall back to page defaults; present values restore that
+ *   exact search and are shareable across tabs.
  *
  * Save IDs in the URL are authoritative for requests and page context. The
  * `localStorage` last-selected-save value is only a fallback for the root
@@ -85,6 +91,7 @@ export type Route =
     }
   | { name: 'records'; saveId: string }
   | { name: 'cups'; saveId: string; view: CupsView }
+  | { name: 'athletes'; saveId: string; search: string }
   | { name: 'athlete'; saveId: string; athleteId: number; rawAthleteId: string }
   | { name: 'invalidAthlete'; saveId: string; rawAthleteId: string }
   | { name: 'notFound'; path: string };
@@ -184,6 +191,17 @@ export function athletePath(saveId: string, athleteId: number): string {
 }
 
 /**
+ * Athlete search/browse entry point, e.g.
+ * `/saves/:saveId/athletes?q=faerie&minNonPool=5&sort=honours&dir=desc`.
+ * Free text, filters, sort and pagination are reflected in the URL and
+ * survive refresh, Back/Forward and new tabs.
+ */
+export function athletesPath(saveId: string, search?: string): string {
+  const suffix = search && search.length > 0 ? (search.startsWith('?') ? search : `?${search}`) : '';
+  return `/saves/${encodeURIComponent(saveId)}/athletes${suffix}`;
+}
+
+/**
  * MSS-040 reservation, now a first-class Standings alias (MSS-041).
  * Keep the exact `/saves/:saveId/leagues/:leagueId` shape for compatibility;
  * the parser maps it to the standings route with season/view from the query.
@@ -246,6 +264,7 @@ export function routeSaveId(route: Route): string | null {
     case 'cups':
     case 'athlete':
     case 'invalidAthlete':
+    case 'athletes':
       return route.saveId;
     default:
       return null;
@@ -414,6 +433,9 @@ export function parseRoute(pathname: string, search: string): Route {
       return { name: 'notFound', path: pathname + search };
     }
     case 'athletes': {
+      if (segments.length === 3) {
+        return { name: 'athletes', saveId, search: search.startsWith('?') ? search : search ? `?${search}` : '' };
+      }
       if (segments.length !== 4) {
         return { name: 'notFound', path: pathname + search };
       }

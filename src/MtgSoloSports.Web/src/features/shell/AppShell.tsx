@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { CatalogStatus } from '../catalog/catalogStatus';
 import { Link } from '../routing/router';
 import {
+  athletesPath,
   cupsPath,
   dashboardPath,
   historyPath,
@@ -13,7 +14,7 @@ import {
 import { MenuButton } from './MenuButton';
 import { RAIL_ID, useRailDrawer } from './useRailDrawer';
 
-export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'history' | 'records' | 'cups' | 'athlete';
+export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'history' | 'records' | 'cups' | 'athletes' | 'athlete';
 
 const VIEW_TITLES: Record<View, string> = {
   saves: 'Saves',
@@ -23,6 +24,7 @@ const VIEW_TITLES: Record<View, string> = {
   history: 'History',
   records: 'Records',
   cups: 'Cups',
+  athletes: 'Athletes',
   athlete: 'Athlete',
 };
 
@@ -127,6 +129,9 @@ export function AppShell({
             title="Open league tables and stage placements"
           >
             Standings
+          </RailLink>
+          <RailLink href={scoped(athletesPath)} current={view === 'athletes' || view === 'athlete'} title="Search and browse athletes">
+            Athletes
           </RailLink>
           <RailLink href={scoped(historyPath)} current={view === 'history'} title="Browse history">
             History
