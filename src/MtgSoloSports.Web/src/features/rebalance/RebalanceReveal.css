@@ -1,0 +1,301 @@
+/* Feeder-rebalance board. Presentation only: movements and their order come
+   from persisted backend facts; animation state never leaves React. The
+   feeder league stays visually anchored between the Superleague (above) and
+   the Common Pool (below) so departures read upward, returns read downward,
+   overflow reads down to the pool and draws read up from it. */
+
+.rebalance-controls {
+  margin: 12px 0 4px;
+}
+
+.rebalance-leagues {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.rebalance-league {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.rebalance-league.is-active {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.rebalance-league.is-unchanged {
+  border-style: dashed;
+}
+
+.rebalance-league-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.rebalance-league-title {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.rebalance-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.rebalance-count-sep {
+  color: var(--text-dim);
+}
+
+.rebalance-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rebalance-zone {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 10px;
+  min-width: 0;
+}
+
+.rebalance-zone-super {
+  border-bottom: none;
+}
+
+.rebalance-zone-pool {
+  border-top: none;
+}
+
+.rebalance-zone-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.rebalance-balanced {
+  margin: 4px 0 0;
+}
+
+.rebalance-tiles {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.rebalance-tile {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Movement types stay distinct without relying on colour alone:
+   glyph + text badge + border treatment differ per type. */
+.rebalance-tile.is-to-superleague {
+  border-top: 3px solid var(--accent);
+}
+
+.rebalance-tile.is-returning {
+  border-top: 3px dashed var(--line-strong);
+}
+
+.rebalance-tile.is-to-pool {
+  border-top: 3px dotted var(--line-strong);
+}
+
+.rebalance-tile.is-drawn {
+  border-top: 3px double var(--accent);
+}
+
+.rebalance-tile.is-latest {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.rebalance-tile.is-pending {
+  border-style: dashed;
+  background: transparent;
+}
+
+.rebalance-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+
+.rebalance-seq {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.rebalance-pending-badge {
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+}
+
+.badge-rebalance-to-superleague {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.badge-rebalance-returning,
+.badge-rebalance-to-pool,
+.badge-rebalance-drawn {
+  border: 1px solid var(--line-strong);
+  color: inherit;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rebalance-tile-art {
+  aspect-ratio: 5 / 7;
+  max-height: 220px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+}
+
+.rebalance-tile-portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--bg);
+  display: block;
+}
+
+img.rebalance-tile-portrait {
+  user-select: none;
+}
+
+.rebalance-portrait-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.rebalance-card-back {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+  padding: 12px;
+  text-align: center;
+}
+
+.rebalance-card-back-motif {
+  font-size: 1.6rem;
+  color: var(--line-strong);
+}
+
+.rebalance-card-back-text {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.rebalance-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 12px;
+  min-width: 0;
+}
+
+.rebalance-leagues {
+  overflow-wrap: anywhere;
+}
+
+/* Arrival motion reinforces the sporting meaning: departures and draws slide
+   up, returns and pool outflow slide down. Only the latest tile animates so
+   concurrent movements never collide. */
+.rebalance-tile.is-latest.arrive-up {
+  animation: rebalance-arrive-up 0.35s ease;
+}
+
+.rebalance-tile.is-latest.arrive-down {
+  animation: rebalance-arrive-down 0.35s ease;
+}
+
+@keyframes rebalance-arrive-up {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rebalance-arrive-down {
+  from {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rebalance-summary td,
+.rebalance-counts-table td {
+  vertical-align: middle;
+}
+
+@media (min-width: 720px) {
+  .rebalance-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rebalance-tile.is-latest.arrive-up,
+  .rebalance-tile.is-latest.arrive-down {
+    animation: none;
+  }
+}

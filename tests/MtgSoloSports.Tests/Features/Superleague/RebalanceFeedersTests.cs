@@ -412,6 +412,66 @@ public sealed class RebalanceFeedersTests
         }
     }
 
+    [Fact]
+    public async Task Rebalance_Inaugural_ExposesDeparturesForReveal()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Reveal", 5151UL, 6161UL, UniverseTestCatalog.Build());
+            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
+            CreateInauguralSuperleagueHandler inaugural = new(store);
+            await inaugural.HandleAsync(created.Detail.SaveId);
+            RebalanceFeedersHandler handler = new(store);
+            RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId);
+
+            // Underfilled multi-league case: every feeder loses 4 to Superleague, draws 4.
+            response.TotalDeparted.ShouldBe(32);
+            response.TotalReturned.ShouldBe(0);
+            response.Departed.Count.ShouldBe(32);
+            response.Returned.Count.ShouldBe(0);
+            foreach (RebalanceColorResult color in response.Colors)
+            {
+                color.StartingCount.ShouldBe(32);
+                color.DepartedCount.ShouldBe(4);
+                color.ReturnedCount.ShouldBe(0);
+                color.ProvisionalCount.ShouldBe(28);
+                color.ProvisionalCount.ShouldBe(
+                    color.StartingCount - color.DepartedCount + color.ReturnedCount);
+                color.FinalCount.ShouldBe(32);
+            }
+
+            foreach (RebalanceMovementMember member in response.Departed)
+            {
+                member.Kind.ShouldBe(RebalanceSuperleagueTransfers.DepartureKind);
+                member.ToLeagueName.ShouldBe("Superleague");
+                member.FromSeasonRank.ShouldBeInRange(1, 4);
+            }
+
+            foreach (RebalanceMovementMember member in response.Draws)
+            {
+                member.Kind.ShouldBe("RebalanceDraw");
+                member.FromLeagueName.ShouldBe("Common Pool");
+                member.FromSeasonRank.ShouldBe(0);
+            }
+
+            // Historical replay shows the exact same departures and draws.
+            GetRebalanceResultHandler query = new(store);
+            GetRebalanceResultResponse replay =
+                await query.HandleAsync(created.Detail.SaveId, fromSeasonNumber: 1);
+            replay.Departed.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
+                response.Departed.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+            replay.Draws.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
+                response.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+            replay.Colors.Select(c => c.ProvisionalCount).ShouldBe(
+                response.Colors.Select(c => c.ProvisionalCount).ToList());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static async Task AssertQueryMatchesAsync(SaveStore store, Guid saveId, RebalanceFeedersResponse response)
     {
         GetRebalanceResultHandler query = new(store);
@@ -421,13 +481,28 @@ public sealed class RebalanceFeedersTests
         summary.MovementCount.ShouldBe(response.MovementCount);
         summary.TotalDrawn.ShouldBe(response.TotalDrawn);
         summary.TotalDisplaced.ShouldBe(response.TotalDisplaced);
+        summary.TotalDeparted.ShouldBe(response.TotalDeparted);
+        summary.TotalReturned.ShouldBe(response.TotalReturned);
         summary.Draws.Select(m => m.AthleteId).OrderBy(id => id)
             .ShouldBe(response.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
         summary.Displaced.Select(m => m.AthleteId).OrderBy(id => id)
             .ShouldBe(response.Displaced.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        summary.Departed.Select(m => m.AthleteId).OrderBy(id => id)
+            .ShouldBe(response.Departed.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        summary.Returned.Select(m => m.AthleteId).OrderBy(id => id)
+            .ShouldBe(response.Returned.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        foreach (RebalanceColorResult color in summary.Colors)
+        {
+            color.FinalCount.ShouldBe(32);
+            color.ProvisionalCount.ShouldBe(
+                color.StartingCount - color.DepartedCount + color.ReturnedCount);
+            color.FinalCount.ShouldBe(
+                color.ProvisionalCount - color.DisplacedCount + color.DrawnCount);
+        }
 
         GetRebalanceResultResponse again = await query.HandleAsync(saveId, fromSeasonNumber: response.FromSeasonNumber).ConfigureAwait(false);
         again.MovementCount.ShouldBe(response.MovementCount);
+        again.TotalDeparted.ShouldBe(response.TotalDeparted);
     }
 
     private static async Task<(RebalanceFeedersResponse Response, string Root)> RunInauguralRebalanceAsync(ulong seed, ulong stream)

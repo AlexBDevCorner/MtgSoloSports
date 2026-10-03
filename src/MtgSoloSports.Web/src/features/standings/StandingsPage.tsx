@@ -17,6 +17,7 @@ import {
 import { AthleteLink, Link } from '../routing/router';
 import { historyPath, livePath, savesPath, type StandingsView } from '../routing/routes';
 import { MovementSection } from '../movement/MovementSection';
+import { RebalanceSection } from '../rebalance/RebalanceSection';
 import { zoneLabelForRank } from './zones';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import {
@@ -547,6 +548,14 @@ export function StandingsPage({
 
       {seasonNumber !== null ? (
         <MovementSection
+          saveId={saveId}
+          seasonNumber={seasonNumber}
+          isSeasonComplete={seasonEntry?.isComplete ?? false}
+        />
+      ) : null}
+
+      {seasonNumber !== null ? (
+        <RebalanceSection
           saveId={saveId}
           seasonNumber={seasonNumber}
           isSeasonComplete={seasonEntry?.isComplete ?? false}

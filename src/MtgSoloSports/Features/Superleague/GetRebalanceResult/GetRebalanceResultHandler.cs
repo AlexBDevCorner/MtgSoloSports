@@ -218,14 +218,20 @@ public sealed class GetRebalanceResultHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        Dictionary<int, string?> images = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        List<RebalanceColorResult> colors = MapColorResults(nextFeeders, movements, rules);
+        (IReadOnlyList<RebalanceMovementMember> departed, IReadOnlyList<RebalanceMovementMember> returned) =
+            await LoadSuperleagueTransfersAsync(context, source, next, names, images, leaguesById, cancellationToken).ConfigureAwait(false);
+        List<RebalanceColorResult> colors = MapColorResults(nextFeeders, movements, departed, returned, rules);
 
-        List<RebalanceMovementMember> draws = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById);
-        List<RebalanceMovementMember> displacedMembers = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById);
+        List<RebalanceMovementMember> draws = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById, images);
+        List<RebalanceMovementMember> displacedMembers = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById, images);
 
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
@@ -238,15 +244,70 @@ public sealed class GetRebalanceResultHandler
             colors,
             draws,
             displacedMembers,
+            departed,
+            returned,
             draws.Count,
             displacedMembers.Count,
+            departed.Count,
+            returned.Count,
             pool,
             movements.Count);
+    }
+
+    internal static async Task<(IReadOnlyList<RebalanceMovementMember> Departed, IReadOnlyList<RebalanceMovementMember> Returned)> LoadSuperleagueTransfersAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<int, string> names,
+        Dictionary<int, string?> images,
+        Dictionary<int, LeagueEntity> leaguesById,
+        CancellationToken cancellationToken)
+    {
+        List<LeagueEntity> sourceFeeders = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        LeagueEntity? sourceSuperleague = await context.Leagues
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken)
+            .ConfigureAwait(false);
+        List<LeagueEntity> nextFeeders = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        LeagueEntity? nextSuperleague = await context.Leagues
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken)
+            .ConfigureAwait(false);
+        if (nextSuperleague is null)
+        {
+            throw new InvalidOperationException($"Season {next.SeasonNumber} has no Superleague.");
+        }
+
+        List<SeasonMembershipEntity> sourceMemberships = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<SeasonMembershipEntity> nextMemberships = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == next.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> rankByAthlete = await RebalanceFeedersHandler.LoadSourceRanksAsync(
+            context, source, sourceFeeders, sourceSuperleague, cancellationToken).ConfigureAwait(false);
+        return RebalanceSuperleagueTransfers.Map(
+            sourceFeeders, sourceSuperleague, nextFeeders, nextSuperleague,
+            sourceMemberships, nextMemberships, rankByAthlete, names, images, leaguesById);
     }
 
     internal static List<RebalanceColorResult> MapColorResults(
         List<LeagueEntity> nextFeeders,
         List<MovementEntity> movements,
+        IReadOnlyList<RebalanceMovementMember> departed,
+        IReadOnlyList<RebalanceMovementMember> returned,
         RulesV1 rules)
     {
         Dictionary<int, int> drawnByLeague = movements
@@ -257,6 +318,8 @@ public sealed class GetRebalanceResultHandler
             .Where(m => m.Kind == (int)MovementKind.RebalanceDisplacement)
             .GroupBy(m => m.FromLeagueId)
             .ToDictionary(g => g.Key, g => g.Count());
+        IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor =
+            RebalanceSuperleagueTransfers.CountsByColor(departed, returned);
 
         List<RebalanceColorResult> colors = new(nextFeeders.Count);
         foreach (LeagueEntity feeder in nextFeeders)
@@ -264,10 +327,22 @@ public sealed class GetRebalanceResultHandler
             drawnByLeague.TryGetValue(feeder.Id, out int drawn);
             displacedByLeague.TryGetValue(feeder.Id, out int displaced);
             int provisional = rules.LeagueSize - drawn + displaced;
+            string colorName = ((SportingColor)feeder.SportingColor).ToString();
+            transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
+            int viaTransfers = rules.LeagueSize - transfers.Departed + transfers.Returned;
+            if (viaTransfers != provisional)
+            {
+                throw new InvalidOperationException(
+                    $"League '{feeder.Name}' provisional count {provisional} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {viaTransfers}).");
+            }
+
             colors.Add(new RebalanceColorResult(
                 feeder.Id,
                 feeder.Name,
-                ((SportingColor)feeder.SportingColor).ToString(),
+                colorName,
+                rules.LeagueSize,
+                transfers.Departed,
+                transfers.Returned,
                 provisional,
                 displaced,
                 drawn,
