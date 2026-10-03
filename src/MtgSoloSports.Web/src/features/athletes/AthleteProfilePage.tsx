@@ -2,6 +2,7 @@ import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link } from '../routing/router';
 import { dashboardPath, livePath, savesPath } from '../routing/routes';
+import { medalBadge } from '../cups/cupFormat';
 import type { AthleteProfileState } from './useAthleteProfile';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
@@ -74,6 +75,7 @@ export function AthleteProfilePage({
   }
 
   const { card, career, seasons, honours, movements, cupSelections } = profile;
+  const cupHistory = profile.cupHistory ?? [];
   const statusLabel = career.isActive
     ? `Active · ${career.currentLeagueName ?? 'League'}`
     : 'Common pool';
@@ -407,6 +409,68 @@ export function AthleteProfilePage({
               </tbody>
             </table>
           </div>
+        </Card>
+
+        <Card
+          eyebrow="Cups"
+          title={`Cup history — ${cupHistory.length} appearance(s)`}
+          info={
+            <p>
+              Every completed Cup is its own row: season, event, team, place and result. Team rows
+              show the team&apos;s final place; the leg detail is the athlete&apos;s own group
+              contribution. Newest seasons first.
+            </p>
+          }
+        >
+          {cupHistory.length === 0 ? (
+            <p className="muted">
+              No Cup appearances yet. Completed Color Cup (individual and team) and Type Cup (team)
+              results appear here automatically.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Season</th>
+                    <th scope="col">Cup / Event</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Place</th>
+                    <th scope="col">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cupHistory.map((entry, index) => (
+                    <tr
+                      key={`${entry.sourceSeasonNumber}-${entry.cup}-${entry.event}-${entry.teamKey}-${index}`}
+                    >
+                      <td className="numeric">{entry.sourceSeasonNumber}</td>
+                      <td>
+                        {entry.eventName}{' '}
+                        <span className="badge badge-wait">{entry.event}</span>
+                      </td>
+                      <td>{entry.teamName}</td>
+                      <td className="numeric">
+                        P{entry.place}
+                        {entry.event === 'Team' ? (
+                          <span className="card-sub">
+                            {' '}
+                            · team
+                            {entry.groupRank !== null && entry.groupRank !== undefined
+                              ? ` · leg P${entry.groupRank}`
+                              : ''}
+                          </span>
+                        ) : (
+                          <span className="card-sub"> · individual</span>
+                        )}
+                      </td>
+                      <td>{medalBadge(entry.medal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card eyebrow="Stories" title="Sporting stories">
