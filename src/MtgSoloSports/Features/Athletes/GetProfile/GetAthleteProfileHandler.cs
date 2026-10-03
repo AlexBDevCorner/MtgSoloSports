@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Athletes.Projections;
+using MtgSoloSports.Features.Cups.CupHistory;
+using MtgSoloSports.Features.Cups.RunColorCupIndividual;
+using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
@@ -10,11 +13,11 @@ namespace MtgSoloSports.Features.Athletes.GetProfile;
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Reads one athlete's career
 /// profile from transactional projections plus the save-owned card snapshot,
-/// plus official honours, postseason movements and Cup selections for the
+/// plus official honours, postseason movements, Cup selections and Cup history for the
 /// spectator profile view. Never decompresses round payloads; the normal path
 /// touches only <c>SaveAthletes</c> + <c>AthleteCareers</c> +
 /// <c>AthleteSeasonSummaries</c> + <c>Honours</c> + <c>Movements</c> +
-/// Cup selection tables.
+/// Cup selection/standing tables.
 /// When projections are missing (saves created before MSS-013), falls back to
 /// an in-memory rebuild from normalized standings/memberships for that single
 /// athlete — still without round payloads — so old saves remain readable while
@@ -54,7 +57,8 @@ public sealed class GetAthleteProfileHandler
         List<AthleteHonourDto> honours = await LoadHonoursAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections);
+        List<AthleteCupHistoryDto> cupHistory = await LoadCupHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory);
     }
 
     internal static async Task<SaveAthleteEntity> LoadAthleteAsync(
@@ -123,7 +127,8 @@ public sealed class GetAthleteProfileHandler
         List<AthleteSeasonSummaryEntity> summaries,
         IReadOnlyList<AthleteHonourDto>? honours = null,
         IReadOnlyList<AthleteMovementDto>? movements = null,
-        IReadOnlyList<AthleteCupSelectionDto>? selections = null)
+        IReadOnlyList<AthleteCupSelectionDto>? selections = null,
+        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null)
     {
         AthleteCardDto card = MapCard(athlete);
         AthleteCareerDto careerDto = MapCareer(career);
@@ -139,7 +144,8 @@ public sealed class GetAthleteProfileHandler
             seasons,
             honours ?? Array.Empty<AthleteHonourDto>(),
             movements ?? Array.Empty<AthleteMovementDto>(),
-            selections ?? Array.Empty<AthleteCupSelectionDto>());
+            selections ?? Array.Empty<AthleteCupSelectionDto>(),
+            cupHistory ?? Array.Empty<AthleteCupHistoryDto>());
     }
 
     internal static async Task<GetAthleteProfileResponse> BuildFallbackAsync(
@@ -156,7 +162,8 @@ public sealed class GetAthleteProfileHandler
         List<AthleteHonourDto> honours = await LoadHonoursAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
         List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
-        return MapFallback(saveId, athlete, history, snapshot.Rules, honours, movements, selections);
+        List<AthleteCupHistoryDto> cupHistory = await LoadCupHistoryAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
+        return MapFallback(saveId, athlete, history, snapshot.Rules, honours, movements, selections, cupHistory);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);
@@ -174,7 +181,8 @@ public sealed class GetAthleteProfileHandler
         SimulationKernel.Rules.RulesV1 rules,
         IReadOnlyList<AthleteHonourDto>? honours = null,
         IReadOnlyList<AthleteMovementDto>? movements = null,
-        IReadOnlyList<AthleteCupSelectionDto>? selections = null)
+        IReadOnlyList<AthleteCupSelectionDto>? selections = null,
+        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null)
     {
         Dictionary<int, SeasonMembershipEntity> membershipBySeason = history.Memberships.ToDictionary(e => e.SeasonId);
         Dictionary<int, SeasonStandingEntity> finalBySeason = history.SeasonRows.ToDictionary(e => e.SeasonId);
@@ -189,7 +197,7 @@ public sealed class GetAthleteProfileHandler
         }
 
         AthleteCareerEntity career = AthleteProjectionUpdater.BuildCareer(athlete.Id, history, rules);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory);
     }
 
     internal static async Task<List<AthleteHonourDto>> LoadHonoursAsync(
@@ -569,6 +577,224 @@ public sealed class GetAthleteProfileHandler
             .OrderBy(e => e.SourceSeasonNumber)
             .ThenBy(e => e.CupKind, StringComparer.Ordinal)
             .ThenBy(e => e.SelectionRank)
+            .ToList();
+    }
+
+    internal static async Task<List<AthleteCupHistoryDto>> LoadCupHistoryAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        List<ColorCupIndividualStandingEntity> individuals = await context.ColorCupIndividualStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<ColorCupTeamGroupStandingEntity> colorLegs = await context.ColorCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamGroupStandingEntity> typeLegs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        List<ColorCupTeamStandingEntity> colorTeams = [];
+        if (colorLegs.Count > 0)
+        {
+            HashSet<int> seasonIds = colorLegs.Select(l => l.SourceSeasonId).ToHashSet();
+            colorTeams = await context.ColorCupTeamStandings
+                .AsNoTracking()
+                .Where(e => seasonIds.Contains(e.SourceSeasonId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        List<TypeCupTeamStandingEntity> typeTeams = [];
+        if (typeLegs.Count > 0)
+        {
+            HashSet<int> seasonIds = typeLegs.Select(l => l.SourceSeasonId).ToHashSet();
+            typeTeams = await context.TypeCupTeamStandings
+                .AsNoTracking()
+                .Where(e => seasonIds.Contains(e.SourceSeasonId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return BuildCupHistory(individuals, colorLegs, colorTeams, typeLegs, typeTeams);
+    }
+
+    internal static List<AthleteCupHistoryDto> BuildCupHistory(
+        IReadOnlyList<ColorCupIndividualStandingEntity> individuals,
+        IReadOnlyList<ColorCupTeamGroupStandingEntity> colorLegs,
+        IReadOnlyList<ColorCupTeamStandingEntity> colorTeams,
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> typeLegs,
+        IReadOnlyList<TypeCupTeamStandingEntity> typeTeams)
+    {
+        ArgumentNullException.ThrowIfNull(individuals);
+        ArgumentNullException.ThrowIfNull(colorLegs);
+        ArgumentNullException.ThrowIfNull(colorTeams);
+        ArgumentNullException.ThrowIfNull(typeLegs);
+        ArgumentNullException.ThrowIfNull(typeTeams);
+        List<AthleteCupHistoryDto> history = new(individuals.Count + colorLegs.Count + typeLegs.Count);
+        history.AddRange(individuals.Select(MapIndividualRow));
+        foreach (ColorCupTeamGroupStandingEntity leg in colorLegs)
+        {
+            AthleteCupHistoryDto? entry = MapColorTeamRow(leg, colorTeams);
+            if (entry is not null)
+            {
+                history.Add(entry);
+            }
+        }
+
+        foreach (TypeCupTeamGroupStandingEntity leg in typeLegs)
+        {
+            AthleteCupHistoryDto? entry = MapTypeTeamRow(leg, typeTeams);
+            if (entry is not null)
+            {
+                history.Add(entry);
+            }
+        }
+
+        return OrderCupHistory(history);
+    }
+
+    internal static AthleteCupHistoryDto MapIndividualRow(ColorCupIndividualStandingEntity row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (row.SourceSeasonNumber <= 0)
+        {
+            throw new InvalidOperationException($"Color Cup individual standing {row.Id} references invalid season number {row.SourceSeasonNumber}.");
+        }
+
+        if (row.CupRank <= 0)
+        {
+            throw new InvalidOperationException($"Color Cup individual standing {row.Id} has invalid rank {row.CupRank}.");
+        }
+
+        SportingColor color = (SportingColor)row.SportingColor;
+        string teamKey = CupTeamKeys.ColorKey(color);
+        string teamName = CupTeamKeys.ColorName(color);
+        return new AthleteCupHistoryDto(
+            row.SourceSeasonNumber,
+            CupTeamKeys.ColorCup,
+            "Individual",
+            "Color Cup",
+            teamKey,
+            teamName,
+            row.CupRank,
+            ((ColorCupMedal)row.Medal).ToString(),
+            row.CupScoreThousandths,
+            GroupRank: null,
+            GroupNumber: null);
+    }
+
+    internal static AthleteCupHistoryDto? MapColorTeamRow(
+        ColorCupTeamGroupStandingEntity leg,
+        IReadOnlyList<ColorCupTeamStandingEntity> colorTeams)
+    {
+        ArgumentNullException.ThrowIfNull(leg);
+        ArgumentNullException.ThrowIfNull(colorTeams);
+        ColorCupTeamStandingEntity? team = colorTeams.FirstOrDefault(candidate =>
+            candidate.SourceSeasonId == leg.SourceSeasonId &&
+            candidate.SportingColor == leg.SportingColor);
+        if (team is null)
+        {
+            return null;
+        }
+
+        if (leg.SourceSeasonNumber <= 0 || team.SourceSeasonNumber <= 0)
+        {
+            throw new InvalidOperationException($"Color Cup team leg {leg.Id} references an invalid season number.");
+        }
+
+        if (team.TeamRank <= 0)
+        {
+            throw new InvalidOperationException($"Color Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
+        }
+
+        if (leg.SourceSeasonNumber != team.SourceSeasonNumber)
+        {
+            throw new InvalidOperationException($"Color Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
+        }
+
+        SportingColor color = (SportingColor)leg.SportingColor;
+        string teamKey = CupTeamKeys.ColorKey(color);
+        string teamName = CupTeamKeys.ColorName(color);
+        return new AthleteCupHistoryDto(
+            team.SourceSeasonNumber,
+            CupTeamKeys.ColorCup,
+            "Team",
+            "Color Cup Team",
+            teamKey,
+            teamName,
+            team.TeamRank,
+            ((ColorCupMedal)team.Medal).ToString(),
+            team.TeamScoreThousandths,
+            leg.GroupRank,
+            leg.GroupNumber);
+    }
+
+    internal static AthleteCupHistoryDto? MapTypeTeamRow(
+        TypeCupTeamGroupStandingEntity leg,
+        IReadOnlyList<TypeCupTeamStandingEntity> typeTeams)
+    {
+        ArgumentNullException.ThrowIfNull(leg);
+        ArgumentNullException.ThrowIfNull(typeTeams);
+        TypeCupTeamStandingEntity? team = typeTeams.FirstOrDefault(candidate =>
+            candidate.SourceSeasonId == leg.SourceSeasonId &&
+            string.Equals(candidate.CreatureType, leg.CreatureType, StringComparison.Ordinal));
+        if (team is null)
+        {
+            return null;
+        }
+
+        if (leg.SourceSeasonNumber <= 0 || team.SourceSeasonNumber <= 0)
+        {
+            throw new InvalidOperationException($"Type Cup team leg {leg.Id} references an invalid season number.");
+        }
+
+        if (team.TeamRank <= 0)
+        {
+            throw new InvalidOperationException($"Type Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
+        }
+
+        if (leg.SourceSeasonNumber != team.SourceSeasonNumber)
+        {
+            throw new InvalidOperationException($"Type Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(leg.CreatureType))
+        {
+            throw new InvalidOperationException($"Type Cup team leg {leg.Id} has no creature type.");
+        }
+
+        return new AthleteCupHistoryDto(
+            team.SourceSeasonNumber,
+            CupTeamKeys.TypeCup,
+            "Team",
+            "Type Cup Team",
+            leg.CreatureType,
+            leg.CreatureType,
+            team.TeamRank,
+            ((TypeCupMedal)team.Medal).ToString(),
+            team.TeamScoreThousandths,
+            leg.GroupRank,
+            leg.GroupNumber);
+    }
+
+    internal static List<AthleteCupHistoryDto> OrderCupHistory(List<AthleteCupHistoryDto> history)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+        return history
+            .OrderByDescending(e => e.SourceSeasonNumber)
+            .ThenBy(e => e.Cup, StringComparer.Ordinal)
+            .ThenBy(e => e.Event, StringComparer.Ordinal)
+            .ThenBy(e => e.TeamKey, StringComparer.Ordinal)
+            .ThenBy(e => e.Place)
             .ToList();
     }
 
