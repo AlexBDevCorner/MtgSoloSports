@@ -813,15 +813,18 @@ public sealed class RebalanceFeedersHandler
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string?> images = await LoadAthleteImagesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        List<RebalanceColorResult> colors = await MapColorResultsAsync(context, next, plan, cancellationToken).ConfigureAwait(false);
         List<MovementEntity> movements = await LoadRebalanceMovementsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
-        List<RebalanceMovementMember> draws = MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById);
-        List<RebalanceMovementMember> displaced = MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById);
+        List<RebalanceMovementMember> draws = MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById, images);
+        List<RebalanceMovementMember> displaced = MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById, images);
+        (IReadOnlyList<RebalanceMovementMember> departed, IReadOnlyList<RebalanceMovementMember> returned) =
+            await LoadSuperleagueTransfersAsync(context, source, next, names, images, leaguesById, cancellationToken).ConfigureAwait(false);
+        List<RebalanceColorResult> colors = await MapColorResultsAsync(context, next, plan, departed, returned, cancellationToken).ConfigureAwait(false);
 
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
@@ -834,8 +837,12 @@ public sealed class RebalanceFeedersHandler
             colors,
             draws,
             displaced,
+            departed,
+            returned,
             draws.Count,
             displaced.Count,
+            departed.Count,
+            returned.Count,
             pool,
             movements.Count,
             rngBefore.State,
@@ -844,10 +851,91 @@ public sealed class RebalanceFeedersHandler
             rngAfter.Stream);
     }
 
+    internal static async Task<Dictionary<int, string?>> LoadAthleteImagesAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        return await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<(IReadOnlyList<RebalanceMovementMember> Departed, IReadOnlyList<RebalanceMovementMember> Returned)> LoadSuperleagueTransfersAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<int, string> names,
+        Dictionary<int, string?> images,
+        Dictionary<int, LeagueEntity> leaguesById,
+        CancellationToken cancellationToken)
+    {
+        List<LeagueEntity> sourceFeeders = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        LeagueEntity? sourceSuperleague = await context.Leagues
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken)
+            .ConfigureAwait(false);
+        List<LeagueEntity> nextFeeders = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        LeagueEntity nextSuperleague = await LoadSuperleagueAsync(context, next, cancellationToken).ConfigureAwait(false);
+        List<SeasonMembershipEntity> sourceMemberships = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<SeasonMembershipEntity> nextMemberships = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == next.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> rankByAthlete = await LoadSourceRanksAsync(context, source, sourceFeeders, sourceSuperleague, cancellationToken).ConfigureAwait(false);
+        return RebalanceSuperleagueTransfers.Map(
+            sourceFeeders, sourceSuperleague, nextFeeders, nextSuperleague,
+            sourceMemberships, nextMemberships, rankByAthlete, names, images, leaguesById);
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadSourceRanksAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<LeagueEntity> sourceFeeders,
+        LeagueEntity? sourceSuperleague,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, int> ranks = new();
+        List<LeagueEntity> leagues = [.. sourceFeeders];
+        if (sourceSuperleague is not null)
+        {
+            leagues.Add(sourceSuperleague);
+        }
+
+        foreach (LeagueEntity league in leagues)
+        {
+            List<SeasonStandingEntity> rows = await context.SeasonStandings
+                .AsNoTracking()
+                .Where(e => e.SeasonId == source.Id && e.LeagueId == league.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            foreach (SeasonStandingEntity row in rows)
+            {
+                ranks[row.SaveAthleteId] = row.SeasonRank;
+            }
+        }
+
+        return ranks;
+    }
+
     internal static async Task<List<RebalanceColorResult>> MapColorResultsAsync(
         SaveDbContext context,
         SeasonEntity next,
         RebalanceFeedersSelection.RebalancePlan plan,
+        IReadOnlyList<RebalanceMovementMember> departed,
+        IReadOnlyList<RebalanceMovementMember> returned,
         CancellationToken cancellationToken)
     {
         List<LeagueEntity> nextFeeders = await context.Leagues
@@ -862,16 +950,30 @@ public sealed class RebalanceFeedersHandler
             .GroupBy(e => e.LeagueId!.Value)
             .ToDictionaryAsync(g => g.Key, g => g.Count(), cancellationToken)
             .ConfigureAwait(false);
+        IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor =
+            RebalanceSuperleagueTransfers.CountsByColor(departed, returned);
 
         List<RebalanceColorResult> colors = new(nextFeeders.Count);
         foreach (LeagueEntity feeder in nextFeeders)
         {
             RebalanceFeedersSelection.ColorPlan colorPlan = plan.PerColor.Single(p => p.Color == (SportingColor)feeder.SportingColor);
             counts.TryGetValue(feeder.Id, out int finalCount);
+            string colorName = ((SportingColor)feeder.SportingColor).ToString();
+            transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
+            int expectedProvisional = 32 - transfers.Departed + transfers.Returned;
+            if (expectedProvisional != colorPlan.ProvisionalCount)
+            {
+                throw new InvalidOperationException(
+                    $"League '{feeder.Name}' provisional count {colorPlan.ProvisionalCount} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {expectedProvisional}).");
+            }
+
             colors.Add(new RebalanceColorResult(
                 feeder.Id,
                 feeder.Name,
-                ((SportingColor)feeder.SportingColor).ToString(),
+                colorName,
+                32,
+                transfers.Departed,
+                transfers.Returned,
                 colorPlan.ProvisionalCount,
                 colorPlan.Displaced.Count,
                 colorPlan.Draws.Count,
@@ -899,7 +1001,8 @@ public sealed class RebalanceFeedersHandler
         List<MovementEntity> movements,
         MovementKind kind,
         Dictionary<int, string> names,
-        Dictionary<int, LeagueEntity> leaguesById)
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, string?>? images = null)
     {
         List<RebalanceMovementMember> members = new();
         foreach (MovementEntity movement in movements
@@ -907,6 +1010,8 @@ public sealed class RebalanceFeedersHandler
             .OrderBy(m => m.SaveAthleteId))
         {
             names.TryGetValue(movement.SaveAthleteId, out string? name);
+            string? imageUrl = null;
+            images?.TryGetValue(movement.SaveAthleteId, out imageUrl);
             string fromName = movement.FromLeagueId == PoolSentinelLeagueId
                 ? "Common Pool"
                 : leaguesById.TryGetValue(movement.FromLeagueId, out LeagueEntity? from) ? from.Name : $"League {movement.FromLeagueId}";
@@ -922,7 +1027,8 @@ public sealed class RebalanceFeedersHandler
                 movement.ToLeagueId,
                 toName,
                 kind.ToString(),
-                movement.FromSeasonRank));
+                movement.FromSeasonRank,
+                imageUrl));
         }
 
         return members;

@@ -15,7 +15,11 @@ public sealed record GetRebalanceResultResponse(
     IReadOnlyList<RebalanceColorResult> Colors,
     IReadOnlyList<RebalanceMovementMember> Draws,
     IReadOnlyList<RebalanceMovementMember> Displaced,
+    IReadOnlyList<RebalanceMovementMember> Departed,
+    IReadOnlyList<RebalanceMovementMember> Returned,
     int TotalDrawn,
     int TotalDisplaced,
+    int TotalDeparted,
+    int TotalReturned,
     int PoolCount,
     int MovementCount);
