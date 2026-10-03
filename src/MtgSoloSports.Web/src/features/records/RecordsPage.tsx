@@ -10,12 +10,79 @@ import {
   type HallOfFame,
   type Honours,
   type Records,
+  type ScoringRecord,
+  type ScoringRecordHolder,
 } from './recordsApi';
+import { formatScoringContext } from './scoringFormat';
 
 /** Display-only projection of a fixed-point bonus (no sporting math). */
 function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
   return `${sign}${(thousandths / 1000).toFixed(3)}%`;
+}
+
+function ScoringHolders({
+  saveId,
+  holders,
+}: {
+  saveId: string;
+  holders: ScoringRecordHolder[];
+}) {
+  return (
+    <>
+      {holders.map((holder, index) => (
+        <div key={`${holder.athleteId ?? holder.teamKey}-${holder.seasonNumber}-${holder.roundNumber ?? '-'}-${holder.stageNumber ?? '-'}-${holder.groupNumber ?? '-'}-${index}`}>
+          {holder.athleteId !== null && holder.athleteName ? (
+            <AthleteLink saveId={saveId} athleteId={holder.athleteId} name={holder.athleteName} />
+          ) : (
+            <span>{holder.teamName || holder.teamKey}</span>
+          )}
+          {holder.athleteId !== null && holder.teamKey ? (
+            <span className="card-sub"> ({holder.teamName || holder.teamKey})</span>
+          ) : undefined}
+          <span className="card-sub"> · {formatScoringContext(holder)}</span>
+          {index < holders.length - 1 ? <span>, </span> : undefined}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function ScoringTable({ saveId, records }: { saveId: string; records: ScoringRecord[] }) {
+  if (records.length === 0) {
+    return <p className="muted">No records yet.</p>;
+  }
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Record</th>
+            <th scope="col">Value</th>
+            <th scope="col">Holders</th>
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record) => (
+            <tr key={record.recordKey}>
+              <td>
+                {record.label}
+                <span className="card-sub"> · {record.scope}</span>
+              </td>
+              <td className="numeric">{record.valueDisplay}</td>
+              <td>
+                {record.isVacant ? (
+                  <span className="muted">Vacant</span>
+                ) : (
+                  <ScoringHolders saveId={saveId} holders={record.holders} />
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function useSaveData<T>(
@@ -92,8 +159,12 @@ export function RecordsPage({ saveId }: { saveId: string }) {
 
   const records = recordsState.data?.records ?? [];
   const history = recordsState.data?.recentHistory ?? [];
+  const scoring = recordsState.data?.scoringRecords ?? [];
   const leaders = fameState.data?.leaders ?? [];
   const honours = honoursState.data?.honours ?? [];
+  const leagueScoring = scoring.filter((r) => r.category === 'League');
+  const individualScoring = scoring.filter((r) => r.category === 'Individual Cups');
+  const teamScoring = scoring.filter((r) => r.category === 'Team Cups');
 
   return (
     <div className="page-grid">
@@ -207,6 +278,50 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             </table>
           </div>
         )}
+      </Card>
+
+      <Card
+        eyebrow="Scoring records"
+        title={`League scoring — ${leagueScoring.length}`}
+        info={
+          <p>
+            Single-round maxima decode immutable round payloads; stage and league-point
+            totals use normalized standings. Records stay scoped per league so feeder
+            colors and the Superleague never mix. Ties share the record with season,
+            league, stage and round context; historical ownership never rewrites when
+            athletes change league or team.
+          </p>
+        }
+      >
+        <ScoringTable saveId={saveId} records={leagueScoring} />
+      </Card>
+
+      <Card
+        eyebrow="Scoring records"
+        title={`Individual Cups — ${individualScoring.length}`}
+        info={
+          <p>
+            Colour Cup individual and Qualifier scoring, separated by event type and
+            round/stage scope. Values come from persisted Cup and Qualifier results so
+            old seasons keep contributing after new seasons start.
+          </p>
+        }
+      >
+        <ScoringTable saveId={saveId} records={individualScoring} />
+      </Card>
+
+      <Card
+        eyebrow="Scoring records"
+        title={`Team Cups — ${teamScoring.length}`}
+        info={
+          <p>
+            Colour Cup and Type Cup team scoring, separated by event type and
+            leg/group-stage scope. Individual leg rounds, leg group-stage totals, team
+            single-round totals and full team-event totals are tracked separately.
+          </p>
+        }
+      >
+        <ScoringTable saveId={saveId} records={teamScoring} />
       </Card>
 
       <Card eyebrow="History" title={`Record breaks — ${history.length} recent`}>
