@@ -76,6 +76,20 @@ export interface AthleteCupSelection {
   selectionRank: number;
 }
 
+export interface AthleteCupHistory {
+  sourceSeasonNumber: number;
+  cup: string;
+  event: string;
+  eventName: string;
+  teamKey: string;
+  teamName: string;
+  place: number;
+  medal: string;
+  scoreThousandths: number;
+  groupRank: number | null;
+  groupNumber: number | null;
+}
+
 export interface AthleteProfile {
   saveId: string;
   athleteId: number;
@@ -85,6 +99,7 @@ export interface AthleteProfile {
   honours: AthleteHonour[];
   movements: AthleteMovement[];
   cupSelections: AthleteCupSelection[];
+  cupHistory: AthleteCupHistory[];
 }
 
 export interface CurrentStandingRow {
