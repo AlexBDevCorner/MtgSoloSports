@@ -14,6 +14,8 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
 - `/saves/:saveId/records`
 - `/saves/:saveId/cups`
+- `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type`).
+- `/saves/:saveId/cups/:cup/teams/:teamKey` — one Cup team's history.
 - `/saves/:saveId/athletes/:athleteId`
 
 Helpers in `features/routing/routes.ts` build and parse every shape; pages
@@ -37,8 +39,19 @@ share them instead of hand-rolling URLs.
   the event after it completes, so the completed event stays on screen.
   Next Round and Run remaining appear only while the URL's event and season
   are the save's next step; any other event shows its rounds read-only.
+- Live selection: `event=color-cup-selection` or `event=type-cup-selection`
+  with `season` shows that Cup's squad selection. Without `event`, Live shows
+  the selection while it is the save's next lifecycle step; announcing it pins
+  the URL so the reveal stays on screen once the save moves on to the Cup. A
+  saved selection opens fully revealed; reveal progress is never persisted.
 - History postseason: `event` and `group` (with `season` and `round`) replay a
   postseason event's stored rounds; unknown event keys are ignored.
+- Cups: the path alone identifies the page. `:season` must be a positive
+  integer and `:cup` one of `color`/`type`; anything else is `notFound` (the
+  hub is no longer a catch-all for `/cups/...`). `teams` is a reserved segment.
+  A Color team key is the lower-case color name (`red`); a Type team key is
+  the creature type, URL-encoded. Whether the edition or team exists is decided
+  by the API: an unknown one renders a recoverable notice linking to the hub.
 
 No navigation resets the selected persisted Live round unexpectedly and no
 reveal autoplays on navigation; reveal state stays presentation-only.

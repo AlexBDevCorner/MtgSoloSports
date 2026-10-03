@@ -79,7 +79,7 @@ describe('season flow steps', () => {
       'League play:done',
       'Form Superleague:current',
       'Rebalance feeders:upcoming',
-      'Color Cup field:upcoming',
+      'Color Cup squads:upcoming',
       'Cup: individual:upcoming',
       'Cup: team:upcoming',
       'Start Season 2:upcoming',
@@ -106,7 +106,7 @@ describe('season flow steps', () => {
       'Promotion & relegation:done',
       'Qualifier:current',
       'Rebalance feeders:upcoming',
-      'Type Cup field:upcoming',
+      'Type Cup squads:upcoming',
       'Cup: team:upcoming',
       'Start Season 3:upcoming',
     ]);
@@ -136,10 +136,10 @@ describe('season flow steps', () => {
     const cases: [string, Partial<SeasonStatus>, string][] = [
       ['ResolveAutomaticMovement', { sourceSeasonNumber: 3 }, 'Resolve promotion & relegation'],
       ['RebalanceFeeders', {}, 'Rebalance feeder leagues'],
-      ['SelectColorCup', {}, 'Select Color Cup field'],
+      ['SelectColorCup', {}, 'Select Color Cup squads'],
       ['RunColorCupIndividual', {}, 'Run Color Cup — individual'],
       ['RunColorCupTeam', {}, 'Run Color Cup — team'],
-      ['SelectTypeCup', { expectedCup: 'TypeCup' }, 'Select Type Cup field'],
+      ['SelectTypeCup', { expectedCup: 'TypeCup' }, 'Select Type Cup squads'],
       ['RunTypeCupTeam', { expectedCup: 'TypeCup' }, 'Run Type Cup — team'],
     ];
     for (const [action, overrides, label] of cases) {
@@ -158,6 +158,7 @@ describe('season flow steps', () => {
       label: 'Run next event',
       explanation: 'Backend detail.',
       liveEvent: null,
+      liveSelection: null,
     });
   });
 
@@ -202,6 +203,18 @@ describe('round-based events', () => {
   it('keeps single-step events off Live', () => {
     const flow = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['RebalanceFeeders'] }));
     assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : 'x', null);
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveSelection : 'x', null);
+  });
+
+  it('sends the Cup squad selections to Live as events of their own', () => {
+    const color = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['SelectColorCup'] }));
+    assert.equal(color.next?.kind === 'event' ? color.next.liveSelection : null, 'color-cup-selection');
+    assert.equal(color.next?.kind === 'event' ? color.next.liveEvent : 'x', null);
+    const type = seasonFlow(
+      progress({ isSeasonComplete: true }),
+      inaugural({ expectedCup: 'TypeCup', legalNextActions: ['SelectTypeCup'] }),
+    );
+    assert.equal(type.next?.kind === 'event' ? type.next.liveSelection : null, 'type-cup-selection');
   });
 });
 
@@ -209,7 +222,7 @@ describe('executed step summary', () => {
   it('says what happened and where to look', () => {
     assert.deepEqual(executedSummary('RunQualifier', 3), { text: 'Qualifier finished.', target: 'standings' });
     assert.deepEqual(executedSummary('ResolveInauguralMovement', 2), { text: 'Superleague formed.', target: 'standings' });
-    assert.deepEqual(executedSummary('SelectColorCup', 2), { text: 'Cup field selected.', target: 'cups' });
+    assert.deepEqual(executedSummary('SelectColorCup', 2), { text: 'Cup squads selected.', target: 'cups' });
     assert.deepEqual(executedSummary('RunTypeCupTeam', 2), { text: 'Cup team event finished.', target: 'cups' });
     assert.deepEqual(executedSummary('StartNextSeason', 2), { text: 'Season 2 started.', target: 'live' });
   });

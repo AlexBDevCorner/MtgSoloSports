@@ -140,11 +140,11 @@ public sealed class GetColorCupTeamResultHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         ColorCupTeamInvariants.ValidatePersisted(source, rounds, legs, teams, honours, rules.Rules);
-        Dictionary<int, string> names = await context.SaveAthletes
+        Dictionary<int, SaveAthleteEntity> athletes = await context.SaveAthletes
             .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        return MapResponse(saveId, source, teams, legs, rounds, names);
+        return MapResponse(saveId, source, teams, legs, rounds, athletes);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);
@@ -163,20 +163,20 @@ public sealed class GetColorCupTeamResultHandler
         List<ColorCupTeamStandingEntity> teams,
         List<ColorCupTeamGroupStandingEntity> legs,
         List<ColorCupTeamRoundEntity> rounds,
-        Dictionary<int, string> names)
+        Dictionary<int, SaveAthleteEntity> athletes)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(teams);
         ArgumentNullException.ThrowIfNull(legs);
         ArgumentNullException.ThrowIfNull(rounds);
-        ArgumentNullException.ThrowIfNull(names);
+        ArgumentNullException.ThrowIfNull(athletes);
         ColorCupTeamRoundPayloadDocument first = ColorCupTeamRoundPayloadDocument.FromStored(
             rounds.OrderBy(r => r.GroupNumber).ThenBy(r => r.RoundNumber).First().PayloadJson);
         ColorCupTeamRoundPayloadDocument last = ColorCupTeamRoundPayloadDocument.FromStored(
             rounds.OrderBy(r => r.GroupNumber).ThenBy(r => r.RoundNumber).Last().PayloadJson);
         string checksum = ComputeChecksum(teams);
         List<GetColorCupTeamMember> teamMembers = MapTeams(teams);
-        List<GetColorCupTeamLegMember> legMembers = MapLegs(legs, names);
+        List<GetColorCupTeamLegMember> legMembers = MapLegs(legs, athletes);
         ColorCupTeamStandingEntity champion = teams.Single(s => s.TeamRank == 1);
         string championName = ((SportingColor)champion.SportingColor).ToString();
         return new GetColorCupTeamResultResponse(
@@ -220,25 +220,26 @@ public sealed class GetColorCupTeamResultHandler
 
     internal static List<GetColorCupTeamLegMember> MapLegs(
         List<ColorCupTeamGroupStandingEntity> legs,
-        Dictionary<int, string> names)
+        Dictionary<int, SaveAthleteEntity> athletes)
     {
         ArgumentNullException.ThrowIfNull(legs);
-        ArgumentNullException.ThrowIfNull(names);
+        ArgumentNullException.ThrowIfNull(athletes);
         List<GetColorCupTeamLegMember> members = new(legs.Count);
         foreach (ColorCupTeamGroupStandingEntity leg in legs.OrderBy(l => l.GroupNumber).ThenBy(l => l.GroupRank))
         {
-            names.TryGetValue(leg.SaveAthleteId, out string? name);
+            athletes.TryGetValue(leg.SaveAthleteId, out SaveAthleteEntity? athlete);
             string color = ((SportingColor)leg.SportingColor).ToString();
             members.Add(new GetColorCupTeamLegMember(
                 leg.SaveAthleteId,
-                name ?? $"Athlete {leg.SaveAthleteId}",
+                athlete?.Name ?? $"Athlete {leg.SaveAthleteId}",
                 color,
                 leg.SelectionRank,
                 leg.GroupNumber,
                 leg.GroupRank,
                 leg.GroupScoreThousandths,
                 leg.BaseScoreThousandths,
-                leg.RoundWins));
+                leg.RoundWins,
+                athlete?.ImageUrl));
         }
 
         return members;

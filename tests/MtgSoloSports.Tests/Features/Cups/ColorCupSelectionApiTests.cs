@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Cups.GetColorCupSelection;
+using MtgSoloSports.Features.Cups.GetColorCupSelectionReport;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
@@ -175,6 +176,108 @@ public sealed class ColorCupSelectionApiTests
             GetColorCupSelectionHandler query = new(store);
             await Should.ThrowAsync<ColorCupSelectionNotFoundException>(
                 () => query.HandleAsync(created.Detail.SaveId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_ExplainsEveryTeam_WithRankingBeyondTheCut()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Report", 4242UL, 4343UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            await CompleteSeasonOneAsync(store, saveId);
+            SelectColorCupTeamsResponse selected = await new SelectColorCupTeamsHandler(store).HandleAsync(saveId);
+
+            GetColorCupSelectionReportHandler query = new(store);
+            GetColorCupSelectionReportResponse report = await query.HandleAsync(saveId);
+
+            report.SourceSeasonNumber.ShouldBe(1);
+            report.HasFullRanking.ShouldBeTrue();
+            report.TeamSize.ShouldBe(4);
+            (report.BonusWeightPermille + report.PerformanceWeightPermille
+                + report.FormWeightPermille + report.PrestigeWeightPermille).ShouldBe(1000);
+            report.Teams.Count.ShouldBe(8);
+            foreach (GetColorCupSelectionReportResponse.Team team in report.Teams)
+            {
+                ColorCupTeamResult expected = selected.Teams.Single(t => string.Equals(t.SportingColorName, team.TeamName, StringComparison.Ordinal));
+                team.CandidateCount.ShouldBe(256);
+                team.Ranking.Select(c => c.Rank).ShouldBe(Enumerable.Range(1, 12));
+                team.Ranking.Where(c => c.Selected).Select(c => c.AthleteId)
+                    .ShouldBe(expected.Members.Select(m => m.SaveAthleteId));
+                team.Ranking.Where(c => c.Selected).Select(c => c.SelectionRank).ShouldBe([1, 2, 3, 4]);
+                team.Ranking.Skip(4).ShouldAllBe(c => !c.Selected && c.SelectionRank == null);
+                for (int i = 1; i < team.Ranking.Count; i++)
+                {
+                    (team.Ranking[i].FinalRatingThousandths <= team.Ranking[i - 1].FinalRatingThousandths).ShouldBeTrue();
+                }
+
+                foreach (GetColorCupSelectionReportResponse.Candidate candidate in team.Ranking)
+                {
+                    candidate.Name.ShouldNotBeNullOrWhiteSpace();
+                    candidate.FinalRatingThousandths.ShouldBe(SelectionScore.Combine(
+                        candidate.BonusNormThousandths,
+                        candidate.PerformanceNormThousandths,
+                        candidate.FormNormThousandths,
+                        candidate.PrestigeNormThousandths,
+                        report.BonusWeightPermille,
+                        report.PerformanceWeightPermille,
+                        report.FormWeightPermille,
+                        report.PrestigeWeightPermille).Thousandths);
+                }
+            }
+
+            GetColorCupSelectionReportResponse explicitSeason = await query.HandleAsync(saveId, sourceSeasonNumber: 1);
+            explicitSeason.Teams.SelectMany(t => t.Ranking).Select(c => c.AthleteId)
+                .ShouldBe(report.Teams.SelectMany(t => t.Ranking).Select(c => c.AthleteId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_SelectionWithoutStoredReport_ListsOnlySelectedAthletes()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Legacy", 4444UL, 4545UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            await CompleteSeasonOneAsync(store, saveId);
+            await new SelectColorCupTeamsHandler(store).HandleAsync(saveId);
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                await context.CupSelectionReports.ExecuteDeleteAsync();
+            }
+
+            GetColorCupSelectionReportResponse report = await new GetColorCupSelectionReportHandler(store).HandleAsync(saveId);
+
+            report.HasFullRanking.ShouldBeFalse();
+            report.Teams.Count.ShouldBe(8);
+            report.Teams.ShouldAllBe(t => t.Ranking.Count == 4 && t.Ranking.All(c => c.Selected));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_BeforeSelected_ReturnsNotFound()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Report Missing", 4646UL, 4747UL, UniverseTestCatalog.Build());
+            await Should.ThrowAsync<ColorCupSelectionNotFoundException>(
+                () => new GetColorCupSelectionReportHandler(store).HandleAsync(created.Detail.SaveId));
         }
         finally
         {

@@ -33,6 +33,9 @@ describe('live event mode', () => {
 
   it('shows team standings and a completion notice', () => {
     assert.ok(view.includes('fetchEventTeamStandings'));
+    assert.ok(view.includes('onRevealedChange={setRevealed}'), 'team standings follow the reveal step');
+    assert.ok(view.includes('projectRevealedTeamStandings('), 'totals before the round plus revealed points');
+    assert.ok(view.includes('{ group: shownGroup, round: shownRound }'), 'baseline excludes the shown round');
     assert.ok(view.includes('Continue on the Dashboard'));
     assert.ok(view.includes('View results'));
   });

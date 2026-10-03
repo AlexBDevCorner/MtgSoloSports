@@ -16,7 +16,9 @@ import {
   type SeasonEventSummary,
 } from '../events/eventsApi';
 import { EVENT_TITLES, isTeamEvent, progressLabel, resultsTarget, roundLabel, type EventKey } from '../events/eventModel';
+import { projectRevealedTeamStandings } from '../events/teamStandingsProjection';
 import { RoundReveal } from '../reveal/RoundReveal';
+import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
 import { cupsPath, dashboardPath, standingsPath } from '../routing/routes';
 import './LivePage.css';
@@ -56,6 +58,9 @@ export function LiveEventView({
   const [rounds, setRounds] = useState<PlayedRound[]>([]);
   const [roundView, setRoundView] = useState<EventRoundView | null>(null);
   const [teams, setTeams] = useState<EventTeamStandings | null>(null);
+  // Team totals before the shown round, tagged with the round they belong to.
+  const [baseline, setBaseline] = useState<{ group: number; round: number; standings: EventTeamStandings } | null>(null);
+  const [revealed, setRevealed] = useState<readonly RevealPlacement[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +114,19 @@ export function LiveEventView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveId, season, event, selected]);
 
+  const shownGroup = team ? (roundView?.group ?? null) : null;
+  const shownRound = team ? (roundView?.roundNumber ?? null) : null;
+  useEffect(() => {
+    if (shownGroup === null || shownRound === null) {
+      return;
+    }
+    const controller = new AbortController();
+    fetchEventTeamStandings(saveId, season, event, controller.signal, { group: shownGroup, round: shownRound })
+      .then((standings) => setBaseline({ group: shownGroup, round: shownRound, standings }))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [saveId, season, event, shownGroup, shownRound]);
+
   const shape = summary ?? progress;
   const totalRounds = shape?.totalRounds ?? (team ? 32 : 16);
   const roundsPerGroup = shape?.roundsPerGroup ?? (team ? 8 : 16);
@@ -160,6 +178,20 @@ export function LiveEventView({
       setBusy(false);
     }
   }
+
+  // The sidebar standings follow the reveal: totals before the shown round plus
+  // the round points of the athletes revealed so far. The persisted final
+  // ranking only appears once the event's last round is fully revealed.
+  const lastRound = rounds.at(-1) ?? null;
+  const shownIsLast =
+    roundView !== null && lastRound !== null && roundView.group === lastRound.group && roundView.roundNumber === lastRound.round;
+  const fullyRevealed = roundView !== null && revealed.length >= roundView.placements.length;
+  const showFinal = teams !== null && teams.isFinal && shownIsLast && fullyRevealed;
+  const baselineReady = baseline !== null && baseline.group === shownGroup && baseline.round === shownRound;
+  const revealedTeams = useMemo(
+    () => (baseline ? projectRevealedTeamStandings(baseline.standings.teams, baseline.standings.members, revealed) : []),
+    [baseline, revealed],
+  );
 
   const visibleGroup = selected?.group ?? (team ? 1 : null);
   const groupsPlayed = team ? Array.from(new Set(rounds.map((r) => r.group ?? 1))) : [];
@@ -270,7 +302,38 @@ export function LiveEventView({
               ))}
             </div>
           )}
-          {team && teams ? (
+          {team && roundView && !showFinal ? (
+            baselineReady ? (
+              <table className="mini-table">
+                <caption className="reveal-subhead">
+                  Team standings so far
+                  <span className="muted small live-team-caption">
+                    {`${roundLabel(roundView.group, roundView.roundNumber)} · ${revealed.length}/${roundView.placements.length} revealed`}
+                  </span>
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Team</th>
+                    <th scope="col" className="numeric">
+                      This round
+                    </th>
+                    <th scope="col" className="numeric">
+                      Points
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revealedTeams.map((row) => (
+                    <tr key={row.teamName}>
+                      <td>{row.teamName}</td>
+                      <td className="numeric">{row.roundThousandths > 0 ? `+${formatPoints(row.roundThousandths)}` : '—'}</td>
+                      <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null
+          ) : team && teams ? (
             <table className="mini-table">
               <caption className="reveal-subhead">{teams.isFinal ? 'Team standings' : 'Team standings so far'}</caption>
               <thead>
@@ -309,6 +372,7 @@ export function LiveEventView({
             autoPlayOnStart={false}
             layout="live"
             saveId={saveId}
+            onRevealedChange={setRevealed}
           />
         ) : (
           <Card eyebrow="Postseason event" title={EVENT_TITLES[event]}>

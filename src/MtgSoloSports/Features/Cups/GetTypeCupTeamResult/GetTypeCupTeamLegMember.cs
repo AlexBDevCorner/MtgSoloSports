@@ -13,4 +13,5 @@ public sealed record GetTypeCupTeamLegMember(
     int GroupRank,
     int GroupScoreThousandths,
     int BaseScoreThousandths,
-    int RoundWins);
+    int RoundWins,
+    string? ImageUrl);

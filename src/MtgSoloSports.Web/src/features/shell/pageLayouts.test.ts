@@ -13,8 +13,9 @@ function read(rel: string): string {
 
 const app = read('App.tsx');
 const records = read('features/records/RecordsPage.tsx');
-const colorCup = read('features/cups/ColorCupPage.tsx');
-const typeCup = read('features/cups/TypeCupPage.tsx');
+const cupsHub = read('features/cups/CupsHubPage.tsx');
+const cupEdition = read('features/cups/CupEditionPage.tsx');
+const cupTeam = read('features/cups/CupTeamPage.tsx');
 const athlete = read('features/athletes/AthleteProfilePage.tsx');
 
 describe('records, cups and athlete layouts', () => {
@@ -23,12 +24,14 @@ describe('records, cups and athlete layouts', () => {
     assert.ok((records.match(/info=\{/g) ?? []).length >= 2);
   });
 
-  it('cups render as titled sections with grids', () => {
-    assert.ok(app.includes('className="page-section"'));
-    assert.ok(app.includes('Color Cup') && app.includes('Type Cup'));
+  it('cups route to a hub, an edition page and a team page', () => {
+    assert.ok(app.includes('<CupsHubPage') && app.includes('<CupEditionPage') && app.includes('<CupTeamPage'));
+    assert.ok(app.includes("route.view.kind === 'edition'") && app.includes("route.view.kind === 'team'"));
+    assert.ok(!app.includes('ColorCupPage') && !app.includes('TypeCupPage'), 'latest-only Cup pages are gone');
     for (const [file, page] of [
-      ['ColorCupPage.tsx', colorCup],
-      ['TypeCupPage.tsx', typeCup],
+      ['CupsHubPage.tsx', cupsHub],
+      ['CupEditionPage.tsx', cupEdition],
+      ['CupTeamPage.tsx', cupTeam],
     ]) {
       assert.ok(page.includes('className="page-grid"'), `${file} uses the grid`);
       assert.ok(page.includes('info={'), `${file} moves notes behind info`);

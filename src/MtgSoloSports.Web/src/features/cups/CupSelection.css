@@ -1,0 +1,160 @@
+/* Cup squad selection reveal. Presentation only: the picks and their order come
+   from the stored selection report. */
+
+.selection-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.selection-teams .nav-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.selection-team-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.selection-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.selection-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  animation: selection-pop 0.2s ease;
+}
+
+.selection-pick.is-hidden {
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border-style: dashed;
+  animation: none;
+}
+
+.selection-pick-head {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.selection-pick-art {
+  width: 72px;
+  height: 100px;
+  flex: 0 0 72px;
+  object-fit: cover;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.selection-pick-art-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.selection-pick-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.selection-pick-number {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.selection-pick-rating {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.selection-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.selection-share dt {
+  font-size: 0.78rem;
+}
+
+.selection-share dd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+}
+
+.selection-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.selection-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.selection-why {
+  margin: 0;
+  padding: 8px 0 0 16px;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.selection-why li + li {
+  margin-top: 4px;
+}
+
+.selection-ranking tr.is-selected td {
+  background: var(--accent-soft);
+}
+
+@keyframes selection-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-pick {
+    animation: none;
+  }
+}

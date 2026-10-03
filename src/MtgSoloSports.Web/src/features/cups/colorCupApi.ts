@@ -10,6 +10,7 @@ export interface ColorCupIndividualStanding {
   baseScoreThousandths: number;
   roundWins: number;
   medal: string;
+  imageUrl: string | null;
 }
 
 export interface ColorCupIndividualResult {
@@ -73,6 +74,7 @@ export interface ColorCupTeamLeg {
   groupScoreThousandths: number;
   baseScoreThousandths: number;
   roundWins: number;
+  imageUrl: string | null;
 }
 
 export interface ColorCupTeamResult {

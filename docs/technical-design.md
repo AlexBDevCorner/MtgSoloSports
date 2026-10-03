@@ -223,14 +223,73 @@ played one round at a time, exactly like league rounds:
   `…/events/{event}/rounds`, `…/events/{event}/rounds/{round}?group=` (league
   replay shape) and `…/events/{event}/team-standings` (persisted final ranking,
   or a provisional display sum of stored points over every round played so far).
+  With `?beforeGroup=&beforeRound=` the sum covers only the rounds ahead of that
+  round; the response also lists each athlete's team, so the live view shows
+  team standings that follow the round reveal (totals before the round plus the
+  stored points of the athletes revealed so far).
 
 ## 16. Color Cup selection
 
 Calculate the 35/30/25/10 selection formula with fixed-point normalized values. Recent form uses the most recent ten league stages with simple increasing recency weights 1..10. Career-prestige constants belong in the save rules snapshot and can be calibrated before rules v1 is frozen for production saves.
 
+### Selection as an event
+
+Selection stays one saved lifecycle step (no RNG), but it is presented as an
+event of its own. In the same transaction as the 32 selection rows the slice
+stores one `CupSelectionReports` row (one per source season, compact
+Brotli-compressed payload): per color the top 12 of the ranking with raw
+inputs, normalized components and final ratings, the field size and the
+weights used. `GET /api/saves/{saveId}/cups/color/selection-report?sourceSeason=`
+returns it with names and artwork; it never recomputes ratings, because
+honours and bonus keep changing after the selection. Selections saved before
+the table existed fall back to the selection rows (selected athletes only,
+`hasFullRanking: false`). The report must agree with the selection rows or the
+read aborts.
+
 ## 17. Type Cup allocation
 
 Treat team formation as a deterministic matching problem because multi-type athletes can collide across teams. Capped athletes can only represent their permanent nationality. Uncapped athletes prefer the type where they have the stronger relative rank. Allocation should maximize the number of valid four-athlete teams while respecting nationality and deterministic tie-breaking.
+
+### Allocation as an event
+
+`TypeCupAllocationInsight` runs the same scoring and matching as
+`TypeCupAllocation.Allocate` and also returns every viable type's ranking with
+where each athlete ended up. The select slice stores it in `CupSelectionReports`
+alongside the selection rows: per fielded team the top 12 of the type ranking
+plus the four members, each with capped state at selection time and the other
+viable types it could represent; plus viable types that fielded no team.
+`GET /api/saves/{saveId}/cups/type/selection-report?sourceSeason=` adds a
+reason per member: `Capped`, `OnlyType`, `BestRank` or `Balanced` (placed away
+from its best-ranked type so the most teams take part).
+
+## 17a. Cup history read model
+
+Three read-only slices under `Features/Cups` serve the Cups pages. None of
+them touch rules, RNG or schema.
+
+- `ListCupEditions` — `GET /api/saves/{saveId}/cups/editions`. Every edition
+  that has stored squad selections, newest first, with state (`Selected`,
+  `InProgress`, `Completed`), team count, team podium and the Color Cup
+  individual champion; plus the all-time team table of each Cup. A Color
+  edition is `Completed` only when both the team and the individual event
+  have stored standings.
+- `GetColorCupTeamHistory` / `GetTypeCupTeamHistory` —
+  `GET /api/saves/{saveId}/cups/{color|type}/teams/{teamKey}/history`. One
+  team across every edition it was selected for: honours, each season's squad
+  with rating, group leg and (Color) individual result, the all-time roster and
+  (Color) individual medals. Both slices load their own tables and share
+  `CupHistory/CupTeamHistoryBuilder`, which aborts when a squad does not have
+  the Cup's team size, a leg belongs to an athlete outside the squad, or a
+  standing has no selection. The Type Cup reason comes from the stored
+  selection report and is absent for editions selected before reports existed.
+
+Team keys: Color = lower-case sporting-color name (names only, never the
+numeric value); Type = the stored creature type, exact case.
+
+Edition pages reuse the existing per-season endpoints (`cups/color/team`,
+`cups/color/individual`, `cups/type/team`, `cups/*/selection-report`) with
+`sourceSeason`. Their leg and individual rows now carry `imageUrl`; checksums
+are unchanged.
 
 ## 18. Story events and projections
 

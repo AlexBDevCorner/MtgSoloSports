@@ -1,0 +1,283 @@
+/* Cup history pages: hub, edition and team. Presentation only. */
+
+.team-badge,
+.team-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+a.team-badge:hover {
+  color: var(--accent-hover);
+}
+
+.team-large {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
+.team-swatch {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  background: var(--line-strong);
+  border: 1px solid var(--line-strong);
+}
+
+.team-large .team-swatch {
+  width: 20px;
+  height: 20px;
+}
+
+.team-swatch-white { background: var(--team-white); }
+.team-swatch-blue { background: var(--team-blue); }
+.team-swatch-black { background: var(--team-black); }
+.team-swatch-red { background: var(--team-red); }
+.team-swatch-green { background: var(--team-green); }
+.team-swatch-multicolor { background: var(--team-multicolor); }
+.team-swatch-hybrid { background: var(--team-hybrid); }
+.team-swatch-colorless { background: var(--team-colorless); }
+
+.card-art {
+  width: 72px;
+  height: 100px;
+  flex: 0 0 72px;
+  object-fit: cover;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.card-art-small {
+  width: 36px;
+  height: 50px;
+  flex-basis: 36px;
+}
+
+.card-art-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.squad-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.squad-tile {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.squad-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.squad-tile-number {
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.squad-tile-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.cup-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cup-podium-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.cup-podium-step.is-first {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cup-podium-place {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cup-podium-detail {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.cup-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+}
+
+.cup-banner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cup-banner-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.cup-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cup-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.cup-fact dt {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cup-fact dd {
+  margin: 2px 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.edition-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.edition-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.edition-card:hover {
+  border-color: var(--accent);
+  background: var(--hover);
+}
+
+.edition-card-season {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.edition-card-state {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.edition-card-podium {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+}
+
+.edition-card-champion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.team-season {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.team-season:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.team-season-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.team-season-result {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.roster-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}

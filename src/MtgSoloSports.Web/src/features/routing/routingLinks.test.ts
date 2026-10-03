@@ -29,8 +29,9 @@ describe('MSS-040 navigational links', () => {
       'features/history/HistoryPage.tsx',
       'features/dashboard/DashboardPage.tsx',
       'features/records/RecordsPage.tsx',
-      'features/cups/ColorCupPage.tsx',
-      'features/cups/TypeCupPage.tsx',
+      'features/cups/CupEditionPage.tsx',
+      'features/cups/CupTeamPage.tsx',
+      'features/cups/SquadTiles.tsx',
       'features/reveal/RoundReveal.tsx',
       'features/reveal/RevealBoard.tsx',
     ]) {

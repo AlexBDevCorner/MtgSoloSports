@@ -483,6 +483,38 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                     b.ToTable("ColorCupTeamStandings", (string)null);
                 });
 
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.CupSelectionReportEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Cup")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RulesVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceSeasonId")
+                        .IsUnique();
+
+                    b.ToTable("CupSelectionReports", (string)null);
+                });
+
             modelBuilder.Entity("MtgSoloSports.Persistence.Saves.HonourEntity", b =>
                 {
                     b.Property<int>("Id")

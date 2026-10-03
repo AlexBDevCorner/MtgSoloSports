@@ -1,0 +1,67 @@
+using System.Text.Json;
+using MtgSoloSports.Features.History;
+
+namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
+
+/// <summary>
+/// Immutable explanation of one Color Cup selection: for every sporting color
+/// the top of the selection ranking (the four selected athletes plus the
+/// nearest misses) with raw inputs, normalized components and final ratings,
+/// and the weights that combined them. Written once with the selection rows
+/// and replayed by the selection event; never recomputed. Stored
+/// Brotli-compressed via <see cref="RoundPayloadCodec"/>.
+/// </summary>
+public sealed record ColorCupSelectionReportDocument(
+    int Version,
+    int BonusWeightPermille,
+    int PerformanceWeightPermille,
+    int FormWeightPermille,
+    int PrestigeWeightPermille,
+    IReadOnlyList<ColorCupSelectionReportDocument.Team> Teams)
+{
+    public const int PayloadVersion = 1;
+
+    /// <summary>Ranked athletes kept per color: the team of four plus eight who missed out.</summary>
+    public const int ShortlistSize = 12;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+    };
+
+    public sealed record Team(
+        int SportingColor,
+        int CandidateCount,
+        IReadOnlyList<Candidate> Ranking);
+
+    public sealed record Candidate(
+        int AthleteId,
+        int Rank,
+        int FinalRatingThousandths,
+        int BonusNormThousandths,
+        int PerformanceNormThousandths,
+        int FormNormThousandths,
+        int PrestigeNormThousandths,
+        int BonusRawThousandths,
+        int PerformanceRawThousandths,
+        int FormRaw,
+        int PrestigeRaw);
+
+    public string ToStored() => RoundPayloadCodec.Encode(JsonSerializer.Serialize(this, JsonOptions));
+
+    public static ColorCupSelectionReportDocument FromStored(string stored)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stored);
+        string json = RoundPayloadCodec.DecodeToJson(stored);
+        try
+        {
+            ColorCupSelectionReportDocument? document = JsonSerializer.Deserialize<ColorCupSelectionReportDocument>(json, JsonOptions);
+            return document ?? throw new InvalidOperationException("Color Cup selection report is empty.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Color Cup selection report is corrupt.", ex);
+        }
+    }
+}

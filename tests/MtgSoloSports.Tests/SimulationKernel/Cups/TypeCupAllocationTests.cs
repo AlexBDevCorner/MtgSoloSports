@@ -272,6 +272,68 @@ public sealed class TypeCupAllocationTests
     }
 
     [Fact]
+    public void Insight_MatchesAllocation_AndExplainsEveryViableType()
+    {
+        RulesV1 rules = Rules();
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "Star", ["Human", "Wizard"], bonus: 500),
+            Candidate(2, "HumanA", ["Human"], bonus: 900),
+            Candidate(3, "HumanB", ["Human"], bonus: 800),
+            Candidate(4, "HumanC", ["Human"], bonus: 700),
+            Candidate(5, "HumanD", ["Human"], bonus: 600),
+            Candidate(6, "WizardB", ["Wizard"], bonus: 100),
+            Candidate(7, "WizardC", ["Wizard"], bonus: 100),
+            Candidate(8, "WizardD", ["Wizard"], bonus: 100),
+            Candidate(9, "Loner", ["Sphinx"], bonus: 1000),
+        };
+
+        TypeCupAllocation.AllocationResult expected = TypeCupAllocation.Allocate(candidates, rules);
+        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
+
+        insight.CandidateCount.ShouldBe(9);
+        insight.Allocation.Teams.Select(t => t.CreatureType).ShouldBe(expected.Teams.Select(t => t.CreatureType));
+        for (int i = 0; i < expected.Teams.Count; i++)
+        {
+            insight.Allocation.Teams[i].Members.ShouldBe(expected.Teams[i].Members);
+        }
+
+        // Sphinx cannot field four athletes, so it has no standing at all.
+        insight.Types.Select(t => t.CreatureType).ShouldBe(["Human", "Wizard"]);
+        insight.Types.ShouldAllBe(t => t.FieldsTeam);
+
+        TypeCupAllocationInsight.TypeStanding human = insight.Types[0];
+        human.Ranking.Select(r => r.TypeRank).ShouldBe([1, 2, 3, 4, 5]);
+        human.Ranking.Select(r => r.Candidate.Name).ShouldBe(["HumanA", "HumanB", "HumanC", "HumanD", "Star"]);
+        human.Ranking[4].AssignedType.ShouldBe("Wizard");
+
+        TypeCupAllocationInsight.TypeStanding wizard = insight.Types[1];
+        wizard.Ranking[0].Candidate.Name.ShouldBe("Star");
+        wizard.Ranking.ShouldAllBe(r => string.Equals(r.AssignedType, "Wizard", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Insight_ReportsViableTypeThatLostItsAthletes()
+    {
+        RulesV1 rules = Rules();
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "Athlete A", ["Human", "Wizard"]),
+            Candidate(2, "Athlete B", ["Human", "Wizard"]),
+            Candidate(3, "Athlete C", ["Human", "Wizard"]),
+            Candidate(4, "Athlete D", ["Human", "Wizard"]),
+        };
+
+        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
+
+        insight.Allocation.Teams.Select(t => t.CreatureType).ShouldBe(["Human"]);
+        insight.Types.Single(t => string.Equals(t.CreatureType, "Human", StringComparison.Ordinal)).FieldsTeam.ShouldBeTrue();
+        TypeCupAllocationInsight.TypeStanding wizard = insight.Types.Single(t => string.Equals(t.CreatureType, "Wizard", StringComparison.Ordinal));
+        wizard.FieldsTeam.ShouldBeFalse();
+        wizard.Ranking.ShouldAllBe(r => string.Equals(r.AssignedType, "Human", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void EligibleTypesFor_CappedReturnsOnlyNationality()
     {
         var capped = Candidate(1, "Capped", ["Human", "Wizard"], capped: "Wizard");

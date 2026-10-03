@@ -4,10 +4,13 @@ import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
 import { catalogStatus } from './features/catalog/catalogStatus';
-import { ColorCupPage } from './features/cups/ColorCupPage';
-import { TypeCupPage } from './features/cups/TypeCupPage';
+import { CupEditionPage } from './features/cups/CupEditionPage';
+import { CupSelectionView } from './features/cups/CupSelectionView';
+import { CupsHubPage } from './features/cups/CupsHubPage';
+import { CupTeamPage } from './features/cups/CupTeamPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
+import { selectionForAction } from './features/events/eventModel';
 import { HistoryPage } from './features/history/HistoryPage';
 import { LiveEventView } from './features/live/LiveEventView';
 import { LivePage } from './features/live/LivePage';
@@ -208,6 +211,26 @@ export default function App() {
         const liveEvent = route.event ?? dashboard.data?.status?.eventProgress?.event ?? null;
         const eventSeason =
           route.eventSeason ?? status?.eventProgress?.sourceSeasonNumber ?? status?.sourceSeasonNumber ?? null;
+        // The Cup squad selection is an event of its own: shown when the URL
+        // names it, or when it is the save's next lifecycle step.
+        const pendingSelection = selectionForAction(status?.legalNextActions[0]);
+        const liveSelection = route.selection ?? (route.event ? null : pendingSelection);
+        if (liveSelection && eventSeason !== null) {
+          return (
+            <CupSelectionView
+              key={`${liveSelection}:${eventSeason}`}
+              saveId={saveId}
+              selection={liveSelection}
+              season={eventSeason}
+              canAnnounce={pendingSelection === liveSelection && status?.sourceSeasonNumber === eventSeason}
+              nextEvent={status?.eventProgress?.sourceSeasonNumber === eventSeason ? status.eventProgress.event : null}
+              onPin={() => {
+                navigate(livePath(saveId, { event: liveSelection, season: eventSeason }), { replace: true });
+              }}
+              onMutated={dashboard.refresh}
+            />
+          );
+        }
         if (liveEvent && eventSeason !== null) {
           return (
             <LiveEventView
@@ -299,22 +322,13 @@ export default function App() {
       case 'records':
         return <RecordsPage saveId={saveId} />;
       case 'cups':
-        return (
-          <div className="dashboard">
-            <section className="page-section" aria-labelledby="cups-color">
-              <h2 id="cups-color" className="section-title">
-                Color Cup
-              </h2>
-              <ColorCupPage saveId={saveId} />
-            </section>
-            <section className="page-section" aria-labelledby="cups-type">
-              <h2 id="cups-type" className="section-title">
-                Type Cup
-              </h2>
-              <TypeCupPage saveId={saveId} />
-            </section>
-          </div>
-        );
+        if (route.view.kind === 'edition') {
+          return <CupEditionPage saveId={saveId} cup={route.view.cup} season={route.view.season} />;
+        }
+        if (route.view.kind === 'team') {
+          return <CupTeamPage saveId={saveId} cup={route.view.cup} teamKey={route.view.teamKey} />;
+        }
+        return <CupsHubPage saveId={saveId} />;
       case 'athlete':
         return (
           <AthleteProfilePage

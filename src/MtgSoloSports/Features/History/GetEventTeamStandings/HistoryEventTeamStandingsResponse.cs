@@ -6,4 +6,5 @@ public sealed record HistoryEventTeamStandingsResponse(
     string Event,
     bool IsFinal,
     int GroupsCompleted,
-    IReadOnlyList<HistoryEventTeamRow> Teams);
+    IReadOnlyList<HistoryEventTeamRow> Teams,
+    IReadOnlyList<HistoryEventTeamMember> Members);

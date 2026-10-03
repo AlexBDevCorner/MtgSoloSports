@@ -162,6 +162,28 @@ public sealed class ColorCupSelectionTests
     }
 
     [Fact]
+    public void RankAll_RanksWholeField_AndStartsWithTheSelectedTeam()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<ColorCupSelection.CandidateRaw> candidates =
+        [
+            new(1, "Bravo", 0, 500, 500, 500, 500),
+            new(2, "Alpha", 0, 500, 500, 500, 500),
+            new(3, "Charlie", 0, 400, 0, 0, 0),
+            new(4, "Delta", 0, 300, 0, 0, 0),
+            new(5, "Echo", 0, 200, 0, 0, 0),
+            new(6, "Foxtrot", 0, 0, 0, 0, 0),
+        ];
+
+        IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);
+        IReadOnlyList<ColorCupSelection.ScoredCandidate> team = ColorCupSelection.SelectTeam(candidates, rules);
+
+        ranking.Select(r => r.SelectionRank).ShouldBe([1, 2, 3, 4, 5, 6]);
+        ranking.Take(4).ShouldBe(team);
+        ranking.Select(r => r.Name).ShouldBe(["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]);
+    }
+
+    [Fact]
     public void PrestigeConstants_HaveDocumentedV1Values()
     {
         RulesV1 rules = RulesV1.CreateDefault();

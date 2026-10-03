@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   athletePath,
+  cupEditionPath,
   cupsPath,
+  cupTeamPath,
   dashboardPath,
   historyPath,
   leagueStandingsPath,
@@ -52,6 +54,7 @@ describe('MSS-040 route shapes', () => {
     assert.deepEqual(parseRoute(`/saves/${SAVE}/cups`, ''), {
       name: 'cups',
       saveId: SAVE,
+      view: { kind: 'hub' },
     });
   });
 
@@ -62,6 +65,7 @@ describe('MSS-040 route shapes', () => {
       leagueId: 7,
       round: 3,
       event: null,
+      selection: null,
       eventSeason: null,
       group: null,
     });
@@ -71,6 +75,7 @@ describe('MSS-040 route shapes', () => {
       leagueId: null,
       round: null,
       event: null,
+      selection: null,
       eventSeason: null,
       group: null,
     });
@@ -114,6 +119,7 @@ describe('MSS-040 route shapes', () => {
       leagueId: null,
       round: null,
       event: null,
+      selection: null,
       eventSeason: null,
       group: null,
     });
@@ -136,6 +142,7 @@ describe('MSS-040 route shapes', () => {
       leagueId: null,
       round: 5,
       event: 'qualifier',
+      selection: null,
       eventSeason: 2,
       group: null,
     });
@@ -145,6 +152,7 @@ describe('MSS-040 route shapes', () => {
       leagueId: null,
       round: 5,
       event: null,
+      selection: null,
       eventSeason: null,
       group: null,
     });
@@ -225,5 +233,59 @@ describe('MSS-040 route shapes', () => {
       season: null,
       view: null,
     });
+  });
+});
+
+describe('Cup history routes', () => {
+  it('builds edition and team paths', () => {
+    assert.equal(cupEditionPath(SAVE, 'color', 3), `/saves/${SAVE}/cups/color/3`);
+    assert.equal(cupEditionPath(SAVE, 'type', 4), `/saves/${SAVE}/cups/type/4`);
+    assert.equal(cupTeamPath(SAVE, 'color', 'red'), `/saves/${SAVE}/cups/color/teams/red`);
+    assert.equal(cupTeamPath(SAVE, 'type', 'Time Lord'), `/saves/${SAVE}/cups/type/teams/Time%20Lord`);
+  });
+
+  it('parses editions', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/cups/color/3`, ''), {
+      name: 'cups',
+      saveId: SAVE,
+      view: { kind: 'edition', cup: 'color', season: 3 },
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/cups/type/4/`, ''), {
+      name: 'cups',
+      saveId: SAVE,
+      view: { kind: 'edition', cup: 'type', season: 4 },
+    });
+  });
+
+  it('round-trips team keys that need encoding', () => {
+    for (const teamKey of ['Elf', 'Time Lord', 'Assembly-Worker', "Urza's"]) {
+      const path = cupTeamPath(SAVE, 'type', teamKey);
+      assert.deepEqual(parseRoute(path, ''), {
+        name: 'cups',
+        saveId: SAVE,
+        view: { kind: 'team', cup: 'type', teamKey },
+      });
+    }
+    assert.deepEqual(parseRoute(cupTeamPath(SAVE, 'color', 'multicolor'), ''), {
+      name: 'cups',
+      saveId: SAVE,
+      view: { kind: 'team', cup: 'color', teamKey: 'multicolor' },
+    });
+  });
+
+  it('treats malformed Cup paths as not found instead of the hub', () => {
+    for (const tail of [
+      'cups/color',
+      'cups/color/abc',
+      'cups/color/0',
+      'cups/color/3x',
+      'cups/color/teams',
+      'cups/gold/3',
+      'cups/color/3/extra',
+      'cups/color/teams/red/extra',
+      'cups/type/teams/%20',
+    ]) {
+      assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
+    }
   });
 });

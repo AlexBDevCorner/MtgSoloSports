@@ -23,6 +23,16 @@
   --warn: var(--accent);
   --scrim: rgba(0, 0, 0, 0.6);
 
+  /* Cup team identity swatches (the only place team colors are defined). */
+  --team-white: #e9e4d4;
+  --team-blue: #4a90d9;
+  --team-black: #7d7a86;
+  --team-red: #d9534a;
+  --team-green: #4caf6e;
+  --team-multicolor: #e8b44a;
+  --team-hybrid: #b37fd6;
+  --team-colorless: #9aa0a8;
+
   --radius: 0;
   --space-1: 4px;
   --space-2: 8px;

@@ -53,10 +53,17 @@ export interface EventTeamRow {
   scoreThousandths: number;
 }
 
+export interface EventTeamMember {
+  athleteId: number;
+  teamName: string;
+}
+
 export interface EventTeamStandings {
   isFinal: boolean;
   groupsCompleted: number;
   teams: EventTeamRow[];
+  /** Which team each athlete of the selected field competes for. */
+  members: EventTeamMember[];
 }
 
 const STEP_ROUTES: Record<EventKey, string> = {
@@ -117,9 +124,12 @@ export function fetchEventTeamStandings(
   season: number,
   key: EventKey,
   signal?: AbortSignal,
+  /** Limits the totals to the rounds played ahead of this round. */
+  before?: { group: number; round: number },
 ): Promise<EventTeamStandings> {
+  const query = before ? `?beforeGroup=${before.group}&beforeRound=${before.round}` : '';
   return fetchJson<EventTeamStandings>(
-    `/api/saves/${saveId}/history/seasons/${season}/events/${key}/team-standings`,
+    `/api/saves/${saveId}/history/seasons/${season}/events/${key}/team-standings${query}`,
     { signal },
   );
 }

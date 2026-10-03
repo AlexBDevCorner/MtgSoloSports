@@ -12,7 +12,9 @@ namespace MtgSoloSports.Features.History.GetEventTeamStandings;
 /// Endpoint -&gt; Handler direct call. Team standings of a team Cup event: the
 /// persisted final ranking once the event is complete, otherwise a provisional
 /// display projection summing each team's stored round points over every round
-/// played so far (no ranking, no tie-break, no RNG). Read-only; never resimulates.
+/// played so far (no ranking, no tie-break, no RNG). With a before-round cursor
+/// the projection covers only the rounds played ahead of that round, so a round
+/// reveal can add its own stored points on top. Read-only; never resimulates.
 /// </summary>
 public sealed class GetHistoryEventTeamStandingsHandler
 {
@@ -27,6 +29,8 @@ public sealed class GetHistoryEventTeamStandingsHandler
         Guid saveId,
         int seasonNumber,
         string eventKey,
+        int? beforeGroup = null,
+        int? beforeRound = null,
         CancellationToken cancellationToken = default)
     {
         HistoryEventRows.ValidateRequest(saveId, seasonNumber, eventKey);
@@ -41,16 +45,23 @@ public sealed class GetHistoryEventTeamStandingsHandler
         PostseasonEvents.EventShape shape = PostseasonEvents.Shape(eventKey, rules);
         SeasonEntity season = await HistoryEventRows.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         bool color = string.Equals(eventKey, PostseasonEvents.ColorCupTeam, StringComparison.Ordinal);
+        (int Group, int Round)? before = ValidateBefore(beforeGroup, beforeRound, shape);
+        Dictionary<int, string> teamByAthlete = await LoadTeamByAthleteAsync(context, season, eventKey, color, cancellationToken).ConfigureAwait(false);
+        List<HistoryEventTeamMember> members = teamByAthlete
+            .OrderBy(pair => pair.Key)
+            .Select(pair => new HistoryEventTeamMember(pair.Key, pair.Value))
+            .ToList();
 
-        if (await HistoryEventRows.IsCompleteAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false))
+        if (before is null
+            && await HistoryEventRows.IsCompleteAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false))
         {
             List<HistoryEventTeamRow> final = await LoadFinalAsync(context, season, color, cancellationToken).ConfigureAwait(false);
-            return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: true, shape.GroupCount, final);
+            return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: true, shape.GroupCount, final, members);
         }
 
         (int groupsCompleted, List<HistoryEventTeamRow> provisional) =
-            await ProjectProvisionalAsync(context, season, eventKey, shape, color, cancellationToken).ConfigureAwait(false);
-        return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: false, groupsCompleted, provisional);
+            await ProjectProvisionalAsync(context, season, eventKey, shape, teamByAthlete, before, cancellationToken).ConfigureAwait(false);
+        return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: false, groupsCompleted, provisional, members);
     }
 
     internal static async Task<List<HistoryEventTeamRow>> LoadFinalAsync(
@@ -74,14 +85,28 @@ public sealed class GetHistoryEventTeamStandingsHandler
             .ToList();
     }
 
-    /// <summary>Sums each team's stored round points over every round played so far (display only).</summary>
-    internal static async Task<(int GroupsCompleted, List<HistoryEventTeamRow> Teams)> ProjectProvisionalAsync(
-        SaveDbContext context,
-        SeasonEntity season,
-        string eventKey,
-        PostseasonEvents.EventShape shape,
-        bool color,
-        CancellationToken cancellationToken)
+    private static (int Group, int Round)? ValidateBefore(int? beforeGroup, int? beforeRound, PostseasonEvents.EventShape shape)
+    {
+        if (beforeGroup is null && beforeRound is null)
+        {
+            return null;
+        }
+
+        if (beforeGroup is not int group || beforeRound is not int round)
+        {
+            throw new ArgumentException("A before-round cursor needs both a group and a round.", nameof(beforeRound));
+        }
+
+        if (group < 1 || group > shape.GroupCount || round < 1 || round > shape.RoundsPerGroup)
+        {
+            throw new ArgumentException($"Group {group} round {round} is outside the event.", nameof(beforeRound));
+        }
+
+        return (group, round);
+    }
+
+    private static async Task<Dictionary<int, string>> LoadTeamByAthleteAsync(
+        SaveDbContext context, SeasonEntity season, string eventKey, bool color, CancellationToken cancellationToken)
     {
         Dictionary<int, string> teamByAthlete = color
             ? (await context.ColorCupSelections.AsNoTracking()
@@ -97,7 +122,27 @@ public sealed class GetHistoryEventTeamStandingsHandler
             throw new HistoryNotFoundException($"{PostseasonEvents.Title(eventKey)} has no selected field for Season {season.SeasonNumber}.");
         }
 
+        return teamByAthlete;
+    }
+
+    /// <summary>Sums each team's stored round points over every round played so far, or ahead of <paramref name="before"/> (display only).</summary>
+    internal static async Task<(int GroupsCompleted, List<HistoryEventTeamRow> Teams)> ProjectProvisionalAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        string eventKey,
+        PostseasonEvents.EventShape shape,
+        Dictionary<int, string> teamByAthlete,
+        (int Group, int Round)? before,
+        CancellationToken cancellationToken)
+    {
         List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        if (before is (int beforeGroup, int beforeRound))
+        {
+            rows = rows
+                .Where(row => row.Group < beforeGroup || (row.Group == beforeGroup && row.Round < beforeRound))
+                .ToList();
+        }
+
         int groupsCompleted = rows.Count / shape.RoundsPerGroup;
         Dictionary<string, long> totals = teamByAthlete.Values.Distinct(StringComparer.Ordinal).ToDictionary(team => team, _ => 0L, StringComparer.Ordinal);
         foreach (HistoryEventRows.StoredRound row in rows)

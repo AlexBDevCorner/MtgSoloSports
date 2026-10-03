@@ -176,6 +176,28 @@ public static class ColorCupSelection
         return TakeTopFour(scored);
     }
 
+    /// <summary>
+    /// Scores every candidate in one sporting color and returns the whole field
+    /// ordered #1..#N by the selection ordering. The first four entries are
+    /// exactly the team <see cref="SelectTeam"/> returns; the rest explain who
+    /// missed the cut and by how much.
+    /// </summary>
+    public static IReadOnlyList<ScoredCandidate> RankAll(IReadOnlyList<CandidateRaw> candidates, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(rules);
+        ValidateCandidates(candidates, rules);
+        ColorRange range = ComputeRange(candidates);
+        List<ScoredCandidate> scored = ScoreAll(candidates, range, rules);
+        List<ScoredCandidate> ranked = new(scored.Count);
+        for (int i = 0; i < scored.Count; i++)
+        {
+            ranked.Add(scored[i] with { SelectionRank = i + 1 });
+        }
+
+        return ranked;
+    }
+
     internal sealed record ColorRange(int BonusMin, int BonusMax, int PerformanceMin, int PerformanceMax, int FormMin, int FormMax, int PrestigeMin, int PrestigeMax);
 
     internal static void ValidateCandidates(IReadOnlyList<CandidateRaw> candidates, RulesV1 rules)

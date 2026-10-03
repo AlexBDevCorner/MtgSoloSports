@@ -21,6 +21,31 @@ export function resultsTarget(key: EventKey): 'standings' | 'cups' {
   return key === 'qualifier' ? 'standings' : 'cups';
 }
 
+/** Keys of the Cup squad selections: single-step events shown as a reveal on Live. */
+export type SelectionKey = 'color-cup-selection' | 'type-cup-selection';
+
+export const SELECTION_TITLES: Record<SelectionKey, string> = {
+  'color-cup-selection': 'Color Cup — squad selection',
+  'type-cup-selection': 'Type Cup — squad selection',
+};
+
+export function isSelectionKey(value: string | null | undefined): value is SelectionKey {
+  return value !== null && value !== undefined && Object.prototype.hasOwnProperty.call(SELECTION_TITLES, value);
+}
+
+/** The selection a lifecycle action resolves, or null for every other action. */
+export function selectionForAction(action: string | null | undefined): SelectionKey | null {
+  if (action === 'SelectColorCup') {
+    return 'color-cup-selection';
+  }
+  return action === 'SelectTypeCup' ? 'type-cup-selection' : null;
+}
+
+/** Odd seasons end with the Color Cup, even seasons with the Type Cup. */
+export function selectionForSeason(season: number): SelectionKey {
+  return season % 2 === 1 ? 'color-cup-selection' : 'type-cup-selection';
+}
+
 export interface ProgressShape {
   roundsPlayed: number;
   totalRounds: number;

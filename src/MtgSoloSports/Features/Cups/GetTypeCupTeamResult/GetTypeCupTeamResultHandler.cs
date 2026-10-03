@@ -140,11 +140,11 @@ public sealed class GetTypeCupTeamResultHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         TypeCupTeamInvariants.ValidatePersisted(source, rounds, legs, teams, honours, rules.Rules);
-        Dictionary<int, string> names = await context.SaveAthletes
+        Dictionary<int, SaveAthleteEntity> athletes = await context.SaveAthletes
             .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        return MapResponse(saveId, source, teams, legs, rounds, names);
+        return MapResponse(saveId, source, teams, legs, rounds, athletes);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);
@@ -163,20 +163,20 @@ public sealed class GetTypeCupTeamResultHandler
         List<TypeCupTeamStandingEntity> teams,
         List<TypeCupTeamGroupStandingEntity> legs,
         List<TypeCupTeamRoundEntity> rounds,
-        Dictionary<int, string> names)
+        Dictionary<int, SaveAthleteEntity> athletes)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(teams);
         ArgumentNullException.ThrowIfNull(legs);
         ArgumentNullException.ThrowIfNull(rounds);
-        ArgumentNullException.ThrowIfNull(names);
+        ArgumentNullException.ThrowIfNull(athletes);
         TypeCupTeamRoundPayloadDocument first = TypeCupTeamRoundPayloadDocument.FromStored(
             rounds.OrderBy(r => r.GroupNumber).ThenBy(r => r.RoundNumber).First().PayloadJson);
         TypeCupTeamRoundPayloadDocument last = TypeCupTeamRoundPayloadDocument.FromStored(
             rounds.OrderBy(r => r.GroupNumber).ThenBy(r => r.RoundNumber).Last().PayloadJson);
         string checksum = ComputeChecksum(teams);
         List<GetTypeCupTeamMember> teamMembers = MapTeams(teams);
-        List<GetTypeCupTeamLegMember> legMembers = MapLegs(legs, names);
+        List<GetTypeCupTeamLegMember> legMembers = MapLegs(legs, athletes);
         TypeCupTeamStandingEntity champion = teams.Single(s => s.TeamRank == 1);
         return new GetTypeCupTeamResultResponse(
             saveId,
@@ -218,24 +218,25 @@ public sealed class GetTypeCupTeamResultHandler
 
     internal static List<GetTypeCupTeamLegMember> MapLegs(
         List<TypeCupTeamGroupStandingEntity> legs,
-        Dictionary<int, string> names)
+        Dictionary<int, SaveAthleteEntity> athletes)
     {
         ArgumentNullException.ThrowIfNull(legs);
-        ArgumentNullException.ThrowIfNull(names);
+        ArgumentNullException.ThrowIfNull(athletes);
         List<GetTypeCupTeamLegMember> members = new(legs.Count);
         foreach (TypeCupTeamGroupStandingEntity leg in legs.OrderBy(l => l.GroupNumber).ThenBy(l => l.GroupRank))
         {
-            names.TryGetValue(leg.SaveAthleteId, out string? name);
+            athletes.TryGetValue(leg.SaveAthleteId, out SaveAthleteEntity? athlete);
             members.Add(new GetTypeCupTeamLegMember(
                 leg.SaveAthleteId,
-                name ?? $"Athlete {leg.SaveAthleteId}",
+                athlete?.Name ?? $"Athlete {leg.SaveAthleteId}",
                 leg.CreatureType,
                 leg.SelectionRank,
                 leg.GroupNumber,
                 leg.GroupRank,
                 leg.GroupScoreThousandths,
                 leg.BaseScoreThousandths,
-                leg.RoundWins));
+                leg.RoundWins,
+                athlete?.ImageUrl));
         }
 
         return members;

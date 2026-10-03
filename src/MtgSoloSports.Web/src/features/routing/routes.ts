@@ -9,12 +9,15 @@
  * - `/saves` -> save management
  * - `/saves/:saveId/dashboard`
  * - `/saves/:saveId/live?league=<id>&round=<n>`
+ * - `/saves/:saveId/live?event=<event|selection key>&season=<n>&group=<n>&round=<n>`
  * - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
  * - `/saves/:saveId/standings?league=<id>&season=<n>&view=season|matrix`
  * - `/saves/:saveId/leagues/:leagueId` (MSS-040 reservation, now a Standings alias)
  * - `/saves/:saveId/leagues/:leagueId/standings?season=<n>&view=season|matrix`
  * - `/saves/:saveId/records`
  * - `/saves/:saveId/cups`
+ * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type`) -> one Cup edition
+ * - `/saves/:saveId/cups/:cup/teams/:teamKey` -> one Cup team's history
  * - `/saves/:saveId/athletes/:athleteId`
  *
  * Query-string scheme (minimal, documented):
@@ -36,9 +39,17 @@
  * entry flow and never overrides an explicit save-scoped URL.
  */
 
-import { isEventKey, type EventKey } from '../events/eventModel.ts';
+import { isEventKey, isSelectionKey, type EventKey, type SelectionKey } from '../events/eventModel.ts';
 
 export type StandingsView = 'season' | 'matrix';
+
+export type CupKind = 'color' | 'type';
+
+/** Which Cups page a `/cups` URL names: the hub, one edition or one team. */
+export type CupsView =
+  | { kind: 'hub' }
+  | { kind: 'edition'; cup: CupKind; season: number }
+  | { kind: 'team'; cup: CupKind; teamKey: string };
 
 export type Route =
   | { name: 'root' }
@@ -50,6 +61,8 @@ export type Route =
       leagueId: number | null;
       round: number | null;
       event: EventKey | null;
+      /** Cup squad selection shown on Live (`?event=color-cup-selection`). */
+      selection: SelectionKey | null;
       eventSeason: number | null;
       group: number | null;
     }
@@ -71,7 +84,7 @@ export type Route =
       view: StandingsView | null;
     }
   | { name: 'records'; saveId: string }
-  | { name: 'cups'; saveId: string }
+  | { name: 'cups'; saveId: string; view: CupsView }
   | { name: 'athlete'; saveId: string; athleteId: number; rawAthleteId: string }
   | { name: 'invalidAthlete'; saveId: string; rawAthleteId: string }
   | { name: 'notFound'; path: string };
@@ -89,7 +102,7 @@ export function livePath(
   query?: {
     league?: number | null;
     round?: number | null;
-    event?: EventKey | null;
+    event?: EventKey | SelectionKey | null;
     season?: number | null;
     group?: number | null;
   },
@@ -154,6 +167,16 @@ export function recordsPath(saveId: string): string {
 
 export function cupsPath(saveId: string): string {
   return `/saves/${encodeURIComponent(saveId)}/cups`;
+}
+
+/** One Cup edition: the Color or Type Cup played after `season`. */
+export function cupEditionPath(saveId: string, cup: CupKind, season: number): string {
+  return `/saves/${encodeURIComponent(saveId)}/cups/${cup}/${season}`;
+}
+
+/** One Cup team. Color keys are lower-case color names; Type keys are creature types. */
+export function cupTeamPath(saveId: string, cup: CupKind, teamKey: string): string {
+  return `/saves/${encodeURIComponent(saveId)}/cups/${cup}/teams/${encodeURIComponent(teamKey)}`;
 }
 
 export function athletePath(saveId: string, athleteId: number): string {
@@ -264,6 +287,11 @@ function parseEvent(params: URLSearchParams): EventKey | null {
   return isEventKey(value) ? value : null;
 }
 
+function parseSelection(params: URLSearchParams): SelectionKey | null {
+  const value = params.get('event');
+  return isSelectionKey(value) ? value : null;
+}
+
 function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
     return pathname.slice(0, -1);
@@ -312,7 +340,9 @@ export function parseRoute(pathname: string, search: string): Route {
         leagueId: parseOptionalPositiveInt(params, 'league'),
         round: parseOptionalPositiveInt(params, 'round'),
         event: parseEvent(params),
-        eventSeason: parseEvent(params) ? parseOptionalPositiveInt(params, 'season') : null,
+        selection: parseSelection(params),
+        eventSeason:
+          parseEvent(params) || parseSelection(params) ? parseOptionalPositiveInt(params, 'season') : null,
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
       };
     case 'history':
@@ -334,11 +364,10 @@ export function parseRoute(pathname: string, search: string): Route {
         return { name: 'notFound', path: pathname + search };
       }
       return { name: 'records', saveId };
-    case 'cups':
-      if (segments.length !== 3) {
-        return { name: 'cups', saveId };
-      }
-      return { name: 'cups', saveId };
+    case 'cups': {
+      const view = parseCupsView(segments.slice(3));
+      return view ? { name: 'cups', saveId, view } : { name: 'notFound', path: pathname + search };
+    }
     case 'standings': {
       if (segments.length !== 3) {
         return { name: 'notFound', path: pathname + search };
@@ -406,6 +435,26 @@ function decodeURIComponentSafe(value: string): string {
   } catch {
     return value;
   }
+}
+
+/** `teams` is a reserved segment, so it never parses as a season. */
+function parseCupsView(rest: string[]): CupsView | null {
+  if (rest.length === 0) {
+    return { kind: 'hub' };
+  }
+  const cup = rest[0];
+  if (cup !== 'color' && cup !== 'type') {
+    return null;
+  }
+  if (rest.length === 2) {
+    const season = parsePositiveInt(rest[1] ?? '');
+    return season === null ? null : { kind: 'edition', cup, season };
+  }
+  if (rest.length === 3 && rest[1] === 'teams') {
+    const teamKey = decodeURIComponentSafe(rest[2] ?? '').trim();
+    return teamKey ? { kind: 'team', cup, teamKey } : null;
+  }
+  return null;
 }
 
 function parseStandingsView(raw: string | null): StandingsView | null {

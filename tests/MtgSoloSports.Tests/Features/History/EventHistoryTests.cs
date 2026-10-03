@@ -145,6 +145,52 @@ public sealed class EventHistoryTests
         }
     }
 
+    [Fact]
+    public async Task TeamStandings_BeforeRound_SumOnlyEarlierRounds()
+    {
+        var (store, root, saveId) = await PrepareColorCupAsync(5252UL, 6363UL);
+        try
+        {
+            await PlayTeamRoundsAsync(store, saveId, 9);
+            GetHistoryEventTeamStandingsHandler standings = new(store);
+            GetHistoryEventRoundHandler rounds = new(store);
+
+            HistoryEventTeamStandingsResponse beforeFirst = await standings.HandleAsync(saveId, 1, "color-cup-team", 1, 1);
+            beforeFirst.IsFinal.ShouldBeFalse();
+            beforeFirst.Teams.Count.ShouldBe(8);
+            beforeFirst.Teams.ShouldAllBe(t => t.ScoreThousandths == 0 && t.Rank == null);
+            beforeFirst.Members.Count.ShouldBe(32);
+
+            // Adding the selected round's stored points to its baseline gives the next round's baseline.
+            HistoryEventTeamStandingsResponse beforeEighth = await standings.HandleAsync(saveId, 1, "color-cup-team", 1, 8);
+            HistoryEventTeamStandingsResponse beforeNinth = await standings.HandleAsync(saveId, 1, "color-cup-team", 2, 1);
+            beforeNinth.GroupsCompleted.ShouldBe(1);
+            EventRoundView eighth = await rounds.HandleAsync(saveId, 1, "color-cup-team", 8, 1);
+            Dictionary<int, string> teamByAthlete = beforeEighth.Members.ToDictionary(m => m.AthleteId, m => m.TeamName);
+            Dictionary<string, int> expected = beforeEighth.Teams.ToDictionary(t => t.TeamName, t => t.ScoreThousandths, StringComparer.Ordinal);
+            foreach (var placement in eighth.Placements)
+            {
+                expected[teamByAthlete[placement.AthleteId]] += placement.FinalThousandths;
+            }
+
+            beforeNinth.Teams.ToDictionary(t => t.TeamName, t => t.ScoreThousandths, StringComparer.Ordinal).ShouldBe(expected, ignoreOrder: true);
+
+            // The baseline stays a provisional projection after the event completes.
+            await new RunColorCupTeamHandler(store).HandleAsync(saveId);
+            HistoryEventTeamStandingsResponse afterComplete = await standings.HandleAsync(saveId, 1, "color-cup-team", 2, 1);
+            afterComplete.IsFinal.ShouldBeFalse();
+            afterComplete.Teams.ToDictionary(t => t.TeamName, t => t.ScoreThousandths, StringComparer.Ordinal).ShouldBe(expected, ignoreOrder: true);
+
+            await Should.ThrowAsync<ArgumentException>(() => standings.HandleAsync(saveId, 1, "color-cup-team", 1, null));
+            await Should.ThrowAsync<ArgumentException>(() => standings.HandleAsync(saveId, 1, "color-cup-team", null, 1));
+            await Should.ThrowAsync<ArgumentException>(() => standings.HandleAsync(saveId, 1, "color-cup-team", 0, 1));
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static async Task PlayTeamRoundsAsync(SaveStore store, Guid saveId, int count)
     {
         PlayColorCupTeamRoundHandler step = new(store);

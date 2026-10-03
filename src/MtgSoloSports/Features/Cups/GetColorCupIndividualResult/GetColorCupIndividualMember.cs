@@ -13,4 +13,5 @@ public sealed record GetColorCupIndividualMember(
     int CupScoreThousandths,
     int BaseScoreThousandths,
     int RoundWins,
-    string Medal);
+    string Medal,
+    string? ImageUrl);

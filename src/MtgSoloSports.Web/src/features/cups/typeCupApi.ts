@@ -21,6 +21,7 @@ export interface TypeCupTeamLeg {
   groupScoreThousandths: number;
   baseScoreThousandths: number;
   roundWins: number;
+  imageUrl: string | null;
 }
 
 export interface TypeCupTeamResult {

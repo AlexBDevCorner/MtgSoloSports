@@ -71,6 +71,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<TypeCupTeamStandingEntity> TypeCupTeamStandings => Set<TypeCupTeamStandingEntity>();
 
+    public DbSet<CupSelectionReportEntity> CupSelectionReports => Set<CupSelectionReportEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -88,6 +90,23 @@ public sealed class SaveDbContext : DbContext
         ConfigureColorCupTeam(modelBuilder);
         ConfigureTypeCupSelections(modelBuilder);
         ConfigureTypeCupTeam(modelBuilder);
+        ConfigureCupSelectionReports(modelBuilder);
+    }
+
+    private static void ConfigureCupSelectionReports(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CupSelectionReportEntity>(entity =>
+        {
+            entity.ToTable("CupSelectionReports");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => e.SourceSeasonId).IsUnique();
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.Cup).IsRequired().HasMaxLength(16);
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.PayloadJson).IsRequired();
+        });
     }
 
     private static void ConfigureSingleRowTables(ModelBuilder modelBuilder)

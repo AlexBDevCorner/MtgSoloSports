@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
@@ -98,6 +99,32 @@ internal static class PostseasonTestSaves
         await SetTypesAsync(store, saveId, activeIds[4..8], ["Dwarf"]).ConfigureAwait(false);
         await CreateEvenSeasonAsync(store, saveId, 2, activeIds).ConfigureAwait(false);
         await new SelectTypeCupTeamsHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
+        return (store, root, saveId);
+    }
+
+    /// <summary>
+    /// Two completed Type Cups: Elf and Dwarf play Seasons 2 and 4, Goblin only
+    /// Season 4. Athletes are single-typed so every squad is unambiguous.
+    /// </summary>
+    internal static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareTwoTypeCupsAsync(ulong seed, ulong stream)
+    {
+        var (store, root) = CreateStore();
+        SaveStore.CreationRecord created = await store.CreateAsync("Two Type Cups", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
+        Guid saveId = created.Detail.SaveId;
+        List<int> ids = await TakeAthletesAsync(store, saveId, 12).ConfigureAwait(false);
+        await SetTypesAsync(store, saveId, ids[..4], ["Elf"]).ConfigureAwait(false);
+        await SetTypesAsync(store, saveId, ids[4..8], ["Dwarf"]).ConfigureAwait(false);
+        await SetTypesAsync(store, saveId, ids[8..12], ["Goblin"]).ConfigureAwait(false);
+        SelectTypeCupTeamsHandler select = new(store);
+        RunTypeCupTeamHandler run = new(store);
+
+        await CreateEvenSeasonAsync(store, saveId, 2, ids[..8]).ConfigureAwait(false);
+        await select.HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
+        await run.HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
+
+        await CreateEvenSeasonAsync(store, saveId, 4, ids).ConfigureAwait(false);
+        await select.HandleAsync(saveId, sourceSeasonNumber: 4).ConfigureAwait(false);
+        await run.HandleAsync(saveId, sourceSeasonNumber: 4).ConfigureAwait(false);
         return (store, root, saveId);
     }
 

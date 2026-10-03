@@ -72,7 +72,9 @@ public sealed partial class SelectColorCupTeamsHandler
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         SelectionInputs inputs = await LoadInputsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<ColorCupSelection.ScoredCandidate> all = ScoreAllColors(inputs, rules);
+        Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings = RankAllColors(inputs, rules);
+        IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, rules);
+        AddReport(context, source, BuildReport(rankings, rules), rules);
         await PersistSelectionsAsync(context, source, all, rules, cancellationToken).ConfigureAwait(false);
 
         List<ColorCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -273,20 +275,7 @@ public sealed partial class SelectColorCupTeamsHandler
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
-        Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules);
-        ValidateEightColors(byColor, rules);
-        List<ColorCupSelection.ScoredCandidate> all = new(rules.ColorCupColorCount * rules.ColorCupTeamSize);
-        foreach (SportingColor color in Enum.GetValues<SportingColor>())
-        {
-            List<ColorCupSelection.CandidateRaw> candidates = byColor[(int)color];
-            IReadOnlyList<ColorCupSelection.ScoredCandidate> team = ColorCupSelection.SelectTeam(candidates, rules);
-            foreach (ColorCupSelection.ScoredCandidate member in team)
-            {
-                all.Add(member);
-            }
-        }
-
-        return all;
+        return TakeTeams(RankAllColors(inputs, rules), rules);
     }
 
     internal static void ValidateEightColors(Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor, RulesV1 rules)

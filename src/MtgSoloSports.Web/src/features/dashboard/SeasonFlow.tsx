@@ -101,6 +101,26 @@ export function SeasonFlow({
                 {running ? 'Running…' : 'Run all rounds'}
               </button>
             </div>
+          ) : next.liveSelection ? (
+            <div className="live-buttons">
+              <Link
+                to={livePath(saveId, { event: next.liveSelection, season: flow.seasonNumber })}
+                className="primary-button"
+              >
+                Announce on Live
+              </Link>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={running}
+                aria-busy={running}
+                onClick={() => {
+                  void runNext();
+                }}
+              >
+                {running ? 'Selecting…' : 'Select now'}
+              </button>
+            </div>
           ) : (
             <button
               type="button"

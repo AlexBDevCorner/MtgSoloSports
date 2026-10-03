@@ -30,6 +30,8 @@ export interface RoundRevealProps {
   layout?: 'default' | 'live';
   /** Save context for athlete profile links; when absent names render as text. */
   saveId?: string | null;
+  /** Reports the placements revealed so far whenever the reveal step changes. */
+  onRevealedChange?: (revealed: readonly RevealPlacement[]) => void;
 }
 
 function speedLabel(speed: (typeof REVEAL_SPEEDS)[number]): string {
@@ -64,8 +66,13 @@ export function RoundReveal({
   autoPlayOnStart = true,
   layout = 'default',
   saveId,
+  onRevealedChange,
 }: RoundRevealProps) {
   const reveal = useRoundReveal(placements, revealKey, false, { autoPlayOnStart });
+  const revealedFeed = reveal.revealedFeed;
+  useEffect(() => {
+    onRevealedChange?.(revealedFeed);
+  }, [onRevealedChange, revealedFeed]);
   const manualByDefault = autoPlayOnStart === false;
   const latestRevealed = reveal.revealedFeed.length > 0
     ? reveal.revealedFeed[reveal.revealedFeed.length - 1]!

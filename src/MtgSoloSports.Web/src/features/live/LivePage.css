@@ -359,3 +359,9 @@
     animation: none;
   }
 }
+
+.live-team-caption {
+  display: block;
+  letter-spacing: 0;
+  text-transform: none;
+}

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Cups.GetTypeCupSelection;
+using MtgSoloSports.Features.Cups.GetTypeCupSelectionReport;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.FixedPoint;
@@ -208,6 +209,154 @@ public sealed class TypeCupSelectionApiTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Report_ExplainsWhyEachMemberRepresentsItsType()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Type Cup Report", 2121UL, 2323UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+
+            // 0: capped Human who also prints Wizard; 1..3: Human only;
+            // 4: uncapped Human/Wizard needed by Wizard; 5..7: Wizard only;
+            // 8: a fifth Human who misses out.
+            List<int> ids = await TakeAthletesAsync(store, saveId, 9);
+            await SetTypesAsync(store, saveId, ids[..1], ["Human", "Wizard"]);
+            await SetTypesAsync(store, saveId, ids[1..4], ["Human"]);
+            await SetTypesAsync(store, saveId, ids[4..5], ["Human", "Wizard"]);
+            await SetTypesAsync(store, saveId, ids[5..8], ["Wizard"]);
+            await SetTypesAsync(store, saveId, ids[8..9], ["Human"]);
+            await SetNationalityAsync(store, saveId, ids[0], "Human");
+            await CreateEvenSeasonAsync(store, saveId, ids, []);
+            SelectTypeCupTeamsResponse selected = await new SelectTypeCupTeamsHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
+
+            GetTypeCupSelectionReportResponse report = await new GetTypeCupSelectionReportHandler(store).HandleAsync(saveId);
+
+            report.SourceSeasonNumber.ShouldBe(2);
+            report.HasFullRanking.ShouldBeTrue();
+            report.CandidateCount.ShouldBe(9);
+            report.MissedTeams.ShouldBeEmpty();
+            report.Teams.Select(t => t.TeamName).ShouldBe(["Human", "Wizard"]);
+            foreach (GetTypeCupSelectionReportResponse.Team team in report.Teams)
+            {
+                TypeCupTeamResult expected = selected.Teams.Single(t => string.Equals(t.CreatureType, team.TeamName, StringComparison.Ordinal));
+                team.Ranking.Where(c => c.Selected).Select(c => c.AthleteId).OrderBy(id => id)
+                    .ShouldBe(expected.Members.Select(m => m.SaveAthleteId).OrderBy(id => id));
+                team.Ranking.Where(c => c.Selected).ShouldAllBe(c => string.Equals(c.AssignedTeam, team.TeamName, StringComparison.Ordinal) && c.Reason != null);
+                team.Ranking.Where(c => !c.Selected).ShouldAllBe(c => c.Reason == null && c.SelectionRank == null);
+            }
+
+            AssertReasons(report, ids);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_ListsViableTypeThatCouldNotFieldATeam()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Type Cup Missed", 2525UL, 2727UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            List<int> ids = await TakeAthletesAsync(store, saveId, 4);
+            await SetTypesAsync(store, saveId, ids, ["Human", "Wizard"]);
+            await CreateEvenSeasonAsync(store, saveId, ids, []);
+            await new SelectTypeCupTeamsHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
+
+            GetTypeCupSelectionReportResponse report = await new GetTypeCupSelectionReportHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
+
+            report.Teams.Select(t => t.TeamName).ShouldBe(["Human"]);
+            report.MissedTeams.Select(m => m.TeamName).ShouldBe(["Wizard"]);
+            report.MissedTeams[0].CandidateCount.ShouldBe(4);
+            report.Teams[0].Ranking.ShouldAllBe(c => c.Selected && c.Alternatives.Count == 1 && !c.Alternatives[0].FieldsTeam);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_AllocationWithoutStoredReport_ListsOnlyMembers()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Type Cup Legacy", 2929UL, 3131UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            List<int> ids = await TakeAthletesAsync(store, saveId, 5);
+            await SetTypesAsync(store, saveId, ids, ["Elf"]);
+            await CreateEvenSeasonAsync(store, saveId, ids, []);
+            await new SelectTypeCupTeamsHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                await context.CupSelectionReports.ExecuteDeleteAsync();
+            }
+
+            GetTypeCupSelectionReportResponse report = await new GetTypeCupSelectionReportHandler(store).HandleAsync(saveId);
+
+            report.HasFullRanking.ShouldBeFalse();
+            report.Teams.Count.ShouldBe(1);
+            report.Teams[0].Ranking.Count.ShouldBe(4);
+            report.Teams[0].Ranking.ShouldAllBe(c => c.Selected && c.Reason == null);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Report_BeforeSelected_ReturnsNotFound()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Type Cup Report Missing", 3333UL, 3535UL, UniverseTestCatalog.Build());
+            await Should.ThrowAsync<TypeCupSelectionNotFoundException>(
+                () => new GetTypeCupSelectionReportHandler(store).HandleAsync(created.Detail.SaveId));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static void AssertReasons(GetTypeCupSelectionReportResponse report, List<int> ids)
+    {
+        GetTypeCupSelectionReportResponse.Team human = report.Teams[0];
+        GetTypeCupSelectionReportResponse.Team wizard = report.Teams[1];
+        human.CandidateCount.ShouldBe(6);
+        wizard.CandidateCount.ShouldBe(4);
+
+        GetTypeCupSelectionReportResponse.Candidate capped = human.Ranking.Single(c => c.AthleteId == ids[0]);
+        capped.Capped.ShouldBeTrue();
+        capped.Reason.ShouldBe(GetTypeCupSelectionReportResponse.ReasonCapped);
+        capped.Alternatives.ShouldBeEmpty();
+
+        human.Ranking.Where(c => c.Selected && !c.Capped)
+            .ShouldAllBe(c => string.Equals(c.Reason, GetTypeCupSelectionReportResponse.ReasonOnlyType, StringComparison.Ordinal));
+
+        GetTypeCupSelectionReportResponse.Candidate swing = wizard.Ranking.Single(c => c.AthleteId == ids[4]);
+        swing.Selected.ShouldBeTrue();
+        swing.Alternatives.Select(a => a.TeamName).ShouldBe(["Human"]);
+        swing.Alternatives[0].FieldsTeam.ShouldBeTrue();
+        swing.Reason.ShouldBeOneOf(
+            GetTypeCupSelectionReportResponse.ReasonBestRank,
+            GetTypeCupSelectionReportResponse.ReasonBalanced);
+
+        // The same athlete shows up in the Human ranking as playing for Wizard.
+        GetTypeCupSelectionReportResponse.Candidate swingAsHuman = human.Ranking.Single(c => c.AthleteId == ids[4]);
+        swingAsHuman.Selected.ShouldBeFalse();
+        swingAsHuman.AssignedTeam.ShouldBe("Wizard");
+        human.Ranking.Count(c => !c.Selected && c.AssignedTeam == null).ShouldBe(1);
     }
 
     private static async Task<(List<int> Active, List<int> Pool, int SeasonId)> SetupActivePoolSeasonAsync(

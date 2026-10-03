@@ -116,7 +116,9 @@ public sealed partial class SelectTypeCupTeamsHandler
 
         SelectionInputs inputs = await LoadInputsAsync(context, source, cancellationToken).ConfigureAwait(false);
         List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules);
-        TypeCupAllocation.AllocationResult allocation = TypeCupAllocation.Allocate(candidates, rules);
+        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
+        TypeCupAllocation.AllocationResult allocation = insight.Allocation;
+        AddReport(context, source, BuildReport(insight, rules), rules);
         await PersistSelectionsAsync(context, source, allocation, rules, cancellationToken).ConfigureAwait(false);
 
         List<TypeCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);

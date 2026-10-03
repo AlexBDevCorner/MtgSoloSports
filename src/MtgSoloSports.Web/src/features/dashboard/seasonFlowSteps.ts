@@ -1,5 +1,5 @@
 import type { SeasonProgress, SeasonStatus } from './dashboardApi';
-import { progressLabel, type EventKey } from '../events/eventModel.ts';
+import { progressLabel, selectionForAction, type EventKey, type SelectionKey } from '../events/eventModel.ts';
 
 /**
  * Plain-language view of the season lifecycle for the Dashboard: league play,
@@ -19,7 +19,15 @@ export interface FlowStep {
 
 export type FlowNext =
   | { kind: 'live'; label: string; explanation: string }
-  | { kind: 'event'; action: string; label: string; explanation: string; liveEvent: EventKey | null };
+  | {
+      kind: 'event';
+      action: string;
+      label: string;
+      explanation: string;
+      liveEvent: EventKey | null;
+      /** Cup squad selection that can be announced and revealed on Live. */
+      liveSelection: SelectionKey | null;
+    };
 
 export interface SeasonFlowView {
   seasonNumber: number;
@@ -78,16 +86,18 @@ function actionCopy(action: string, nextSeason: number): ActionCopy | null {
       };
     case 'SelectColorCup':
       return {
-        label: 'Select Color Cup field',
-        explanation: 'Picks 4 athletes per sporting color — 32 in total — for the Color Cup.',
-        summary: 'Cup field selected.',
+        label: 'Select Color Cup squads',
+        explanation:
+          'Rates every athlete within its sporting color and picks the top 4 per color — 32 in total. Announce it on Live to see why each one made the squad.',
+        summary: 'Cup squads selected.',
         target: 'cups',
       };
     case 'SelectTypeCup':
       return {
-        label: 'Select Type Cup field',
-        explanation: 'Allocates athletes to creature-type teams for the Type Cup.',
-        summary: 'Cup field selected.',
+        label: 'Select Type Cup squads',
+        explanation:
+          'Forms a team of 4 for every creature type that can field one. Announce it on Live to see why each athlete plays for its type.',
+        summary: 'Cup squads selected.',
         target: 'cups',
       };
     case 'RunColorCupIndividual':
@@ -155,7 +165,7 @@ function stepDefinitions(progress: SeasonProgress, status: SeasonStatus | null, 
     { key: 'rebalance', label: 'Rebalance feeders', actions: ['RebalanceFeeders'], done: status.rebalanced },
     {
       key: 'cupField',
-      label: `${cupName} field`,
+      label: `${cupName} squads`,
       actions: ['SelectColorCup', 'SelectTypeCup'],
       done: status.cupSelectionResolved,
     },
@@ -214,9 +224,23 @@ function nextFor(
   const liveEvent = status.eventProgress ? status.eventProgress.event : null;
   const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1);
   if (!copy) {
-    return { kind: 'event', action: legalAction, label: 'Run next event', explanation: status.nextActionDetail, liveEvent };
+    return {
+      kind: 'event',
+      action: legalAction,
+      label: 'Run next event',
+      explanation: status.nextActionDetail,
+      liveEvent,
+      liveSelection: null,
+    };
   }
-  return { kind: 'event', action: legalAction, label: copy.label, explanation: copy.explanation, liveEvent };
+  return {
+    kind: 'event',
+    action: legalAction,
+    label: copy.label,
+    explanation: copy.explanation,
+    liveEvent,
+    liveSelection: selectionForAction(legalAction),
+  };
 }
 
 /** One-line confirmation shown after a step runs, plus where its results live. */
