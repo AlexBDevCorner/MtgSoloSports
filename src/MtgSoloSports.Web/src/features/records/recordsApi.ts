@@ -41,10 +41,37 @@ export interface RecordHistoryItem {
   text: string;
 }
 
+export interface ScoringRecordHolder {
+  athleteId: number | null;
+  athleteName: string | null;
+  teamKey: string;
+  teamName: string;
+  value: number;
+  valueDisplay: string;
+  seasonNumber: number;
+  competition: string;
+  leagueName: string | null;
+  stageNumber: number | null;
+  roundNumber: number | null;
+  groupNumber: number | null;
+}
+
+export interface ScoringRecord {
+  recordKey: string;
+  label: string;
+  category: string;
+  scope: string;
+  value: number;
+  valueDisplay: string;
+  isVacant: boolean;
+  holders: ScoringRecordHolder[];
+}
+
 export interface Records {
   saveId: string;
   records: CareerRecord[];
   recentHistory: RecordHistoryItem[];
+  scoringRecords?: ScoringRecord[];
 }
 
 export interface HallOfFameLeader {
