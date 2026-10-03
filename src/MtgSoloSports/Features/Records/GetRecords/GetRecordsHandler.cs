@@ -5,11 +5,16 @@ namespace MtgSoloSports.Features.Records.GetRecords;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Serves current career
-/// records plus recent break history. Current values are computed live from
-/// normalized standings, memberships, movements, qualifier standings and
-/// career projections via <see cref="RecordLoader"/> plus
+/// records plus scoring records and recent break history. Career values are
+/// computed live from normalized standings, memberships, movements, qualifier
+/// standings and career projections via <see cref="RecordLoader"/> plus
 /// <see cref="RecordCalculator"/>; neither <c>Rounds.PayloadJson</c> nor
-/// <c>QualifierRounds.PayloadJson</c> is selected. History reads persisted
+/// <c>QualifierRounds.PayloadJson</c> is selected for that path. Scoring
+/// records are derived from historical persisted round/stage/event results via
+/// <see cref="ScoreRecordLoader"/> plus <see cref="ScoreRecordCalculator"/>:
+/// single-round maxima decode the immutable compact payloads (the same bytes
+/// used by exact-round replay) while stage/season totals use normalized
+/// standings; nothing is resimulated. History reads persisted
 /// <c>new_record</c> story events. Read-only: no lock, no RNG, no mutation.
 /// </summary>
 public sealed class GetRecordsHandler
@@ -40,13 +45,33 @@ public sealed class GetRecordsHandler
             inputs.Memberships,
             inputs.Careers,
             inputs.Promotions);
+        ScoreRecordLoader.ScoringInputs scoringInputs = await ScoreRecordLoader.LoadAsync(
+            context, inputs.AthleteNames, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ScoreRecordCalculator.ScoringRecordResult> scoringComputed = ScoreRecordCalculator.ComputeAll(
+            scoringInputs.AthleteNames,
+            scoringInputs.LeagueRounds,
+            scoringInputs.LeagueStages,
+            scoringInputs.LeaguePoints,
+            scoringInputs.ColourRounds,
+            scoringInputs.ColourStages,
+            scoringInputs.QualifierRounds,
+            scoringInputs.QualifierStages,
+            scoringInputs.ColourLegRounds,
+            scoringInputs.ColourLegStages,
+            scoringInputs.ColourTotals,
+            scoringInputs.ColourTeamRounds,
+            scoringInputs.TypeLegRounds,
+            scoringInputs.TypeLegStages,
+            scoringInputs.TypeTotals,
+            scoringInputs.TypeTeamRounds);
         List<RecordHistoryEntry> history = await LoadHistoryAsync(context, cancellationToken).ConfigureAwait(false);
-        return Map(saveId, computed, inputs.AthleteNames, history);
+        return Map(saveId, computed, scoringComputed, inputs.AthleteNames, history);
     }
 
     internal static GetRecordsResponse Map(
         Guid saveId,
         IReadOnlyList<RecordCalculator.RecordHolders> computed,
+        IReadOnlyList<ScoreRecordCalculator.ScoringRecordResult> scoringComputed,
         Dictionary<int, string> names,
         List<RecordHistoryEntry> history)
     {
@@ -56,7 +81,8 @@ public sealed class GetRecordsHandler
             records.Add(MapSingle(holders, names));
         }
 
-        return new GetRecordsResponse(saveId, records, history);
+        List<ScoringRecordEntry> scoring = MapScoring(scoringComputed, names);
+        return new GetRecordsResponse(saveId, records, history, scoring);
     }
 
     internal static RecordEntry MapSingle(
@@ -80,6 +106,65 @@ public sealed class GetRecordsHandler
             isBonus,
             isVacant,
             entries);
+    }
+
+    internal static List<ScoringRecordEntry> MapScoring(
+        IReadOnlyList<ScoreRecordCalculator.ScoringRecordResult> computed,
+        Dictionary<int, string> names)
+    {
+        ArgumentNullException.ThrowIfNull(computed);
+        ArgumentNullException.ThrowIfNull(names);
+        List<ScoringRecordEntry> entries = new(computed.Count);
+        foreach (ScoreRecordCalculator.ScoringRecordResult result in computed)
+        {
+            entries.Add(MapScoringSingle(result, names));
+        }
+
+        return entries;
+    }
+
+    internal static ScoringRecordEntry MapScoringSingle(
+        ScoreRecordCalculator.ScoringRecordResult result,
+        Dictionary<int, string> names)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(names);
+        bool isVacant = result.Holders.Count == 0;
+        List<ScoringRecordHolderEntry> holders = new(result.Holders.Count);
+        foreach (ScoreRecordCalculator.ScoringHolder holder in result.Holders)
+        {
+            string? athleteName = null;
+            if (holder.SaveAthleteId is not null)
+            {
+                names.TryGetValue(holder.SaveAthleteId.Value, out string? resolved);
+                athleteName = resolved ?? $"Athlete {holder.SaveAthleteId.Value}";
+            }
+
+            string teamName = string.IsNullOrWhiteSpace(holder.TeamKey) ? string.Empty : holder.TeamKey;
+            holders.Add(new ScoringRecordHolderEntry(
+                holder.SaveAthleteId,
+                athleteName,
+                holder.TeamKey ?? string.Empty,
+                teamName,
+                holder.Value,
+                ScoreRecordKey.FormatPoints(holder.Value),
+                holder.SeasonNumber,
+                holder.Competition,
+                holder.LeagueName,
+                holder.StageNumber,
+                holder.RoundNumber,
+                holder.GroupNumber));
+        }
+
+        return new ScoringRecordEntry(
+            result.RecordKey,
+            ScoreRecordKey.LabelOf(result.RecordKey),
+            ScoreRecordKey.CategoryOf(result.RecordKey),
+            ScoreRecordKey.ScopeLabelOf(result.RecordKey),
+            result.Value,
+            ScoreRecordKey.FormatPoints(result.Value),
+            isVacant,
+            holders);
     }
 
     internal static async Task<List<RecordHistoryEntry>> LoadHistoryAsync(
