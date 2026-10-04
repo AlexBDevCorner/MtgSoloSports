@@ -387,6 +387,10 @@ public sealed class SaveDbContext : DbContext
             entity.HasIndex(e => new { e.ToSeasonId, e.SaveAthleteId }).IsUnique();
             entity.HasIndex(e => new { e.FromSeasonId, e.FromLeagueId });
             entity.HasIndex(e => new { e.ToSeasonId, e.ToLeagueId });
+            // Athlete profile path filters by athlete and orders by destination
+            // season/kind; without an athlete-leading index every profile scans
+            // the full movements table on long saves.
+            entity.HasIndex(e => new { e.SaveAthleteId, e.ToSeasonId, e.Kind });
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.FromSeasonId).IsRequired();
             entity.Property(e => e.ToSeasonId).IsRequired();
@@ -451,7 +455,11 @@ public sealed class SaveDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
             entity.HasIndex(e => new { e.SaveAthleteId, e.EventType, e.DedupKey }).IsUnique();
-            entity.HasIndex(e => e.SaveAthleteId);
+            // Newest-N athlete feed filters by athlete and orders by Id desc;
+            // the composite lets SQLite satisfy filter plus order from the index
+            // without a separate sort. It covers the old single-column athlete
+            // prefix, so no separate SaveAthleteId index is kept.
+            entity.HasIndex(e => new { e.SaveAthleteId, e.Id });
             entity.HasIndex(e => new { e.SeasonNumber, e.Id });
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.EventType).IsRequired().HasMaxLength(64);

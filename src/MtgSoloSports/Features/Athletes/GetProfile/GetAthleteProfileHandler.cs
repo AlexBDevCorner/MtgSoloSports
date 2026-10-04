@@ -106,18 +106,24 @@ public sealed class GetAthleteProfileHandler
         List<AthleteSeasonSummaryEntity> summaries,
         CancellationToken cancellationToken)
     {
-        List<int> seasonIds = await context.Seasons
+        // Cheap completeness gate: COUNT(*) avoids materializing every season id
+        // on the hot profile path. Only when counts match do we probe for a
+        // missing season with a single indexed EXISTS query over the athlete's
+        // own small covered set.
+        int seasonCount = await context.Seasons
             .AsNoTracking()
-            .Select(e => e.Id)
-            .ToListAsync(cancellationToken)
+            .CountAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (summaries.Count != seasonIds.Count)
+        if (summaries.Count != seasonCount)
         {
             return true;
         }
 
         HashSet<int> covered = summaries.Select(s => s.SeasonId).ToHashSet();
-        return !seasonIds.All(covered.Contains);
+        return await context.Seasons
+            .AsNoTracking()
+            .AnyAsync(e => !covered.Contains(e.Id), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal static GetAthleteProfileResponse MapPersisted(
@@ -503,14 +509,25 @@ public sealed class GetAthleteProfileHandler
             return [];
         }
 
+        // Targeted lookups: only the seasons/leagues referenced by this
+        // athlete's own movement rows, never the full save dictionaries.
+        HashSet<int> seasonIds = rows.SelectMany(r => new[] { r.FromSeasonId, r.ToSeasonId }).ToHashSet();
         Dictionary<int, int> seasonNumbers = await context.Seasons
             .AsNoTracking()
+            .Where(e => seasonIds.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, string> leagueNames = await context.Leagues
-            .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
-            .ConfigureAwait(false);
+        HashSet<int> leagueIds = rows
+            .SelectMany(r => new[] { r.FromLeagueId, r.ToLeagueId })
+            .Where(id => id != 0)
+            .ToHashSet();
+        Dictionary<int, string> leagueNames = leagueIds.Count == 0
+            ? new Dictionary<int, string>()
+            : await context.Leagues
+                .AsNoTracking()
+                .Where(e => leagueIds.Contains(e.Id))
+                .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+                .ConfigureAwait(false);
         List<AthleteMovementDto> movements = new(rows.Count);
         foreach (MovementEntity row in rows)
         {
