@@ -443,7 +443,7 @@ public static class SearchAthletesFilter
     {
         return asc
             ? candidates.OrderBy(e => e.BestSeasonFinish ?? int.MaxValue).ThenBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.AthleteId)
-            : candidates.OrderBy(e => e.BestSeasonFinish ?? int.MinValue).ThenBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.AthleteId);
+            : candidates.OrderByDescending(e => e.BestSeasonFinish ?? int.MinValue).ThenBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.AthleteId);
     }
 
     private static IEnumerable<Candidate> SortByCurrentLeague(IReadOnlyList<Candidate> candidates, bool asc)
