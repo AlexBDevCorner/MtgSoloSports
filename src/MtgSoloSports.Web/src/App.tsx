@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { AthleteProfilePage } from './features/athletes/AthleteProfilePage';
+import { AthleteSearchPage } from './features/athletes/AthleteSearchPage';
 import { useAthleteProfile } from './features/athletes/useAthleteProfile';
 import { CatalogBanner } from './features/catalog/CatalogBanner';
 import { useCatalogStats } from './features/catalog/catalogApi';
@@ -24,6 +25,7 @@ import {
   writeLastSelectedSave,
 } from './features/routing/router';
 import {
+  athletesPath,
   dashboardPath,
   historyPath,
   livePath,
@@ -52,6 +54,8 @@ function viewForRoute(route: Route): View {
       return 'records';
     case 'cups':
       return 'cups';
+    case 'athletes':
+      return 'athletes';
     case 'athlete':
     case 'invalidAthlete':
       return 'athlete';
@@ -329,6 +333,17 @@ export default function App() {
           return <CupTeamPage saveId={saveId} cup={route.view.cup} teamKey={route.view.teamKey} />;
         }
         return <CupsHubPage saveId={saveId} />;
+      case 'athletes':
+        return (
+          <AthleteSearchPage
+            key={saveId}
+            saveId={saveId}
+            urlSearch={route.search}
+            onSearchChange={(search) => {
+              navigate(athletesPath(saveId, search), { replace: true });
+            }}
+          />
+        );
       case 'athlete':
         return (
           <AthleteProfilePage
