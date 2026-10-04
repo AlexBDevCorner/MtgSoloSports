@@ -332,10 +332,12 @@ export function AthleteProfilePage({
 
         <Card
           eyebrow="Records"
-          title={`Record context — ${state.recordHoldings.length} held`}
+          title={state.holdingsLoading ? 'Record context' : `Record context — ${state.recordHoldings.length} held`}
           info={<p>Computed from normalized projections without decompressing round payloads.</p>}
         >
-          {state.recordHoldings.length === 0 ? (
+          {state.holdingsLoading && state.recordHoldings.length === 0 ? (
+            <p className="muted">Loading record holdings…</p>
+          ) : state.recordHoldings.length === 0 ? (
             <p className="muted">
               Holds no outright career records right now. Ties share records; only an outright
               higher value replaces holders.
@@ -360,6 +362,9 @@ export function AthleteProfilePage({
               </table>
             </div>
           )}
+          {state.holdingsError ? (
+            <p className="muted">Record holdings unavailable: {state.holdingsError}</p>
+          ) : null}
         </Card>
 
         <Card
@@ -474,7 +479,9 @@ export function AthleteProfilePage({
         </Card>
 
         <Card eyebrow="Stories" title="Sporting stories">
-          {state.stories.length === 0 ? (
+          {state.storiesLoading && state.stories.length === 0 ? (
+            <p className="muted">Loading stories…</p>
+          ) : state.stories.length === 0 ? (
             <p className="muted">
               No stories yet for this athlete. First stage wins, titles, Superleague
               milestones and pool returns appear here.
@@ -489,6 +496,9 @@ export function AthleteProfilePage({
               ))}
             </ul>
           )}
+          {state.storiesError ? (
+            <p className="muted">Stories unavailable: {state.storiesError}</p>
+          ) : null}
         </Card>
       </div>
     </div>

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
@@ -33,6 +34,24 @@ public sealed class SaveStore
     private readonly SaveDbContextFactory _factory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SaveStore> _logger;
+
+    /// <summary>
+    /// Per-save migration-verified fast path for hot read endpoints. After a
+    /// save is proven current (no pending EF migrations), repeated
+    /// <see cref="EnsureMigratedAsync"/> calls skip the
+    /// <c>__EFMigrationsHistory</c> round-trip while the underlying file bytes
+    /// are unchanged (length plus last-write). Any file replacement via import,
+    /// restore, delete or migration itself invalidates the entry, and a new
+    /// app version with additional migrations naturally misses because the
+    /// verified entry stores the schema version it was verified against.
+    /// Correctness is preserved: a stale entry can only occur if the file is
+    /// replaced outside <see cref="SaveStore"/> with identical length and
+    /// timestamp, in which case the next detailed read still validates
+    /// required rows and schema bookkeeping.
+    /// </summary>
+    private readonly ConcurrentDictionary<Guid, VerifiedMigration> _migrationVerified = new();
+
+    private sealed record VerifiedMigration(int SchemaVersion, long Length, DateTime LastWriteUtc);
 
     public SaveStore(
         IOptions<SaveStorageOptions> options,
@@ -148,11 +167,17 @@ public sealed class SaveStore
             throw new SaveNotFoundException(saveId);
         }
 
+        if (IsMigrationVerified(path, saveId))
+        {
+            return;
+        }
+
         IReadOnlyList<string> pending = await SaveSchemaMigrator
             .GetPendingMigrationsAsync(_factory, path, cancellationToken)
             .ConfigureAwait(false);
         if (pending.Count == 0)
         {
+            MarkMigrationVerified(path, saveId);
             return;
         }
 
@@ -174,6 +199,56 @@ public sealed class SaveStore
         string rulesAfter = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
         SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
         _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+        InvalidateMigrationVerified(saveId);
+        MarkMigrationVerified(path, saveId);
+    }
+
+    public bool IsMigrationVerified(string saveFilePath, Guid saveId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(saveFilePath);
+        if (!_migrationVerified.TryGetValue(saveId, out VerifiedMigration? verified))
+        {
+            return false;
+        }
+
+        if (verified.SchemaVersion != SaveSchemaVersion.Current)
+        {
+            return false;
+        }
+
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(saveFilePath);
+            if (!info.Exists)
+            {
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return info.Length == verified.Length && info.LastWriteTimeUtc == verified.LastWriteUtc;
+    }
+
+    public void MarkMigrationVerified(string saveFilePath, Guid saveId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(saveFilePath);
+        FileInfo info = new(saveFilePath);
+        if (!info.Exists)
+        {
+            return;
+        }
+
+        _migrationVerified[saveId] = new VerifiedMigration(
+            SaveSchemaVersion.Current, info.Length, info.LastWriteTimeUtc);
+    }
+
+    public void InvalidateMigrationVerified(Guid saveId)
+    {
+        _migrationVerified.TryRemove(saveId, out _);
     }
 
     /// <summary>
@@ -517,6 +592,7 @@ public sealed class SaveStore
         File.Delete(path);
         DeleteCompanionFiles(path);
         ClearSaveConnections(path);
+        InvalidateMigrationVerified(saveId);
 
         string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
         if (Directory.Exists(checkpointDirectory))
@@ -645,6 +721,7 @@ public sealed class SaveStore
             // File replacement bypasses pooled SQLite handles, which would
             // otherwise keep serving pages from the previous file content.
             ClearSaveConnections(target);
+            InvalidateMigrationVerified(manifest.SaveId);
             return await ReadDetailAsync(manifest.SaveId, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -1228,6 +1305,7 @@ public sealed class SaveStore
         File.Copy(checkpointPath, livePath, overwrite: true);
         DeleteCompanionFiles(livePath);
         ClearSaveConnections(livePath);
+        InvalidateMigrationVerified(saveId);
         _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
     }
 

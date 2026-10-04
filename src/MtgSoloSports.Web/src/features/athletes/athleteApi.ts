@@ -102,6 +102,20 @@ export interface AthleteProfile {
   cupHistory: AthleteCupHistory[];
 }
 
+export interface AthleteRecordHolding {
+  recordKey: string;
+  label: string;
+  value: number;
+  valueDisplay: string;
+  isBonus: boolean;
+}
+
+export interface AthleteRecordHoldings {
+  saveId: string;
+  athleteId: number;
+  holdings: AthleteRecordHolding[];
+}
+
 export interface CurrentStandingRow {
   athleteId: number;
   name: string;
@@ -138,6 +152,17 @@ export async function fetchAthleteProfile(
   return fetchJson<AthleteProfile>(`/api/saves/${saveId}/athletes/${athleteId}`, {
     signal,
   });
+}
+
+export async function fetchAthleteRecordHoldings(
+  saveId: string,
+  athleteId: number,
+  signal?: AbortSignal,
+): Promise<AthleteRecordHoldings> {
+  return fetchJson<AthleteRecordHoldings>(
+    `/api/saves/${saveId}/athletes/${athleteId}/record-holdings`,
+    { signal },
+  );
 }
 
 export async function fetchCurrentStandings(

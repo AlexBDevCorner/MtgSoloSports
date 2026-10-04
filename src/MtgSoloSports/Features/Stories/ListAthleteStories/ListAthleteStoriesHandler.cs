@@ -33,8 +33,13 @@ public sealed class ListAthleteStoriesHandler
         int limited = Math.Clamp(take, 1, ListRecentStoriesHandler.MaxTake);
         using SaveDbContext context = _store.OpenDbContext(saveId);
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
-        bool exists = await context.SaveAthletes.AsNoTracking().AnyAsync(e => e.Id == athleteId, cancellationToken).ConfigureAwait(false);
-        if (!exists)
+        string? name = await context.SaveAthletes
+            .AsNoTracking()
+            .Where(e => e.Id == athleteId)
+            .Select(e => e.Name)
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (name is null)
         {
             throw new AthleteStoriesNotFoundException($"Athlete {athleteId} does not exist in save '{saveId:D}'.");
         }
@@ -45,12 +50,6 @@ public sealed class ListAthleteStoriesHandler
             .OrderByDescending(e => e.Id)
             .Take(limited)
             .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        string name = await context.SaveAthletes
-            .AsNoTracking()
-            .Where(e => e.Id == athleteId)
-            .Select(e => e.Name)
-            .SingleAsync(cancellationToken)
             .ConfigureAwait(false);
         Dictionary<int, string> names = new() { [athleteId] = name };
         return new ListRecentStoriesResponse(saveId, ListRecentStoriesHandler.Map(rows, names));
