@@ -10,6 +10,7 @@
  * - `/saves/:saveId/dashboard`
  * - `/saves/:saveId/live?league=<id>&round=<n>`
  * - `/saves/:saveId/live?event=<event|selection key>&season=<n>&group=<n>&round=<n>`
+ * - `/saves/:saveId/live?transition=<movement|rebalance>&season=<fromSeason>` (MSS-053 transition reveal)
  * - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
  * - `/saves/:saveId/standings?league=<id>&season=<n>&view=season|matrix`
  * - `/saves/:saveId/leagues/:leagueId` (MSS-040 reservation, now a Standings alias)
@@ -45,7 +46,14 @@
  * entry flow and never overrides an explicit save-scoped URL.
  */
 
-import { isEventKey, isSelectionKey, type EventKey, type SelectionKey } from '../events/eventModel.ts';
+import {
+  isEventKey,
+  isSelectionKey,
+  isTransitionKey,
+  type EventKey,
+  type SelectionKey,
+  type TransitionKey,
+} from '../events/eventModel.ts';
 
 export type StandingsView = 'season' | 'matrix';
 
@@ -69,6 +77,13 @@ export type Route =
       event: EventKey | null;
       /** Cup squad selection shown on Live (`?event=color-cup-selection`). */
       selection: SelectionKey | null;
+      /**
+       * Postseason transition reveal shown on Live
+       * (`?transition=movement|rebalance&season=<fromSeason>`). Read-only
+       * presentation over the persisted movement/rebalance result; the
+       * sporting mutation runs from the Dashboard before navigating here.
+       */
+      transition: TransitionKey | null;
       eventSeason: number | null;
       group: number | null;
     }
@@ -110,6 +125,7 @@ export function livePath(
     league?: number | null;
     round?: number | null;
     event?: EventKey | SelectionKey | null;
+    transition?: TransitionKey | null;
     season?: number | null;
     group?: number | null;
   },
@@ -123,6 +139,9 @@ export function livePath(
   }
   if (query?.event !== undefined && query.event !== null) {
     params.set('event', query.event);
+  }
+  if (query?.transition !== undefined && query.transition !== null) {
+    params.set('transition', query.transition);
   }
   if (query?.season !== undefined && query.season !== null) {
     params.set('season', String(query.season));
@@ -311,6 +330,11 @@ function parseSelection(params: URLSearchParams): SelectionKey | null {
   return isSelectionKey(value) ? value : null;
 }
 
+function parseTransition(params: URLSearchParams): TransitionKey | null {
+  const value = params.get('transition');
+  return isTransitionKey(value) ? value : null;
+}
+
 function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
     return pathname.slice(0, -1);
@@ -360,8 +384,11 @@ export function parseRoute(pathname: string, search: string): Route {
         round: parseOptionalPositiveInt(params, 'round'),
         event: parseEvent(params),
         selection: parseSelection(params),
+        transition: parseTransition(params),
         eventSeason:
-          parseEvent(params) || parseSelection(params) ? parseOptionalPositiveInt(params, 'season') : null,
+          parseEvent(params) || parseSelection(params) || parseTransition(params)
+            ? parseOptionalPositiveInt(params, 'season')
+            : null,
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
       };
     case 'history':

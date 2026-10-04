@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Notice } from '../../shared/ui/Notice';
-import { Link } from '../routing/router';
+import { Link, navigate } from '../routing/router';
 import { cupsPath, livePath, standingsPath } from '../routing/routes';
+import { transitionForAction } from '../events/eventModel';
 import { advanceToNextEvent, type SeasonProgress, type SeasonStatus } from './dashboardApi';
 import { executedSummary, seasonFlow, type SummaryTarget } from './seasonFlowSteps';
 
@@ -45,6 +46,33 @@ export function SeasonFlow({
       const result = await advanceToNextEvent(saveId);
       setLastDone(executedSummary(result.executedAction, result.nextSeasonNumber ?? result.currentSeasonNumber));
       onAdvanced();
+    } catch (failure) {
+      setError(apiErrorMessage(failure));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  /**
+   * MSS-053 transition steps (promotion/relegation, feeder rebalance,
+   * inaugural formation). The backend persists the authoritative result
+   * exactly once; the UI then navigates to the dedicated Live reveal for the
+   * season that was just persisted. The reveal page re-reads that persisted
+   * result, so refresh and Back/Forward never rerun the sporting action.
+   */
+  async function runNextAndReveal(): Promise<void> {
+    if (running || next?.kind !== 'event' || !next.liveTransition) {
+      return;
+    }
+    setRunning(true);
+    setError(null);
+    try {
+      const result = await advanceToNextEvent(saveId);
+      setLastDone(executedSummary(result.executedAction, result.nextSeasonNumber ?? result.currentSeasonNumber));
+      onAdvanced();
+      const transition = transitionForAction(result.executedAction) ?? next.liveTransition;
+      const fromSeason = result.sourceSeasonNumber ?? flow.seasonNumber;
+      navigate(livePath(saveId, { transition, season: fromSeason }));
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
@@ -121,6 +149,20 @@ export function SeasonFlow({
                 {running ? 'Selecting…' : 'Select now'}
               </button>
             </div>
+          ) : next.liveTransition ? (
+            <div className="live-buttons">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={running}
+                aria-busy={running}
+                onClick={() => {
+                  void runNextAndReveal();
+                }}
+              >
+                {running ? 'Resolving…' : `${next.label} on Live`}
+              </button>
+            </div>
           ) : (
             <button
               type="button"
@@ -149,18 +191,22 @@ export function SeasonFlow({
       {error ? (
         <Notice tone="error" title="The step did not complete">
           <p>{error}</p>
-          <p>
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={running}
-              onClick={() => {
-                void runNext();
-              }}
-            >
-              Try again
-            </button>
-          </p>
+            <p>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={running}
+                onClick={() => {
+                  if (next?.kind === 'event' && next.liveTransition) {
+                    void runNextAndReveal();
+                  } else {
+                    void runNext();
+                  }
+                }}
+              >
+                Try again
+              </button>
+            </p>
         </Notice>
       ) : null}
 

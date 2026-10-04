@@ -66,6 +66,7 @@ describe('MSS-040 route shapes', () => {
       round: 3,
       event: null,
       selection: null,
+      transition: null,
       eventSeason: null,
       group: null,
     });
@@ -76,6 +77,7 @@ describe('MSS-040 route shapes', () => {
       round: null,
       event: null,
       selection: null,
+      transition: null,
       eventSeason: null,
       group: null,
     });
@@ -120,6 +122,7 @@ describe('MSS-040 route shapes', () => {
       round: null,
       event: null,
       selection: null,
+      transition: null,
       eventSeason: null,
       group: null,
     });
@@ -143,6 +146,7 @@ describe('MSS-040 route shapes', () => {
       round: 5,
       event: 'qualifier',
       selection: null,
+      transition: null,
       eventSeason: 2,
       group: null,
     });
@@ -153,6 +157,7 @@ describe('MSS-040 route shapes', () => {
       round: 5,
       event: null,
       selection: null,
+      transition: null,
       eventSeason: null,
       group: null,
     });

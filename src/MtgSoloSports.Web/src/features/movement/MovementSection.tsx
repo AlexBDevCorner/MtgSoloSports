@@ -128,6 +128,7 @@ export function MovementSection({
         title={`Season 1 → Season 2 · inaugural Superleague`}
         meta={`${boundaries.length} feeder boundaries · ${inaugural.members.length} promoted athletes · persisted roster, never resimulated.`}
         saveId={saveId}
+        initialMode="complete"
       />
     );
   }
@@ -141,6 +142,7 @@ export function MovementSection({
         title={`Season ${movement.fromSeasonNumber} → Season ${movement.toSeasonNumber}`}
         meta={`${boundaries.length} league boundaries · ${movement.promoted.length} promoted · ${movement.relegated.length} relegated · persisted movements, never resimulated.`}
         saveId={saveId}
+        initialMode="complete"
       />
     );
   }
