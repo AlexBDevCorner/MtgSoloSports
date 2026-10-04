@@ -112,6 +112,19 @@ public sealed class AthleteSearchTests
     }
 
     [Fact]
+    public void ApplySort_BestFinishDescending_ReversesNumericOrderAndKeepsMissingLast()
+    {
+        SearchAthletesFilter.Candidate missing = BuildCandidate(1, "Missing", 0, true, "White League", 1, ["Human"], 0, 0, 0);
+        SearchAthletesFilter.Candidate first = BuildCandidate(2, "First", 0, true, "White League", 1, ["Human"], 0, 0, 1);
+        SearchAthletesFilter.Candidate fifth = BuildCandidate(3, "Fifth", 0, true, "White League", 1, ["Human"], 0, 0, 5);
+
+        IReadOnlyList<SearchAthletesFilter.Candidate> sorted =
+            SearchAthletesFilter.ApplySort([missing, first, fifth], "bestFinish", "desc");
+
+        sorted.Select(e => e.AthleteId).ShouldBe([3, 2, 1]);
+    }
+
+    [Fact]
     public async Task Search_AfterTwoStages_NonPoolCountsSeasonOnce()
     {
         var (store, root) = CreateStore();
