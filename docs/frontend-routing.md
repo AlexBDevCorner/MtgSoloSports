@@ -44,6 +44,16 @@ share them instead of hand-rolling URLs.
   the selection while it is the save's next lifecycle step; announcing it pins
   the URL so the reveal stays on screen once the save moves on to the Cup. A
   saved selection opens fully revealed; reveal progress is never persisted.
+- Live transition reveal (MSS-053): `transition=movement` or
+  `transition=rebalance` with `season` (source season) shows the
+  promotion/relegation — including the Season 1 inaugural formation — or the
+  feeder-rebalance reveal. The Dashboard persists the result once before
+  navigating here; the view only re-reads persisted facts, so refresh and
+  Back/Forward never rerun the sporting action. The first presentation starts
+  face-down for deliberate stepping, while Standings keeps the historical
+  fully-revealed view with replay. An explicit Continue returns to the
+  Dashboard, where the next legal step is already waiting; finishing or
+  skipping the reveal never runs that next step.
 - History postseason: `event` and `group` (with `season` and `round`) replay a
   postseason event's stored rounds; unknown event keys are ignored.
 - Cups: the path alone identifies the page. `:season` must be a positive

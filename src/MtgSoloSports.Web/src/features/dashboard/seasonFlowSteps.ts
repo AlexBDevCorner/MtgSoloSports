@@ -1,5 +1,12 @@
 import type { SeasonProgress, SeasonStatus } from './dashboardApi';
-import { progressLabel, selectionForAction, type EventKey, type SelectionKey } from '../events/eventModel.ts';
+import {
+  progressLabel,
+  selectionForAction,
+  transitionForAction,
+  type EventKey,
+  type SelectionKey,
+  type TransitionKey,
+} from '../events/eventModel.ts';
 
 /**
  * Plain-language view of the season lifecycle for the Dashboard: league play,
@@ -27,6 +34,12 @@ export type FlowNext =
       liveEvent: EventKey | null;
       /** Cup squad selection that can be announced and revealed on Live. */
       liveSelection: SelectionKey | null;
+      /**
+       * Postseason transition reveal (MSS-053). Resolving the step from the
+       * Dashboard persists the result once, then navigates to this reveal on
+       * Live for the progressive first-time presentation.
+       */
+      liveTransition: TransitionKey | null;
     };
 
 export interface SeasonFlowView {
@@ -56,16 +69,16 @@ function actionCopy(action: string, nextSeason: number): ActionCopy | null {
   switch (action) {
     case 'ResolveInauguralMovement':
       return {
-        label: 'Form Superleague',
-        explanation: `The top 4 of every feeder league form the 32-athlete Superleague for Season ${nextSeason}.`,
+        label: 'Form Superleague & reveal',
+        explanation: `The top 4 of every feeder league form the 32-athlete Superleague for Season ${nextSeason} — then reveal each arrival on Live.`,
         summary: 'Superleague formed.',
         target: 'standings',
       };
     case 'ResolveAutomaticMovement':
       return {
-        label: 'Resolve promotion & relegation',
+        label: 'Resolve & reveal promotion',
         explanation:
-          'Superleague places 25–32 are relegated, feeder champions are promoted, and places 17–24 go to the qualifier.',
+          'Superleague places 25–32 are relegated, feeder champions are promoted, and places 17–24 go to the qualifier — then reveal each movement on Live.',
         summary: 'Promotion and relegation resolved.',
         target: 'standings',
       };
@@ -79,8 +92,9 @@ function actionCopy(action: string, nextSeason: number): ActionCopy | null {
       };
     case 'RebalanceFeeders':
       return {
-        label: 'Rebalance feeder leagues',
-        explanation: 'Every feeder league is refilled to 32 athletes from its color pool.',
+        label: 'Rebalance & reveal feeders',
+        explanation:
+          'Every feeder league is refilled to 32 athletes from its color pool — then reveal each departure, return and pool draw on Live.',
         summary: 'Feeder leagues rebalanced.',
         target: 'standings',
       };
@@ -231,6 +245,7 @@ function nextFor(
       explanation: status.nextActionDetail,
       liveEvent,
       liveSelection: null,
+      liveTransition: null,
     };
   }
   return {
@@ -240,6 +255,7 @@ function nextFor(
     explanation: copy.explanation,
     liveEvent,
     liveSelection: selectionForAction(legalAction),
+    liveTransition: transitionForAction(legalAction),
   };
 }
 

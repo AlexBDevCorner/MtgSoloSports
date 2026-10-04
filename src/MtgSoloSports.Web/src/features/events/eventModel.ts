@@ -23,7 +23,6 @@ export function resultsTarget(key: EventKey): 'standings' | 'cups' {
 
 /** Keys of the Cup squad selections: single-step events shown as a reveal on Live. */
 export type SelectionKey = 'color-cup-selection' | 'type-cup-selection';
-
 export const SELECTION_TITLES: Record<SelectionKey, string> = {
   'color-cup-selection': 'Color Cup — squad selection',
   'type-cup-selection': 'Type Cup — squad selection',
@@ -31,6 +30,32 @@ export const SELECTION_TITLES: Record<SelectionKey, string> = {
 
 export function isSelectionKey(value: string | null | undefined): value is SelectionKey {
   return value !== null && value !== undefined && Object.prototype.hasOwnProperty.call(SELECTION_TITLES, value);
+}
+
+/**
+ * Keys of the postseason transition reveals (MSS-053). Unlike round-based
+ * `EventKey` competitions, these are single persisted results presented
+ * progressively on Live: `movement` covers both the Season 1 inaugural
+ * Superleague formation and later promotion/relegation, `rebalance` covers
+ * the feeder-league rebalance. The reveal only reads persisted facts.
+ */
+export type TransitionKey = 'movement' | 'rebalance';
+
+export const TRANSITION_TITLES: Record<TransitionKey, string> = {
+  movement: 'Promotion & relegation',
+  rebalance: 'Feeder rebalance',
+};
+
+export function isTransitionKey(value: string | null | undefined): value is TransitionKey {
+  return value !== null && value !== undefined && Object.prototype.hasOwnProperty.call(TRANSITION_TITLES, value);
+}
+
+/** The transition reveal a lifecycle action resolves, or null for every other action. */
+export function transitionForAction(action: string | null | undefined): TransitionKey | null {
+  if (action === 'ResolveInauguralMovement' || action === 'ResolveAutomaticMovement') {
+    return 'movement';
+  }
+  return action === 'RebalanceFeeders' ? 'rebalance' : null;
 }
 
 /** The selection a lifecycle action resolves, or null for every other action. */

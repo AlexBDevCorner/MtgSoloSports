@@ -85,7 +85,7 @@ describe('season flow steps', () => {
       'Start Season 2:upcoming',
     ]);
     assert.equal(flow.next?.kind, 'event');
-    assert.equal(flow.next?.label, 'Form Superleague');
+    assert.equal(flow.next?.label, 'Form Superleague & reveal');
     assert.equal(flow.next?.kind === 'event' ? flow.next.action : null, 'ResolveInauguralMovement');
   });
 
@@ -134,8 +134,8 @@ describe('season flow steps', () => {
 
   it('labels every lifecycle action in plain words', () => {
     const cases: [string, Partial<SeasonStatus>, string][] = [
-      ['ResolveAutomaticMovement', { sourceSeasonNumber: 3 }, 'Resolve promotion & relegation'],
-      ['RebalanceFeeders', {}, 'Rebalance feeder leagues'],
+      ['ResolveAutomaticMovement', { sourceSeasonNumber: 3 }, 'Resolve & reveal promotion'],
+      ['RebalanceFeeders', {}, 'Rebalance & reveal feeders'],
       ['SelectColorCup', {}, 'Select Color Cup squads'],
       ['RunColorCupIndividual', {}, 'Run Color Cup — individual'],
       ['RunColorCupTeam', {}, 'Run Color Cup — team'],
@@ -159,6 +159,7 @@ describe('season flow steps', () => {
       explanation: 'Backend detail.',
       liveEvent: null,
       liveSelection: null,
+      liveTransition: null,
     });
   });
 
@@ -200,10 +201,18 @@ describe('round-based events', () => {
     assert.equal(flow.steps.find((s) => s.state === 'current')?.detail, 'Round 5 / 16');
   });
 
-  it('keeps single-step events off Live', () => {
-    const flow = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['RebalanceFeeders'] }));
-    assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : 'x', null);
-    assert.equal(flow.next?.kind === 'event' ? flow.next.liveSelection : 'x', null);
+  it('keeps single-step Cup-adjacent events off round-based Live but sends transitions to their reveal', () => {
+    const rebalance = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['RebalanceFeeders'] }));
+    assert.equal(rebalance.next?.kind === 'event' ? rebalance.next.liveEvent : 'x', null);
+    assert.equal(rebalance.next?.kind === 'event' ? rebalance.next.liveSelection : 'x', null);
+    assert.equal(rebalance.next?.kind === 'event' ? rebalance.next.liveTransition : null, 'rebalance');
+    const movement = seasonFlow(progress({ isSeasonComplete: true }), inaugural({ legalNextActions: ['ResolveInauguralMovement'] }));
+    assert.equal(movement.next?.kind === 'event' ? movement.next.liveTransition : null, 'movement');
+    const automatic = seasonFlow(
+      progress({ isSeasonComplete: true }),
+      inaugural({ sourceSeasonNumber: 3, legalNextActions: ['ResolveAutomaticMovement'] }),
+    );
+    assert.equal(automatic.next?.kind === 'event' ? automatic.next.liveTransition : null, 'movement');
   });
 
   it('sends the Cup squad selections to Live as events of their own', () => {

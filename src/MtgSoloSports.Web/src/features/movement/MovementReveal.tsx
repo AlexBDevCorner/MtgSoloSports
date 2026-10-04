@@ -65,9 +65,12 @@ function MovementBadge({ direction }: { direction: MovementDirection }) {
  * authoritative source league, destination league and movement type. Nothing
  * is resimulated and animation state lives in React only.
  *
- * A completed event opens fully revealed so revisits land on the stable
- * final state immediately; "Replay the reveal" restarts the progressive
- * board, which advances one movement at a time (never on long timers).
+ * `initialMode` selects the first-time presentation explicitly: `'complete'`
+ * (default) opens fully revealed so historical revisits land on the stable
+ * final state immediately, while `'reveal'` starts face-down so the
+ * first-time postseason presentation can be stepped through deliberately.
+ * "Replay the reveal" restarts the progressive board in either mode, which
+ * advances one movement at a time (never on long timers).
  * Promoted athletes arrive upward into the higher league, relegated athletes
  * arrive downward into the lower league; labels and direction always carry
  * the result, never colour alone.
@@ -78,6 +81,7 @@ export function MovementReveal({
   title,
   meta,
   saveId,
+  initialMode = 'complete',
 }: {
   /** Boundaries in reveal order (see `buildMovementBoundaries`). */
   boundaries: readonly MovementBoundary[];
@@ -89,20 +93,27 @@ export function MovementReveal({
   meta?: string;
   /** Save context for athlete profile links; when absent names render as text. */
   saveId?: string | null;
+  /**
+   * First-time presentation mode: `'reveal'` starts face-down for the
+   * just-resolved lifecycle step, `'complete'` opens on the final state for
+   * historical viewing.
+   */
+  initialMode?: 'reveal' | 'complete';
 }) {
   const order = buildRevealOrder(boundaries);
   const total = order.length;
-  const [revealedCount, setRevealedCount] = useState(total);
+  const [revealedCount, setRevealedCount] = useState(initialMode === 'reveal' ? 0 : total);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
-  // A new event identity restarts the presentation at the completed final
-  // state; progressive stepping is opt-in via Replay. Animation state never
+  // A new event identity restarts the presentation at the mode's initial
+  // state (face-down for a fresh reveal, final for history); progressive
+  // stepping is opt-in via Replay once complete. Animation state never
   // leaves React and never touches sporting state.
   useEffect(() => {
-    setRevealedCount(total);
-    // Restart only when the event identity changes; local stepping must not reset.
+    setRevealedCount(initialMode === 'reveal' ? 0 : total);
+    // Restart only when the event identity or mode changes; local stepping must not reset.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealKey]);
+  }, [revealKey, initialMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {

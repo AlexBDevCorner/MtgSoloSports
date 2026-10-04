@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "test": "node --test --experimental-strip-types \"src/features/reveal/*.test.ts\" \"src/features/standings/*.test.ts\" \"src/features/catalog/*.test.ts\" \"src/features/live/*.test.ts\" \"src/features/routing/*.test.ts\" \"src/features/dashboard/*.test.ts\" \"src/features/shell/*.test.ts\" \"src/shared/ui/*.test.ts\" \"src/features/saves/*.test.ts\" \"src/features/history/*.test.ts\" \"src/features/events/*.test.ts\" \"src/features/cups/*.test.ts\" \"src/features/athletes/*.test.ts\" \"src/features/records/*.test.ts\" \"src/features/movement/*.test.ts\" \"src/features/rebalance/*.test.ts\""
+    "test": "node --test --experimental-strip-types \"src/features/reveal/*.test.ts\" \"src/features/standings/*.test.ts\" \"src/features/catalog/*.test.ts\" \"src/features/live/*.test.ts\" \"src/features/routing/*.test.ts\" \"src/features/dashboard/*.test.ts\" \"src/features/shell/*.test.ts\" \"src/shared/ui/*.test.ts\" \"src/features/saves/*.test.ts\" \"src/features/history/*.test.ts\" \"src/features/events/*.test.ts\" \"src/features/cups/*.test.ts\" \"src/features/athletes/*.test.ts\" \"src/features/records/*.test.ts\" \"src/features/movement/*.test.ts\" \"src/features/rebalance/*.test.ts\" \"src/features/transitions/*.test.ts\""
   },
   "dependencies": {
     "@types/react": "19.1.16",

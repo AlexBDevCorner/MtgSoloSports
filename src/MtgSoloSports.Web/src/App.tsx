@@ -17,6 +17,7 @@ import { LiveEventView } from './features/live/LiveEventView';
 import { LivePage } from './features/live/LivePage';
 import { RecordsPage } from './features/records/RecordsPage';
 import { StandingsPage } from './features/standings/StandingsPage';
+import { TransitionRevealView } from './features/transitions/TransitionRevealView';
 import {
   Link,
   navigate,
@@ -215,6 +216,20 @@ export default function App() {
         const liveEvent = route.event ?? dashboard.data?.status?.eventProgress?.event ?? null;
         const eventSeason =
           route.eventSeason ?? status?.eventProgress?.sourceSeasonNumber ?? status?.sourceSeasonNumber ?? null;
+        // MSS-053 postseason transition reveals are read-only presentations
+        // over already-persisted movement/rebalance results. They take
+        // precedence when the URL names one; reloading re-reads the persisted
+        // result and never reruns the sporting mutation.
+        if (route.transition && eventSeason !== null) {
+          return (
+            <TransitionRevealView
+              key={`${route.transition}:${eventSeason}`}
+              saveId={saveId}
+              transition={route.transition}
+              season={eventSeason}
+            />
+          );
+        }
         // The Cup squad selection is an event of its own: shown when the URL
         // names it, or when it is the save's next lifecycle step.
         const pendingSelection = selectionForAction(status?.legalNextActions[0]);
