@@ -535,11 +535,11 @@ export function RebalanceReveal({
               <thead>
                 <tr>
                   <th scope="col">League</th>
-                  <th scope="col">To Superleague</th>
-                  <th scope="col">Returning</th>
-                  <th scope="col">To pool</th>
-                  <th scope="col">Drawn</th>
-                  <th scope="col">Final</th>
+                  <th scope="col" className="numeric">To Superleague</th>
+                  <th scope="col" className="numeric">Returning</th>
+                  <th scope="col" className="numeric">To pool</th>
+                  <th scope="col" className="numeric">Drawn</th>
+                  <th scope="col" className="numeric">Final</th>
                 </tr>
               </thead>
               <tbody>

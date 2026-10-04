@@ -528,11 +528,11 @@ export function HistoryPage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
-                    <th scope="col">Stage score</th>
-                    <th scope="col">Champ pts</th>
-                    <th scope="col">Round W</th>
+                    <th scope="col" className="numeric">Stage score</th>
+                    <th scope="col" className="numeric">Champ pts</th>
+                    <th scope="col" className="numeric">Round W</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -592,11 +592,11 @@ export function HistoryPage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
-                    <th scope="col">Champ pts</th>
-                    <th scope="col">Stage W</th>
-                    <th scope="col">Round W</th>
+                    <th scope="col" className="numeric">Champ pts</th>
+                    <th scope="col" className="numeric">Stage W</th>
+                    <th scope="col" className="numeric">Round W</th>
                   </tr>
                 </thead>
                 <tbody>

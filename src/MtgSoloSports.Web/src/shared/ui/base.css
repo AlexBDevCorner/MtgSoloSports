@@ -829,7 +829,15 @@ a.ghost-button:visited {
   margin-left: auto;
 }
 
-/* ---------- Tables ---------- */
+/* ---------- Tables ----------
+ *
+ * Table alignment convention (MSS-046): descriptive text columns stay on the
+ * shared left default below; every rank/score/points/stat column carries
+ * .numeric on BOTH its <th> and its <td>s so the header lines up with the
+ * values it labels. Compact status/medal columns keep the left default in
+ * both header and body. Feature styles must not redeclare text-align for
+ * .data-table/.mini-table cells; only .numeric (and intentional centered
+ * primitives such as the standings matrix cells) override the default. */
 
 .table-wrap {
   max-width: 100%;

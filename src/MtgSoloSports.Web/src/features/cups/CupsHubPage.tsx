@@ -164,12 +164,12 @@ function TeamTable({ saveId, cup, teams }: { saveId: string; cup: CupKind; teams
             <thead>
               <tr>
                 <th scope="col">Team</th>
-                <th scope="col">Cups</th>
-                <th scope="col">🥇</th>
-                <th scope="col">🥈</th>
-                <th scope="col">🥉</th>
-                <th scope="col">Best</th>
-                <th scope="col">Last</th>
+                <th scope="col" className="numeric">Cups</th>
+                <th scope="col" className="numeric">🥇</th>
+                <th scope="col" className="numeric">🥈</th>
+                <th scope="col" className="numeric">🥉</th>
+                <th scope="col" className="numeric">Best</th>
+                <th scope="col" className="numeric">Last</th>
               </tr>
             </thead>
             <tbody>

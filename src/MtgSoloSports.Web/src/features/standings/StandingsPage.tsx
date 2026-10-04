@@ -590,13 +590,13 @@ export function StandingsPage({
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th scope="col">Rank</th>
+                      <th scope="col" className="numeric">Rank</th>
                       <th scope="col">Card</th>
                       <th scope="col">Zone</th>
-                      <th scope="col">Champ pts</th>
-                      <th scope="col">Stage W</th>
-                      <th scope="col">Round W</th>
-                      <th scope="col">Stage score</th>
+                      <th scope="col" className="numeric">Champ pts</th>
+                      <th scope="col" className="numeric">Stage W</th>
+                      <th scope="col" className="numeric">Round W</th>
+                      <th scope="col" className="numeric">Stage score</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -716,19 +716,19 @@ export function StandingsPage({
                 <table className="data-table matrix-table">
                   <thead>
                     <tr>
-                      <th scope="col" className="sticky sticky-rank">
+                      <th scope="col" className="numeric sticky sticky-rank">
                         Rank
                       </th>
                       <th scope="col" className="sticky sticky-athlete">
                         Card
                       </th>
-                      <th scope="col" className="sticky sticky-points">
+                      <th scope="col" className="numeric sticky sticky-points">
                         Champ pts
                       </th>
-                      <th scope="col" className="sticky sticky-wins">
+                      <th scope="col" className="numeric sticky sticky-wins">
                         Stage W
                       </th>
-                      <th scope="col" className="sticky sticky-bonus" title="Time-dependent current effective bonus, not the bonus used in earlier stages.">
+                      <th scope="col" className="numeric sticky sticky-bonus" title="Time-dependent current effective bonus, not the bonus used in earlier stages.">
                         Bonus now*
                       </th>
                       {stageColumns.map((stage) => (

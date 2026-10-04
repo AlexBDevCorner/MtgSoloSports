@@ -177,11 +177,11 @@ export function HistoryEventView({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Team</th>
-                  <th scope="col" className="numeric">
-                    Points
-                  </th>
+                    <th scope="col" className="numeric">Rank</th>
+                    <th scope="col">Team</th>
+                    <th scope="col" className="numeric">
+                      Points
+                    </th>
                 </tr>
               </thead>
               <tbody>

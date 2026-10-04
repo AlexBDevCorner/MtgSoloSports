@@ -412,13 +412,13 @@ function RankingTable({ saveId, report, team }: { saveId: string; report: Select
       <table className="data-table selection-ranking">
         <thead>
           <tr>
-            <th scope="col">Rank</th>
+            <th scope="col" className="numeric">Rank</th>
             <th scope="col">Card</th>
-            <th scope="col">Rating</th>
-            <th scope="col">Bonus</th>
-            <th scope="col">Season</th>
-            <th scope="col">Form</th>
-            <th scope="col">Prestige</th>
+            <th scope="col" className="numeric">Rating</th>
+            <th scope="col" className="numeric">Bonus</th>
+            <th scope="col" className="numeric">Season</th>
+            <th scope="col" className="numeric">Form</th>
+            <th scope="col" className="numeric">Prestige</th>
             <th scope="col">Outcome</th>
           </tr>
         </thead>

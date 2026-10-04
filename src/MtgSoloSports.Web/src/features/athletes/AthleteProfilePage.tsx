@@ -236,7 +236,7 @@ export function AthleteProfilePage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Season</th>
+                    <th scope="col" className="numeric">Season</th>
                     <th scope="col">League</th>
                     <th scope="col">Honour</th>
                   </tr>
@@ -266,7 +266,7 @@ export function AthleteProfilePage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Season</th>
+                    <th scope="col" className="numeric">Season</th>
                     <th scope="col">Movement</th>
                     <th scope="col">From → To</th>
                   </tr>
@@ -309,10 +309,10 @@ export function AthleteProfilePage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Season</th>
+                    <th scope="col" className="numeric">Season</th>
                     <th scope="col">Cup</th>
                     <th scope="col">Team</th>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -346,7 +346,7 @@ export function AthleteProfilePage({
                 <thead>
                   <tr>
                     <th scope="col">Record</th>
-                    <th scope="col">Value</th>
+                    <th scope="col" className="numeric">Value</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -376,14 +376,14 @@ export function AthleteProfilePage({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Season</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Finish</th>
-                  <th scope="col">Round W</th>
-                  <th scope="col">Stage W</th>
-                  <th scope="col">2nd/3rd</th>
-                  <th scope="col">Earned</th>
-                  <th scope="col">Champ pts</th>
+                    <th scope="col" className="numeric">Season</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" className="numeric">Finish</th>
+                    <th scope="col" className="numeric">Round W</th>
+                    <th scope="col" className="numeric">Stage W</th>
+                    <th scope="col" className="numeric">2nd/3rd</th>
+                    <th scope="col" className="numeric">Earned</th>
+                    <th scope="col" className="numeric">Champ pts</th>
                 </tr>
               </thead>
               <tbody>
@@ -432,10 +432,10 @@ export function AthleteProfilePage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Season</th>
+                    <th scope="col" className="numeric">Season</th>
                     <th scope="col">Cup / Event</th>
                     <th scope="col">Team</th>
-                    <th scope="col">Place</th>
+                    <th scope="col" className="numeric">Place</th>
                     <th scope="col">Result</th>
                   </tr>
                 </thead>

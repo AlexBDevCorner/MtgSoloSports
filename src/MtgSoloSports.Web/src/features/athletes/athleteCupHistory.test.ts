@@ -31,10 +31,10 @@ describe('athlete cup history', () => {
   it('renders a cup history section alongside league history with season, place and result', () => {
     assert.ok(page.includes('Cup history'), 'cup history card');
     assert.ok(page.includes('cupHistory.length'), 'count in title');
-    assert.ok(page.includes('<th scope="col">Season</th>'), 'season column');
+    assert.ok(page.includes('<th scope="col" className="numeric">Season</th>'), 'season column');
     assert.ok(page.includes('Cup / Event'), 'cup/event column');
     assert.ok(page.includes('<th scope="col">Team</th>'), 'team column');
-    assert.ok(page.includes('<th scope="col">Place</th>'), 'place column');
+    assert.ok(page.includes('<th scope="col" className="numeric">Place</th>'), 'place column');
     assert.ok(page.includes('<th scope="col">Result</th>'), 'result column');
     assert.ok(page.includes('P{entry.place}'), 'place value');
     assert.ok(page.includes('medalBadge(entry.medal)'), 'result uses shared medal wording');
