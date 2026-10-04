@@ -58,7 +58,7 @@ function ScoringTable({ saveId, records }: { saveId: string; records: ScoringRec
         <thead>
           <tr>
             <th scope="col">Record</th>
-            <th scope="col">Value</th>
+            <th scope="col" className="numeric">Value</th>
             <th scope="col">Holders</th>
           </tr>
         </thead>
@@ -193,13 +193,13 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Rank</th>
-                  <th scope="col">Card</th>
-                  <th scope="col">Titles</th>
-                  <th scope="col">Stage W</th>
-                  <th scope="col">Round W</th>
-                  <th scope="col">Tenure</th>
-                  <th scope="col">Bonus</th>
+                    <th scope="col" className="numeric">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col" className="numeric">Titles</th>
+                    <th scope="col" className="numeric">Stage W</th>
+                    <th scope="col" className="numeric">Round W</th>
+                    <th scope="col" className="numeric">Tenure</th>
+                    <th scope="col" className="numeric">Bonus</th>
                 </tr>
               </thead>
               <tbody>
@@ -250,9 +250,9 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Record</th>
-                  <th scope="col">Value</th>
-                  <th scope="col">Holders</th>
+                    <th scope="col">Record</th>
+                    <th scope="col" className="numeric">Value</th>
+                    <th scope="col">Holders</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,10 +356,10 @@ export function RecordsPage({ saveId }: { saveId: string }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Season</th>
-                  <th scope="col">League</th>
-                  <th scope="col">Athlete</th>
-                  <th scope="col">Honour</th>
+                    <th scope="col" className="numeric">Season</th>
+                    <th scope="col">League</th>
+                    <th scope="col">Athlete</th>
+                    <th scope="col">Honour</th>
                 </tr>
               </thead>
               <tbody>

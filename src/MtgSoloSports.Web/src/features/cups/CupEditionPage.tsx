@@ -188,12 +188,12 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Team</th>
-                    <th scope="col">Score</th>
-                    <th scope="col">Base</th>
-                    <th scope="col">Group W</th>
-                    <th scope="col">Round W</th>
+                    <th scope="col" className="numeric">Score</th>
+                    <th scope="col" className="numeric">Base</th>
+                    <th scope="col" className="numeric">Group W</th>
+                    <th scope="col" className="numeric">Round W</th>
                     <th scope="col">Medal</th>
                   </tr>
                 </thead>
@@ -269,11 +269,11 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th scope="col">Rank</th>
+                        <th scope="col" className="numeric">Rank</th>
                         <th scope="col">Card</th>
                         <th scope="col">Team</th>
-                        <th scope="col">Leg score</th>
-                        <th scope="col">Round W</th>
+                        <th scope="col" className="numeric">Leg score</th>
+                        <th scope="col" className="numeric">Round W</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -334,11 +334,11 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th scope="col">Rank</th>
+                        <th scope="col" className="numeric">Rank</th>
                         <th scope="col">Card</th>
                         <th scope="col">Team</th>
-                        <th scope="col">Cup score</th>
-                        <th scope="col">Round W</th>
+                        <th scope="col" className="numeric">Cup score</th>
+                        <th scope="col" className="numeric">Round W</th>
                         <th scope="col">Medal</th>
                       </tr>
                     </thead>

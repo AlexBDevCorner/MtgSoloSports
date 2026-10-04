@@ -139,10 +139,10 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
               <thead>
                 <tr>
                   <th scope="col">Card</th>
-                  <th scope="col">Caps</th>
-                  <th scope="col">Seasons</th>
-                  <th scope="col">Leg score</th>
-                  <th scope="col">Best leg</th>
+                  <th scope="col" className="numeric">Caps</th>
+                  <th scope="col" className="numeric">Seasons</th>
+                  <th scope="col" className="numeric">Leg score</th>
+                  <th scope="col" className="numeric">Best leg</th>
                 </tr>
               </thead>
               <tbody>
@@ -178,7 +178,7 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th scope="col">Season</th>
+                      <th scope="col" className="numeric">Season</th>
                       <th scope="col">Card</th>
                       <th scope="col">Medal</th>
                     </tr>

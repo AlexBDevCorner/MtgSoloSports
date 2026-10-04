@@ -632,11 +632,11 @@ export function AthleteSearchPage({
                   <tr>
                     <th scope="col">Card</th>
                     <th scope="col">Status</th>
-                    <th scope="col">Non-pool</th>
-                    <th scope="col">Honours</th>
-                    <th scope="col">Titles</th>
-                    <th scope="col">Best</th>
-                    <th scope="col">Cup</th>
+                    <th scope="col" className="numeric">Non-pool</th>
+                    <th scope="col" className="numeric">Honours</th>
+                    <th scope="col" className="numeric">Titles</th>
+                    <th scope="col" className="numeric">Best</th>
+                    <th scope="col" className="numeric">Cup</th>
                   </tr>
                 </thead>
                 <tbody>

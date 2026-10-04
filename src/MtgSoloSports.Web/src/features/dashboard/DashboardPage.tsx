@@ -195,7 +195,7 @@ export function DashboardPage({
                   <thead>
                     <tr>
                       <th scope="col">Color pool</th>
-                      <th scope="col">Count</th>
+                      <th scope="col" className="numeric">Count</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -247,10 +247,10 @@ export function DashboardPage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
                     <th scope="col">Color</th>
-                    <th scope="col">Champ pts</th>
+                    <th scope="col" className="numeric">Champ pts</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +318,7 @@ export function DashboardPage({
                   <tr>
                     <th scope="col">League</th>
                     <th scope="col">Leader</th>
-                    <th scope="col">Champ pts</th>
+                    <th scope="col" className="numeric">Champ pts</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -370,11 +370,11 @@ export function DashboardPage({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">League</th>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Current stage</th>
-                  <th scope="col">Completed</th>
-                  <th scope="col">Status</th>
+                    <th scope="col">League</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col" className="numeric">Current stage</th>
+                    <th scope="col" className="numeric">Completed</th>
+                    <th scope="col">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -418,7 +418,7 @@ export function DashboardPage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Season</th>
+                    <th scope="col" className="numeric">Season</th>
                     <th scope="col">League</th>
                     <th scope="col">Athlete</th>
                     <th scope="col">Honour</th>
@@ -506,7 +506,7 @@ export function DashboardPage({
                 <thead>
                   <tr>
                     <th scope="col">Record</th>
-                    <th scope="col">Value</th>
+                    <th scope="col" className="numeric">Value</th>
                     <th scope="col">Holders</th>
                   </tr>
                 </thead>
@@ -543,10 +543,10 @@ export function DashboardPage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
-                    <th scope="col">Titles</th>
-                    <th scope="col">Bonus</th>
+                    <th scope="col" className="numeric">Titles</th>
+                    <th scope="col" className="numeric">Bonus</th>
                   </tr>
                 </thead>
                 <tbody>

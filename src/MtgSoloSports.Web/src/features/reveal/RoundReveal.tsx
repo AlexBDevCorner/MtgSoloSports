@@ -217,13 +217,13 @@ export function RoundReveal({
         <table className="data-table">
           <thead>
             <tr>
-              <th scope="col">Pos</th>
+              <th scope="col" className="numeric">Pos</th>
               <th scope="col">Card</th>
-              <th scope="col">Base</th>
-              <th scope="col">Bonus</th>
-              <th scope="col">Final</th>
-              <th scope="col">Rank</th>
-              <th scope="col">Stage score</th>
+              <th scope="col" className="numeric">Base</th>
+              <th scope="col" className="numeric">Bonus</th>
+              <th scope="col" className="numeric">Final</th>
+              <th scope="col" className="numeric">Rank</th>
+              <th scope="col" className="numeric">Stage score</th>
             </tr>
           </thead>
           <tbody>

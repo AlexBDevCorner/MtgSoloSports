@@ -539,13 +539,13 @@ export function LivePage({
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th scope="col">Rank</th>
+                    <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
                     <th scope="col">Color</th>
                     <th scope="col">Zone</th>
-                    <th scope="col">Champ pts</th>
-                    <th scope="col">Stage W</th>
-                    <th scope="col">Round W</th>
+                    <th scope="col" className="numeric">Champ pts</th>
+                    <th scope="col" className="numeric">Stage W</th>
+                    <th scope="col" className="numeric">Round W</th>
                   </tr>
                 </thead>
                 <tbody>
