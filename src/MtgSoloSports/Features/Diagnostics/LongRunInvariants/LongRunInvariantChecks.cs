@@ -155,8 +155,10 @@ public static class LongRunInvariantChecks
 
     internal static InvariantResult CheckBonusTiming(Snapshot snapshot, SimulationKernel.Rules.RulesV1 rules)
     {
-        int maxRound = rules.RoundBonusThousandths.Max() * rules.RoundsPerStage * rules.SuperleagueBonusMultiplier;
-        int maxStage = rules.StageBonusThousandths.Max() * rules.SuperleagueBonusMultiplier;
+        // Upper bound across tiers: the Superleague 2/1 scale is the maximum.
+        SimulationKernel.Leagues.TierBonusScale top = rules.GetBonusScale(SimulationKernel.Leagues.LeagueLevel.Superleague);
+        int maxRound = top.ScaleThousandths(rules.RoundBonusThousandths.Max()) * rules.RoundsPerStage;
+        int maxStage = top.ScaleThousandths(rules.StageBonusThousandths.Max());
         int maxEarned = checked(maxRound + maxStage);
         foreach (StageStandingEntity row in snapshot.StageRows)
         {

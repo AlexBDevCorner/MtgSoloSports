@@ -110,6 +110,7 @@ public sealed class GetSeasonPlacementsHandler
         List<SeasonPlacementAthlete> athletes = MapAthletes(query);
         List<SeasonPlacementCell> placements = MapCells(query.Standings);
         string kind = ((LeagueKind)league.Kind).ToString();
+        SimulationKernel.Leagues.LeagueLevel level = LeagueEntityLevels.GetLevel(league);
 
         return new GetSeasonPlacementsResponse(
             saveId,
@@ -117,6 +118,8 @@ public sealed class GetSeasonPlacementsHandler
             league.Id,
             league.Name,
             kind,
+            league.FeederDivision,
+            level.ToString(),
             season.IsComplete,
             stageNumbers.Count,
             athletes,

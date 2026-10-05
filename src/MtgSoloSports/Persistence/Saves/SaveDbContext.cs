@@ -195,11 +195,12 @@ public sealed class SaveDbContext : DbContext
             entity.ToTable("Leagues");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.SeasonId, e.Kind, e.SportingColor }).IsUnique();
+            entity.HasIndex(e => new { e.SeasonId, e.Kind, e.FeederDivision, e.SportingColor }).IsUnique();
             entity.HasIndex(e => e.SeasonId);
             entity.Property(e => e.SeasonId).IsRequired();
             entity.Property(e => e.SportingColor).IsRequired();
             entity.Property(e => e.Kind).IsRequired();
+            entity.Property(e => e.FeederDivision).IsRequired();
             entity.Property(e => e.Name).IsRequired().HasMaxLength(64);
         });
     }

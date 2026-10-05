@@ -66,6 +66,11 @@ public static class Season1PersistedInvariants
                 throw new InvalidOperationException($"Season 1 league '{league.Name}' must be a feeder league.");
             }
 
+            if (league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.First)
+            {
+                throw new InvalidOperationException($"Season 1 league '{league.Name}' must be Feeder 1, was division {league.FeederDivision}.");
+            }
+
             if (!colors.Add(league.SportingColor))
             {
                 throw new InvalidOperationException($"Season 1 has duplicate league for {league.SportingColor}.");

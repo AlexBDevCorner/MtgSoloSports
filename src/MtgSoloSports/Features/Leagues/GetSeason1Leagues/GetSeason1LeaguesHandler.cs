@@ -89,7 +89,7 @@ public sealed class GetSeason1LeaguesHandler
             throw new InvalidOperationException("Save is missing its rules snapshot.");
         }
 
-        return RulesSnapshotDocument.FromJson(row.RulesJson).ToRules();
+        return RulesSnapshotCodec.Decode(row.RulesJson);
     }
 
     internal static GetSeason1LeaguesResponse BuildResponse(
@@ -121,7 +121,7 @@ public sealed class GetSeason1LeaguesHandler
         RulesV1 rules)
     {
         List<PersistedLeague> invariantLeagues = leagues
-            .Select(l => new PersistedLeague(l.Id, (SportingColor)l.SportingColor, l.Kind, l.Name))
+            .Select(l => new PersistedLeague(l.Id, (SportingColor)l.SportingColor, l.Kind, l.FeederDivision, l.Name))
             .ToList();
         List<PersistedMembership> invariantMemberships = memberships
             .Select(m => new PersistedMembership(m.SaveAthleteId, (SportingColor)m.SportingColor, m.LeagueId, m.DrawIndex))

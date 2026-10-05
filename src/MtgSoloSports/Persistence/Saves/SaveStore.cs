@@ -308,7 +308,7 @@ public sealed class SaveStore
             Pcg32V1.AlgorithmVersion,
             preparation.AdvancedRng.State,
             preparation.AdvancedRng.Stream,
-            RulesV1.RulesVersion,
+            preparation.Rules.Version,
             preparation.RulesJson);
         UniverseSummaryRecord universe = new(
             preparation.Selection.Summary.TotalAthletes,
@@ -329,11 +329,11 @@ public sealed class SaveStore
         ulong seed,
         ulong stream)
     {
-        RulesV1 rules = RulesV1.CreateDefault();
+        RulesV1 rules = RulesV2.CreateDefault();
         Pcg32V1 rng = new(seed, stream);
         UniverseSelection selection = UniverseSelector.Select(catalogAthletes, rng, rules);
         InauguralDrawResult draw = InauguralDrawSelector.Select(selection.Selected, rng, rules);
-        return new UniversePreparation(rules, selection, draw, rng.Snapshot(), RulesSnapshotDocument.FromRules(rules).ToJson());
+        return new UniversePreparation(rules, selection, draw, rng.Snapshot(), RulesSnapshotCodec.Encode(rules));
     }
 
     private async Task PersistNewSaveAsync(
@@ -390,7 +390,7 @@ public sealed class SaveStore
         context.RulesSnapshots.Add(new RulesSnapshotEntity
         {
             Id = 1,
-            RulesVersion = RulesV1.RulesVersion,
+            RulesVersion = preparation.Rules.Version,
             RulesJson = preparation.RulesJson,
         });
         context.RngStates.Add(RngStateEntity.FromState(preparation.AdvancedRng));
@@ -468,6 +468,7 @@ public sealed class SaveStore
                 SeasonId = seasonId,
                 SportingColor = (int)color,
                 Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.First,
                 Name = $"{color} League",
             });
         }
@@ -520,7 +521,7 @@ public sealed class SaveStore
         Season1PersistedInvariants.ValidatePersistedSeason1(
             season.SeasonNumber,
             season.HasSuperleague,
-            leagues.Select(l => new PersistedLeague(l.Id, (SportingColor)l.SportingColor, l.Kind, l.Name)).ToList(),
+            leagues.Select(l => new PersistedLeague(l.Id, (SportingColor)l.SportingColor, l.Kind, l.FeederDivision, l.Name)).ToList(),
             memberships.Select(m => new PersistedMembership(m.SaveAthleteId, (SportingColor)m.SportingColor, m.LeagueId, m.DrawIndex)).ToList(),
             rules.TotalAthletesInSave,
             rules);
@@ -1089,7 +1090,7 @@ public sealed class SaveStore
         }
 
         Pcg32State rngState = rngRow.ToState();
-        RulesSnapshotDocument.FromJson(rulesRow.RulesJson).ToRules();
+        _ = RulesSnapshotCodec.Decode(rulesRow.RulesJson);
 
         return new SaveDetailRecord(
             metadata.SaveId,

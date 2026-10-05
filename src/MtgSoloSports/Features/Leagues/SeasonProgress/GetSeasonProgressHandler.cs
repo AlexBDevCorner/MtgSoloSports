@@ -61,6 +61,8 @@ public sealed class GetSeasonProgressHandler
                 status.LeagueId,
                 status.LeagueName,
                 status.LeagueKind,
+                status.FeederDivision,
+                status.LeagueLevel,
                 status.CurrentStage,
                 status.CompletedStages,
                 status.IsLeagueComplete));

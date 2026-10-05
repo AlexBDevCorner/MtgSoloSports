@@ -31,7 +31,7 @@ public sealed class AdvanceRoundTests
             response.SeasonNumber.ShouldBe(1);
             response.StageNumber.ShouldBe(1);
             response.RoundNumber.ShouldBe(1);
-            response.RulesVersion.ShouldBe(RulesV1.RulesVersion);
+            response.RulesVersion.ShouldBe(RulesV2.RulesVersion);
             response.Placements.Count.ShouldBe(32);
             response.PayloadChecksum.Length.ShouldBe(64);
             response.RngBeforeState.ShouldBe(rngBefore);

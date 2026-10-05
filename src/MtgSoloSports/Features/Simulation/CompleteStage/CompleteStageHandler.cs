@@ -81,7 +81,7 @@ public sealed class CompleteStageHandler
 
         Pcg32V1 tieBreakRng = Pcg32V1.Restore(stageRounds.RngAfterRounds);
         IReadOnlyList<StageRankedAthlete> ranked = RankCompletedStage(completion, stageRounds, tieBreakRng);
-        StageInvariants.ValidateCompletedStage(ranked, stageRounds.Totals, completion.Rules, completion.IsSuperleague);
+        StageInvariants.ValidateCompletedStage(ranked, stageRounds.Totals, completion.Rules, completion.Level);
 
         Pcg32State rngAfterStage = tieBreakRng.Snapshot();
         int? nextStageNumber = await PersistCompletionAsync(
@@ -170,7 +170,7 @@ public sealed class CompleteStageHandler
         LeagueEntity League,
         List<AdvanceRoundHandler.MemberRow> Roster,
         StageEntity Stage,
-        bool IsSuperleague);
+        SimulationKernel.Leagues.LeagueLevel Level);
 
     internal sealed record StageRounds(
         List<RoundPayloadDocument> Payloads,
@@ -191,8 +191,8 @@ public sealed class CompleteStageHandler
         LeagueEntity league = await AdvanceRoundHandler.LoadLeagueAsync(context, season, leagueId, cancellationToken).ConfigureAwait(false);
         List<AdvanceRoundHandler.MemberRow> roster = await AdvanceRoundHandler.LoadRosterAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
         StageEntity stage = await LoadCurrentStageAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
-        bool isSuperleague = league.Kind == (int)LeagueKind.Superleague;
-        return new StageCompletionContext(saveId, metadata, rules, rngBefore, season, league, roster, stage, isSuperleague);
+        SimulationKernel.Leagues.LeagueLevel level = LeagueEntityLevels.GetLevel(league);
+        return new StageCompletionContext(saveId, metadata, rules, rngBefore, season, league, roster, stage, level);
     }
 
     /// <summary>
@@ -456,7 +456,7 @@ public sealed class CompleteStageHandler
         StageRounds stageRounds,
         Pcg32V1 rng)
     {
-        return StageCalculator.Rank(stageRounds.Totals, rng, completion.Rules, completion.IsSuperleague);
+        return StageCalculator.Rank(stageRounds.Totals, rng, completion.Rules, completion.Level);
     }
 
     internal static async Task<int?> PersistCompletionAsync(

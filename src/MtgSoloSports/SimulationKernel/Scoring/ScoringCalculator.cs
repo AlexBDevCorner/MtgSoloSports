@@ -1,4 +1,5 @@
 using MtgSoloSports.SimulationKernel.FixedPoint;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.SimulationKernel.Scoring;
@@ -110,9 +111,10 @@ public static class ScoringCalculator
 
     /// <summary>
     /// Round bonus earned for a 1-based finishing position. Places outside 1..10 earn zero.
-    /// Superleague earns twice the regular amount via the snapshot multiplier.
+    /// Tiered scale comes from the versioned snapshot: Superleague 2/1, Feeder 1 1/1,
+    /// Feeder 2 1/2, Feeder 3 1/4 (v2). v1 supports Superleague and Feeder 1 only.
     /// </summary>
-    public static Bonus RoundBonusForPosition(int position, RulesV1 rules, bool isSuperleague)
+    public static Bonus RoundBonusForPosition(int position, RulesV1 rules, LeagueLevel level)
     {
         ArgumentNullException.ThrowIfNull(rules);
         if (position < 1 || position > rules.LeagueSize)
@@ -121,15 +123,23 @@ public static class ScoringCalculator
         }
 
         int thousandths = position <= rules.RoundBonusThousandths.Count ? rules.RoundBonusThousandths[position - 1] : 0;
-        Bonus earned = Bonus.FromThousandths(thousandths);
-        return isSuperleague ? earned.Scale(rules.SuperleagueBonusMultiplier) : earned;
+        TierBonusScale scale = rules.GetBonusScale(level);
+        return Bonus.FromThousandths(thousandths).ScaleRatio(scale.Numerator, scale.Denominator);
     }
 
     /// <summary>
-    /// Stage bonus earned for a 1-based finishing position. Places outside 1..10 earn zero.
-    /// Superleague earns twice the regular amount via the snapshot multiplier.
+    /// Round bonus earned for a 1-based finishing position. Places outside 1..10 earn zero.
+    /// v1 compatibility path: Superleague earns twice the regular amount.
+    /// New code should pass a <see cref="LeagueLevel"/> instead.
     /// </summary>
-    public static Bonus StageBonusForPosition(int position, RulesV1 rules, bool isSuperleague)
+    public static Bonus RoundBonusForPosition(int position, RulesV1 rules, bool isSuperleague) =>
+        RoundBonusForPosition(position, rules, LeagueHierarchy.FromLegacySuperleagueFlag(isSuperleague));
+
+    /// <summary>
+    /// Stage bonus earned for a 1-based finishing position. Places outside 1..10 earn zero.
+    /// Tiered scale comes from the versioned snapshot (see <see cref="RoundBonusForPosition(int, RulesV1, LeagueLevel)"/>).
+    /// </summary>
+    public static Bonus StageBonusForPosition(int position, RulesV1 rules, LeagueLevel level)
     {
         ArgumentNullException.ThrowIfNull(rules);
         if (position < 1 || position > rules.LeagueSize)
@@ -138,9 +148,17 @@ public static class ScoringCalculator
         }
 
         int thousandths = position <= rules.StageBonusThousandths.Count ? rules.StageBonusThousandths[position - 1] : 0;
-        Bonus earned = Bonus.FromThousandths(thousandths);
-        return isSuperleague ? earned.Scale(rules.SuperleagueBonusMultiplier) : earned;
+        TierBonusScale scale = rules.GetBonusScale(level);
+        return Bonus.FromThousandths(thousandths).ScaleRatio(scale.Numerator, scale.Denominator);
     }
+
+    /// <summary>
+    /// Stage bonus earned for a 1-based finishing position. Places outside 1..10 earn zero.
+    /// v1 compatibility path: Superleague earns twice the regular amount.
+    /// New code should pass a <see cref="LeagueLevel"/> instead.
+    /// </summary>
+    public static Bonus StageBonusForPosition(int position, RulesV1 rules, bool isSuperleague) =>
+        StageBonusForPosition(position, rules, LeagueHierarchy.FromLegacySuperleagueFlag(isSuperleague));
 
     /// <summary>
     /// Applies season-age decay to a bonus earned in an older season.

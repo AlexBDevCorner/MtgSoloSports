@@ -134,10 +134,13 @@ public sealed class ListHistoryCompetitionsHandler
         roundsByLeague.TryGetValue(league.Id, out int totalRounds);
         string kind = ((LeagueKind)league.Kind).ToString();
         string colorName = ((SportingColor)league.SportingColor).ToString();
+        SimulationKernel.Leagues.LeagueLevel level = LeagueEntityLevels.GetLevel(league);
         return new HistoryCompetitionSummary(
             league.Id,
             league.Name,
             kind,
+            league.FeederDivision,
+            level.ToString(),
             league.SportingColor,
             colorName,
             stageCount,

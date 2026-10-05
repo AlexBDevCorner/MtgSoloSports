@@ -15,17 +15,18 @@ public static class SaveRulesCompatibility
 {
     /// <summary>
     /// Validates that an imported artifact's sporting rules are supported by
-    /// this build. Rules versions other than the current one are rejected:
-    /// game-rule migration is an explicit future operation, never an implicit
-    /// side effect of import or schema migration.
+    /// this build. Rules v1 (single feeder tier) and v2 (tiered Superleague /
+    /// Feeder 1-3) are both importable; anything else is rejected.
+    /// Game-rule migration stays explicit and is never an implicit side effect
+    /// of import or schema migration.
     /// </summary>
     public static void EnsureImportableRules(SaveBundleManifest manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
-        if (manifest.RulesVersion != RulesV1.RulesVersion)
+        if (!RulesSnapshotCodec.SupportedVersions.Contains(manifest.RulesVersion))
         {
             throw new InvalidOperationException(
-                $"Save bundle rules version {manifest.RulesVersion} is not supported by this build (rules v{RulesV1.RulesVersion}). " +
+                $"Save bundle rules version {manifest.RulesVersion} is not supported by this build (supports v1 and v2). " +
                 "Game-rule migration is separate from database-schema migration and is not performed automatically on import.");
         }
 
@@ -39,15 +40,17 @@ public static class SaveRulesCompatibility
     }
 
     /// <summary>
-    /// Rebuilds and validates the persisted rules snapshot. Throws with a
-    /// rules-specific message when sporting mathematics cannot be trusted.
+    /// Rebuilds and validates the persisted rules snapshot. v1 snapshots use
+    /// the v1 compatibility path; v2 tiered snapshots decode to
+    /// <see cref="RulesV2"/>. Throws with a rules-specific message when
+    /// sporting mathematics cannot be trusted.
     /// </summary>
     public static RulesV1 ReadSnapshotRules(string rulesJson)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rulesJson);
         try
         {
-            RulesV1 rules = RulesSnapshotDocument.FromJson(rulesJson).ToRules();
+            RulesV1 rules = RulesSnapshotCodec.Decode(rulesJson);
             rules.Validate();
             return rules;
         }

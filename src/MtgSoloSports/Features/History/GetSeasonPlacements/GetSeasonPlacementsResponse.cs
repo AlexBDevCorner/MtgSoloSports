@@ -12,6 +12,8 @@ public sealed record GetSeasonPlacementsResponse(
     int LeagueId,
     string LeagueName,
     string LeagueKind,
+    int FeederDivision,
+    string LeagueLevel,
     bool IsSeasonComplete,
     int CompletedStages,
     IReadOnlyList<SeasonPlacementAthlete> Athletes,
