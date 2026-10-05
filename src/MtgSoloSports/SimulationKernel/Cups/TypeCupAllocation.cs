@@ -10,13 +10,16 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 /// one team of four. Capped athletes may represent only their permanent nationality;
 /// uncapped athletes may initially represent any printed creature type and prefer
 /// the type where they rank higher (for example #1 Wizard over #4 Human).
-/// Allocation is an exact deterministic global maximum: it maximizes the number of
-/// valid four-distinct-athlete teams via branch-and-bound over type subsets with
+/// Permanent nationality is eligibility only: it restricts which teams a capped
+/// athlete may join and never grants selection priority. Allocation is an exact
+/// deterministic global maximum: it maximizes the number of valid
+/// four-distinct-athlete teams via branch-and-bound over type subsets with
 /// max-flow feasibility (Edmonds-Karp, ordinal deterministic) and backtracking, so
 /// overlapping type sets never lose a feasible team to a greedy commitment. Type-name
 /// ordinal breaks cardinality ties; within the optimal team set, a deterministic
-/// min-cost flow prefers capped athletes, then stronger relative preference, then
-/// stronger type rank/rating. All ordering is ordinal by name then athlete id; all
+/// min-cost flow prefers the strongest legal squads first (global selection rating,
+/// then per-type rank), then relative type preference to resolve competing placements,
+/// then ordinal tie-breakers. All ordering is ordinal by name then athlete id; all
 /// scoring is checked fixed-point integers via <see cref="SelectionScore.Combine"/>
 /// with the snapshot Cup weights normalized globally across the candidate pool
 /// (tied components normalize to 1000).
@@ -480,14 +483,17 @@ public static class TypeCupAllocation
             throw new InvalidOperationException($"Type Cup type '{type}' has only {pool.Count} remaining candidates.");
         }
 
+        // Legacy greedy helper kept consistent with AllocateOptimal: permanent
+        // nationality is eligibility only (expressed by the pool), so capped status
+        // grants no priority. Strongest selection ordering first, then relative
+        // preference, then fewest remaining alternatives, all ordinal deterministic.
         List<ScoredCandidate> ordered = [.. pool];
         ordered.Sort((left, right) =>
         {
-            bool leftCapped = string.Equals(left.CappedNationality, type, StringComparison.Ordinal);
-            bool rightCapped = string.Equals(right.CappedNationality, type, StringComparison.Ordinal);
-            if (leftCapped != rightCapped)
+            int quality = CompareScored(left, right);
+            if (quality != 0)
             {
-                return leftCapped ? -1 : 1;
+                return quality;
             }
 
             int leftPref = PreferenceIndex(left.AthleteId, type, preferences);
@@ -509,12 +515,6 @@ public static class TypeCupAllocation
             if (leftRank != rightRank)
             {
                 return leftRank.CompareTo(rightRank);
-            }
-
-            int rating = right.FinalRatingThousandths.CompareTo(left.FinalRatingThousandths);
-            if (rating != 0)
-            {
-                return rating;
             }
 
             int name = string.Compare(left.Name, right.Name, StringComparison.Ordinal);
@@ -636,10 +636,13 @@ public static class TypeCupAllocation
     /// <summary>
     /// Exact deterministic maximum-cardinality allocation. Maximizes the number of
     /// valid four-distinct-athlete teams via branch-and-bound over type subsets with
-    /// max-flow feasibility and backtracking. Guaranteed types (four or more exclusive
-    /// athletes) are fixed first; remaining types are split into sharing-connected
-    /// components solved independently; each component optimum is assigned via
-    /// deterministic min-cost flow preferring capped, then preference, then rank.
+    /// max-flow feasibility and backtracking. A type having four exclusive athletes
+    /// proves a team can exist but never freezes which four play: every viable type
+    /// is split into sharing-connected components and solved independently, so the
+    /// strongest eligible roster wins. Each component optimum is assigned via
+    /// deterministic min-cost flow preferring stronger selection rating, then
+    /// stronger per-type rank, then relative type preference, then ordinal tie-breaks.
+    /// Capped status is eligibility only and never appears in the assignment cost.
     /// </summary>
     internal static AllocationResult AllocateOptimal(
         List<ScoredCandidate> scored,
@@ -660,47 +663,10 @@ public static class TypeCupAllocation
         Dictionary<string, int> rankLookup = BuildRankLookup(viable);
         List<string> allTypes = viable.Keys.OrderBy(t => t, StringComparer.Ordinal).ToList();
         Dictionary<int, List<string>> eligibleViable = BuildEligibleViable(scored, viable);
-        List<AllocatedTeam> guaranteedTeams = CollectGuaranteedTeams(allTypes, viable, eligibleViable, rankLookup, rules);
-        HashSet<string> guaranteedSet = guaranteedTeams.Select(t => t.CreatureType).ToHashSet(StringComparer.Ordinal);
-        List<string> remainingTypes = allTypes.Where(t => !guaranteedSet.Contains(t)).ToList();
-        if (remainingTypes.Count == 0)
-        {
-            return BuildResultFromTeams(scored, guaranteedTeams);
-        }
-
-        Dictionary<int, List<string>> eligibleRemaining = BuildEligibleRemaining(eligibleViable, remainingTypes);
-        List<List<string>> components = SplitComponents(remainingTypes, eligibleRemaining);
+        Dictionary<int, List<string>> eligibleRemaining = BuildEligibleRemaining(eligibleViable, allTypes);
+        List<List<string>> components = SplitComponents(allTypes, eligibleRemaining);
         List<AllocatedTeam> allTeams = SolveComponents(components, eligibleRemaining, byId, preferences, rankLookup, rules);
-        allTeams.AddRange(guaranteedTeams);
         return BuildResultFromTeams(scored, allTeams);
-    }
-
-    internal static List<AllocatedTeam> CollectGuaranteedTeams(
-        List<string> allTypes,
-        Dictionary<string, List<ScoredCandidate>> viable,
-        Dictionary<int, List<string>> eligibleViable,
-        Dictionary<string, int> rankLookup,
-        RulesV1 rules)
-    {
-        ArgumentNullException.ThrowIfNull(allTypes);
-        ArgumentNullException.ThrowIfNull(viable);
-        ArgumentNullException.ThrowIfNull(eligibleViable);
-        ArgumentNullException.ThrowIfNull(rankLookup);
-        ArgumentNullException.ThrowIfNull(rules);
-        List<AllocatedTeam> teams = [];
-        foreach (string type in allTypes)
-        {
-            List<ScoredCandidate> exclusives = viable[type]
-                .Where(c => eligibleViable.TryGetValue(c.AthleteId, out List<string>? elig) && elig.Count == 1)
-                .ToList();
-            if (exclusives.Count >= rules.TypeCupMinTeamSize)
-            {
-                List<ScoredCandidate> picked = exclusives.GetRange(0, rules.TypeCupMinTeamSize);
-                teams.Add(new AllocatedTeam(type, OrderTeamMembers(type, picked, rankLookup)));
-            }
-        }
-
-        return teams;
     }
 
     internal static List<AllocatedTeam> SolveComponents(
@@ -1087,6 +1053,24 @@ public static class TypeCupAllocation
         return assignment;
     }
 
+    /// <summary>
+    /// Lexicographic assignment cost with explicit priority, all fixed-point integers:
+    /// strongest global selection rating first, then stronger per-type rank, then
+    /// relative type preference for competing placements, then ordinal graph order.
+    /// Capped status never appears: its entire meaning is already expressed by the
+    /// eligibility edges. One rating point (1_000_000) outweighs any realistic total
+    /// preference penalty, and one rank step (10_000) outweighs any realistic total
+    /// preference penalty, so preference resolves placement without benching a
+    /// stronger eligible athlete. Ineligible (MaxValue) inputs map to large finite
+    /// constants; feasible edges are always eligible so those branches never decide
+    /// a real assignment.
+    /// </summary>
+    internal const long AssignmentRatingScale = 1_000_000L;
+
+    internal const long AssignmentRankScale = 10_000L;
+
+    internal const long AssignmentPreferenceScale = 1L;
+
     internal static long ComputeAssignmentCost(
         ScoredCandidate candidate,
         string type,
@@ -1097,23 +1081,18 @@ public static class TypeCupAllocation
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentNullException.ThrowIfNull(rankLookup);
-        bool capped = string.Equals(candidate.CappedNationality, type, StringComparison.Ordinal);
         int prefIndex = PreferenceIndex(candidate.AthleteId, type, preferences);
         int rank = TypeRankOf(type, candidate.AthleteId, rankLookup);
         checked
         {
-            long cost = 0;
-            if (!capped)
-            {
-                cost += 1_000_000_000L;
-            }
-
-            long prefPart = prefIndex == int.MaxValue ? 1_000_000L * 1000L : (long)prefIndex * 1_000_000L;
-            cost += prefPart;
-            long rankPart = rank == int.MaxValue ? 1_000L * 100000L : (long)rank * 1_000L;
-            cost += rankPart;
-            cost += 1000L - candidate.FinalRatingThousandths;
-            return cost;
+            long ratingPart = (long)(1000 - candidate.FinalRatingThousandths) * AssignmentRatingScale;
+            long rankPart = rank == int.MaxValue
+                ? AssignmentRankScale * 100_000L
+                : (long)(rank - 1) * AssignmentRankScale;
+            long prefPart = prefIndex == int.MaxValue
+                ? AssignmentRatingScale
+                : (long)prefIndex * AssignmentPreferenceScale;
+            return ratingPart + rankPart + prefPart;
         }
     }
 
