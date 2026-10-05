@@ -342,4 +342,237 @@ public sealed class TypeCupAllocationTests
         var uncapped = Candidate(2, "Open", ["Wizard", "Human", "Human", " "]);
         TypeCupAllocation.EligibleTypesFor(uncapped).ShouldBe(["Human", "Wizard"]);
     }
+
+    [Fact]
+    public void WeakCappedDoNotLockSquad_StrongestLegalFourWin()
+    {
+        RulesV1 rules = Rules();
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "WCapA", ["Wizard"], capped: "Wizard", bonus: 100),
+            Candidate(2, "WCapB", ["Wizard"], capped: "Wizard", bonus: 90),
+            Candidate(3, "WCapC", ["Wizard"], capped: "Wizard", bonus: 80),
+            Candidate(4, "WCapD", ["Wizard"], capped: "Wizard", bonus: 70),
+            Candidate(5, "StrongOne", ["Wizard", "Elf"], bonus: 900),
+            Candidate(6, "StrongTwo", ["Wizard", "Elf"], bonus: 800),
+            Candidate(7, "ElfA", ["Elf"], bonus: 200),
+            Candidate(8, "ElfB", ["Elf"], bonus: 190),
+            Candidate(9, "ElfC", ["Elf"], bonus: 180),
+            Candidate(10, "ElfD", ["Elf"], bonus: 170),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        // Maximum cardinality is preserved: both types still field.
+        result.Teams.Count.ShouldBe(2);
+        TypeCupAllocation.AllocatedTeam wizard = result.Teams.Single(t => string.Equals(t.CreatureType, "Wizard", StringComparison.Ordinal));
+        TypeCupAllocation.AllocatedTeam elf = result.Teams.Single(t => string.Equals(t.CreatureType, "Elf", StringComparison.Ordinal));
+        wizard.Members.Count.ShouldBe(4);
+        elf.Members.Count.ShouldBe(4);
+
+        // The old CollectGuaranteedTeams shortcut froze Wizard to the four
+        // exclusive capped athletes. The corrected allocator must pick the
+        // strongest legal four: both shared strong athletes plus the two
+        // strongest capped athletes.
+        wizard.Members.Select(m => m.Name).Contains("StrongOne", StringComparer.Ordinal).ShouldBeTrue();
+        wizard.Members.Select(m => m.Name).Contains("StrongTwo", StringComparer.Ordinal).ShouldBeTrue();
+        wizard.Members.Select(m => m.TypeRank).OrderBy(r => r).ShouldBe([1, 2, 3, 4]);
+
+        // The two weakest capped athletes are benched instead of locking the squad.
+        result.UnassignedAthleteIds.Count.ShouldBe(2);
+        result.UnassignedAthleteIds.ShouldContain(3);
+        result.UnassignedAthleteIds.ShouldContain(4);
+        result.UnassignedAthleteIds.ShouldNotContain(5);
+        result.UnassignedAthleteIds.ShouldNotContain(6);
+    }
+
+    [Fact]
+    public void CappedStatusGrantsNoPriority_WeakerCappedLosesToStrongerOpen()
+    {
+        RulesV1 rules = Rules();
+
+        // No type has four exclusives, so the old guaranteed shortcut does not
+        // trigger: this reaches the global min-cost assignment path. The old
+        // 1_000_000_000 uncapped penalty kept the weak capped athletes and
+        // benched a stronger open athlete; the corrected objective benches the
+        // weakest rating regardless of cap status.
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "WCapWeak", ["Wizard"], capped: "Wizard", bonus: 70),
+            Candidate(2, "WCapMid", ["Wizard"], capped: "Wizard", bonus: 90),
+            Candidate(3, "WOpen", ["Wizard"], bonus: 100),
+            Candidate(4, "SharedOne", ["Wizard", "Elf"], bonus: 900),
+            Candidate(5, "SharedTwo", ["Wizard", "Elf"], bonus: 800),
+            Candidate(6, "SharedThree", ["Wizard", "Elf"], bonus: 700),
+            Candidate(7, "ElfA", ["Elf"], bonus: 110),
+            Candidate(8, "ElfB", ["Elf"], bonus: 105),
+            Candidate(9, "ElfC", ["Elf"], bonus: 95),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        result.Teams.Count.ShouldBe(2);
+        HashSet<int> assigned = result.Teams.SelectMany(t => t.Members).Select(m => m.AthleteId).ToHashSet();
+        assigned.Count.ShouldBe(8);
+        result.UnassignedAthleteIds.Count.ShouldBe(1);
+
+        // Weakest rating overall is the 70-bonus capped Wizard: it must be the
+        // athlete left out. Capped status alone must not save it while a
+        // stronger open athlete (95-bonus ElfC) takes a legal squad slot.
+        result.UnassignedAthleteIds.Single().ShouldBe(1);
+        assigned.ShouldContain(9);
+        assigned.ShouldContain(4);
+        assigned.ShouldContain(5);
+        assigned.ShouldContain(6);
+    }
+
+    [Fact]
+    public void StrongDualTypeAthleteIsNotStranded_MockeryPattern()
+    {
+        RulesV1 rules = Rules();
+
+        // Mockery of Nature pattern: strong uncapped Eldrazi/Beast, #1 Eldrazi
+        // (900 vs 100/90/80/70) and #2 Beast (950 BeastStrong is #1, Mockery 900
+        // is #2). Both sides already have four exclusive athletes, so the old
+        // shortcut stranded Mockery on neither team.
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "ECapA", ["Eldrazi"], capped: "Eldrazi", bonus: 100),
+            Candidate(2, "ECapB", ["Eldrazi"], capped: "Eldrazi", bonus: 90),
+            Candidate(3, "ECapC", ["Eldrazi"], capped: "Eldrazi", bonus: 80),
+            Candidate(4, "ECapD", ["Eldrazi"], capped: "Eldrazi", bonus: 70),
+            Candidate(5, "Mockery", ["Eldrazi", "Beast"], bonus: 900),
+            Candidate(6, "BCapA", ["Beast"], capped: "Beast", bonus: 110),
+            Candidate(7, "BCapB", ["Beast"], capped: "Beast", bonus: 95),
+            Candidate(8, "BCapC", ["Beast"], capped: "Beast", bonus: 85),
+            Candidate(9, "BCapD", ["Beast"], capped: "Beast", bonus: 75),
+            Candidate(10, "BeastStrong", ["Beast"], bonus: 950),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        // Maximum cardinality is preserved: both types still field.
+        result.Teams.Count.ShouldBe(2);
+        foreach (TypeCupAllocation.AllocatedTeam team in result.Teams)
+        {
+            team.Members.Count.ShouldBe(4);
+        }
+
+        // Mockery is selected by exactly one eligible team, never zero or twice.
+        List<TypeCupAllocation.AllocatedTeam> withMockery = result.Teams
+            .Where(t => t.Members.Any(m => string.Equals(m.Name, "Mockery", StringComparison.Ordinal)))
+            .ToList();
+        withMockery.Count.ShouldBe(1);
+        result.UnassignedAthleteIds.ShouldNotContain(5);
+
+        // The roster made room for Mockery by benching weak capped athletes.
+        result.UnassignedAthleteIds.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void PreferenceResolvesConflictWithoutBenchingStronger()
+    {
+        RulesV1 rules = Rules();
+
+        // Shared athlete S ranks #1 Aaa (600 vs 500/400/300/200) but only #2 Bbb
+        // (700 BeastStrong is #1). Both types already have four exclusives, so the
+        // old shortcut stranded S. Totals are tied (displacing either 200-bonus
+        // weakest gains the same rating), so relative preference must place S on
+        // Aaa without benching it.
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "AaaA", ["Aaa"], bonus: 500),
+            Candidate(2, "AaaB", ["Aaa"], bonus: 400),
+            Candidate(3, "AaaC", ["Aaa"], bonus: 300),
+            Candidate(4, "AaaD", ["Aaa"], bonus: 200),
+            Candidate(5, "BbbStrong", ["Bbb"], bonus: 700),
+            Candidate(6, "BbbB", ["Bbb"], bonus: 400),
+            Candidate(7, "BbbC", ["Bbb"], bonus: 300),
+            Candidate(8, "BbbD", ["Bbb"], bonus: 200),
+            Candidate(9, "Swing", ["Aaa", "Bbb"], bonus: 600),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        result.Teams.Count.ShouldBe(2);
+        TypeCupAllocation.AllocatedTeam aaa = result.Teams.Single(t => string.Equals(t.CreatureType, "Aaa", StringComparison.Ordinal));
+        TypeCupAllocation.AllocatedTeam bbb = result.Teams.Single(t => string.Equals(t.CreatureType, "Bbb", StringComparison.Ordinal));
+
+        // Preference places Swing where it ranks higher.
+        aaa.Members.Select(m => m.Name).Contains("Swing", StringComparer.Ordinal).ShouldBeTrue();
+        bbb.Members.Select(m => m.Name).Contains("Swing", StringComparer.Ordinal).ShouldBeFalse();
+
+        // Swing is not benched merely for preferring Aaa: a legal squad slot
+        // exists and the maximum team count is preserved.
+        result.UnassignedAthleteIds.Count.ShouldBe(1);
+        result.UnassignedAthleteIds.ShouldNotContain(9);
+    }
+
+    [Fact]
+    public void CappedAthleteWithMultiplePrintedTypes_NeverRepresentsOtherType()
+    {
+        RulesV1 rules = Rules();
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "CappedStar", ["Human", "Wizard"], capped: "Wizard", bonus: 900),
+            Candidate(2, "WizardA", ["Wizard"], bonus: 800),
+            Candidate(3, "WizardB", ["Wizard"], bonus: 700),
+            Candidate(4, "WizardC", ["Wizard"], bonus: 600),
+            Candidate(5, "HumanA", ["Human"], bonus: 500),
+            Candidate(6, "HumanB", ["Human"], bonus: 400),
+            Candidate(7, "HumanC", ["Human"], bonus: 300),
+            Candidate(8, "HumanD", ["Human"], bonus: 200),
+        };
+
+        TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
+
+        result.Teams.Count.ShouldBe(2);
+        TypeCupAllocation.AllocatedTeam wizard = result.Teams.Single(t => string.Equals(t.CreatureType, "Wizard", StringComparison.Ordinal));
+        TypeCupAllocation.AllocatedTeam human = result.Teams.Single(t => string.Equals(t.CreatureType, "Human", StringComparison.Ordinal));
+        wizard.Members.Select(m => m.Name).Contains("CappedStar", StringComparer.Ordinal).ShouldBeTrue();
+        human.Members.Select(m => m.Name).Contains("CappedStar", StringComparer.Ordinal).ShouldBeFalse();
+        TypeCupAllocation.EligibleTypesFor(candidates[0]).ShouldBe(["Wizard"]);
+    }
+
+    [Fact]
+    public void SelectionInsight_MatchesCorrectedStrongestSquad()
+    {
+        RulesV1 rules = Rules();
+        var candidates = new List<TypeCupAllocation.CandidateRaw>
+        {
+            Candidate(1, "WCapA", ["Wizard"], capped: "Wizard", bonus: 100),
+            Candidate(2, "WCapB", ["Wizard"], capped: "Wizard", bonus: 90),
+            Candidate(3, "WCapC", ["Wizard"], capped: "Wizard", bonus: 80),
+            Candidate(4, "WCapD", ["Wizard"], capped: "Wizard", bonus: 70),
+            Candidate(5, "StrongOne", ["Wizard", "Elf"], bonus: 900),
+            Candidate(6, "StrongTwo", ["Wizard", "Elf"], bonus: 800),
+            Candidate(7, "ElfA", ["Elf"], bonus: 200),
+            Candidate(8, "ElfB", ["Elf"], bonus: 190),
+            Candidate(9, "ElfC", ["Elf"], bonus: 180),
+            Candidate(10, "ElfD", ["Elf"], bonus: 170),
+        };
+
+        TypeCupAllocation.AllocationResult expected = TypeCupAllocation.Allocate(candidates, rules);
+        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
+
+        insight.Allocation.Teams.Select(t => t.CreatureType).ShouldBe(expected.Teams.Select(t => t.CreatureType));
+        for (int i = 0; i < expected.Teams.Count; i++)
+        {
+            insight.Allocation.Teams[i].Members.ShouldBe(expected.Teams[i].Members);
+        }
+
+        // The Wizard standing must show the corrected top-four selected: ranks
+        // 1..4 selected, ranks 5..6 not placed. No weaker capped athlete is
+        // selected ahead of a higher-ranked eligible athlete for the same team.
+        TypeCupAllocationInsight.TypeStanding wizard = insight.Types.Single(t => string.Equals(t.CreatureType, "Wizard", StringComparison.Ordinal));
+        wizard.FieldsTeam.ShouldBeTrue();
+        wizard.Ranking.Count.ShouldBe(6);
+        for (int i = 0; i < 4; i++)
+        {
+            wizard.Ranking[i].AssignedType.ShouldBe("Wizard");
+        }
+
+        wizard.Ranking[4].AssignedType.ShouldBeNull();
+        wizard.Ranking[5].AssignedType.ShouldBeNull();
+    }
 }
