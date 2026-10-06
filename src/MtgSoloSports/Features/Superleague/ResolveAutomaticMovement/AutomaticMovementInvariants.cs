@@ -126,10 +126,10 @@ public static class AutomaticMovementInvariants
             throw new InvalidOperationException("Next Superleague league row is corrupt.");
         }
 
-        if (nextFeeders.Count != rules.RegularLeagueCount)
+        if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Next season must have exactly {rules.RegularLeagueCount} feeder leagues, was {nextFeeders.Count}.");
+                $"Next season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         if (sourceMemberships.Count != rules.TotalAthletesInSave || nextMemberships.Count != rules.TotalAthletesInSave)
@@ -373,7 +373,7 @@ public static class AutomaticMovementInvariants
     {
         HashSet<int> feederIds = nextFeeders.Select(l => l.Id).ToHashSet();
         int feederTotal = nextMemberships.Count(m => m.LeagueId is not null && feederIds.Contains(m.LeagueId.Value));
-        int expectedFeeders = rules.RegularLeagueCount * rules.LeagueSize - rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount;
+        int expectedFeeders = rules.TieredFeederLeagueCount * rules.LeagueSize - rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount;
         if (feederTotal != expectedFeeders)
         {
             throw new InvalidOperationException(

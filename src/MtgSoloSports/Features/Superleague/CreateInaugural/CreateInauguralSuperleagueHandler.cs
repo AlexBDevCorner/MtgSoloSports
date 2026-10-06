@@ -74,11 +74,11 @@ public sealed class CreateInauguralSuperleagueHandler
         Dictionary<int, SeasonMembershipEntity> membershipByAthlete = membershipsOne.ToDictionary(m => m.SaveAthleteId);
 
         SeasonEntity seasonTwo = await CreateSeasonTwoAsync(context, cancellationToken).ConfigureAwait(false);
-        List<LeagueEntity> feedersTwo = await CreateFeedersTwoAsync(context, seasonTwo, cancellationToken).ConfigureAwait(false);
+        List<LeagueEntity> feedersTwo = await CreateFeedersTwoAsync(context, seasonTwo, rules, cancellationToken).ConfigureAwait(false);
         LeagueEntity superleague = await CreateSuperleagueAsync(context, seasonTwo, cancellationToken).ConfigureAwait(false);
 
         List<SeasonMembershipEntity> membershipsTwo = BuildSeasonTwoMemberships(
-            membershipsOne, membershipByAthlete, picks, seasonTwo, feedersTwo, superleague);
+            membershipsOne, membershipByAthlete, picks, seasonTwo, feedersTwo, superleague, rules);
         foreach (SeasonMembershipEntity membership in membershipsTwo)
         {
             context.SeasonMemberships.Add(membership);
@@ -250,10 +250,10 @@ public sealed class CreateInauguralSuperleagueHandler
             .OrderBy(e => e.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (leagues.Count != rules.RegularLeagueCount)
+        if (leagues.Count != rules.Season1FeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season 1 must have exactly {rules.RegularLeagueCount} leagues, was {leagues.Count}.");
+                $"Season 1 must have exactly {rules.Season1FeederLeagueCount} leagues, was {leagues.Count}.");
         }
 
         foreach (LeagueEntity league in leagues)
@@ -279,7 +279,7 @@ public sealed class CreateInauguralSuperleagueHandler
             .Where(e => e.SeasonId == seasonOne.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        int expected = rules.RegularLeagueCount * rules.LeagueSize;
+        int expected = rules.Season1FeederLeagueCount * rules.LeagueSize;
         if (standings.Count != expected)
         {
             throw new InvalidOperationException(
@@ -329,9 +329,11 @@ public sealed class CreateInauguralSuperleagueHandler
     internal static async Task<List<LeagueEntity>> CreateFeedersTwoAsync(
         SaveDbContext context,
         SeasonEntity seasonTwo,
+        RulesV1 rules,
         CancellationToken cancellationToken)
     {
         List<LeagueEntity> leagues = [];
+        bool tiered = rules.FeederDivisionsPerColor == 3;
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
             leagues.Add(new LeagueEntity
@@ -341,6 +343,28 @@ public sealed class CreateInauguralSuperleagueHandler
                 Kind = (int)LeagueKind.Feeder,
                 FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.First,
                 Name = $"{color} League",
+            });
+
+            if (!tiered)
+            {
+                continue;
+            }
+
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = seasonTwo.Id,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Second,
+                Name = $"{color} League F2",
+            });
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = seasonTwo.Id,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Third,
+                Name = $"{color} League F3",
             });
         }
 
@@ -382,12 +406,37 @@ public sealed class CreateInauguralSuperleagueHandler
         List<LeagueEntity> feedersTwo,
         LeagueEntity superleague)
     {
+        return BuildSeasonTwoMemberships(
+            membershipsOne, membershipByAthlete, picks, seasonTwo, feedersTwo, superleague,
+            RulesV1.CreateDefault());
+    }
+
+    internal static List<SeasonMembershipEntity> BuildSeasonTwoMemberships(
+        List<SeasonMembershipEntity> membershipsOne,
+        Dictionary<int, SeasonMembershipEntity> membershipByAthlete,
+        IReadOnlyList<InauguralSuperleagueSelection.InauguralPick> picks,
+        SeasonEntity seasonTwo,
+        List<LeagueEntity> feedersTwo,
+        LeagueEntity superleague,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
         HashSet<int> promoted = picks.Select(p => p.SaveAthleteId).ToHashSet();
-        Dictionary<int, int> feederByColor = feedersTwo.ToDictionary(l => l.SportingColor, l => l.Id);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        Dictionary<int, int> feederByColor = !tiered
+            ? feedersTwo.ToDictionary(l => l.SportingColor, l => l.Id)
+            : new Dictionary<int, int>();
+        Dictionary<(int Color, int Division), int> feederByColorDivision = tiered
+            ? feedersTwo.ToDictionary(l => (l.SportingColor, l.FeederDivision), l => l.Id)
+            : new Dictionary<(int, int), int>();
+        // For tiered saves we also need the Season 1 division per athlete to
+        // preserve tiers (F1→F1, F2→F2, F3→F3). Draw index encodes it.
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete = membershipsOne.ToDictionary(m => m.SaveAthleteId);
         List<SeasonMembershipEntity> memberships = new(membershipsOne.Count);
         foreach (SeasonMembershipEntity source in membershipsOne.OrderBy(m => m.SaveAthleteId))
         {
-            int? leagueId = ResolveSeasonTwoLeague(source, promoted, feederByColor, superleague, membershipByAthlete);
+            int? leagueId = ResolveSeasonTwoLeague(
+                source, promoted, feederByColor, feederByColorDivision, superleague, membershipByAthlete, sourceByAthlete, rules);
             memberships.Add(new SeasonMembershipEntity
             {
                 SeasonId = seasonTwo.Id,
@@ -408,11 +457,30 @@ public sealed class CreateInauguralSuperleagueHandler
         LeagueEntity superleague,
         Dictionary<int, SeasonMembershipEntity> membershipByAthlete)
     {
+        return ResolveSeasonTwoLeague(
+            source, promoted, feederByColor, new Dictionary<(int, int), int>(),
+            superleague, membershipByAthlete, membershipByAthlete,
+            RulesV1.CreateDefault());
+    }
+
+    internal static int? ResolveSeasonTwoLeague(
+        SeasonMembershipEntity source,
+        HashSet<int> promoted,
+        Dictionary<int, int> feederByColor,
+        Dictionary<(int Color, int Division), int> feederByColorDivision,
+        LeagueEntity superleague,
+        Dictionary<int, SeasonMembershipEntity> membershipByAthlete,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        RulesV1 rules)
+    {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(promoted);
         ArgumentNullException.ThrowIfNull(feederByColor);
+        ArgumentNullException.ThrowIfNull(feederByColorDivision);
         ArgumentNullException.ThrowIfNull(superleague);
         ArgumentNullException.ThrowIfNull(membershipByAthlete);
+        ArgumentNullException.ThrowIfNull(sourceByAthlete);
+        ArgumentNullException.ThrowIfNull(rules);
 
         if (promoted.Contains(source.SaveAthleteId))
         {
@@ -424,12 +492,33 @@ public sealed class CreateInauguralSuperleagueHandler
             return null;
         }
 
-        if (!feederByColor.TryGetValue(source.SportingColor, out int feederId))
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (!tiered)
         {
-            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor}.");
+            if (!feederByColor.TryGetValue(source.SportingColor, out int feederId))
+            {
+                throw new InvalidOperationException($"Unknown sporting color {source.SportingColor}.");
+            }
+
+            return feederId;
         }
 
-        return feederId;
+        if (!sourceByAthlete.TryGetValue(source.SaveAthleteId, out SeasonMembershipEntity? original))
+        {
+            throw new InvalidOperationException($"Athlete {source.SaveAthleteId} has no Season 1 membership.");
+        }
+
+        int division = original.DrawIndex < rules.LeagueSize
+            ? (int)SimulationKernel.Leagues.FeederDivision.First
+            : original.DrawIndex < 2 * rules.LeagueSize
+                ? (int)SimulationKernel.Leagues.FeederDivision.Second
+                : (int)SimulationKernel.Leagues.FeederDivision.Third;
+        if (!feederByColorDivision.TryGetValue((source.SportingColor, division), out int tieredFeederId))
+        {
+            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} division {division}.");
+        }
+
+        return tieredFeederId;
     }
 
     internal static List<MovementEntity> BuildMovements(

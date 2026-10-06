@@ -139,9 +139,30 @@ Stage 32 bonus starts the following season at 80%. Bonus keeps aging while an at
 
 ## 9. Season 1 and inaugural Superleague
 
-Season 1 has only the eight feeder leagues. Each league randomly draws 32 of its 256 save athletes.
+Season 1 has 24 feeder leagues with no Superleague: one Feeder 1, one Feeder 2
+and one Feeder 3 league per sporting color (8 × 3 × 32 = 768 active, 160 pool
+per color, 1,280 pool globally). Each color's 256-athlete save population is
+name-sorted and shuffled once with the versioned RNG; shuffled positions 1-32
+join F1, 33-64 join F2, 65-96 join F3 and 97-256 stay in the common pool. One
+persisted draw order is the source of truth so reveal/replay never resimulates.
 
-After Season 1, positions 1-4 from each feeder league enter the inaugural Superleague: 8 × 4 = 32. They leave their feeder leagues and retain all bonus history. Vacancies are filled from the common pool after movement is resolved.
+After Season 1, positions 1-4 from each **F1** feeder league enter the
+inaugural Superleague: 8 × 4 = 32. F2/F3 and pool athletes never skip tiers
+directly into the inaugural Superleague. Promoted athletes leave their F1
+membership, retain all bonus history, and keep their division for the
+inaugural carryover (F1 minus promoted stays F1 at 28 each, F2/F3 stay at 32
+each). Vacancies are filled from the common pool after movement is resolved.
+
+Compatibility: historical v1 saves (8 single-tier feeders, 256 active, 1,792
+pool) remain openable and their Season/Stage/Round/Standing/Bonus/Cup/Movement
+history is never rewritten or reinterpreted as tiered. A v1 save enters the
+tiered rules only at a safe season boundary (completed source plus a pending
+CupComplete next season with rebalanced 32-per-league F1 rosters and no live
+simulation): its existing feeders become F1 and exactly 32 F2 plus 32 F3 per
+color are seeded from that color's target-season pool with the versioned RNG
+(equal-probability, no bonus weighting, no F1 demotion). Saves not at the
+boundary stay on v1 until the boundary is reached rather than partially
+upgrading a live season.
 
 ## 10. Superleague movement from Season 2
 

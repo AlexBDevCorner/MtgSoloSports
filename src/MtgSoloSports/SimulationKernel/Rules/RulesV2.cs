@@ -146,6 +146,69 @@ public sealed class RulesV2 : RulesV1
 
     public static new RulesV2 CreateDefault() => Create(null);
 
+    /// <summary>
+    /// Upgrades a validated v1 snapshot to v2, preserving every sporting core
+    /// value (tables, counts, decay, cups, prestige) and applying the canonical
+    /// tier scales (Superleague 2/1, F1 1/1, F2 1/2, F3 1/4). Historical v1
+    /// results keep the amount earned at their original tier and are never
+    /// rescaled; only newly earned bonus uses the tiered scales.
+    /// </summary>
+    public static RulesV2 FromV1(RulesV1 v1)
+    {
+        ArgumentNullException.ThrowIfNull(v1);
+        v1.Validate();
+        if (v1 is RulesV2 already)
+        {
+            return already;
+        }
+
+        var candidate = new RulesV2(
+            v1.SportingColorCount,
+            v1.AthletesPerSportingColor,
+            v1.TotalAthletesInSave,
+            v1.RegularLeagueCount,
+            v1.LeagueSize,
+            v1.SuperleagueSize,
+            v1.StagesPerSeason,
+            v1.RoundsPerStage,
+            v1.QualifierSize,
+            v1.QualifierRounds,
+            v1.QualifierWinners,
+            v1.SuperleagueSafeCount,
+            v1.SuperleagueRelegatedCount,
+            v1.SuperleagueQualifierIncumbentCount,
+            v1.FeederAutoPromotedCount,
+            v1.FeederQualifierCount,
+            v1.InauguralQualifiedPerLeague,
+            v1.ColorCupColorCount,
+            v1.ColorCupTeamSize,
+            v1.ColorCupIndividualRounds,
+            v1.ColorCupTeamGroupRounds,
+            v1.TypeCupMinTeamSize,
+            v1.TypeCupGroupRounds,
+            v1.RecentFormStageCount,
+            v1.CupBonusWeightPermille,
+            v1.CupPerformanceWeightPermille,
+            v1.CupFormWeightPermille,
+            v1.CupPrestigeWeightPermille,
+            v1.Prestige,
+            [.. v1.ScoringTable],
+            [.. v1.RoundBonusThousandths],
+            [.. v1.StageBonusThousandths],
+            [.. v1.BonusAgeWeightsThousandths],
+            [.. v1.RecentFormWeights],
+            SuperleagueBonusNumeratorDefault,
+            SuperleagueBonusDenominatorDefault,
+            Feeder1BonusNumeratorDefault,
+            Feeder1BonusDenominatorDefault,
+            Feeder2BonusNumeratorDefault,
+            Feeder2BonusDenominatorDefault,
+            Feeder3BonusNumeratorDefault,
+            Feeder3BonusDenominatorDefault);
+        candidate.Validate();
+        return candidate;
+    }
+
     public static RulesV2 Create(
         RulesV1Overrides? overrides,
         int superleagueNumerator = SuperleagueBonusNumeratorDefault,

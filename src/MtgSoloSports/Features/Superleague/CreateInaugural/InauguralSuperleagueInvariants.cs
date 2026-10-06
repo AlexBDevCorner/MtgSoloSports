@@ -15,7 +15,8 @@ public static class InauguralSuperleagueInvariants
 {
     /// <summary>
     /// Validates the 32 picked athletes before persistence: exactly 32 unique
-    /// athletes, four per source league, ranks 1-4 only.
+    /// athletes, four per F1 source league, ranks 1-4 only. Tiered saves supply
+    /// 24 feeders but only the 8 F1 leagues contribute; F2/F3 never skip tiers.
     /// </summary>
     public static void ValidateSelection(
         IReadOnlyList<InauguralSuperleagueSelection.InauguralPick> picks,
@@ -52,8 +53,9 @@ public static class InauguralSuperleagueInvariants
             }
         }
 
+        List<LeagueEntity> sources = InauguralSuperleagueSelection.ResolveSources(feederLeagues, rules);
         Dictionary<int, int> perLeague = picks.GroupBy(p => p.FromLeagueId).ToDictionary(g => g.Key, g => g.Count());
-        foreach (LeagueEntity league in feederLeagues)
+        foreach (LeagueEntity league in sources)
         {
             if (!perLeague.TryGetValue(league.Id, out int count) || count != rules.InauguralQualifiedPerLeague)
             {
@@ -61,13 +63,20 @@ public static class InauguralSuperleagueInvariants
                     $"League '{league.Name}' must contribute exactly {rules.InauguralQualifiedPerLeague} athletes, was {count}.");
             }
         }
+
+        if (perLeague.Count != sources.Count)
+        {
+            throw new InvalidOperationException(
+                $"Inaugural selection must draw from exactly {sources.Count} F1 leagues, was {perLeague.Count}.");
+        }
     }
 
     /// <summary>
     /// Validates persisted Season 2 state after the inaugural transition:
-    /// one Superleague with exactly 32 members, eight feeders with 28 retained
-    /// members each (vacancies left for the rebalancing flow), no athlete active
-    /// in two leagues, and an untouched common-pool athlete set.
+    /// one Superleague with exactly 32 members, versioned feeders (8 with 28
+    /// retained each for v1; 24 with F1 at 28 and F2/F3 at 32 each for v2 tiered,
+    /// vacancies left for the rebalancing flow), no athlete active in two
+    /// leagues, and an untouched common-pool athlete set.
     /// </summary>
     public static void ValidateCreated(
         SeasonEntity seasonOne,
@@ -98,10 +107,10 @@ public static class InauguralSuperleagueInvariants
             throw new InvalidOperationException("Inaugural Superleague league row is corrupt.");
         }
 
-        if (seasonTwoFeeders.Count != rules.RegularLeagueCount)
+        if (seasonTwoFeeders.Count != rules.Season1FeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season 2 must have exactly {rules.RegularLeagueCount} feeder leagues, was {seasonTwoFeeders.Count}.");
+                $"Season 2 must have exactly {rules.Season1FeederLeagueCount} feeder leagues, was {seasonTwoFeeders.Count}.");
         }
 
         if (seasonOneMemberships.Count != rules.TotalAthletesInSave || seasonTwoMemberships.Count != rules.TotalAthletesInSave)
@@ -162,19 +171,57 @@ public static class InauguralSuperleagueInvariants
         Dictionary<int, int> seasonOneLeagueByAthlete = seasonOneMemberships
             .Where(m => m.LeagueId is not null)
             .ToDictionary(m => m.SaveAthleteId, m => m.LeagueId!.Value);
-        Dictionary<int, LeagueEntity> feederByColor = seasonTwoFeeders.ToDictionary(l => l.SportingColor);
+        Dictionary<(int Color, int Division), LeagueEntity> feederByColorDivision = seasonTwoFeeders
+            .ToDictionary(l => (l.SportingColor, l.FeederDivision));
+        bool tiered = rules.FeederDivisionsPerColor == 3;
 
+        CheckFeederCounts(seasonTwoMemberships, seasonTwoFeeders, rules, tiered);
+        CheckFeederMembers(
+            seasonOneMemberships, seasonTwoMemberships, seasonTwoFeeders,
+            superleague, promoted, seasonOneLeagueByAthlete, feederByColorDivision, rules, tiered);
+    }
+
+    private static void CheckFeederCounts(
+        IReadOnlyList<SeasonMembershipEntity> seasonTwoMemberships,
+        IReadOnlyList<LeagueEntity> seasonTwoFeeders,
+        RulesV1 rules,
+        bool tiered)
+    {
         foreach (LeagueEntity feeder in seasonTwoFeeders)
         {
             int retained = seasonTwoMemberships.Count(m => m.LeagueId == feeder.Id);
-            int expected = rules.LeagueSize - rules.InauguralQualifiedPerLeague;
+            int expected = ExpectedRetention(feeder, rules, tiered);
             if (retained != expected)
             {
                 throw new InvalidOperationException(
                     $"League '{feeder.Name}' must retain exactly {expected} athletes pending rebalancing, was {retained}.");
             }
         }
+    }
 
+    private static int ExpectedRetention(LeagueEntity feeder, RulesV1 rules, bool tiered)
+    {
+        if (!tiered)
+        {
+            return rules.LeagueSize - rules.InauguralQualifiedPerLeague;
+        }
+
+        return feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First
+            ? rules.LeagueSize - rules.InauguralQualifiedPerLeague
+            : rules.LeagueSize;
+    }
+
+    private static void CheckFeederMembers(
+        IReadOnlyList<SeasonMembershipEntity> seasonOneMemberships,
+        IReadOnlyList<SeasonMembershipEntity> seasonTwoMemberships,
+        IReadOnlyList<LeagueEntity> seasonTwoFeeders,
+        LeagueEntity superleague,
+        HashSet<int> promoted,
+        Dictionary<int, int> seasonOneLeagueByAthlete,
+        Dictionary<(int Color, int Division), LeagueEntity> feederByColorDivision,
+        RulesV1 rules,
+        bool tiered)
+    {
         foreach (SeasonMembershipEntity membership in seasonTwoMemberships)
         {
             if (membership.LeagueId is null || membership.LeagueId == superleague.Id)
@@ -194,12 +241,53 @@ public static class InauguralSuperleagueInvariants
                     $"Season 2 feeder member {membership.SaveAthleteId} was not active in Season 1; pool fills are reserved for rebalancing.");
             }
 
-            if (!feederByColor.TryGetValue(membership.SportingColor, out LeagueEntity? expectedFeeder)
-                || expectedFeeder.Id != membership.LeagueId)
+            if (!tiered)
             {
-                throw new InvalidOperationException(
-                    $"Season 2 feeder member {membership.SaveAthleteId} is in the wrong color league.");
+                CheckSingleTierMember(membership, seasonTwoFeeders);
+                continue;
             }
+
+            CheckTieredMember(membership, seasonOneMemberships, feederByColorDivision, rules);
+        }
+    }
+
+    private static void CheckSingleTierMember(
+        SeasonMembershipEntity membership,
+        IReadOnlyList<LeagueEntity> seasonTwoFeeders)
+    {
+        LeagueEntity? expectedSingle = seasonTwoFeeders.SingleOrDefault(l => l.SportingColor == membership.SportingColor);
+        if (expectedSingle is null || expectedSingle.Id != membership.LeagueId)
+        {
+            throw new InvalidOperationException(
+                $"Season 2 feeder member {membership.SaveAthleteId} is in the wrong color league.");
+        }
+    }
+
+    private static void CheckTieredMember(
+        SeasonMembershipEntity membership,
+        IReadOnlyList<SeasonMembershipEntity> seasonOneMemberships,
+        Dictionary<(int Color, int Division), LeagueEntity> feederByColorDivision,
+        RulesV1 rules)
+    {
+        SeasonMembershipEntity? source = seasonOneMemberships.SingleOrDefault(m => m.SaveAthleteId == membership.SaveAthleteId);
+        if (source?.LeagueId is null)
+        {
+            throw new InvalidOperationException(
+                $"Season 2 feeder member {membership.SaveAthleteId} was not active in Season 1; pool fills are reserved for rebalancing.");
+        }
+
+        // Tier is preserved across the inaugural transition: F1 minus
+        // promoted stays F1, F2 stays F2, F3 stays F3. No tier skipping.
+        int sourceDivision = source.DrawIndex < rules.LeagueSize
+            ? (int)SimulationKernel.Leagues.FeederDivision.First
+            : source.DrawIndex < 2 * rules.LeagueSize
+                ? (int)SimulationKernel.Leagues.FeederDivision.Second
+                : (int)SimulationKernel.Leagues.FeederDivision.Third;
+        if (!feederByColorDivision.TryGetValue((membership.SportingColor, sourceDivision), out LeagueEntity? expectedFeeder)
+            || expectedFeeder.Id != membership.LeagueId)
+        {
+            throw new InvalidOperationException(
+                $"Season 2 feeder member {membership.SaveAthleteId} is in the wrong color/division league.");
         }
     }
 

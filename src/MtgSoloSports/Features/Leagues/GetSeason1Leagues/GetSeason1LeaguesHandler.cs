@@ -8,9 +8,11 @@ namespace MtgSoloSports.Features.Leagues.GetSeason1Leagues;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Reads the persisted Season 1
-/// inaugural draw (never resimulates): eight feeder-league rosters in draw order
-/// plus per-color common-pool counts. Unknown saves abort with not-found; saves
-/// without Season 1 abort as not-found so presentation never invents rosters.
+/// inaugural draw (never resimulates): versioned feeder-league rosters in draw
+/// order (8 for v1, 24 F1/F2/F3 for v2) plus per-color common-pool counts.
+/// Rosters carry explicit feeder division so presentation never parses names.
+/// Unknown saves abort with not-found; saves without Season 1 abort as
+/// not-found so presentation never invents rosters.
 /// </summary>
 public sealed class GetSeason1LeaguesHandler
 {
@@ -56,6 +58,7 @@ public sealed class GetSeason1LeaguesHandler
             .AsNoTracking()
             .Where(e => e.SeasonId == seasonId)
             .OrderBy(e => e.SportingColor)
+            .ThenBy(e => e.FeederDivision)
             .ToListAsync(cancellationToken);
     }
 
@@ -169,7 +172,7 @@ public sealed class GetSeason1LeaguesHandler
     {
         List<Season1LeagueRoster> rosters = [];
         checksumEntries = [];
-        foreach (LeagueEntity league in leagues.OrderBy(l => l.SportingColor))
+        foreach (LeagueEntity league in leagues.OrderBy(l => l.SportingColor).ThenBy(l => l.FeederDivision))
         {
             List<SeasonMembershipEntity> members = active[league.Id];
             members.Sort(static (a, b) => a.DrawIndex.CompareTo(b.DrawIndex));
@@ -186,7 +189,14 @@ public sealed class GetSeason1LeaguesHandler
                 checksumEntries.Add(new InauguralDrawEntry(name, color, member.DrawIndex, true));
             }
 
-            rosters.Add(new Season1LeagueRoster(league.Name, color.ToString(), league.Id, roster));
+            SimulationKernel.Leagues.LeagueLevel level = Persistence.Saves.LeagueEntityLevels.GetLevel(league);
+            rosters.Add(new Season1LeagueRoster(
+                league.Name,
+                color.ToString(),
+                league.Id,
+                league.FeederDivision,
+                level.ToString(),
+                roster));
         }
 
         return rosters;

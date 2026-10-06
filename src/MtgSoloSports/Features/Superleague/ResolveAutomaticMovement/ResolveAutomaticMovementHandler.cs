@@ -274,11 +274,11 @@ public sealed class ResolveAutomaticMovementHandler
         SaveDbContext context, ResolutionInputs inputs, RulesV1 rules, CancellationToken cancellationToken)
     {
         SeasonEntity next = await CreateNextSeasonAsync(context, inputs.Source, cancellationToken).ConfigureAwait(false);
-        List<LeagueEntity> nextFeeders = await CreateNextFeedersAsync(context, next, cancellationToken).ConfigureAwait(false);
+        List<LeagueEntity> nextFeeders = await CreateNextFeedersAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         LeagueEntity nextSuperleague = await CreateNextSuperleagueAsync(context, next, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SeasonMembershipEntity> byAthlete = inputs.SourceMemberships.ToDictionary(m => m.SaveAthleteId);
         List<SeasonMembershipEntity> nextMemberships = BuildNextMemberships(
-            inputs.SourceMemberships, byAthlete, inputs.Plan, inputs.SuperStandings, inputs.FeederStandings, next, nextFeeders, nextSuperleague, rules);
+            inputs.SourceMemberships, byAthlete, inputs.Plan, inputs.SuperStandings, inputs.FeederStandings, next, nextFeeders, nextSuperleague, rules, inputs.SourceFeeders);
         foreach (SeasonMembershipEntity membership in nextMemberships)
         {
             context.SeasonMemberships.Add(membership);
@@ -424,10 +424,10 @@ public sealed class ResolveAutomaticMovementHandler
             .OrderBy(e => e.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (leagues.Count != rules.RegularLeagueCount)
+        if (leagues.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {source.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {leagues.Count}.");
+                $"Season {source.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {leagues.Count}.");
         }
 
         return leagues;
@@ -557,7 +557,14 @@ public sealed class ResolveAutomaticMovementHandler
     internal static async Task<List<LeagueEntity>> CreateNextFeedersAsync(
         SaveDbContext context, SeasonEntity next, CancellationToken cancellationToken)
     {
+        return await CreateNextFeedersAsync(context, next, RulesV1.CreateDefault(), cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<List<LeagueEntity>> CreateNextFeedersAsync(
+        SaveDbContext context, SeasonEntity next, RulesV1 rules, CancellationToken cancellationToken)
+    {
         List<LeagueEntity> leagues = [];
+        bool tiered = rules.FeederDivisionsPerColor == 3;
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
             leagues.Add(new LeagueEntity
@@ -567,6 +574,28 @@ public sealed class ResolveAutomaticMovementHandler
                 Kind = (int)LeagueKind.Feeder,
                 FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.First,
                 Name = $"{color} League",
+            });
+
+            if (!tiered)
+            {
+                continue;
+            }
+
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = next.Id,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Second,
+                Name = $"{color} League F2",
+            });
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = next.Id,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Third,
+                Name = $"{color} League F3",
             });
         }
 
@@ -606,6 +635,26 @@ public sealed class ResolveAutomaticMovementHandler
         LeagueEntity nextSuperleague,
         RulesV1 rules)
     {
+        // Source feeders are not passed in the legacy 9-arg shape; resolve
+        // divisions from draw-index ranges for tiered carryover where possible.
+        // New code passes explicit source feeders via the 10-arg overload.
+        return BuildNextMemberships(
+            sourceMemberships, membershipByAthlete, plan, superStandings, feederStandings,
+            next, nextFeeders, nextSuperleague, rules, sourceFeeders: null);
+    }
+
+    internal static List<SeasonMembershipEntity> BuildNextMemberships(
+        List<SeasonMembershipEntity> sourceMemberships,
+        Dictionary<int, SeasonMembershipEntity> membershipByAthlete,
+        AutomaticMovementSelection.AutomaticPlan plan,
+        IReadOnlyList<SeasonStandingEntity> superStandings,
+        IReadOnlyDictionary<int, IReadOnlyList<SeasonStandingEntity>> feederStandings,
+        SeasonEntity next,
+        List<LeagueEntity> nextFeeders,
+        LeagueEntity nextSuperleague,
+        RulesV1 rules,
+        IReadOnlyList<LeagueEntity>? sourceFeeders)
+    {
         HashSet<int> promoted = plan.Promotions.Select(p => p.SaveAthleteId).ToHashSet();
         HashSet<int> relegated = plan.Relegations.Select(p => p.SaveAthleteId).ToHashSet();
         HashSet<int> incumbents = plan.QualifierIncumbents.Select(p => p.SaveAthleteId).ToHashSet();
@@ -621,11 +670,24 @@ public sealed class ResolveAutomaticMovementHandler
                 $"Superleague must hold exactly {rules.SuperleagueSafeCount} safe athletes, was {safe.Count}.");
         }
 
-        Dictionary<int, int> feederByColor = nextFeeders.ToDictionary(l => l.SportingColor, l => l.Id);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        Dictionary<int, int> feederByColor = !tiered
+            ? nextFeeders.ToDictionary(l => l.SportingColor, l => l.Id)
+            : new Dictionary<int, int>();
+        Dictionary<(int Color, int Division), int> feederByColorDivision = tiered
+            ? nextFeeders.ToDictionary(l => (l.SportingColor, l.FeederDivision), l => l.Id)
+            : new Dictionary<(int, int), int>();
+        Dictionary<int, int> sourceDivisionByLeague = sourceFeeders is not null
+            ? sourceFeeders.ToDictionary(l => l.Id, l => l.FeederDivision)
+            : new Dictionary<int, int>();
         List<SeasonMembershipEntity> nextMemberships = new(sourceMemberships.Count);
         foreach (SeasonMembershipEntity source in sourceMemberships.OrderBy(m => m.SaveAthleteId))
         {
-            int? leagueId = ResolveNextLeague(source, promoted, relegated, incumbents, challengers, safe, feederByColor, nextSuperleague);
+            int? leagueId = tiered
+                ? ResolveNextLeagueTiered(
+                    source, promoted, relegated, incumbents, challengers, safe,
+                    feederByColorDivision, sourceDivisionByLeague, nextSuperleague, rules)
+                : ResolveNextLeague(source, promoted, relegated, incumbents, challengers, safe, feederByColor, nextSuperleague);
             nextMemberships.Add(new SeasonMembershipEntity
             {
                 SeasonId = next.Id,
@@ -637,6 +699,72 @@ public sealed class ResolveAutomaticMovementHandler
         }
 
         return nextMemberships;
+    }
+
+    internal static int? ResolveNextLeagueTiered(
+        SeasonMembershipEntity source,
+        HashSet<int> promoted,
+        HashSet<int> relegated,
+        HashSet<int> incumbents,
+        HashSet<int> challengers,
+        HashSet<int> safe,
+        Dictionary<(int Color, int Division), int> feederByColorDivision,
+        Dictionary<int, int> sourceDivisionByLeague,
+        LeagueEntity nextSuperleague,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(feederByColorDivision);
+        ArgumentNullException.ThrowIfNull(sourceDivisionByLeague);
+        ArgumentNullException.ThrowIfNull(nextSuperleague);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (source.LeagueId is null)
+        {
+            return null;
+        }
+
+        if (promoted.Contains(source.SaveAthleteId)
+            || safe.Contains(source.SaveAthleteId)
+            || incumbents.Contains(source.SaveAthleteId))
+        {
+            return nextSuperleague.Id;
+        }
+
+        // Relegated Superleague athletes return to F1 (never directly to F2/F3).
+        if (relegated.Contains(source.SaveAthleteId) || challengers.Contains(source.SaveAthleteId))
+        {
+            if (!feederByColorDivision.TryGetValue(
+                (source.SportingColor, (int)SimulationKernel.Leagues.FeederDivision.First), out int f1Id))
+            {
+                throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} F1.");
+            }
+
+            return f1Id;
+        }
+
+        // Retained F2/F3 carry over in the same division; retained F1 stays F1.
+        // MSS-057 does not implement F1↔F2↔F3 promotion, so no tier movement here.
+        if (!sourceDivisionByLeague.TryGetValue(source.LeagueId.Value, out int sourceDivision))
+        {
+            throw new InvalidOperationException(
+                $"Athlete {source.SaveAthleteId} source league {source.LeagueId.Value} is not a feeder; Superleague members must be in safe/incumbent/relegated bands.");
+        }
+
+        if (sourceDivision != (int)SimulationKernel.Leagues.FeederDivision.First &&
+            sourceDivision != (int)SimulationKernel.Leagues.FeederDivision.Second &&
+            sourceDivision != (int)SimulationKernel.Leagues.FeederDivision.Third)
+        {
+            throw new InvalidOperationException($"Athlete {source.SaveAthleteId} has corrupt source division {sourceDivision}.");
+        }
+
+        // If source was Superleague but not in any band, it must be safe?
+        // Safe already handled; this path is for feeder retained.
+        if (!feederByColorDivision.TryGetValue((source.SportingColor, sourceDivision), out int retainedId))
+        {
+            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} division {sourceDivision}.");
+        }
+
+        return retainedId;
     }
 
     internal static int? ResolveNextLeague(
@@ -696,7 +824,19 @@ public sealed class ResolveAutomaticMovementHandler
         List<LeagueEntity> nextFeeders,
         LeagueEntity nextSuperleague)
     {
-        Dictionary<int, int> feederByColor = nextFeeders.ToDictionary(l => l.SportingColor, l => l.Id);
+        // Tiered saves carry 24 feeders; relegated/challengers always return to
+        // F1 (never directly to F2/F3), so resolve via F1-only map when tiered.
+        Dictionary<int, int> feederByColor;
+        if (nextFeeders.Count == 8)
+        {
+            feederByColor = nextFeeders.ToDictionary(l => l.SportingColor, l => l.Id);
+        }
+        else
+        {
+            feederByColor = nextFeeders
+                .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+                .ToDictionary(l => l.SportingColor, l => l.Id);
+        }
         List<MovementEntity> movements = new(plan.All.Count);
         foreach (AutomaticMovementSelection.AutomaticPick pick in plan.All)
         {

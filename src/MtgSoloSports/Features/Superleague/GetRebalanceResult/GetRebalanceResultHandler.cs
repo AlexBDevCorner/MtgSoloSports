@@ -167,12 +167,13 @@ public sealed class GetRebalanceResultHandler
             .AsNoTracking()
             .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
             .OrderBy(e => e.SportingColor)
+            .ThenBy(e => e.FeederDivision)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (nextFeeders.Count != rules.RegularLeagueCount)
+        if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {nextFeeders.Count}.");
+                $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         foreach (LeagueEntity feeder in nextFeeders)

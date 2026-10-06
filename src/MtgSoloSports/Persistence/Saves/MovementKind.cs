@@ -49,4 +49,13 @@ public enum MovementKind
     /// Deterministic by previous feeder-season rank; consumes no RNG.
     /// </summary>
     RebalanceDisplacement = 6,
+
+    /// <summary>
+    /// Common-pool athlete seeded into a new F2/F3 division when a v1 save
+    /// enters the tiered rules at a safe season boundary (MSS-057).
+    /// Equal-probability deterministic draw with the versioned simulation RNG
+    /// from the target season's pool; F1 is never demoted to populate new
+    /// divisions. Exactly 512 per upgrade (32 F2 + 32 F3 per color).
+    /// </summary>
+    TierUpgradeSeed = 7,
 }

@@ -34,18 +34,18 @@ internal static class StartNextSeasonInvariants
         IReadOnlyList<LeagueEntity> nextLeagues,
         RulesV1 rules)
     {
-        if (nextLeagues.Count != rules.RegularLeagueCount + 1)
+        if (nextLeagues.Count != rules.PostInauguralLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount + 1} leagues (8 feeders + Superleague), was {nextLeagues.Count}.");
+                $"Season {next.SeasonNumber} must have exactly {rules.PostInauguralLeagueCount} leagues ({rules.TieredFeederLeagueCount} feeders + Superleague), was {nextLeagues.Count}.");
         }
 
         int feeders = nextLeagues.Count(l => l.Kind == (int)LeagueKind.Feeder);
         int supers = nextLeagues.Count(l => l.Kind == (int)LeagueKind.Superleague);
-        if (feeders != rules.RegularLeagueCount || supers != 1)
+        if (feeders != rules.TieredFeederLeagueCount || supers != 1)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have {rules.RegularLeagueCount} feeders and 1 Superleague, was {feeders}/{supers}.");
+                $"Season {next.SeasonNumber} must have {rules.TieredFeederLeagueCount} feeders and 1 Superleague, was {feeders}/{supers}.");
         }
     }
 
@@ -124,7 +124,7 @@ internal static class StartNextSeasonInvariants
         RulesV1 rules)
     {
         int active = nextMemberships.Count(m => m.LeagueId is not null);
-        int expectedActive = (rules.RegularLeagueCount * rules.LeagueSize) + rules.SuperleagueSize;
+        int expectedActive = rules.PostInauguralActiveTotal;
         if (active != expectedActive)
         {
             throw new InvalidOperationException(

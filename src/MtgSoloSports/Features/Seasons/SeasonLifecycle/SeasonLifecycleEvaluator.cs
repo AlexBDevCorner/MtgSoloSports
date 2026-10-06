@@ -693,10 +693,10 @@ public static class SeasonLifecycleEvaluator
             .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (feeders.Count != rules.RegularLeagueCount)
+        if (feeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {feeders.Count}.");
+                $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feeders.Count}.");
         }
 
         LeagueEntity? superleague = await context.Leagues

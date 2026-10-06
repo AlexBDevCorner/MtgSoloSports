@@ -174,6 +174,50 @@ public class RulesV1
         level is LeagueLevel.Superleague or LeagueLevel.Feeder1;
 
     /// <summary>
+    /// Number of feeder divisions per sporting color under this snapshot.
+    /// v1 has one (Feeder 1 only); v2 has three (Feeder 1/2/3).
+    /// Derived from <see cref="SupportsLevel"/>, never stored, so historical
+    /// snapshots keep their meaning and new defaults never reinterpret history.
+    /// </summary>
+    public virtual int FeederDivisionsPerColor => SupportsLevel(LeagueLevel.Feeder2) ? 3 : 1;
+
+    /// <summary>
+    /// Number of Season 1 feeder leagues under this snapshot: 8 for v1, 24 for v2.
+    /// </summary>
+    public int Season1FeederLeagueCount => RegularLeagueCount * FeederDivisionsPerColor;
+
+    /// <summary>
+    /// Active feeder athletes per sporting color in Season 1: 32 for v1, 96 for v2.
+    /// </summary>
+    public int Season1ActivePerColor => LeagueSize * FeederDivisionsPerColor;
+
+    /// <summary>
+    /// Common-pool athletes per sporting color in Season 1: 224 for v1, 160 for v2.
+    /// </summary>
+    public int Season1PoolPerColor => AthletesPerSportingColor - Season1ActivePerColor;
+
+    /// <summary>
+    /// Global Season 1 active membership: 256 for v1, 768 for v2.
+    /// </summary>
+    public int Season1ActiveTotal => Season1FeederLeagueCount * LeagueSize;
+
+    /// <summary>
+    /// Feeder leagues in a post-inaugural (Superleague) season: 8 for v1, 24 for v2.
+    /// </summary>
+    public int TieredFeederLeagueCount => Season1FeederLeagueCount;
+
+    /// <summary>
+    /// Total leagues in a post-inaugural season including the Superleague: 9 for v1, 25 for v2.
+    /// </summary>
+    public int PostInauguralLeagueCount => TieredFeederLeagueCount + 1;
+
+    /// <summary>
+    /// Global active membership in a post-inaugural season (feeders + Superleague):
+    /// 288 for v1 (256 + 32), 800 for v2 (768 + 32).
+    /// </summary>
+    public int PostInauguralActiveTotal => Season1ActiveTotal + SuperleagueSize;
+
+    /// <summary>
     /// Exact bonus scale for a tier under this snapshot.
     /// v1: Superleague 2/1, Feeder 1 1/1; F2/F3 throw instead of silently
     /// reinterpreting historical seasons.

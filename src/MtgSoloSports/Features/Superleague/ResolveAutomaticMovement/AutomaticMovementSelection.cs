@@ -27,6 +27,8 @@ public static class AutomaticMovementSelection
     /// Selects the 48 automatic/qualifier-candidate picks from final standings.
     /// Returns promotions (8), relegations (8), incumbents (8) and challengers
     /// (24) ordered deterministically by kind, source league then rank.
+    /// Tiered saves supply 24 feeders but only F1 contributes (8 champions,
+    /// 24 challengers from F1); F2/F3 never skip tiers into the Superleague.
     /// </summary>
     public static AutomaticPlan Select(
         IReadOnlyList<SeasonStandingEntity> superleagueStandings,
@@ -41,16 +43,11 @@ public static class AutomaticMovementSelection
         ArgumentNullException.ThrowIfNull(superleague);
         ArgumentNullException.ThrowIfNull(rules);
 
-        if (feederLeagues.Count != rules.RegularLeagueCount)
-        {
-            throw new InvalidOperationException(
-                $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
-        }
-
-        List<AutomaticPick> promotions = SelectPromotions(feederStandingsByLeague, feederLeagues, rules);
+        List<LeagueEntity> sources = ResolveSources(feederLeagues, rules);
+        List<AutomaticPick> promotions = SelectPromotions(feederStandingsByLeague, sources, rules);
         List<AutomaticPick> relegations = SelectRelegations(superleagueStandings, superleague, rules);
         List<AutomaticPick> incumbents = SelectIncumbents(superleagueStandings, superleague, rules);
-        List<AutomaticPick> challengers = SelectChallengers(feederStandingsByLeague, feederLeagues, rules);
+        List<AutomaticPick> challengers = SelectChallengers(feederStandingsByLeague, sources, rules);
 
         List<AutomaticPick> all = new(promotions.Count + relegations.Count + incumbents.Count + challengers.Count);
         all.AddRange(promotions);
@@ -70,6 +67,40 @@ public static class AutomaticMovementSelection
         });
 
         return new AutomaticPlan(promotions, relegations, incumbents, challengers, all);
+    }
+
+    internal static List<LeagueEntity> ResolveSources(IReadOnlyList<LeagueEntity> feederLeagues, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(feederLeagues);
+        ArgumentNullException.ThrowIfNull(rules);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (!tiered)
+        {
+            if (feederLeagues.Count != rules.RegularLeagueCount)
+            {
+                throw new InvalidOperationException(
+                    $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
+            }
+
+            return [.. feederLeagues];
+        }
+
+        if (feederLeagues.Count != rules.TieredFeederLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feederLeagues.Count}.");
+        }
+
+        List<LeagueEntity> first = feederLeagues
+            .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .ToList();
+        if (first.Count != rules.RegularLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered season must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
+        }
+
+        return first;
     }
 
     private static List<AutomaticPick> SelectPromotions(

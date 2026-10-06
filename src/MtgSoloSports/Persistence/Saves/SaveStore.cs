@@ -252,17 +252,18 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Creates one independent save universe: metadata, immutable Rules v1
+    /// Creates one independent save universe: metadata, immutable Rules v2
     /// snapshot, the deterministic 2,048-athlete universe selected from
-    /// <paramref name="catalogAthletes"/> with the save RNG, Season 1 with eight
-    /// 32-athlete feeder leagues (no Superleague) drawn from the save population
-    /// with the same RNG, and the post-draw RNG state, all committed in a single
-    /// transaction. Selection and the inaugural draw consume only the save RNG in
-    /// sporting-color enum order from name-sorted pools, so an equivalent seed
-    /// plus catalog reproduces the equivalent universe and leagues. Any failure
-    /// deletes the save file so no partially initialized save is left behind.
-    /// League membership lives in Season/Membership rows, never in
-    /// <see cref="SaveAthleteEntity"/> card metadata.
+    /// <paramref name="catalogAthletes"/> with the save RNG, Season 1 with 24
+    /// 32-athlete feeder leagues (F1/F2/F3 per color, no Superleague) drawn from
+    /// the save population with the same RNG, and the post-draw RNG state, all
+    /// committed in a single transaction. Selection and the inaugural draw
+    /// consume only the save RNG in sporting-color enum order from name-sorted
+    /// pools (positions 0..31 F1, 32..63 F2, 64..95 F3, 96..255 pool), so an
+    /// equivalent seed plus catalog reproduces the equivalent universe and
+    /// leagues. Any failure deletes the save file so no partially initialized
+    /// save is left behind. League membership lives in Season/Membership rows,
+    /// never in <see cref="SaveAthleteEntity"/> card metadata.
     /// </summary>
     public async Task<CreationRecord> CreateAsync(
         string name,
@@ -402,11 +403,14 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Inserts Season 1 (no Superleague), its eight feeder leagues and all 2,048
-    /// Season 1 memberships from the already-validated inaugural draw. Runs inside
-    /// the save-creation transaction so RNG state and memberships commit together.
-    /// Membership is the sporting source of truth; <see cref="SaveAthleteEntity"/>
-    /// card rows are left untouched.
+    /// Inserts Season 1 (no Superleague), its versioned feeder leagues (8 for v1,
+    /// 24 F1/F2/F3 for v2 tiered) and all 2,048 Season 1 memberships from the
+    /// already-validated inaugural draw. Runs inside the save-creation
+    /// transaction so RNG state and memberships commit together. Membership is
+    /// the sporting source of truth; <see cref="SaveAthleteEntity"/> card rows
+    /// are left untouched. F1 keeps the canonical "{Color} League" name so
+    /// existing feeder identity is preserved; F2/F3 carry explicit suffixes and
+    /// divisions so tiers never depend on name parsing.
     /// </summary>
     private static async Task InsertSeason1RowsAsync(
         SaveDbContext context,
@@ -419,7 +423,7 @@ public sealed class SaveStore
 
         Dictionary<string, int> athleteIds = CollectAthleteIds(context, rules);
         SeasonEntity season = await CreateSeason1Async(context, cancellationToken).ConfigureAwait(false);
-        List<LeagueEntity> leagues = await CreateFeederLeaguesAsync(context, season.Id, cancellationToken).ConfigureAwait(false);
+        List<LeagueEntity> leagues = await CreateFeederLeaguesAsync(context, season.Id, rules, cancellationToken).ConfigureAwait(false);
         List<SeasonMembershipEntity> memberships = BuildMemberships(preparation.Draw, athleteIds, season.Id, leagues, rules);
         foreach (SeasonMembershipEntity membership in memberships)
         {
@@ -458,9 +462,13 @@ public sealed class SaveStore
     private static async Task<List<LeagueEntity>> CreateFeederLeaguesAsync(
         SaveDbContext context,
         int seasonId,
+        RulesV1 rules,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(rules);
         List<LeagueEntity> leagues = [];
+        bool tiered = rules.FeederDivisionsPerColor == 3;
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
             leagues.Add(new LeagueEntity
@@ -470,6 +478,28 @@ public sealed class SaveStore
                 Kind = (int)LeagueKind.Feeder,
                 FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.First,
                 Name = $"{color} League",
+            });
+
+            if (!tiered)
+            {
+                continue;
+            }
+
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = seasonId,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Second,
+                Name = $"{color} League F2",
+            });
+            leagues.Add(new LeagueEntity
+            {
+                SeasonId = seasonId,
+                SportingColor = (int)color,
+                Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.Third,
+                Name = $"{color} League F3",
             });
         }
 
@@ -490,7 +520,9 @@ public sealed class SaveStore
         RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(draw);
-        Dictionary<SportingColor, int> leagueIds = leagues.ToDictionary(l => (SportingColor)l.SportingColor, l => l.Id);
+        Dictionary<(SportingColor Color, int Division), int> leagueIds = leagues.ToDictionary(
+            l => ((SportingColor)l.SportingColor, l.FeederDivision), l => l.Id);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
         List<SeasonMembershipEntity> memberships = new(rules.TotalAthletesInSave);
         foreach (InauguralDrawEntry entry in draw.Entries)
         {
@@ -499,10 +531,11 @@ public sealed class SaveStore
                 throw new InvalidOperationException($"Season 1 draw references unknown athlete '{entry.Name}'.");
             }
 
+            int? leagueId = ResolveInauguralLeague(entry, leagueIds, tiered, rules);
             memberships.Add(new SeasonMembershipEntity
             {
                 SeasonId = seasonId,
-                LeagueId = entry.IsLeagueMember ? leagueIds[entry.SportingColor] : null,
+                LeagueId = leagueId,
                 SaveAthleteId = athleteId,
                 SportingColor = (int)entry.SportingColor,
                 DrawIndex = entry.DrawIndex,
@@ -510,6 +543,36 @@ public sealed class SaveStore
         }
 
         return memberships;
+    }
+
+    internal static int? ResolveInauguralLeague(
+        InauguralDrawEntry entry,
+        Dictionary<(SportingColor Color, int Division), int> leagueIds,
+        bool tiered,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(leagueIds);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (!entry.IsLeagueMember)
+        {
+            return null;
+        }
+
+        int division = !tiered
+            ? (int)SimulationKernel.Leagues.FeederDivision.First
+            : entry.DrawIndex < rules.LeagueSize
+                ? (int)SimulationKernel.Leagues.FeederDivision.First
+                : entry.DrawIndex < 2 * rules.LeagueSize
+                    ? (int)SimulationKernel.Leagues.FeederDivision.Second
+                    : (int)SimulationKernel.Leagues.FeederDivision.Third;
+        if (!leagueIds.TryGetValue((entry.SportingColor, division), out int leagueId))
+        {
+            throw new InvalidOperationException(
+                $"Season 1 is missing the {entry.SportingColor} division {division} league for draw index {entry.DrawIndex}.");
+        }
+
+        return leagueId;
     }
 
     private static void ValidateSeason1Rows(
