@@ -214,16 +214,14 @@ jobs:
 
           preferred="autonomous/${TASK_ID}"
           current="$(git branch --show-current)"
-          branch=''
+          branch="${preferred}"
 
-          if [[ "${current}" == "${preferred}" ]]; then
-            branch="${preferred}"
-            git push -u origin "HEAD:${branch}"
+          # The coordinator recognizes only autonomous/<task-id>. Normalize any
+          # action-owned/agent-owned working branch to that canonical ref.
+          if [[ -n "${current}" && "${current}" != "${BASE_BRANCH}" ]]; then
+            git push -u origin "HEAD:${preferred}"
           elif git ls-remote --exit-code --heads origin "${preferred}" >/dev/null 2>&1; then
-            branch="${preferred}"
-          elif [[ -n "${current}" && "${current}" != "${BASE_BRANCH}" ]]; then
-            branch="${current}"
-            git push -u origin "HEAD:${branch}"
+            : # Canonical branch was already pushed by the worker.
           else
             echo "Successful worker left no task branch for ${TASK_ID}." >&2
             exit 1
