@@ -626,7 +626,6 @@ public static class RebalanceFeedersInvariants
         RebalanceFeedersSelection.RebalancePlan plan,
         RulesV1 rules)
     {
-        _ = rules;
         int expectedCount = plan.AllDraws.Count + plan.AllDisplaced.Count
             + plan.AllUpMoves.Count + plan.AllDownMoves.Count;
         if (movements.Count != expectedCount)
@@ -655,7 +654,7 @@ public static class RebalanceFeedersInvariants
                 throw new InvalidOperationException($"Rebalancing contains duplicate athlete id {movement.SaveAthleteId}.");
             }
 
-            CheckSingleMovement(movement, feederIds, feedersById, drawIds, displacedIds, upIds, downIds);
+            CheckSingleMovement(movement, feederIds, feedersById, drawIds, displacedIds, upIds, downIds, rules);
         }
 
         CheckPersistedSets(movements, drawIds, displacedIds, upIds, downIds);
@@ -698,15 +697,16 @@ public static class RebalanceFeedersInvariants
         HashSet<int> drawIds,
         HashSet<int> displacedIds,
         HashSet<int> upIds,
-        HashSet<int> downIds)
+        HashSet<int> downIds,
+        RulesV1 rules)
     {
         switch ((MovementKind)movement.Kind)
         {
             case MovementKind.RebalanceDraw:
-                CheckDrawMovement(movement, feederIds, feedersById, drawIds);
+                CheckDrawMovement(movement, feederIds, feedersById, drawIds, rules);
                 break;
             case MovementKind.RebalanceDisplacement:
-                CheckDisplacementMovement(movement, feederIds, feedersById, displacedIds);
+                CheckDisplacementMovement(movement, feederIds, feedersById, displacedIds, rules);
                 break;
             case MovementKind.RebalanceUp:
             case MovementKind.RebalanceDown:
@@ -721,7 +721,8 @@ public static class RebalanceFeedersInvariants
         MovementEntity movement,
         HashSet<int> feederIds,
         Dictionary<int, LeagueEntity> feedersById,
-        HashSet<int> drawIds)
+        HashSet<int> drawIds,
+        RulesV1 rules)
     {
         if (!drawIds.Contains(movement.SaveAthleteId))
         {
@@ -738,7 +739,11 @@ public static class RebalanceFeedersInvariants
             throw new InvalidOperationException($"Pool draw {movement.Id} must target its color feeder.");
         }
 
-        if (feedersById.TryGetValue(movement.ToLeagueId, out LeagueEntity? drawTo)
+        // Tiered saves: pool connects only to F3. Legacy v1 single-feeder
+        // saves have only the F1 feeder, so any feeder target is legal.
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (tiered
+            && feedersById.TryGetValue(movement.ToLeagueId, out LeagueEntity? drawTo)
             && drawTo.FeederDivision != (int)FeederDivision.Third)
         {
             throw new InvalidOperationException(
@@ -755,7 +760,8 @@ public static class RebalanceFeedersInvariants
         MovementEntity movement,
         HashSet<int> feederIds,
         Dictionary<int, LeagueEntity> feedersById,
-        HashSet<int> displacedIds)
+        HashSet<int> displacedIds,
+        RulesV1 rules)
     {
         if (!displacedIds.Contains(movement.SaveAthleteId))
         {
@@ -767,7 +773,11 @@ public static class RebalanceFeedersInvariants
             throw new InvalidOperationException($"Displacement {movement.Id} must originate from its feeder.");
         }
 
-        if (feedersById.TryGetValue(movement.FromLeagueId, out LeagueEntity? dispFrom)
+        // Tiered saves: only F3 may displace to pool. Legacy v1
+        // single-feeder saves displace from their only feeder.
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (tiered
+            && feedersById.TryGetValue(movement.FromLeagueId, out LeagueEntity? dispFrom)
             && dispFrom.FeederDivision != (int)FeederDivision.Third)
         {
             throw new InvalidOperationException(

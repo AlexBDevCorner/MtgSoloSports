@@ -88,20 +88,15 @@ public sealed class RebalanceFeedersHandler
             : await LoadSuperleagueAsync(context, source, cancellationToken).ConfigureAwait(false);
         Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings =
             await LoadSourceStandingsAsync(context, source, sourceFeeders, rules, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, int> sourceRanks = await LoadAllSourceRanksAsync(context, source, sourceFeeders, sourceSuperleague, cancellationToken).ConfigureAwait(false);
         List<SeasonMembershipEntity> sourceMemberships =
             await LoadMembershipsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         List<SeasonMembershipEntity> nextMemberships =
             await LoadMembershipsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
 
-        List<RebalanceFeedersSelection.TierColorInput> inputs = BuildTierColorInputs(
-            sourceFeeders, sourceSuperleague, nextFeeders, sourceMemberships, nextMemberships, sourceRanks, names, rules);
-
-        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
-        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
-        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
-        Pcg32State rngAfter = rng.Snapshot();
+        (RebalanceFeedersSelection.RebalancePlan plan, Pcg32State rngAfter) = await SelectValidatedPlanAsync(
+            context, source, next, sourceSuperleague, sourceFeeders, nextFeeders,
+            sourceStandings, sourceMemberships, nextMemberships, names, rules, rngBefore, cancellationToken).ConfigureAwait(false);
 
         ApplyTierPlan(context, next, nextFeeders, nextMemberships, plan);
         await PersistRebalanceMovementsAsync(context, source, next, nextFeeders, nextMemberships, plan, rngAfter, metadata, cancellationToken).ConfigureAwait(false);
@@ -119,6 +114,91 @@ public sealed class RebalanceFeedersHandler
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, plan, rngBefore, rngAfter, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Selects and validates the rebalance plan for the active rules version.
+    /// Tiered (v2) saves use the F1→F2→F3→pool cascade; legacy v1 saves keep
+    /// the historical single-feeder F1↔pool repair so pre-upgrade transitions
+    /// and the tier-upgrade safe boundary keep working.
+    /// </summary>
+    internal static async Task<(RebalanceFeedersSelection.RebalancePlan Plan, Pcg32State RngAfter)> SelectValidatedPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        LeagueEntity? sourceSuperleague,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32State rngBefore,
+        CancellationToken cancellationToken)
+    {
+        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
+        RebalanceFeedersSelection.RebalancePlan plan;
+        if (rules.FeederDivisionsPerColor == 3)
+        {
+            plan = await SelectTieredPlanAsync(
+                context, source, sourceSuperleague, sourceFeeders, nextFeeders,
+                sourceMemberships, nextMemberships, names, rules, rng, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            plan = await SelectLegacyPlanAsync(
+                context, source, next, sourceFeeders, nextFeeders, sourceStandings,
+                sourceMemberships, nextMemberships, names, rules, rng, cancellationToken).ConfigureAwait(false);
+        }
+
+        return (plan, rng.Snapshot());
+    }
+
+    internal static async Task<RebalanceFeedersSelection.RebalancePlan> SelectTieredPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        LeagueEntity? sourceSuperleague,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32V1 rng,
+        CancellationToken cancellationToken)
+    {
+        _ = context;
+        _ = source;
+        _ = cancellationToken;
+        Dictionary<int, int> sourceRanks = await LoadAllSourceRanksAsync(context, source, sourceFeeders, sourceSuperleague, cancellationToken).ConfigureAwait(false);
+        List<RebalanceFeedersSelection.TierColorInput> inputs = BuildTierColorInputs(
+            sourceFeeders, sourceSuperleague, nextFeeders, sourceMemberships, nextMemberships, sourceRanks, names, rules);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
+        return plan;
+    }
+
+    internal static async Task<RebalanceFeedersSelection.RebalancePlan> SelectLegacyPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32V1 rng,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> moved = await LoadMovedAthletesAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        List<RebalanceFeedersSelection.ColorInput> inputs = BuildColorInputs(
+            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules, moved);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
+        return plan;
     }
 
     internal static async Task<List<MovementEntity>> PersistRebalanceMovementsAsync(
