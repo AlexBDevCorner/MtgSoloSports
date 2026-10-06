@@ -160,7 +160,10 @@ public sealed class RebalanceFeedersHandler
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(nextFeeders);
         ArgumentNullException.ThrowIfNull(plan);
-        Dictionary<string, string> feederNames = nextFeeders.ToDictionary(
+        bool tieredNames = nextFeeders.Count == 24;
+        Dictionary<string, string> feederNames = (tieredNames
+            ? nextFeeders.Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            : nextFeeders).ToDictionary(
             l => ((SportingColor)l.SportingColor).ToString(), l => l.Name, StringComparer.Ordinal);
         string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
             source.SeasonNumber, next.SeasonNumber);
@@ -664,8 +667,13 @@ public sealed class RebalanceFeedersHandler
         ArgumentNullException.ThrowIfNull(sourceStandings);
 
         Dictionary<int, SeasonMembershipEntity> byAthlete = nextMemberships.ToDictionary(m => m.SaveAthleteId);
-        Dictionary<string, int> feederByColor = nextFeeders.ToDictionary(
-            l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
+        bool tiered = nextFeeders.Count == 24;
+        Dictionary<string, int> feederByColor = tiered
+            ? nextFeeders
+                .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+                .ToDictionary(l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
+            : nextFeeders.ToDictionary(
+                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
 
         foreach (RebalanceFeedersSelection.ColorPlan colorPlan in plan.PerColor)
         {
@@ -726,8 +734,13 @@ public sealed class RebalanceFeedersHandler
         RebalanceFeedersSelection.RebalancePlan plan,
         List<SeasonMembershipEntity> nextMemberships)
     {
-        Dictionary<string, int> feederByColor = nextFeeders.ToDictionary(
-            l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
+        bool tiered = nextFeeders.Count == 24;
+        Dictionary<string, int> feederByColor = tiered
+            ? nextFeeders
+                .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+                .ToDictionary(l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
+            : nextFeeders.ToDictionary(
+                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
         Dictionary<int, int> colorByAthlete = nextMemberships.ToDictionary(m => m.SaveAthleteId, m => m.SportingColor);
         List<MovementEntity> movements = new(plan.AllDraws.Count + plan.AllDisplaced.Count);
 

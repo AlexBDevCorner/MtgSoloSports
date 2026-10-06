@@ -11,6 +11,7 @@ using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.Tests.Features.Universe;
@@ -76,12 +77,20 @@ public sealed class RebalanceFeedersTests
 
             response.FromSeasonNumber.ShouldBe(1);
             response.ToSeasonNumber.ShouldBe(2);
-            response.Colors.Count.ShouldBe(8);
-            foreach (RebalanceColorResult color in response.Colors)
+            response.Colors.Count.ShouldBe(24);
+            response.Colors.Count(c => c.ProvisionalCount == 28).ShouldBe(8);
+            response.Colors.Count(c => c.ProvisionalCount == 32).ShouldBe(16);
+            foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 28))
             {
-                color.ProvisionalCount.ShouldBe(28);
                 color.DisplacedCount.ShouldBe(0);
                 color.DrawnCount.ShouldBe(4);
+                color.FinalCount.ShouldBe(32);
+            }
+
+            foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 32))
+            {
+                color.DisplacedCount.ShouldBe(0);
+                color.DrawnCount.ShouldBe(0);
                 color.FinalCount.ShouldBe(32);
             }
 
@@ -134,7 +143,7 @@ public sealed class RebalanceFeedersTests
             qualifierResponse.Winners.ShouldBe(8);
 
             Dictionary<int, int> provisional = await LoadFeederCountsAsync(store, created.Detail.SaveId, 3);
-            provisional.Values.Sum().ShouldBe(256);
+            provisional.Values.Sum().ShouldBe(768);
 
             (int stages, int seasons, int rounds, int qualifierRounds, int qualifierStandings, ulong rngBefore) =
                 await CapturePreservationAsync(store, created.Detail.SaveId);
@@ -143,7 +152,7 @@ public sealed class RebalanceFeedersTests
 
             response.FromSeasonNumber.ShouldBe(2);
             response.ToSeasonNumber.ShouldBe(3);
-            response.Colors.Count.ShouldBe(8);
+            response.Colors.Count.ShouldBe(24);
             foreach (RebalanceColorResult color in response.Colors)
             {
                 color.FinalCount.ShouldBe(32);
@@ -288,12 +297,15 @@ public sealed class RebalanceFeedersTests
         SeasonEntity season = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == seasonNumber).ConfigureAwait(false);
         List<LeagueEntity> feeders = await context.Leagues.AsNoTracking()
             .Where(e => e.SeasonId == season.Id && e.Kind == (int)LeagueKind.Feeder).ToListAsync().ConfigureAwait(false);
-        feeders.Count.ShouldBe(8);
+        feeders.Count.ShouldBe(24);
         foreach (LeagueEntity feeder in feeders)
         {
             int count = await context.SeasonMemberships
                 .CountAsync(e => e.SeasonId == season.Id && e.LeagueId == feeder.Id).ConfigureAwait(false);
-            count.ShouldBe(expectedPerFeeder);
+            int expected = feeder.FeederDivision == (int)FeederDivision.First
+                ? expectedPerFeeder
+                : 32;
+            count.ShouldBe(expected);
         }
     }
 
@@ -323,8 +335,8 @@ public sealed class RebalanceFeedersTests
 
         HashSet<int> active = memberships.Where(m => m.LeagueId is not null).Select(m => m.SaveAthleteId).ToHashSet();
         HashSet<int> pool = memberships.Where(m => m.LeagueId is null).Select(m => m.SaveAthleteId).ToHashSet();
-        active.Count.ShouldBe(288);
-        pool.Count.ShouldBe(1760);
+        active.Count.ShouldBe(800);
+        pool.Count.ShouldBe(1248);
         active.Intersect(pool).ShouldBeEmpty();
         memberships.Select(m => m.SaveAthleteId).Distinct().Count().ShouldBe(2048);
 

@@ -34,7 +34,7 @@ public sealed class RecordsApiTests
             records.Records.Count.ShouldBe(13);
             RecordPayload feeder = records.Records.Single(r => string.Equals(r.RecordKey, "feeder_titles", StringComparison.Ordinal));
             feeder.Value.ShouldBe(1);
-            feeder.Holders.Count.ShouldBe(8);
+            feeder.Holders.Count.ShouldBe(24);
             feeder.IsVacant.ShouldBeFalse();
             records.Records.Single(r => string.Equals(r.RecordKey, "superleague_titles", StringComparison.Ordinal)).IsVacant.ShouldBeTrue();
             records.RecentHistory.Count.ShouldBeGreaterThan(0);

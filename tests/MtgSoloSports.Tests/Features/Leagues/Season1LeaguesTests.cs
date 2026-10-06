@@ -37,8 +37,8 @@ public sealed class Season1LeaguesTests
             RosterNames(firstLeagues).ShouldBe(RosterNames(secondLeagues));
 
             Pcg32V1 fresh = new(9001UL, 7002UL);
-            UniverseSelection universe = UniverseSelector.Select(catalog, fresh, RulesV1.CreateDefault());
-            InauguralDrawResult draw = InauguralDrawSelector.Select(universe.Selected, fresh, RulesV1.CreateDefault());
+            UniverseSelection universe = UniverseSelector.Select(catalog, fresh, RulesV2.CreateDefault());
+            InauguralDrawResult draw = InauguralDrawSelector.Select(universe.Selected, fresh, RulesV2.CreateDefault());
             draw.Checksum.ShouldBe(firstLeagues.DrawChecksum);
             fresh.Snapshot().State.ShouldBe(first.Detail.RngState);
         }
@@ -82,25 +82,32 @@ public sealed class Season1LeaguesTests
 
             response.SeasonNumber.ShouldBe(1);
             response.HasSuperleague.ShouldBeFalse();
-            response.Leagues.Count.ShouldBe(8);
-            response.ActiveAthletes.ShouldBe(256);
-            response.PoolAthletes.ShouldBe(1792);
+            response.Leagues.Count.ShouldBe(24);
+            response.ActiveAthletes.ShouldBe(768);
+            response.PoolAthletes.ShouldBe(1280);
             response.PoolCounts.Count.ShouldBe(8);
-            response.PoolCounts.Sum(p => p.Count).ShouldBe(1792);
+            response.PoolCounts.Sum(p => p.Count).ShouldBe(1280);
 
             foreach (Season1LeagueRoster league in response.Leagues)
             {
                 league.Athletes.Count.ShouldBe(32);
+                (league.FeederDivision is 1 or 2 or 3).ShouldBeTrue();
+                league.LeagueLevel.ShouldBe($"Feeder{league.FeederDivision}");
             }
+
+            // Eight F1, eight F2, eight F3.
+            response.Leagues.Count(l => l.FeederDivision == 1).ShouldBe(8);
+            response.Leagues.Count(l => l.FeederDivision == 2).ShouldBe(8);
+            response.Leagues.Count(l => l.FeederDivision == 3).ShouldBe(8);
 
             foreach (Season1PoolCount pool in response.PoolCounts)
             {
-                pool.Count.ShouldBe(224);
+                pool.Count.ShouldBe(160);
             }
 
             IReadOnlyList<string> active = RosterNames(response);
-            active.Count.ShouldBe(256);
-            active.Distinct(StringComparer.Ordinal).Count().ShouldBe(256);
+            active.Count.ShouldBe(768);
+            active.Distinct(StringComparer.Ordinal).Count().ShouldBe(768);
 
             await AssertMembershipCoverageAsync(store, created.Detail.SaveId);
         }
@@ -129,8 +136,15 @@ public sealed class Season1LeaguesTests
             foreach (Season1LeagueRoster league in response.Leagues)
             {
                 SportingColor expected = Enum.Parse<SportingColor>(league.SportingColor);
+                List<int> expectedIndices = league.FeederDivision switch
+                {
+                    1 => Enumerable.Range(0, 32).ToList(),
+                    2 => Enumerable.Range(32, 32).ToList(),
+                    3 => Enumerable.Range(64, 32).ToList(),
+                    _ => throw new InvalidOperationException($"Unexpected division {league.FeederDivision}."),
+                };
                 List<int> indices = league.Athletes.Select(a => a.DrawIndex).ToList();
-                indices.ShouldBe(Enumerable.Range(0, 32).ToList());
+                indices.ShouldBe(expectedIndices);
                 foreach (Season1RosterAthlete athlete in league.Athletes)
                 {
                     persistedColor[athlete.Name].ShouldBe((int)expected);
@@ -283,9 +297,9 @@ public sealed class Season1LeaguesTests
     {
         response.SeasonNumber.ShouldBe(1);
         response.HasSuperleague.ShouldBeFalse();
-        response.Leagues.Count.ShouldBe(8);
-        response.ActiveAthletes.ShouldBe(256);
-        response.PoolAthletes.ShouldBe(1792);
+        response.Leagues.Count.ShouldBe(24);
+        response.ActiveAthletes.ShouldBe(768);
+        response.PoolAthletes.ShouldBe(1280);
         foreach (Season1LeagueRoster league in response.Leagues)
         {
             league.Athletes.Count.ShouldBe(32);
@@ -309,11 +323,11 @@ public sealed class Season1LeaguesTests
         List<SeasonMembershipEntity> memberships = await context.SeasonMemberships.AsNoTracking().ToListAsync().ConfigureAwait(false);
         memberships.Count.ShouldBe(2048);
         memberships.Select(m => m.SaveAthleteId).Distinct().Count().ShouldBe(2048);
-        memberships.Count(m => m.LeagueId is not null).ShouldBe(256);
-        memberships.Count(m => m.LeagueId is null).ShouldBe(1792);
+        memberships.Count(m => m.LeagueId is not null).ShouldBe(768);
+        memberships.Count(m => m.LeagueId is null).ShouldBe(1280);
 
         List<LeagueEntity> leagues = await context.Leagues.AsNoTracking().ToListAsync().ConfigureAwait(false);
-        leagues.Count.ShouldBe(8);
+        leagues.Count.ShouldBe(24);
         leagues.All(l => l.Kind == (int)LeagueKind.Feeder).ShouldBeTrue();
     }
 

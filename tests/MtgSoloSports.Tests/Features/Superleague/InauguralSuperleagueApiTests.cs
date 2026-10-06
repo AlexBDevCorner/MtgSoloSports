@@ -59,11 +59,9 @@ public sealed class InauguralSuperleagueApiTests
             created.ShouldNotBeNull();
             created.Members.Count.ShouldBe(32);
             created.MovementCount.ShouldBe(32);
-            created.FeederRetention.Count.ShouldBe(8);
-            foreach (RetentionPayload retention in created.FeederRetention)
-            {
-                retention.RetainedCount.ShouldBe(28);
-            }
+            created.FeederRetention.Count.ShouldBe(24);
+            created.FeederRetention.Count(r => r.RetainedCount == 28).ShouldBe(8);
+            created.FeederRetention.Count(r => r.RetainedCount == 32).ShouldBe(16);
 
             using HttpResponseMessage get = await client.GetAsync($"/api/saves/{saveId:D}/superleague/inaugural");
             get.StatusCode.ShouldBe(HttpStatusCode.OK);

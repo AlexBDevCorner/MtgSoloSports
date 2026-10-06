@@ -9,6 +9,7 @@ using MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
@@ -273,9 +274,9 @@ public sealed class AutomaticMovementTests
         next.IsComplete.ShouldBeFalse();
 
         List<LeagueEntity> leaguesNext = await context.Leagues.AsNoTracking().Where(e => e.SeasonId == next.Id).ToListAsync().ConfigureAwait(false);
-        leaguesNext.Count.ShouldBe(9);
+        leaguesNext.Count.ShouldBe(25);
         leaguesNext.Count(l => l.Kind == (int)LeagueKind.Superleague).ShouldBe(1);
-        leaguesNext.Count(l => l.Kind == (int)LeagueKind.Feeder).ShouldBe(8);
+        leaguesNext.Count(l => l.Kind == (int)LeagueKind.Feeder).ShouldBe(24);
 
         List<SeasonMembershipEntity> membershipsSource = await context.SeasonMemberships.AsNoTracking().Where(e => e.SeasonId == source.Id).ToListAsync().ConfigureAwait(false);
         List<SeasonMembershipEntity> membershipsNext = await context.SeasonMemberships.AsNoTracking().Where(e => e.SeasonId == next.Id).ToListAsync().ConfigureAwait(false);
@@ -342,8 +343,9 @@ public sealed class AutomaticMovementTests
         using SaveDbContext context = store.OpenDbContext(saveId);
         SeasonEntity seasonTwo = await context.Seasons.SingleAsync(e => e.SeasonNumber == 2).ConfigureAwait(false);
         List<LeagueEntity> feeders = await context.Leagues
-            .Where(e => e.SeasonId == seasonTwo.Id && e.Kind == (int)LeagueKind.Feeder)
+            .Where(e => e.SeasonId == seasonTwo.Id && e.Kind == (int)LeagueKind.Feeder && e.FeederDivision == (int)FeederDivision.First)
             .ToListAsync().ConfigureAwait(false);
+        feeders.Count.ShouldBe(8);
         foreach (LeagueEntity feeder in feeders.OrderBy(l => l.SportingColor))
         {
             int memberCount = await context.SeasonMemberships
@@ -379,7 +381,7 @@ public sealed class AutomaticMovementTests
             .Where(e => e.SeasonId == seasonTwo.Id)
             .OrderBy(e => e.Id)
             .ToListAsync().ConfigureAwait(false);
-        leagues.Count.ShouldBe(9);
+        leagues.Count.ShouldBe(25);
 
         foreach (LeagueEntity league in leagues)
         {

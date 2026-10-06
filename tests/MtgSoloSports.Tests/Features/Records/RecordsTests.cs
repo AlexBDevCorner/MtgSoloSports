@@ -41,15 +41,15 @@ public sealed class RecordsTests
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
         List<HonourEntity> honours = await context.Honours.AsNoTracking().ToListAsync().ConfigureAwait(false);
-        honours.Count.ShouldBe(24);
-        honours.Count(h => h.Kind == (int)HonourKind.FeederTitle).ShouldBe(8);
-        honours.Count(h => h.Kind == (int)HonourKind.FeederRunnerUp).ShouldBe(8);
-        honours.Count(h => h.Kind == (int)HonourKind.FeederThirdPlace).ShouldBe(8);
+        honours.Count.ShouldBe(72);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederTitle).ShouldBe(24);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederRunnerUp).ShouldBe(24);
+        honours.Count(h => h.Kind == (int)HonourKind.FeederThirdPlace).ShouldBe(24);
         honours.All(h => h.SeasonNumber == 1).ShouldBeTrue();
 
         List<SeasonStandingEntity> champions = await context.SeasonStandings
             .AsNoTracking().Where(e => e.IsChampion).ToListAsync().ConfigureAwait(false);
-        champions.Count.ShouldBe(8);
+        champions.Count.ShouldBe(24);
         foreach (SeasonStandingEntity champion in champions)
         {
             honours.Any(h =>
@@ -60,11 +60,11 @@ public sealed class RecordsTests
 
         List<SeasonStandingEntity> podiums = await context.SeasonStandings
             .AsNoTracking().Where(e => e.SeasonRank >= 1 && e.SeasonRank <= 3).ToListAsync().ConfigureAwait(false);
-        podiums.Count.ShouldBe(24);
+        podiums.Count.ShouldBe(72);
 
         ListHonoursHandler honoursHandler = new(store);
         ListHonoursResponse honoursResponse = await honoursHandler.HandleAsync(saveId).ConfigureAwait(false);
-        honoursResponse.Honours.Count.ShouldBe(24);
+        honoursResponse.Honours.Count.ShouldBe(72);
     }
 
     private static async Task AssertWinOnlyRecordsAsync(SaveStore store, Guid saveId)
@@ -82,7 +82,7 @@ public sealed class RecordsTests
         records.Records.Count.ShouldBe(RecordKey.All.Count);
         RecordEntry feeder = records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.FeederTitles, StringComparison.Ordinal));
         feeder.Value.ShouldBe(1);
-        feeder.Holders.Count.ShouldBe(8);
+        feeder.Holders.Count.ShouldBe(24);
         feeder.IsVacant.ShouldBeFalse();
         records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.SuperleagueTitles, StringComparison.Ordinal)).IsVacant.ShouldBeTrue();
         records.RecentHistory.Count.ShouldBeGreaterThan(0);
