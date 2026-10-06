@@ -212,7 +212,7 @@ internal static class PostseasonTestSaves
         using SaveDbContext context = store.OpenDbContext(saveId);
         SeasonEntity seasonTwo = await context.Seasons.SingleAsync(e => e.SeasonNumber == 2).ConfigureAwait(false);
         List<LeagueEntity> feeders = await context.Leagues
-            .Where(e => e.SeasonId == seasonTwo.Id && e.Kind == (int)LeagueKind.Feeder)
+            .Where(e => e.SeasonId == seasonTwo.Id && e.Kind == (int)LeagueKind.Feeder && e.FeederDivision == (int)MtgSoloSports.SimulationKernel.Leagues.FeederDivision.First)
             .ToListAsync().ConfigureAwait(false);
         foreach (LeagueEntity feeder in feeders.OrderBy(l => l.SportingColor))
         {

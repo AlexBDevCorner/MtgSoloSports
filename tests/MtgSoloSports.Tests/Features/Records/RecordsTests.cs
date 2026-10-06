@@ -107,7 +107,7 @@ public sealed class RecordsTests
 
             using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
             int before = await context.Honours.CountAsync();
-            before.ShouldBe(24);
+            before.ShouldBe(72);
             await HonourUpdater.RebuildAllAsync(context, CancellationToken.None);
             await context.SaveChangesAsync();
             int after = await context.Honours.CountAsync();

@@ -147,7 +147,7 @@ public sealed class AthleteSearchTests
     private static async Task AssertTwoStageSearchAsync(SaveStore store, Guid saveId)
     {
         SearchAthletesHandler handler = new(store);
-        SearchAthletesResponse activePage = await handler.HandleAsync(saveId, SearchAthletesQuery.Empty with { MinNonPoolSeasons = 1, Take = 2000 }).ConfigureAwait(false);
+        SearchAthletesResponse activePage = await handler.HandleAsync(saveId, SearchAthletesQuery.Empty with { MinNonPoolSeasons = 1, Take = 500 }).ConfigureAwait(false);
         activePage.TotalCount.ShouldBe(768);
         activePage.Results.All(e => e.NonPoolSeasons >= 1).ShouldBeTrue();
 
@@ -178,7 +178,7 @@ public sealed class AthleteSearchTests
         pool.IsActive.ShouldBeFalse();
 
         SearchAthletesResponse filtered = await handler.HandleAsync(saveId, new SearchAthletesQuery(
-            null, 1, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 2000)).ConfigureAwait(false);
+            null, 1, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 500)).ConfigureAwait(false);
         filtered.TotalCount.ShouldBe(768);
         filtered.Results.All(e => e.NonPoolSeasons >= 1).ShouldBeTrue();
     }
@@ -340,10 +340,18 @@ public sealed class AthleteSearchTests
         }
 
         SearchAthletesResponse poolNow = await handler.HandleAsync(
-            saveId, SearchAthletesQuery.Empty with { CurrentLeagues = ["Common pool"], MinNonPoolSeasons = 1, Take = 2000 }).ConfigureAwait(false);
+            saveId, SearchAthletesQuery.Empty with { CurrentLeagues = ["Common pool"], MinNonPoolSeasons = 1, Take = 500 }).ConfigureAwait(false);
         poolNow.TotalCount.ShouldBe(768);
         poolNow.Results.All(e => !e.IsActive && e.NonPoolSeasons >= 1).ShouldBeTrue();
-        poolNow.Results.Any(e => e.AthleteId == activeId).ShouldBeTrue();
+        string activePoolName;
+        using (SaveDbContext context = store.OpenDbContext(saveId))
+        {
+            activePoolName = await context.SaveAthletes.AsNoTracking().Where(e => e.Id == activeId).Select(e => e.Name).SingleAsync().ConfigureAwait(false);
+        }
+
+        SearchAthletesResponse targeted = await handler.HandleAsync(
+            saveId, SearchAthletesQuery.Empty with { Search = activePoolName, CurrentLeagues = ["Common pool"], Take = 10 }).ConfigureAwait(false);
+        targeted.Results.Any(e => e.AthleteId == activeId).ShouldBeTrue();
     }
 
     private static SearchAthletesFilter.Candidate BuildCandidate(

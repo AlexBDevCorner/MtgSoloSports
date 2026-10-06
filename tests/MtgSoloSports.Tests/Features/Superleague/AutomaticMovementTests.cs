@@ -254,7 +254,7 @@ public sealed class AutomaticMovementTests
         List<LeagueEntity> feedersThree = await context.Leagues.AsNoTracking()
             .Where(e => e.SeasonId == seasonThree.Id && e.Kind == (int)LeagueKind.Feeder)
             .ToListAsync().ConfigureAwait(false);
-        LeagueEntity whiteFeeder = feedersThree.Single(l => l.SportingColor == (int)SportingColor.White);
+        LeagueEntity whiteFeeder = feedersThree.Single(l => l.SportingColor == (int)SportingColor.White && l.FeederDivision == (int)MtgSoloSports.SimulationKernel.Leagues.FeederDivision.First);
         int whiteCount = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == seasonThree.Id && e.LeagueId == whiteFeeder.Id).ConfigureAwait(false);
         int superCount = await context.SeasonMemberships

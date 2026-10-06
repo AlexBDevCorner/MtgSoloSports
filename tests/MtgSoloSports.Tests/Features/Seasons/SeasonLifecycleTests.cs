@@ -338,7 +338,7 @@ public sealed class SeasonLifecycleTests
         RulesV1 rules = RulesV1.CreateDefault();
         SeasonEntity season = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == seasonNumber).ConfigureAwait(false);
         List<LeagueEntity> leagues = await context.Leagues.AsNoTracking().Where(e => e.SeasonId == season.Id).ToListAsync().ConfigureAwait(false);
-        leagues.Count.ShouldBe(9);
+        leagues.Count.ShouldBe(25);
         LeagueEntity superleague = leagues.Single(l => l.Kind == (int)LeagueKind.Superleague);
         foreach (LeagueEntity league in leagues)
         {
@@ -360,7 +360,7 @@ public sealed class SeasonLifecycleTests
         memberships.Count.ShouldBe(rules.TotalAthletesInSave);
         memberships.Select(m => m.SaveAthleteId).Distinct().Count().ShouldBe(rules.TotalAthletesInSave);
         int active = memberships.Count(m => m.LeagueId is not null);
-        active.ShouldBe((8 * 32) + 32);
+        active.ShouldBe((24 * 32) + 32);
         Dictionary<int, LeagueEntity> byId = leagues.ToDictionary(l => l.Id);
         foreach (SeasonMembershipEntity membership in memberships.Where(m => m.LeagueId is not null && m.LeagueId != superleague.Id))
         {

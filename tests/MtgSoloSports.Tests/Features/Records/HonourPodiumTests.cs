@@ -253,7 +253,7 @@ public sealed class HonourPodiumTests
                 .Select(h => $"{h.SeasonId}:{h.LeagueId}:{h.HonourKind}:{h.AthleteId}")
                 .ToList();
             keys.Distinct(StringComparer.Ordinal).Count().ShouldBe(keys.Count);
-            response.Honours.Count.ShouldBe(24);
+            response.Honours.Count.ShouldBe(72);
 
             int anyAthlete = response.Honours[0].AthleteId;
             ListHonoursResponse filtered = await listHandler.HandleAsync(saveId, anyAthlete);

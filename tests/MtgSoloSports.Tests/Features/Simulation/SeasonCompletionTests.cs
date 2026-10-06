@@ -27,7 +27,7 @@ public sealed class SeasonCompletionTests
         {
             SaveStore.CreationRecord created = await store.CreateAsync("Stage Sync", 111UL, 222UL, UniverseTestCatalog.Build());
             List<int> allLeagues = await AllLeagueIdsAsync(store, created.Detail.SaveId);
-            allLeagues.Count.ShouldBe(8);
+            allLeagues.Count.ShouldBe(24);
             int first = allLeagues[0];
 
             CompleteStageHandler completer = new(store);
@@ -82,12 +82,12 @@ public sealed class SeasonCompletionTests
 
             List<int> sequentialLeagues = await AllLeagueIdsAsync(store, viaSequential.Detail.SaveId);
             List<int> bulkLeagues = await AllLeagueIdsAsync(store, viaBulk.Detail.SaveId);
-            sequentialLeagues.Count.ShouldBe(8);
-            bulkLeagues.Count.ShouldBe(8);
+            sequentialLeagues.Count.ShouldBe(24);
+            bulkLeagues.Count.ShouldBe(24);
 
-            // Path A: eight sequential single-league completions in canonical id order.
+            // Path A: 24 sequential single-league completions in canonical id order.
             CompleteStageHandler single = new(store);
-            List<string> sequentialChecksums = new(8);
+            List<string> sequentialChecksums = new(24);
             foreach (int leagueId in sequentialLeagues)
             {
                 CompleteStageResponse completed = await single.HandleAsync(viaSequential.Detail.SaveId, leagueId);
@@ -102,7 +102,7 @@ public sealed class SeasonCompletionTests
             bulkResponse.CompletedStage.ShouldBe(1);
             bulkResponse.GlobalStageAfter.ShouldBe(2);
             bulkResponse.IsSeasonComplete.ShouldBeFalse();
-            bulkResponse.Leagues.Count.ShouldBe(8);
+            bulkResponse.Leagues.Count.ShouldBe(24);
             bulkResponse.Leagues.Select(l => l.StageChecksum).ShouldBe(sequentialChecksums);
 
             // RNG-after commits identically for equivalent operation order.
@@ -135,7 +135,7 @@ public sealed class SeasonCompletionTests
             CompleteStageForAllLeaguesResponse response = await bulk.HandleAsync(created.Detail.SaveId);
 
             response.CompletedStage.ShouldBe(1);
-            response.Leagues.Count.ShouldBe(5);
+            response.Leagues.Count.ShouldBe(21);
             response.GlobalStageAfter.ShouldBe(2);
 
             GetSeasonProgressHandler progress = new(store);

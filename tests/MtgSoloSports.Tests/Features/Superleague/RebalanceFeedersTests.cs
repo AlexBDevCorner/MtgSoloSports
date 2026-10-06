@@ -437,21 +437,7 @@ public sealed class RebalanceFeedersTests
             RebalanceFeedersHandler handler = new(store);
             RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId);
 
-            // Underfilled multi-league case: every feeder loses 4 to Superleague, draws 4.
-            response.TotalDeparted.ShouldBe(32);
-            response.TotalReturned.ShouldBe(0);
-            response.Departed.Count.ShouldBe(32);
-            response.Returned.Count.ShouldBe(0);
-            foreach (RebalanceColorResult color in response.Colors)
-            {
-                color.StartingCount.ShouldBe(32);
-                color.DepartedCount.ShouldBe(4);
-                color.ReturnedCount.ShouldBe(0);
-                color.ProvisionalCount.ShouldBe(28);
-                color.ProvisionalCount.ShouldBe(
-                    color.StartingCount - color.DepartedCount + color.ReturnedCount);
-                color.FinalCount.ShouldBe(32);
-            }
+            AssertTieredInauguralColors(response);
 
             foreach (RebalanceMovementMember member in response.Departed)
             {
@@ -517,6 +503,34 @@ public sealed class RebalanceFeedersTests
         again.TotalDeparted.ShouldBe(response.TotalDeparted);
     }
 
+    private static void AssertTieredInauguralColors(RebalanceFeedersResponse response)
+    {
+        response.TotalDeparted.ShouldBe(32);
+        response.TotalReturned.ShouldBe(0);
+        response.Departed.Count.ShouldBe(32);
+        response.Returned.Count.ShouldBe(0);
+        response.Colors.Count.ShouldBe(24);
+        response.Colors.Count(c => c.ProvisionalCount == 28).ShouldBe(8);
+        response.Colors.Count(c => c.ProvisionalCount == 32).ShouldBe(16);
+        foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 28))
+        {
+            color.StartingCount.ShouldBe(32);
+            color.DepartedCount.ShouldBe(4);
+            color.ReturnedCount.ShouldBe(0);
+            color.ProvisionalCount.ShouldBe(28);
+            color.FinalCount.ShouldBe(32);
+        }
+
+        foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 32))
+        {
+            color.StartingCount.ShouldBe(32);
+            color.DepartedCount.ShouldBe(0);
+            color.ReturnedCount.ShouldBe(0);
+            color.ProvisionalCount.ShouldBe(32);
+            color.FinalCount.ShouldBe(32);
+        }
+    }
+
     private static async Task<(RebalanceFeedersResponse Response, string Root)> RunInauguralRebalanceAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
@@ -564,7 +578,7 @@ public sealed class RebalanceFeedersTests
             .Where(e => e.SeasonId == seasonTwo.Id)
             .OrderBy(e => e.Id)
             .ToListAsync().ConfigureAwait(false);
-        leagues.Count.ShouldBe(9);
+        leagues.Count.ShouldBe(25);
 
         foreach (LeagueEntity league in leagues)
         {

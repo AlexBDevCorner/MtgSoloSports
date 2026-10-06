@@ -39,7 +39,7 @@ public sealed class AthleteRecordHoldingsTests
             RecordEntry feeder = records.Records.Single(r =>
                 string.Equals(r.RecordKey, RecordKey.FeederTitles, StringComparison.Ordinal));
             feeder.Value.ShouldBe(1);
-            feeder.Holders.Count.ShouldBe(8);
+            feeder.Holders.Count.ShouldBe(24);
 
             await AssertTiedHoldersMatchAsync(store, saveId, feeder);
             await AssertSampleMatchesFilteredGlobalAsync(store, saveId, records);

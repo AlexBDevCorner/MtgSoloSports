@@ -51,8 +51,8 @@ public sealed class QualifierStepTests
         try
         {
             RunQualifierResponse response = await new RunQualifierHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("a5394e936536530e55f79040a54d52a22fb27ab63df5afa04650642f378cfbb0");
-            (await LoadRngAsync(store, saveId)).ShouldBe((7116585901650728893L, 6161L));
+            response.Checksum.ShouldBe("dc12bcc8557734b41ccf710c51031488a20aa82e99e06d61340c3fb09f2aae96");
+            (await LoadRngAsync(store, saveId)).ShouldBe((-1970775041327548483L, 6161L));
         }
         finally
         {

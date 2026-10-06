@@ -122,10 +122,12 @@ public sealed class FeederDivisionPersistenceTests
             ListHistoryCompetitionsResponse competitionsResponse =
                 await competitions.HandleAsync(created.Detail.SaveId, 1);
             competitionsResponse.Competitions.Count.ShouldBe(24);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.First).ShouldBe(8);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.Second).ShouldBe(8);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.Third).ShouldBe(8);
             foreach (HistoryCompetitionSummary summary in competitionsResponse.Competitions)
             {
-                summary.FeederDivision.ShouldBe((int)FeederDivision.First);
-                summary.LeagueLevel.ShouldBe(nameof(LeagueLevel.Feeder1));
+                (summary.FeederDivision is 1 or 2 or 3).ShouldBeTrue();
             }
 
             using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
