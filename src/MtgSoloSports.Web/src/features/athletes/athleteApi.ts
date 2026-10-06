@@ -42,6 +42,10 @@ export interface AthleteSeason {
   leagueId: number | null;
   leagueName: string | null;
   leagueKind: number | null;
+  /** Tier identity ("Superleague", "Feeder1", ...); null for pool seasons. */
+  leagueLevel?: string | null;
+  /** Persisted feeder division (0 legacy v1); null for pool seasons. */
+  feederDivision?: number | null;
   roundWins: number;
   stageWins: number;
   stageSeconds: number;
@@ -67,6 +71,9 @@ export interface AthleteMovement {
   toLeagueName: string;
   kind: string;
   fromSeasonRank: number;
+  /** Adjacent-tier source/destination; null for the common pool. */
+  fromLeagueLevel?: string | null;
+  toLeagueLevel?: string | null;
 }
 
 export interface AthleteCupSelection {

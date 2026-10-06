@@ -6,6 +6,10 @@ export interface SeasonProgressLeague {
   leagueId: number;
   leagueName: string;
   leagueKind: string;
+  /** Persisted feeder division (0 Superleague/legacy, 1..3 tiered). */
+  feederDivision?: number | null;
+  /** Tier identity ("Superleague", "Feeder1"..) without name parsing. */
+  leagueLevel?: string | null;
   currentStage: number | null;
   completedStages: number;
   isLeagueComplete: boolean;
@@ -101,6 +105,8 @@ export interface Season1LeagueRoster {
   leagueName: string;
   sportingColor: string;
   leagueId: number;
+  feederDivision?: number | null;
+  leagueLevel?: string | null;
   athletes: Season1RosterAthlete[];
 }
 

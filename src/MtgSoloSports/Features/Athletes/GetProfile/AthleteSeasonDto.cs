@@ -2,6 +2,11 @@ namespace MtgSoloSports.Features.Athletes.GetProfile;
 
 /// <summary>
 /// One season of an athlete's history for presentation.
+/// LeagueLevel carries the tier identity ("Superleague", "Feeder1",
+/// "Feeder2", "Feeder3") derived from league rows without parsing league
+/// names (MSS-060); FeederDivision carries the persisted division (0 for
+/// historical v1 single-feeder rows, which display as the original "Feeder").
+/// Both are null for pool/inactive seasons.
 /// </summary>
 public sealed record AthleteSeasonDto(
     int SeasonNumber,
@@ -19,4 +24,6 @@ public sealed record AthleteSeasonDto(
     int EarnedBonusThousandths,
     int TotalChampionshipPointsThousandths,
     int TotalStageScoreThousandths,
-    int TotalBaseScoreThousandths);
+    int TotalBaseScoreThousandths,
+    string? LeagueLevel = null,
+    int? FeederDivision = null);

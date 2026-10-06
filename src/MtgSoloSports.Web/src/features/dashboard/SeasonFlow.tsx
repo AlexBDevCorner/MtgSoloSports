@@ -109,9 +109,23 @@ export function SeasonFlow({
             <p className="muted">{next.explanation}</p>
           </div>
           {next.kind === 'live' ? (
-            <Link to={livePath(saveId)} className="primary-button">
-              Go to Live
-            </Link>
+            <div className="live-buttons">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={running}
+                aria-busy={running}
+                title={`Completes stage ${next.globalStage} for all ${next.leagueCount} leagues in one backend operation.`}
+                onClick={() => {
+                  void runNext();
+                }}
+              >
+                {running ? 'Completing…' : `Complete stage ${next.globalStage} for all ${next.leagueCount} leagues`}
+              </button>
+              <Link to={livePath(saveId)} className="ghost-button">
+                Go to Live
+              </Link>
+            </div>
           ) : next.liveEvent ? (
             <div className="live-buttons">
               <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">

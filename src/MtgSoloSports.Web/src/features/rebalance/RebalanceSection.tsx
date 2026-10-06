@@ -105,13 +105,17 @@ export function RebalanceSection({
 
   const leagues = buildRebalanceLeagues(result);
   const changed = leagues.filter((league) => league.hasChanges).length;
+  const structural =
+    (result.totalRebalancedUp ?? 0) > 0 || (result.totalRebalancedDown ?? 0) > 0
+      ? ` · ${result.totalRebalancedUp ?? 0} up / ${result.totalRebalancedDown ?? 0} down the cascade (structural)`
+      : '';
   return (
     <RebalanceReveal
       result={result}
       leagues={leagues}
       revealKey={`rebalance:${result.fromSeasonNumber}:${result.toSeasonNumber}:${result.movementCount}:${result.totalDeparted}:${result.totalReturned}`}
       title={`Season ${result.fromSeasonNumber} → Season ${result.toSeasonNumber} · feeder rebalance`}
-      meta={`${leagues.length} feeder leagues · ${changed} changed · ${result.totalDeparted} to Superleague · ${result.totalReturned} returning · ${result.totalDisplaced} to pool · ${result.totalDrawn} drawn · persisted result, never resimulated.`}
+      meta={`${leagues.length} feeder leagues · ${changed} changed · ${result.totalDeparted} to Superleague · ${result.totalReturned} returning · ${result.totalDisplaced} to pool · ${result.totalDrawn} drawn${structural} · persisted result, never resimulated.`}
       saveId={saveId}
       initialMode="complete"
     />

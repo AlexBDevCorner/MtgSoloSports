@@ -36,7 +36,8 @@ public sealed class SearchAthletesHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates = await LoadCandidatesAsync(context, cancellationToken).ConfigureAwait(false);
-        return MapPaged(saveId, candidates, query);
+        Dictionary<string, (string Level, int Division)> levels = await LoadLeagueLevelsByNameAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapPaged(saveId, candidates, query, levels);
     }
 
     public async Task<SearchAthletesOptionsResponse> HandleOptionsAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -49,13 +50,42 @@ public sealed class SearchAthletesHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates = await LoadCandidatesAsync(context, cancellationToken).ConfigureAwait(false);
-        return MapOptions(saveId, candidates);
+        Dictionary<string, (string Level, int Division)> levels = await LoadLeagueLevelsByNameAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapOptions(saveId, candidates, levels);
+    }
+
+    /// <summary>
+    /// Tier identity per league name for search display (MSS-060). League
+    /// names are stable per division ("White League" is always F1, "White
+    /// League F2" always F2); the first persisted row wins and no name is
+    /// ever parsed. Pool athletes carry no tier.
+    /// </summary>
+    internal static async Task<Dictionary<string, (string Level, int Division)>> LoadLeagueLevelsByNameAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .OrderBy(e => e.SeasonId)
+            .ThenBy(e => e.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<string, (string Level, int Division)> levels = new(StringComparer.Ordinal);
+        foreach (LeagueEntity league in leagues)
+        {
+            if (!levels.ContainsKey(league.Name))
+            {
+                levels[league.Name] = (LeagueEntityLevels.GetLevel(league).ToString(), league.FeederDivision);
+            }
+        }
+
+        return levels;
     }
 
     internal static SearchAthletesResponse MapPaged(
         Guid saveId,
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
-        SearchAthletesQuery query)
+        SearchAthletesQuery query,
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
     {
         IReadOnlyList<SearchAthletesFilter.Candidate> filtered = SearchAthletesFilter.ApplyFilters(candidates, query);
         (string sort, string dir) = query.EffectiveSort();
@@ -65,13 +95,24 @@ public sealed class SearchAthletesHandler
         List<AthleteSearchResultDto> page = sorted
             .Skip(skip)
             .Take(take)
-            .Select(MapResult)
+            .Select(c => MapResult(c, levelsByName))
             .ToList();
         return new SearchAthletesResponse(saveId, filtered.Count, skip, take, page);
     }
 
-    internal static AthleteSearchResultDto MapResult(SearchAthletesFilter.Candidate candidate)
+    internal static AthleteSearchResultDto MapResult(
+        SearchAthletesFilter.Candidate candidate,
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
     {
+        string? level = null;
+        int? division = null;
+        if (candidate.IsActive && candidate.CurrentLeagueName is not null && levelsByName is not null
+            && levelsByName.TryGetValue(candidate.CurrentLeagueName, out (string Level, int Division) resolved))
+        {
+            level = resolved.Level;
+            division = resolved.Division;
+        }
+
         return new AthleteSearchResultDto(
             candidate.AthleteId,
             candidate.Name,
@@ -92,14 +133,19 @@ public sealed class SearchAthletesHandler
             candidate.SuperSeasons,
             candidate.CupAppearances,
             candidate.CupPodiums,
-            candidate.CupTitles);
+            candidate.CupTitles,
+            level,
+            division);
     }
 
-    internal static SearchAthletesOptionsResponse MapOptions(Guid saveId, IReadOnlyList<SearchAthletesFilter.Candidate> candidates)
+    internal static SearchAthletesOptionsResponse MapOptions(
+        Guid saveId,
+        IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
     {
         IReadOnlyList<AthleteSearchColourOption> colours = BuildColourOptions(candidates);
         IReadOnlyList<AthleteSearchTypeOption> types = BuildTypeOptions(candidates);
-        IReadOnlyList<AthleteSearchLeagueOption> leagues = BuildLeagueOptions(candidates);
+        IReadOnlyList<AthleteSearchLeagueOption> leagues = BuildLeagueOptions(candidates, levelsByName);
         int maxNonPool = candidates.Count == 0 ? 0 : candidates.Max(e => e.NonPoolSeasons);
         int maxHonours = candidates.Count == 0 ? 0 : candidates.Max(e => e.HonoursCount);
         int maxTitles = candidates.Count == 0 ? 0 : candidates.Max(e => e.TitlesCount);
@@ -154,7 +200,8 @@ public sealed class SearchAthletesHandler
     }
 
     private static IReadOnlyList<AthleteSearchLeagueOption> BuildLeagueOptions(
-        IReadOnlyList<SearchAthletesFilter.Candidate> candidates)
+        IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
     {
         Dictionary<string, AthleteSearchLeagueOption> leagues = new(StringComparer.Ordinal);
         foreach (SearchAthletesFilter.Candidate candidate in candidates)
@@ -162,13 +209,22 @@ public sealed class SearchAthletesHandler
             string name = candidate.IsActive ? (candidate.CurrentLeagueName ?? "League") : SearchAthletesFilter.PoolLeagueName;
             bool isPool = !candidate.IsActive;
             int? kind = candidate.IsActive ? candidate.CurrentLeagueKind : null;
+            string? level = null;
+            int? division = null;
+            if (!isPool && levelsByName is not null
+                && levelsByName.TryGetValue(name, out (string Level, int Division) resolved))
+            {
+                level = resolved.Level;
+                division = resolved.Division;
+            }
+
             if (leagues.TryGetValue(name, out AthleteSearchLeagueOption? existing))
             {
                 leagues[name] = existing with { Count = checked(existing.Count + 1) };
             }
             else
             {
-                leagues[name] = new AthleteSearchLeagueOption(name, kind, isPool, 1);
+                leagues[name] = new AthleteSearchLeagueOption(name, kind, isPool, 1, level, division);
             }
         }
 

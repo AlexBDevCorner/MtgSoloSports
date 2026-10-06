@@ -25,3 +25,14 @@ describe('history layout', () => {
     assert.ok(!page.includes('Open the <Link'));
   });
 });
+
+describe('pyramid history (MSS-060)', () => {
+  it('groups competitions by tier from data instead of a flat league list', () => {
+    assert.ok(page.includes('groupLeaguesByTier'), 'competitions group by tier from data');
+    assert.ok(page.includes("label={'Feeder 1'}") || page.includes("'Feeder 1'"), 'feeder divisions are explicit groups');
+  });
+
+  it('links the qualifier phase to the qualifier overview with boundary identity', () => {
+    assert.ok(page.includes('qualifiersPath(saveId'), 'history links to qualifiers');
+  });
+});

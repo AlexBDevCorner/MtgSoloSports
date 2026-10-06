@@ -17,6 +17,13 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type`).
 - `/saves/:saveId/cups/:cup/teams/:teamKey` — one Cup team's history.
 - `/saves/:saveId/athletes/:athleteId`
+- `/saves/:saveId/qualifiers?season=<n>` — qualifier overview (MSS-060): one
+  row per qualifier of the transition (1 for v1 saves, 17 for tiered saves:
+  Superleague plus 8 F1↔F2 and 8 F2↔F3 colors) with completion state from
+  persisted facts.
+- `/saves/:saveId/qualifiers/superleague?season=<n>` — one Superleague qualifier.
+- `/saves/:saveId/qualifiers/f1f2/:color?season=<n>` — one F1↔F2 qualifier.
+- `/saves/:saveId/qualifiers/f2f3/:color?season=<n>` — one F2↔F3 qualifier.
 
 Helpers in `features/routing/routes.ts` build and parse every shape; pages
 share them instead of hand-rolling URLs.
@@ -55,7 +62,20 @@ share them instead of hand-rolling URLs.
   Dashboard, where the next legal step is already waiting; finishing or
   skipping the reveal never runs that next step.
 - History postseason: `event` and `group` (with `season` and `round`) replay a
-  postseason event's stored rounds; unknown event keys are ignored.
+  postseason event's stored rounds; unknown event keys are ignored. The
+  `event=qualifier` replay covers Superleague qualifier rounds; tiered feeder
+  qualifiers replay per boundary/color on the qualifier pages below.
+- Qualifiers (MSS-060): qualifier identity is route data, never an implicit
+  "latest Superleague qualifier". `season` is the source season and falls back
+  to the latest resolved qualifiers; `f1f2`/`f2f3` name the feeder boundary and
+  `:color` the sporting color (any case, URL-encoded). The Superleague detail
+  has no color segment. The same detail page serves 32-athlete Superleague and
+  16-athlete feeder fields from data (field size, roles, rounds, top-8 cutoff).
+  Running qualifiers happens in place (single or remaining, canonical backend
+  order, idempotent); the player never has to return to the Dashboard between
+  qualifiers. Tier labels everywhere come from backend tier identity
+  (`leagueLevel`/`feederDivision`/`boundary`); league names are never parsed,
+  and historical v1 rows keep their original single-feeder "Feeder" label.
 - Cups: the path alone identifies the page. `:season` must be a positive
   integer and `:cup` one of `color`/`type`; anything else is `notFound` (the
   hub is no longer a catch-all for `/cups/...`). `teams` is a reserved segment.

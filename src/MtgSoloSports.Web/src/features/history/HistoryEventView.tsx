@@ -12,6 +12,8 @@ import {
 } from '../events/eventsApi';
 import { EVENT_TITLES, isTeamEvent, roundLabel, type EventKey } from '../events/eventModel';
 import { RoundReveal } from '../reveal/RoundReveal';
+import { Link } from '../routing/router';
+import { qualifiersPath } from '../routing/routes';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -101,6 +103,13 @@ export function HistoryEventView({
   return (
     <>
       <div className="toolbar" role="group" aria-label="Event round">
+        {event === 'qualifier' ? (
+          <p className="muted small">
+            This replay covers the Superleague qualifier rounds. Tiered seasons resolve 16 more
+            feeder qualifiers —{' '}
+            <Link to={qualifiersPath(saveId, { season })}>open all qualifiers with boundary and color</Link>.
+          </p>
+        ) : null}
         {team ? (
           <label className="field">
             <span>Group</span>

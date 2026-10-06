@@ -1,9 +1,11 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { groupLeaguesByTier } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, livePath, recordsPath, savesPath, standingsPath } from '../routing/routes';
+import { cupsPath, livePath, recordsPath, savesPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import type { DashboardData } from './useDashboard';
 import { FastForwardSeason } from './FastForwardSeason';
+import { FeederLeaders } from './FeederLeaders';
 import { SeasonFlow } from './SeasonFlow';
 import './DashboardPage.css';
 
@@ -70,9 +72,28 @@ export function DashboardPage({
   } = data;
   const completedTotal = progress.leagues.reduce((sum, league) => sum + league.completedStages, 0);
   const superleagueBoard = leaders.find((board) => board.leagueKind === 'Superleague') ?? null;
-  const feederBoards = leaders
-    .filter((board) => board.leagueKind !== 'Superleague')
-    .sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  const tierGroups = groupLeaguesByTier(
+    progress.leagues.map((league) => ({
+      leagueId: league.leagueId,
+      name: league.leagueName,
+      kind: league.leagueKind,
+      feederDivision: league.feederDivision ?? null,
+      leagueLevel: league.leagueLevel ?? null,
+    })),
+  );
+  const tierSections = (
+    [
+      ['Superleague', tierGroups.superleague],
+      ['Feeder 1', tierGroups.feeder1],
+      ['Feeder 2', tierGroups.feeder2],
+      ['Feeder 3', tierGroups.feeder3],
+      ['Feeder', tierGroups.legacyFeeder],
+    ] as const
+  ).filter(([, rows]) => rows.length > 0);
+  const leagueById = new Map(progress.leagues.map((league) => [league.leagueId, league]));
+  const onTrackCount = progress.leagues.filter(
+    (league) => league.isLeagueComplete || league.currentStage === progress.globalStage,
+  ).length;
   const cupHonours = recentHonours.filter((honour) => honour.honourKind.includes('Cup'));
   const leagueHonours = recentHonours.filter((honour) => !honour.honourKind.includes('Cup'));
   const recordPreview = (records?.records ?? []).slice(0, 6);
@@ -294,57 +315,7 @@ export function DashboardPage({
           ) : null}
         </Card>
 
-        <Card
-          eyebrow="Leaders"
-          title="Feeder leagues — current leaders"
-          action={
-            <Link to={livePath(saveId)} className="ghost-button">
-              Open live
-            </Link>
-          }
-          info={
-            <p>
-              Feeder champion is auto-promoted; places 2–4 enter the qualifier. Zones are visual
-              only and never change selection math.
-            </p>
-          }
-        >
-          {feederBoards.length === 0 ? (
-            <p className="muted">No feeder leagues in this season.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">League</th>
-                    <th scope="col">Leader</th>
-                    <th scope="col" className="numeric">Champ pts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {feederBoards.map((board) => {
-                    const leader = board.top[0];
-                    return (
-                      <tr key={board.leagueId}>
-                        <td>{board.leagueName}</td>
-                        <td>
-                          {leader ? (
-                            <AthleteLink saveId={saveId} athleteId={leader.athleteId} name={leader.name} />
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td className="numeric">
-                          {leader ? formatPoints(leader.totalChampionshipPointsThousandths) : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+        <FeederLeaders saveId={saveId} leagues={progress.leagues} />
 
         <Card
           eyebrow="Leagues"
@@ -366,40 +337,62 @@ export function DashboardPage({
               <p>{error}</p>
             </Notice>
           ) : null}
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                    <th scope="col">League</th>
-                    <th scope="col">Kind</th>
-                    <th scope="col" className="numeric">Current stage</th>
-                    <th scope="col" className="numeric">Completed</th>
-                    <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...progress.leagues]
-                  .sort((a, b) => a.leagueId - b.leagueId)
-                  .map((league) => (
-                    <tr key={league.leagueId}>
-                      <td>{league.leagueName}</td>
-                      <td>{league.leagueKind}</td>
-                      <td className="numeric">{league.currentStage ?? '—'}</td>
-                      <td className="numeric">{league.completedStages} / 32</td>
-                      <td>
-                        {league.isLeagueComplete ? (
-                          <span className="badge badge-done">Complete</span>
-                        ) : league.currentStage === progress.globalStage ? (
-                          <span className="badge badge-ready">Ready</span>
-                        ) : (
-                          <span className="badge badge-wait">Waiting</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
+          <p className="muted small">
+            {progress.isSeasonComplete
+              ? `Season complete — ${progress.leagues.length} leagues × 32 stages persisted.`
+              : `Stage ${progress.globalStage}/32 · ${onTrackCount}/${progress.leagues.length} leagues on the global stage · ${completedTotal}/${progress.leagues.length * 32} league-stages persisted.`}
+          </p>
+          {tierSections.map(([label, rows]) => {
+            const tierCompleted = rows.reduce(
+              (sum, row) => sum + (leagueById.get(row.leagueId)?.completedStages ?? 0),
+              0,
+            );
+            return (
+              <section key={label} aria-label={`${label} stage progress`}>
+                <h3 className="reveal-subhead">
+                  {label} — {rows.length} league{rows.length === 1 ? '' : 's'} · {tierCompleted}/{rows.length * 32} league-stages
+                </h3>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">League</th>
+                        <th scope="col" className="numeric">Current stage</th>
+                        <th scope="col" className="numeric">Completed</th>
+                        <th scope="col">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => {
+                        const league = leagueById.get(row.leagueId);
+                        if (!league) {
+                          return null;
+                        }
+                        return (
+                          <tr key={league.leagueId}>
+                            <td>
+                              <Link to={standingsLeaguePath(saveId, league.leagueId)}>{league.leagueName}</Link>
+                            </td>
+                            <td className="numeric">{league.currentStage ?? '—'}</td>
+                            <td className="numeric">{league.completedStages} / 32</td>
+                            <td>
+                              {league.isLeagueComplete ? (
+                                <span className="badge badge-done">Complete</span>
+                              ) : league.currentStage === progress.globalStage ? (
+                                <span className="badge badge-ready">Ready</span>
+                              ) : (
+                                <span className="badge badge-wait">Waiting</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })}
         </Card>
 
         <Card

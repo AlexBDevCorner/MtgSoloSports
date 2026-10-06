@@ -5,11 +5,12 @@ import {
   boundariesForMovement,
   buildMovementBoundaries,
   buildRevealOrder,
+  buildTieredMovementBoundaries,
   directionGlyph,
   directionLabel,
   stepDescription,
 } from './movementModel.ts';
-import type { AutomaticMovement, InauguralRosterMember, MovementMember } from './movementApi.ts';
+import type { AutomaticMovement, FeederMovementMember, FeederMovements, InauguralRosterMember, MovementMember } from './movementApi.ts';
 
 function member(overrides: Partial<MovementMember> & { athleteId: number }): MovementMember {
   return {
@@ -36,11 +37,12 @@ function movement(): AutomaticMovement {
     safe: [],
     promoted: [
       member({ athleteId: 1, fromLeagueName: 'White League', toLeagueName: 'Superleague' }),
-      member({ athleteId: 2, fromLeagueName: 'Blue League', toLeagueName: 'Superleague' }),
+      member({ athleteId: 2, sportingColor: 'Blue', fromLeagueName: 'Blue League', toLeagueName: 'Superleague' }),
     ],
     relegated: [
       member({
         athleteId: 3,
+        sportingColor: 'Blue',
         fromLeagueId: 9,
         fromLeagueName: 'Superleague',
         fromSeasonRank: 25,
@@ -148,8 +150,7 @@ describe('movement boundaries', () => {
     assert.equal(white.steps[0]!.imageUrl, 'https://img.test/white.jpg');
   });
 
-  it('labels direction with text and glyphs, never colour alone', () => {
-    assert.equal(directionLabel('promoted'), 'PROMOTED');
+  it('labels direction with text and glyphs, never colour alone', () => {    assert.equal(directionLabel('promoted'), 'PROMOTED');
     assert.equal(directionLabel('relegated'), 'RELEGATED');
     assert.equal(directionGlyph('promoted'), '▲');
     assert.equal(directionGlyph('relegated'), '▼');
@@ -166,6 +167,95 @@ describe('movement boundaries', () => {
         imageUrl: null,
       }),
       'Card 1 promoted from White League to Superleague',
+    );
+  });
+});
+
+function feederMember(overrides: Partial<FeederMovementMember> & { athleteId: number }): FeederMovementMember {
+  return {
+    name: `Card ${overrides.athleteId}`,
+    sportingColor: 0,
+    sportingColorName: 'White',
+    boundaryId: 1,
+    boundary: 'Feeder1Feeder2',
+    fromLeagueId: 2,
+    fromLeagueName: 'White League F2',
+    fromLeagueLevel: 'Feeder2',
+    fromSeasonRank: 1,
+    toLeagueId: 1,
+    toLeagueName: 'White League',
+    toLeagueLevel: 'Feeder1',
+    movementKind: 'FeederAutomaticPromotion',
+    imageUrl: null,
+    ...overrides,
+  };
+}
+
+describe('tiered movement boundaries (MSS-060)', () => {
+  it('groups F1↔Superleague movement by color with qualifier designations as notes', () => {
+    const sl: AutomaticMovement = {
+      ...movement(),
+      qualifierIncumbents: [
+        member({ athleteId: 10, fromLeagueName: 'Superleague', toLeagueName: 'Superleague', movementKind: 'QualifierIncumbent', sportingColor: 'White' }),
+      ],
+      qualifierChallengers: [
+        member({ athleteId: 11, fromLeagueName: 'White League', toLeagueName: 'White League', movementKind: 'QualifierChallenger', fromSeasonRank: 2, sportingColor: 'White' }),
+      ],
+    };
+    const boundaries = buildTieredMovementBoundaries(sl, null);
+    assert.equal(boundaries.length, 2);
+    assert.ok(boundaries.every((boundary) => boundary.boundaryLabel === 'Feeder 1 ↔ Superleague'));
+    const white = boundaries.find((boundary) => boundary.key === 'Superleague:White')!;
+    assert.equal(white.promoted.length, 1);
+    assert.equal(white.relegated.length, 2);
+    assert.match(white.qualifierNote ?? '', /1 incumbent.*1 challenger/);
+    // Qualifier designations never become steps.
+    assert.equal(white.steps.length, 3);
+  });
+
+  it('groups feeder boundaries by boundary then color from tier identity', () => {
+    const feeders: FeederMovements = {
+      saveId: 'save-1',
+      fromSeasonNumber: 2,
+      toSeasonNumber: 3,
+      movementCount: 4,
+      movements: [
+        feederMember({ athleteId: 1 }),
+        feederMember({ athleteId: 2, movementKind: 'FeederAutomaticRelegation', fromLeagueId: 1, fromLeagueName: 'White League', fromLeagueLevel: 'Feeder1', fromSeasonRank: 25, toLeagueId: 2, toLeagueName: 'White League F2', toLeagueLevel: 'Feeder2' }),
+        feederMember({ athleteId: 3, movementKind: 'FeederQualifierIncumbent', fromLeagueId: 1, fromLeagueName: 'White League', fromLeagueLevel: 'Feeder1', fromSeasonRank: 17, toLeagueId: 1, toLeagueName: 'White League', toLeagueLevel: 'Feeder1' }),
+        feederMember({ athleteId: 4, boundaryId: 2, boundary: 'Feeder2Feeder3', movementKind: 'FeederQualifierChallenger', fromLeagueId: 3, fromLeagueName: 'White League F3', fromLeagueLevel: 'Feeder3', fromSeasonRank: 9, toLeagueId: 3, toLeagueName: 'White League F3', toLeagueLevel: 'Feeder3', sportingColorName: 'White' }),
+      ],
+    };
+    const boundaries = buildTieredMovementBoundaries(null, feeders);
+    assert.deepEqual(
+      boundaries.map((boundary) => boundary.key),
+      ['Feeder1Feeder2:White', 'Feeder2Feeder3:White'],
+    );
+    const f1f2 = boundaries[0]!;
+    assert.equal(f1f2.boundaryLabel, 'Feeder 1 ↔ Feeder 2');
+    assert.equal(f1f2.superleagueName, 'White League');
+    assert.equal(f1f2.feederLeagueName, 'White League F2');
+    assert.deepEqual(
+      f1f2.steps.map((step) => step.direction),
+      ['relegated', 'promoted'],
+    );
+    assert.match(f1f2.qualifierNote ?? '', /1 incumbent/);
+    const f2f3 = boundaries[1]!;
+    assert.equal(f2f3.steps.length, 0);
+    assert.match(f2f3.qualifierNote ?? '', /1 challenger/);
+  });
+
+  it('orders reveal top-down: Superleague boundary before feeder boundaries', () => {
+    const boundaries = buildTieredMovementBoundaries(movement(), {
+      saveId: 'save-1',
+      fromSeasonNumber: 2,
+      toSeasonNumber: 3,
+      movementCount: 1,
+      movements: [feederMember({ athleteId: 1 })],
+    });
+    assert.deepEqual(
+      boundaries.map((boundary) => boundary.boundaryLabel),
+      ['Feeder 1 ↔ Superleague', 'Feeder 1 ↔ Superleague', 'Feeder 1 ↔ Feeder 2'],
     );
   });
 });

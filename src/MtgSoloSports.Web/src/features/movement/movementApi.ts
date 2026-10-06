@@ -12,9 +12,13 @@ export interface MovementMember {
   sportingColor: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** Tier identity of the source league ("Superleague", "Feeder1", ...). */
+  fromLeagueLevel?: string | null;
   fromSeasonRank: number;
   toLeagueId: number;
   toLeagueName: string;
+  /** Tier identity of the destination league; null for pool sentinels. */
+  toLeagueLevel?: string | null;
   movementKind: string;
   imageUrl: string | null;
 }
@@ -79,4 +83,47 @@ export async function fetchInauguralRoster(
   return fetchJson<InauguralRoster>(`/api/saves/${saveId}/superleague/inaugural`, {
     signal,
   });
+}
+
+/**
+ * One athlete in the persisted competitive feeder movement (MSS-060).
+ * Covers F1↔F2 and F2↔F3 automatic promotions/relegations plus qualifier
+ * incumbents/challengers with adjacent-tier source/destination identity.
+ */
+export interface FeederMovementMember {
+  athleteId: number;
+  name: string;
+  sportingColor: number;
+  sportingColorName: string;
+  boundaryId: number;
+  boundary: string;
+  fromLeagueId: number;
+  fromLeagueName: string;
+  fromLeagueLevel: string;
+  fromSeasonRank: number;
+  toLeagueId: number;
+  toLeagueName: string;
+  toLeagueLevel: string | null;
+  movementKind: string;
+  imageUrl: string | null;
+}
+
+/** Persisted feeder automatic movement for one season transition. */
+export interface FeederMovements {
+  saveId: string;
+  fromSeasonNumber: number;
+  toSeasonNumber: number;
+  movements: FeederMovementMember[];
+  movementCount: number;
+}
+
+export async function fetchFeederMovements(
+  saveId: string,
+  fromSeason: number,
+  signal?: AbortSignal,
+): Promise<FeederMovements> {
+  return fetchJson<FeederMovements>(
+    `/api/saves/${saveId}/feeder-movements?fromSeason=${fromSeason}`,
+    { signal },
+  );
 }

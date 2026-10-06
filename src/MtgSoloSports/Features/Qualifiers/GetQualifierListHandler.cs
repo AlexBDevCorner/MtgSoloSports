@@ -126,6 +126,8 @@ public sealed class GetQualifierListHandler
             .ToList();
 
         List<GetQualifierEventResponse> events = new(groups.Count);
+        Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
         foreach (var group in groups)
         {
             QualifierBoundary boundary = (QualifierBoundary)group.Key.QualifierBoundary;
@@ -137,7 +139,7 @@ public sealed class GetQualifierListHandler
                     && r.QualifierSportingColor == group.Key.QualifierSportingColor)
                 .OrderBy(r => r.RoundNumber)
                 .ToList();
-            events.Add(MapEvent(saveId, source, next, boundary, color, eventStandings, eventRounds));
+            events.Add(MapEvent(saveId, source, next, boundary, color, eventStandings, eventRounds, names, leagueNames));
         }
 
         return new GetQualifierListResponse(saveId, source.SeasonNumber, next.SeasonNumber, events);
@@ -167,7 +169,27 @@ public sealed class GetQualifierListHandler
                 && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == storageColor)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
-        return MapEvent(saveId, source, next, boundary, sportingColor, standings, rounds);
+        Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapEvent(saveId, source, next, boundary, sportingColor, standings, rounds, names, leagueNames);
+    }
+
+    internal static async Task<Dictionary<int, string>> LoadNamesAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        return await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<Dictionary<int, string>> LoadLeagueNamesAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        return await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     internal static GetQualifierEventResponse MapEvent(
@@ -177,7 +199,9 @@ public sealed class GetQualifierListHandler
         QualifierBoundary boundary,
         int? sportingColor,
         List<QualifierStandingEntity> standings,
-        List<QualifierRoundEntity> rounds)
+        List<QualifierRoundEntity> rounds,
+        IReadOnlyDictionary<int, string>? names = null,
+        IReadOnlyDictionary<int, string>? leagueNames = null)
     {
         string colorName = sportingColor.HasValue
             ? ((SportingColor)sportingColor.Value).ToString()
@@ -196,7 +220,7 @@ public sealed class GetQualifierListHandler
             rngAfterStream = unchecked((ulong)rounds[^1].RngAfterStream);
         }
 
-        List<QualifierEventMember> members = MapMembers(standings);
+        List<QualifierEventMember> members = MapMembers(standings, names, leagueNames);
         return new GetQualifierEventResponse(
             saveId,
             source.SeasonNumber,
@@ -216,16 +240,27 @@ public sealed class GetQualifierListHandler
             members);
     }
 
-    internal static List<QualifierEventMember> MapMembers(List<QualifierStandingEntity> standings)
+    internal static List<QualifierEventMember> MapMembers(
+        List<QualifierStandingEntity> standings,
+        IReadOnlyDictionary<int, string>? names = null,
+        IReadOnlyDictionary<int, string>? leagueNames = null)
     {
         List<QualifierEventMember> members = new(standings.Count);
         foreach (QualifierStandingEntity standing in standings.OrderBy(s => s.QualifierRank))
         {
+            string name = names is not null && names.TryGetValue(standing.SaveAthleteId, out string? resolvedName)
+                ? resolvedName
+                : $"Athlete {standing.SaveAthleteId}";
+            string leagueName = leagueNames is not null && leagueNames.TryGetValue(standing.FromLeagueId, out string? resolvedLeague)
+                ? resolvedLeague
+                : $"League {standing.FromLeagueId}";
             members.Add(new QualifierEventMember(
                 standing.SaveAthleteId,
+                name,
                 ((SportingColor)standing.SportingColor).ToString(),
                 ((QualifierRole)standing.Role).ToString(),
                 standing.FromLeagueId,
+                leagueName,
                 standing.FromSeasonRank,
                 standing.QualifierRank,
                 standing.QualifierScoreThousandths,

@@ -26,4 +26,6 @@ public sealed record AthleteSearchResultDto(
     int SuperSeasons,
     int CupAppearances,
     int CupPodiums,
-    int CupTitles);
+    int CupTitles,
+    string? CurrentLeagueLevel = null,
+    int? CurrentLeagueDivision = null);

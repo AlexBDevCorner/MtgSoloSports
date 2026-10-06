@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balancedText,
+  buildRebalanceCascades,
   buildRebalanceLeagues,
   buildRebalanceRevealOrder,
   churnLine,
@@ -346,5 +347,104 @@ describe('rebalance leagues', () => {
     assert.ok(line.includes('5 returning'));
     assert.ok(line.includes('2 to pool'));
     assert.ok(line.includes('1 drawn'));
+  });
+});
+
+function tieredResult(): RebalanceResult {
+  const base = result();
+  return {
+    ...base,
+    colors: [
+      { leagueId: 21, leagueName: 'White League', sportingColor: 'White', startingCount: 32, departedCount: 1, returnedCount: 1, provisionalCount: 32, displacedCount: 0, drawnCount: 0, finalCount: 32, feederDivision: 1, rebalancedUpIn: 1, rebalancedUpOut: 0, rebalancedDownIn: 0, rebalancedDownOut: 2 },
+      { leagueId: 22, leagueName: 'White League F2', sportingColor: 'White', startingCount: 32, departedCount: 0, returnedCount: 0, provisionalCount: 32, displacedCount: 0, drawnCount: 0, finalCount: 32, feederDivision: 2, rebalancedUpIn: 2, rebalancedUpOut: 1, rebalancedDownIn: 2, rebalancedDownOut: 2 },
+      { leagueId: 23, leagueName: 'White League F3', sportingColor: 'White', startingCount: 32, departedCount: 0, returnedCount: 0, provisionalCount: 32, displacedCount: 1, drawnCount: 1, finalCount: 32, feederDivision: 3, rebalancedUpIn: 0, rebalancedUpOut: 2, rebalancedDownIn: 2, rebalancedDownOut: 0 },
+    ],
+    departed: [
+      member({ athleteId: 1, name: 'White Champ', fromLeagueId: 21, fromLeagueName: 'White League', toLeagueId: 9, toLeagueName: 'Superleague', kind: 'SuperleagueDeparture', fromSeasonRank: 1 }),
+    ],
+    returned: [
+      member({ athleteId: 2, name: 'White Back', fromLeagueId: 9, fromLeagueName: 'Superleague', toLeagueId: 21, toLeagueName: 'White League', kind: 'SuperleagueReturn', fromSeasonRank: 25 }),
+    ],
+    displaced: [
+      member({ athleteId: 3, name: 'White Low', fromLeagueId: 23, fromLeagueName: 'White League F3', toLeagueId: 0, toLeagueName: 'Common Pool', kind: 'RebalanceDisplacement', fromSeasonRank: 32 }),
+    ],
+    draws: [
+      member({ athleteId: 4, name: 'White Draw', fromLeagueId: 0, fromLeagueName: 'Common Pool', toLeagueId: 23, toLeagueName: 'White League F3', kind: 'RebalanceDraw', fromSeasonRank: 0 }),
+    ],
+    rebalancedUp: [
+      member({ athleteId: 5, name: 'White Up', fromLeagueId: 22, fromLeagueName: 'White League F2', toLeagueId: 21, toLeagueName: 'White League', kind: 'RebalanceUp', fromSeasonRank: 1 }),
+    ],
+    rebalancedDown: [
+      member({ athleteId: 6, name: 'White Down', fromLeagueId: 21, fromLeagueName: 'White League', toLeagueId: 22, toLeagueName: 'White League F2', kind: 'RebalanceDown', fromSeasonRank: 32 }),
+    ],
+    totalDeparted: 1,
+    totalReturned: 1,
+    totalDisplaced: 1,
+    totalDrawn: 1,
+    totalRebalancedUp: 1,
+    totalRebalancedDown: 1,
+  };
+}
+
+describe('tiered rebalance cascades (MSS-060)', () => {
+  it('attributes Superleague moves to F1 and pool moves to F3 only', () => {
+    const leagues = buildRebalanceLeagues(tieredResult());
+    assert.equal(leagues.length, 3);
+    const f1 = leagues.find((league) => league.leagueName === 'White League')!;
+    assert.equal(f1.feederDivision, 1);
+    assert.equal(f1.departed.length, 1);
+    assert.equal(f1.returned.length, 1);
+    assert.equal(f1.displaced.length, 0);
+    assert.equal(f1.drawn.length, 0);
+    const f3 = leagues.find((league) => league.leagueName === 'White League F3')!;
+    assert.equal(f3.departed.length, 0);
+    assert.equal(f3.returned.length, 0);
+    assert.equal(f3.displaced.length, 1);
+    assert.equal(f3.drawn.length, 1);
+  });
+
+  it('shows structural up/down arrivals and departures per division', () => {
+    const leagues = buildRebalanceLeagues(tieredResult());
+    const f1 = leagues.find((league) => league.leagueName === 'White League')!;
+    assert.equal(f1.upIn, 1);
+    assert.equal(f1.downOut, 2);
+    assert.deepEqual(f1.structuralIn.map((step) => step.movementType), ['up']);
+    assert.deepEqual(f1.structuralOut.map((step) => step.movementType), ['down']);
+    const f2 = leagues.find((league) => league.leagueName === 'White League F2')!;
+    assert.deepEqual(f2.structuralOut.map((step) => step.name), ['White Up']);
+    assert.deepEqual(f2.structuralIn.map((step) => step.name), ['White Down']);
+  });
+
+  it('groups divisions into per-color cascades ordered F1 → F2 → F3', () => {
+    const cascades = buildRebalanceCascades(tieredResult());
+    assert.equal(cascades.length, 1);
+    assert.equal(cascades[0]!.sportingColor, 'White');
+    assert.deepEqual(
+      cascades[0]!.divisions.map((league) => league.leagueName),
+      ['White League', 'White League F2', 'White League F3'],
+    );
+    // Structural moves touch two divisions but count once per color.
+    assert.equal(cascades[0]!.total, 6);
+  });
+
+  it('reveals each structural athlete once across the cascade', () => {
+    const leagues = buildRebalanceLeagues(tieredResult());
+    const order = buildRebalanceRevealOrder(leagues);
+    assert.equal(order.length, 6);
+    assert.deepEqual(
+      order.map((step) => step.athleteId).sort((a, b) => a - b),
+      [1, 2, 3, 4, 5, 6],
+    );
+  });
+
+  it('labels structural moves with text and counts them in churn', () => {
+    assert.equal(movementLabel('up'), 'UP (STRUCTURAL)');
+    assert.equal(movementLabel('down'), 'DOWN (STRUCTURAL)');
+    const input = tieredResult();
+    const churn = churnSummary(input, buildRebalanceLeagues(input));
+    assert.equal(churn.totalUp, 1);
+    assert.equal(churn.totalDown, 1);
+    assert.equal(churn.totalAffected, 6);
+    assert.ok(churnLine(churn).includes('1 up / 1 down the cascade (structural)'));
   });
 });

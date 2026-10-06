@@ -323,6 +323,7 @@ public sealed class GetAutomaticMovementHandler
             images.TryGetValue(row.SaveAthleteId, out string? imageUrl);
             nextByAthlete.TryGetValue(row.SaveAthleteId, out SeasonMembershipEntity? nextMembership);
             string color = nextMembership is null ? "Unknown" : ((SportingColor)nextMembership.SportingColor).ToString();
+            string level = LeagueEntityLevels.GetLevel(sourceSuperleague).ToString();
             members.Add(new AutomaticMovementMember(
                 row.SaveAthleteId,
                 name ?? $"Athlete {row.SaveAthleteId}",
@@ -333,7 +334,9 @@ public sealed class GetAutomaticMovementHandler
                 nextSuperleague.Id,
                 nextSuperleague.Name,
                 "Safe",
-                imageUrl));
+                imageUrl,
+                level,
+                level));
         }
 
         if (members.Count != 16)
@@ -366,6 +369,9 @@ public sealed class GetAutomaticMovementHandler
             string toName = leaguesById.TryGetValue(toLeague, out LeagueEntity? to)
                 ? to.Name
                 : $"League {toLeague}";
+            string? toLevel = leaguesById.TryGetValue(toLeague, out LeagueEntity? toForLevel)
+                ? LeagueEntityLevels.GetLevel(toForLevel).ToString()
+                : null;
             string color = nextMembership is null
                 ? ((SportingColor)movement.SportingColor).ToString()
                 : ((SportingColor)nextMembership.SportingColor).ToString();
@@ -379,7 +385,9 @@ public sealed class GetAutomaticMovementHandler
                 toLeague,
                 toName,
                 kind.ToString(),
-                imageUrl));
+                imageUrl,
+                from is null ? null : LeagueEntityLevels.GetLevel(from).ToString(),
+                toLevel));
         }
 
         return members;

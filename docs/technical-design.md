@@ -188,7 +188,13 @@ The core identity is always `16 safe + 8 champions + 8 qualifier = 32`.
 The qualifier (`qualifier`, 32 × 16 rounds), Color Cup individual
 (`color-cup-individual`, 32 × 16), Color Cup team (`color-cup-team`, 4 groups ×
 8 rounds) and Type Cup team (`type-cup-team`, 4 groups × 8 rounds) can be
-played one round at a time, exactly like league rounds:
+played one round at a time, exactly like league rounds. Tiered saves resolve
+16 additional feeder qualifiers (8 F1↔F2 plus 8 F2↔F3, each 16 athletes × 16
+rounds) as one-shot events in canonical order via `POST
+…/qualifiers/{boundary}/{color}` or together via `POST …/qualifiers/run-all`;
+all 17 read back through `GET …/qualifiers` with boundary/color identity for
+the MSS-060 overview. The Dashboard lifecycle keeps one `RunQualifier` step
+for the whole phase in both modes. Round-by-round play:
 
 - Step slices `POST …/superleague/qualifier/rounds/next`,
   `…/cups/color/individual/rounds/next`, `…/cups/color/team/rounds/next` and

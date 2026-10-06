@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const page = readFileSync(join(here, 'DashboardPage.tsx'), 'utf8');
+const leaders = readFileSync(join(here, 'FeederLeaders.tsx'), 'utf8');
 const css = readFileSync(join(here, 'DashboardPage.css'), 'utf8');
 
 describe('dashboard layout', () => {
@@ -24,8 +25,21 @@ describe('dashboard layout', () => {
 
   it('keeps contextual links and moves system notes behind info', () => {
     assert.ok(page.includes('standingsPath(saveId)'), 'stage gate links to standings');
-    assert.ok((page.match(/info=\{/g) ?? []).length >= 5, 'system notes live in info disclosures');
+    const disclosures = (page.match(/info=\{/g) ?? []).length + (leaders.match(/info=\{/g) ?? []).length;
+    assert.ok(disclosures >= 5, 'system notes live in info disclosures');
     assert.ok(page.includes("import './DashboardPage.css'"), 'feature stylesheet is loaded');
+  });
+
+  it('groups the stage gate by pyramid tier instead of a flat league wall', () => {
+    assert.ok(page.includes('groupLeaguesByTier'), 'leagues group by tier from data');
+    assert.ok(page.includes('league-stages'), 'tier rollups summarize progress');
+    assert.ok(page.includes('standingsLeaguePath(saveId'), 'leagues link to their tables');
+  });
+
+  it('loads feeder leaders on demand per division', () => {
+    assert.ok(page.includes('<FeederLeaders'), 'dashboard mounts on-demand feeder leaders');
+    assert.ok(leaders.includes('fetchCurrentStandings'), 'division tabs fetch standings on demand');
+    assert.ok(leaders.includes('Feeder 1'), 'division tabs name tiers explicitly');
   });
 
   it('never forces horizontal scroll on phones', () => {

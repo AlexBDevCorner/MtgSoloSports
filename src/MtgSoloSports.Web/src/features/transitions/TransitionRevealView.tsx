@@ -5,14 +5,19 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { TRANSITION_TITLES, type TransitionKey } from '../events/eventModel';
 import { Link } from '../routing/router';
 import { dashboardPath, standingsPath } from '../routing/routes';
-import { boundariesForInaugural, boundariesForMovement } from '../movement/movementModel';
+import { boundariesForInaugural, boundariesForMovement, buildTieredMovementBoundaries } from '../movement/movementModel';
 import {
   fetchAutomaticMovement,
+  fetchFeederMovements,
   fetchInauguralRoster,
   type AutomaticMovement,
+  type FeederMovements,
   type InauguralRoster,
 } from '../movement/movementApi';
 import { MovementReveal } from '../movement/MovementReveal';
+import { QualifierOutcomeSection } from '../movement/QualifierOutcomeSection';
+import { fetchQualifierList, type QualifierList } from '../qualifiers/qualifierApi';
+import { qualifierOutcomeGroups } from '../qualifiers/qualifierModel';
 import { buildRebalanceLeagues } from '../rebalance/rebalanceModel';
 import { fetchRebalanceResult, type RebalanceResult } from '../rebalance/rebalanceApi';
 import { RebalanceReveal } from '../rebalance/RebalanceReveal';
@@ -118,6 +123,8 @@ function NotResolved({ saveId, season, transition }: { saveId: string; season: n
 
 function MovementTransition({ saveId, season }: { saveId: string; season: number }) {
   const [movement, setMovement] = useState<AutomaticMovement | null>(null);
+  const [feeders, setFeeders] = useState<FeederMovements | null>(null);
+  const [qualifiers, setQualifiers] = useState<QualifierList | null>(null);
   const [inaugural, setInaugural] = useState<InauguralRoster | null>(null);
   const [loading, setLoading] = useState(true);
   const [notResolved, setNotResolved] = useState(false);
@@ -127,6 +134,8 @@ function MovementTransition({ saveId, season }: { saveId: string; season: number
     const controller = new AbortController();
     const { signal } = controller;
     setMovement(null);
+    setFeeders(null);
+    setQualifiers(null);
     setInaugural(null);
     setLoading(true);
     setNotResolved(false);
@@ -140,6 +149,20 @@ function MovementTransition({ saveId, season }: { saveId: string; season: number
         } else {
           const resolved = await fetchAutomaticMovement(saveId, season, signal);
           setMovement(resolved);
+          try {
+            setFeeders(await fetchFeederMovements(saveId, season, signal));
+          } catch (failure) {
+            if (!(failure instanceof ApiError && failure.status === 404)) {
+              throw failure;
+            }
+          }
+          try {
+            setQualifiers(await fetchQualifierList(saveId, season, signal));
+          } catch (failure) {
+            if (!(failure instanceof ApiError && failure.status === 404)) {
+              throw failure;
+            }
+          }
         }
         setLoading(false);
       } catch (failure: unknown) {
@@ -206,23 +229,26 @@ function MovementTransition({ saveId, season }: { saveId: string; season: number
     );
   }
 
-  const boundaries = boundariesForMovement(movement!);
+  const boundaries = feeders ? buildTieredMovementBoundaries(movement!, feeders) : boundariesForMovement(movement!);
+  const automaticCount = boundaries.reduce((sum, boundary) => sum + boundary.total, 0);
+  const outcomes = qualifierOutcomeGroups(qualifiers);
   return (
     <div className="live-layout">
       <TransitionSidebar
         title={`Promotion & relegation · Season ${movement!.fromSeasonNumber} → Season ${movement!.toSeasonNumber}`}
-        detail={`${boundaries.length} league boundaries · ${movement!.promoted.length} promoted · ${movement!.relegated.length} relegated · persisted movements, never resimulated.`}
+        detail={`${boundaries.length} league boundaries · ${automaticCount} automatic moves · persisted movements, never resimulated.`}
         saveId={saveId}
       />
       <section className="live-main" aria-label="Promotion and relegation reveal">
         <MovementReveal
           boundaries={boundaries}
-          revealKey={`movement:${movement!.fromSeasonNumber}:${movement!.toSeasonNumber}:${movement!.movementCount}`}
+          revealKey={`movement:${movement!.fromSeasonNumber}:${movement!.toSeasonNumber}:${movement!.movementCount}:${feeders?.movementCount ?? 0}`}
           title={`Season ${movement!.fromSeasonNumber} → Season ${movement!.toSeasonNumber}`}
-          meta={`${boundaries.length} league boundaries · ${movement!.promoted.length} promoted · ${movement!.relegated.length} relegated · persisted movements, never resimulated.`}
+          meta={`${boundaries.length} league boundaries · ${automaticCount} automatic moves · persisted movements, never resimulated.`}
           saveId={saveId}
           initialMode="reveal"
         />
+        <QualifierOutcomeSection saveId={saveId} season={movement!.fromSeasonNumber} groups={outcomes} />
         <TransitionContinue saveId={saveId} />
       </section>
     </div>
@@ -290,11 +316,16 @@ function RebalanceTransition({ saveId, season }: { saveId: string; season: numbe
 
   const leagues = buildRebalanceLeagues(result);
   const changed = leagues.filter((league) => league.hasChanges).length;
+  const structural =
+    (result.totalRebalancedUp ?? 0) > 0 || (result.totalRebalancedDown ?? 0) > 0
+      ? ` · ${result.totalRebalancedUp ?? 0} up / ${result.totalRebalancedDown ?? 0} down the cascade (structural)`
+      : '';
+  const summary = `${leagues.length} feeder leagues · ${changed} changed · ${result.totalDeparted} to Superleague · ${result.totalReturned} returning · ${result.totalDisplaced} to pool · ${result.totalDrawn} drawn${structural} · persisted result, never resimulated.`;
   return (
     <div className="live-layout">
       <TransitionSidebar
         title={`Feeder rebalance · Season ${result.fromSeasonNumber} → Season ${result.toSeasonNumber}`}
-        detail={`${leagues.length} feeder leagues · ${changed} changed · ${result.totalDeparted} to Superleague · ${result.totalReturned} returning · ${result.totalDisplaced} to pool · ${result.totalDrawn} drawn · persisted result, never resimulated.`}
+        detail={summary}
         saveId={saveId}
       />
       <section className="live-main" aria-label="Feeder rebalance reveal">
@@ -303,7 +334,7 @@ function RebalanceTransition({ saveId, season }: { saveId: string; season: numbe
           leagues={leagues}
           revealKey={`rebalance:${result.fromSeasonNumber}:${result.toSeasonNumber}:${result.movementCount}:${result.totalDeparted}:${result.totalReturned}`}
           title={`Season ${result.fromSeasonNumber} → Season ${result.toSeasonNumber} · feeder rebalance`}
-          meta={`${leagues.length} feeder leagues · ${changed} changed · ${result.totalDeparted} to Superleague · ${result.totalReturned} returning · ${result.totalDisplaced} to pool · ${result.totalDrawn} drawn · persisted result, never resimulated.`}
+          meta={summary}
           saveId={saveId}
           initialMode="reveal"
         />

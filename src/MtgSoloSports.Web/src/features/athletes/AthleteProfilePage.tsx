@@ -1,5 +1,6 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { leagueLevelLabel, movementKindLabel } from '../../shared/leagueTiers';
 import { Link } from '../routing/router';
 import { dashboardPath, livePath, savesPath } from '../routing/routes';
 import { medalBadge } from '../cups/cupFormat';
@@ -8,6 +9,14 @@ import type { AthleteProfileState } from './useAthleteProfile';
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
+}
+
+/** Adjacent-tier prefix for a movement endpoint ("[Feeder 1]", or nothing for the pool). */
+function movementTierPrefix(level: string | null | undefined): string {
+  if (!level) {
+    return '';
+  }
+  return `[${leagueLevelLabel(level, null, null)}] `;
 }
 
 /** Display-only projection of a fixed-point bonus (no sporting math). */
@@ -278,13 +287,14 @@ export function AthleteProfilePage({
                         {movement.fromSeasonNumber} → {movement.toSeasonNumber}
                       </td>
                       <td>
-                        <span className="badge badge-wait">{movement.kind}</span>
+                        <span className="badge badge-wait">{movementKindLabel(movement.kind)}</span>
                         {movement.fromSeasonRank > 0 ? (
                           <span className="card-sub"> · P{movement.fromSeasonRank}</span>
                         ) : null}
                       </td>
                       <td>
-                        {movement.fromLeagueName} → {movement.toLeagueName}
+                        {movementTierPrefix(movement.fromLeagueLevel)} {movement.fromLeagueName} →{' '}
+                        {movementTierPrefix(movement.toLeagueLevel)} {movement.toLeagueName}
                       </td>
                     </tr>
                   ))}
@@ -395,7 +405,21 @@ export function AthleteProfilePage({
                 {seasons.map((season) => (
                   <tr key={season.seasonNumber}>
                     <td className="numeric">{season.seasonNumber}</td>
-                    <td>{season.wasActive ? (season.leagueName ?? 'Active') : 'Pool'}</td>
+                    <td>
+                      {season.wasActive ? (
+                        <>
+                          {season.leagueName ?? 'Active'}
+                          {season.leagueLevel != null || season.feederDivision != null ? (
+                            <span className="card-sub">
+                              {' '}
+                              · {leagueLevelLabel(season.leagueLevel ?? null, season.feederDivision ?? null, null)}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        'Pool'
+                      )}
+                    </td>
                     <td className="numeric">
                       {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
                       {season.isChampion ? ' · Champion' : ''}

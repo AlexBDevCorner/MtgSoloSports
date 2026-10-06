@@ -32,6 +32,8 @@ const AUDITED_TABLES = [
   'features/live/LiveEventView.tsx',
   'features/live/LivePage.tsx',
   'features/movement/MovementReveal.tsx',
+  'features/movement/QualifierOutcomeSection.tsx',
+  'features/qualifiers/QualifiersPage.tsx',
   'features/rebalance/RebalanceReveal.tsx',
   'features/records/RecordsPage.tsx',
   'features/reveal/RoundReveal.tsx',

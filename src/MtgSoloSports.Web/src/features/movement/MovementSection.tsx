@@ -7,14 +7,20 @@ import { dashboardPath } from '../routing/routes';
 import {
   boundariesForInaugural,
   boundariesForMovement,
+  buildTieredMovementBoundaries,
 } from './movementModel';
 import {
   fetchAutomaticMovement,
+  fetchFeederMovements,
   fetchInauguralRoster,
   type AutomaticMovement,
+  type FeederMovements,
   type InauguralRoster,
 } from './movementApi';
 import { MovementReveal } from './MovementReveal';
+import { QualifierOutcomeSection } from './QualifierOutcomeSection';
+import { fetchQualifierList, type QualifierList } from '../qualifiers/qualifierApi';
+import { qualifierOutcomeGroups } from '../qualifiers/qualifierModel';
 
 /**
  * Promotion/relegation section for the Standings page.
@@ -37,6 +43,8 @@ export function MovementSection({
   isSeasonComplete: boolean;
 }) {
   const [movement, setMovement] = useState<AutomaticMovement | null>(null);
+  const [feeders, setFeeders] = useState<FeederMovements | null>(null);
+  const [qualifiers, setQualifiers] = useState<QualifierList | null>(null);
   const [inaugural, setInaugural] = useState<InauguralRoster | null>(null);
   const [loading, setLoading] = useState(true);
   const [notResolved, setNotResolved] = useState(false);
@@ -46,6 +54,8 @@ export function MovementSection({
     const controller = new AbortController();
     const { signal } = controller;
     setMovement(null);
+    setFeeders(null);
+    setQualifiers(null);
     setInaugural(null);
     setLoading(true);
     setNotResolved(false);
@@ -59,6 +69,26 @@ export function MovementSection({
         } else {
           const resolved = await fetchAutomaticMovement(saveId, seasonNumber, signal);
           setMovement(resolved);
+          // Tiered saves additionally persist competitive feeder movement
+          // (F1↔F2, F2↔F3); v1 saves 404 here and stay on the Superleague board.
+          try {
+            const feederResolved = await fetchFeederMovements(saveId, seasonNumber, signal);
+            setFeeders(feederResolved);
+          } catch (failure) {
+            if (!(failure instanceof ApiError && failure.status === 404)) {
+              throw failure;
+            }
+          }
+          // Qualifier outcomes are a separate persisted phase; absence (404)
+          // means the qualifier has not run yet, not an error.
+          try {
+            const qualifierResolved = await fetchQualifierList(saveId, seasonNumber, signal);
+            setQualifiers(qualifierResolved);
+          } catch (failure) {
+            if (!(failure instanceof ApiError && failure.status === 404)) {
+              throw failure;
+            }
+          }
         }
         setLoading(false);
       } catch (failure: unknown) {
@@ -134,16 +164,24 @@ export function MovementSection({
   }
 
   if (movement) {
-    const boundaries = boundariesForMovement(movement);
+    const tiered = feeders !== null;
+    const boundaries = tiered
+      ? buildTieredMovementBoundaries(movement, feeders)
+      : boundariesForMovement(movement);
+    const automaticCount = boundaries.reduce((sum, boundary) => sum + boundary.total, 0);
+    const outcomes = qualifierOutcomeGroups(qualifiers);
     return (
-      <MovementReveal
-        boundaries={boundaries}
-        revealKey={`movement:${movement.fromSeasonNumber}:${movement.toSeasonNumber}:${movement.movementCount}`}
-        title={`Season ${movement.fromSeasonNumber} → Season ${movement.toSeasonNumber}`}
-        meta={`${boundaries.length} league boundaries · ${movement.promoted.length} promoted · ${movement.relegated.length} relegated · persisted movements, never resimulated.`}
-        saveId={saveId}
-        initialMode="complete"
-      />
+      <>
+        <MovementReveal
+          boundaries={boundaries}
+          revealKey={`movement:${movement.fromSeasonNumber}:${movement.toSeasonNumber}:${movement.movementCount}:${feeders?.movementCount ?? 0}`}
+          title={`Season ${movement.fromSeasonNumber} → Season ${movement.toSeasonNumber}`}
+          meta={`${boundaries.length} league boundaries · ${automaticCount} automatic moves${tiered ? ` (${movement.promoted.length} promoted to Superleague, ${movement.relegated.length} relegated)` : ` · ${movement.promoted.length} promoted · ${movement.relegated.length} relegated`} · persisted movements, never resimulated.`}
+          saveId={saveId}
+          initialMode="complete"
+        />
+        <QualifierOutcomeSection saveId={saveId} season={movement.fromSeasonNumber} groups={outcomes} />
+      </>
     );
   }
 
