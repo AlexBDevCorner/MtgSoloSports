@@ -181,6 +181,24 @@ export function qualifierRoleLabel(role: string): string {
   return role === 'Incumbent' ? 'Incumbent' : role === 'Challenger' ? 'Challenger' : role;
 }
 
+/**
+ * Source tier for a qualifier role, from the boundary's persisted bands
+ * (incumbents defend from the upper tier, challengers attack from the lower).
+ */
+export function qualifierRoleTier(role: string, boundary: string): string | null {
+  const upper =
+    boundary === 'Superleague' ? 'Superleague' : boundary === 'Feeder1Feeder2' ? 'Feeder 1' : boundary === 'Feeder2Feeder3' ? 'Feeder 2' : null;
+  const lower =
+    boundary === 'Superleague' ? 'Feeder 1' : boundary === 'Feeder1Feeder2' ? 'Feeder 2' : boundary === 'Feeder2Feeder3' ? 'Feeder 3' : null;
+  if (role === 'Incumbent') {
+    return upper;
+  }
+  if (role === 'Challenger') {
+    return lower;
+  }
+  return null;
+}
+
 export interface QualifierOutcomeGroup {
   key: string;
   boundary: string;

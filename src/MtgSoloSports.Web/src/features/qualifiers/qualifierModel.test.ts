@@ -6,6 +6,7 @@ import {
   qualifierFieldRows,
   qualifierOutcomeLabel,
   qualifierProgressLine,
+  qualifierRoleTier,
 } from './qualifierModel.ts';
 
 function event(overrides: Partial<QualifierEvent> & { boundary: string }): QualifierEvent {
@@ -116,5 +117,14 @@ describe('qualifierFieldRows', () => {
     );
     assert.ok(qualifierProgressLine(entry!).includes('32 athletes'));
     assert.ok(qualifierProgressLine(entry!).includes('top 8 qualify'));
+  });
+
+  it('names the source tier per role from the boundary bands', () => {
+    assert.equal(qualifierRoleTier('Incumbent', 'Superleague'), 'Superleague');
+    assert.equal(qualifierRoleTier('Challenger', 'Superleague'), 'Feeder 1');
+    assert.equal(qualifierRoleTier('Incumbent', 'Feeder1Feeder2'), 'Feeder 1');
+    assert.equal(qualifierRoleTier('Challenger', 'Feeder1Feeder2'), 'Feeder 2');
+    assert.equal(qualifierRoleTier('Incumbent', 'Feeder2Feeder3'), 'Feeder 2');
+    assert.equal(qualifierRoleTier('Challenger', 'Feeder2Feeder3'), 'Feeder 3');
   });
 });

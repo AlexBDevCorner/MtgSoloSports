@@ -20,6 +20,7 @@ import {
   qualifierOutcomeLabel,
   qualifierProgressLine,
   qualifierRoleLabel,
+  qualifierRoleTier,
   type QualifierEntry,
 } from './qualifierModel';
 import {
@@ -607,6 +608,9 @@ export function QualifierDetailPage({
                       </td>
                       <td>
                         {qualifierRoleLabel(row.role)}
+                        {qualifierRoleTier(row.role, event.boundary) ? (
+                          <span className="card-sub"> · {qualifierRoleTier(row.role, event.boundary)}</span>
+                        ) : null}
                         <span className="card-sub"> · {row.fromLeagueName}</span>
                       </td>
                       <td className="numeric">P{row.fromSeasonRank}</td>
