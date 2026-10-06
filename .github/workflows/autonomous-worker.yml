@@ -58,7 +58,7 @@ jobs:
   worker:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 135
+    timeout-minutes: 255
     env:
       GH_REPO: ${{ github.repository }}
       TASK_ID: ${{ inputs.task_id }}
@@ -145,7 +145,7 @@ jobs:
           gh auth setup-git --hostname github.com --force || { echo 'gh auth setup-git failed' >&2; exit 1; }
       - name: Run OpenCode worker
         id: opencode-worker
-        timeout-minutes: 120
+        timeout-minutes: 240
         uses: anomalyco/opencode/github@83abc64a5c4e0e0a5157f2c4435d34131009a404 # pinned 2026-09-19
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
