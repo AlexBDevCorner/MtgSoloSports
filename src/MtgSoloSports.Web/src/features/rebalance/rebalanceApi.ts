@@ -64,10 +64,16 @@ export interface RebalanceResult {
   displaced: RebalanceMovementMember[];
   departed: RebalanceMovementMember[];
   returned: RebalanceMovementMember[];
+  /** Structural F2→F1 / F3→F2 cascade moves (tiered saves). */
+  rebalancedUp?: RebalanceMovementMember[];
+  /** Structural F1→F2 / F2→F3 cascade moves (tiered saves). */
+  rebalancedDown?: RebalanceMovementMember[];
   totalDrawn: number;
   totalDisplaced: number;
   totalDeparted: number;
   totalReturned: number;
+  totalRebalancedUp?: number;
+  totalRebalancedDown?: number;
   poolCount: number;
   movementCount: number;
 }

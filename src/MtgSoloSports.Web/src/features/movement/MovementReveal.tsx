@@ -190,7 +190,8 @@ export function MovementReveal({
       info={
         <div>
           <p>
-            Each boundary pairs one feeder league (below) with the Superleague (above). A relegated
+            Each boundary pairs one lower league (below) with the next league above — the
+            Superleague for Feeder 1, Feeder 1 for Feeder 2, Feeder 2 for Feeder 3. A relegated
             athlete starts in the higher league and moves downward across the boundary; a promoted
             athlete starts in the lower league and moves upward. Tiles land in their destination
             league and stay there.
@@ -263,7 +264,11 @@ export function MovementReveal({
       )}
 
       <div className="movement-boundaries">
-        {boundaries.map((boundary) => {
+        {boundaries.map((boundary, index) => {
+          const previous = index > 0 ? boundaries[index - 1]! : null;
+          const showGroupHeader =
+            boundary.boundaryLabel !== null &&
+            (previous === null || previous.boundaryLabel !== boundary.boundaryLabel);
           const boundaryRevealed = boundary.steps.filter((step) => revealed.has(step.key)).length;
           const isActive = boundary.key === activeKey;
           const upperSteps = boundary.steps.filter(
@@ -279,13 +284,19 @@ export function MovementReveal({
             (step) => step.direction === 'relegated' && !revealed.has(step.key),
           );
           return (
-            <section
-              key={boundary.key}
-              id={`movement-boundary-${boundary.key}`}
-              className={isActive ? 'movement-boundary is-active' : 'movement-boundary'}
-              aria-current={isActive ? 'step' : undefined}
-              aria-label={`${boundary.feederLeagueName} and ${boundary.superleagueName} boundary`}
-            >
+            <>
+              {showGroupHeader ? (
+                <h2 className="reveal-subhead movement-boundary-group" key={`group-${boundary.boundaryLabel}`}>
+                  {boundary.boundaryLabel}
+                </h2>
+              ) : null}
+              <section
+                key={boundary.key}
+                id={`movement-boundary-${boundary.key}`}
+                className={isActive ? 'movement-boundary is-active' : 'movement-boundary'}
+                aria-current={isActive ? 'step' : undefined}
+                aria-label={`${boundary.feederLeagueName} and ${boundary.superleagueName} boundary`}
+              >
               <header className="movement-boundary-head">
                 <h3 className="movement-boundary-title">
                   {boundary.feederLeagueName} ⇄ {boundary.superleagueName}
@@ -295,6 +306,9 @@ export function MovementReveal({
                   {boundaryRevealed}/{boundary.total} revealed
                   {isActive ? ' · active boundary' : ''}
                 </p>
+                {boundary.qualifierNote ? (
+                  <p className="muted small">{boundary.qualifierNote}</p>
+                ) : null}
               </header>
 
               <div className="movement-board">
@@ -364,7 +378,8 @@ export function MovementReveal({
                   </ol>
                 </div>
               </div>
-            </section>
+              </section>
+            </>
           );
         })}
       </div>

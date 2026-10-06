@@ -180,3 +180,60 @@ export function qualifierOutcomeLabel(row: QualifierFieldRow): string {
 export function qualifierRoleLabel(role: string): string {
   return role === 'Incumbent' ? 'Incumbent' : role === 'Challenger' ? 'Challenger' : role;
 }
+
+export interface QualifierOutcomeGroup {
+  key: string;
+  boundary: string;
+  title: string;
+  sportingColorName: string;
+  /** Destination tier the winners take places in. */
+  destination: string;
+  qualified: Array<{ athleteId: number; name: string; role: string; fromSeasonRank: number }>;
+  eliminatedCount: number;
+}
+
+/** Destination tier for qualifier winners, from data (boundary identity). */
+export function qualifierDestination(boundary: string): string {
+  if (boundary === 'Feeder1Feeder2') {
+    return 'Feeder 1';
+  }
+  if (boundary === 'Feeder2Feeder3') {
+    return 'Feeder 2';
+  }
+  return 'Superleague';
+}
+
+/**
+ * Qualifier outcomes per boundary/color for the movement reveal (MSS-060):
+ * who qualified (top-8 cutoff from data) and which tier they take places in.
+ * Automatic movement comes from the movement endpoints; this is the
+ * qualifier-decided counterpart, so the reveal can distinguish the two
+ * without resimulating anything.
+ */
+export function qualifierOutcomeGroups(list: QualifierList | null): QualifierOutcomeGroup[] {
+  if (!list) {
+    return [];
+  }
+  return [...list.events]
+    .sort(
+      (a, b) =>
+        boundaryOrder(a.boundary) * 8 + colorOrder(a.sportingColor) - (boundaryOrder(b.boundary) * 8 + colorOrder(b.sportingColor)),
+    )
+    .map((event) => ({
+      key: `${event.boundary}:${event.sportingColor ?? '-'}`,
+      boundary: event.boundary,
+      title: qualifierBoundaryLabel(event.boundary, event.sportingColorName),
+      sportingColorName: event.sportingColorName,
+      destination: qualifierDestination(event.boundary),
+      qualified: [...event.standings]
+        .filter((member) => member.isQualified)
+        .sort((a, b) => a.qualifierRank - b.qualifierRank)
+        .map((member) => ({
+          athleteId: member.athleteId,
+          name: member.name,
+          role: member.role,
+          fromSeasonRank: member.fromSeasonRank,
+        })),
+      eliminatedCount: event.standings.filter((member) => !member.isQualified).length,
+    }));
+}

@@ -129,6 +129,14 @@
   border-top: 3px double var(--accent);
 }
 
+.rebalance-tile.is-up {
+  border-top: 3px solid var(--accent-hover);
+}
+
+.rebalance-tile.is-down {
+  border-top: 3px dashed var(--accent-hover);
+}
+
 .rebalance-tile.is-latest {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
@@ -173,7 +181,9 @@
 
 .badge-rebalance-returning,
 .badge-rebalance-to-pool,
-.badge-rebalance-drawn {
+.badge-rebalance-drawn,
+.badge-rebalance-up,
+.badge-rebalance-down {
   border: 1px solid var(--line-strong);
   color: inherit;
   font-weight: 800;

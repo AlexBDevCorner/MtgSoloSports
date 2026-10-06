@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink } from '../routing/router';
 import {
   arrivalClass,
@@ -8,6 +9,7 @@ import {
   buildRebalanceRevealOrder,
   churnLine,
   churnSummary,
+  groupRebalanceCascades,
   movementGlyph,
   movementLabel,
   rosterCheckText,
@@ -73,6 +75,10 @@ function MovementBadge({ step }: { step: RebalanceStep }) {
  * Leagues reveal one at a time in alphabetical order; inside a league the
  * sporting sequence is departures to Superleague, returns from Superleague,
  * overflow to the common pool, then draws from the pool.
+ * Tiered saves (MSS-060) group the 24 leagues into per-color cascades
+ * (Feeder 1 → Feeder 2 → Feeder 3): structural up/down moves between tiers
+ * reveal with their destination league, and the common pool connects only to
+ * Feeder 3.
  * `initialMode` selects the first-time presentation explicitly: `'complete'`
  * (default) opens fully revealed so historical revisits land on the stable
  * final state immediately, while `'reveal'` starts face-down so the
@@ -140,6 +146,8 @@ export function RebalanceReveal({
   }, []);
 
   const churn = churnSummary(result, leagues);
+  const cascades = groupRebalanceCascades(leagues);
+  const tiered = cascades.some((cascade) => cascade.divisions.length > 1);
 
   if (total === 0) {
     return (
@@ -204,7 +212,15 @@ export function RebalanceReveal({
             Each feeder league starts at 32 athletes. Athletes leaving for the Superleague move
             upward out of the league; returning athletes move downward into it. Overflow athletes
             move down into the Common Pool and drawn athletes move up out of the pool into the
-            league. Tiles land in their destination and stay there.
+            league.
+            {tiered ? (
+              <>
+                {' '}
+                Tiered leagues additionally cascade structurally between Feeder 1, Feeder 2 and
+                Feeder 3 within each color; the Common Pool connects only to Feeder 3.
+              </>
+            ) : null}{' '}
+            Tiles land in their destination and stay there.
           </p>
           <p>
             The board replays persisted rebalance facts only and never resimulates. Pool draws
@@ -278,7 +294,24 @@ export function RebalanceReveal({
       )}
 
       <div className="rebalance-leagues">
-        {leagues.map((league) => {
+        {cascades.map((cascade) => (
+          <section
+            key={cascade.sportingColor}
+            aria-label={
+              tiered ? `${cascade.sportingColor} cascade through Feeder 1, Feeder 2 and Feeder 3` : `${cascade.sportingColor} rebalance`
+            }
+          >
+            {tiered ? (
+              <h2 className="reveal-subhead">
+                {cascade.sportingColor} cascade —{' '}
+                {cascade.divisions
+                  .map((league) => leagueLevelLabel(null, league.feederDivision, 'Feeder'))
+                  .join(' → ')}{' '}
+                · {cascade.total} movement{cascade.total === 1 ? '' : 's'}
+              </h2>
+            ) : null}
+            {cascade.divisions.map((league) => {
+          const leagueTier = leagueLevelLabel(null, league.feederDivision, 'Feeder');
           const leagueRevealed = league.steps.filter((step) => revealed.has(step.key)).length;
           const isActive = league.key === activeKey;
           if (!league.hasChanges) {
@@ -289,7 +322,7 @@ export function RebalanceReveal({
                 aria-label={`${league.leagueName} unchanged`}
               >
                 <header className="rebalance-league-head">
-                  <h3 className="rebalance-league-title">{league.leagueName}</h3>
+                  <h3 className="rebalance-league-title">{league.leagueName}{tiered ? ` · ${leagueTier}` : ''}</h3>
                   <p className="muted small">No changes · 32 / 32 — BALANCED</p>
                 </header>
                 <p className="muted small">
@@ -303,10 +336,15 @@ export function RebalanceReveal({
           const departedPending = league.departed.filter((step) => !revealed.has(step.key));
           const returnedRevealed = league.returned.filter((step) => revealed.has(step.key));
           const returnedPending = league.returned.filter((step) => !revealed.has(step.key));
+          const structuralInRevealed = league.structuralIn.filter((step) => revealed.has(step.key));
+          const structuralInPending = league.structuralIn.filter((step) => !revealed.has(step.key));
+          const structuralOutRevealed = league.structuralOut.filter((step) => revealed.has(step.key));
+          const structuralOutPending = league.structuralOut.filter((step) => !revealed.has(step.key));
           const displacedRevealed = league.displaced.filter((step) => revealed.has(step.key));
           const displacedPending = league.displaced.filter((step) => !revealed.has(step.key));
           const drawnRevealed = league.drawn.filter((step) => revealed.has(step.key));
           const drawnPending = league.drawn.filter((step) => !revealed.has(step.key));
+          const structuralCount = league.structuralIn.length + league.structuralOut.length;
           return (
             <section
               key={league.key}
@@ -317,10 +355,11 @@ export function RebalanceReveal({
             >
               <header className="rebalance-league-head">
                 <h3 className="rebalance-league-title">
-                  {league.leagueName} · {league.sportingColor}
+                  {league.leagueName} · {league.sportingColor}{tiered ? ` · ${leagueTier}` : ''}
                 </h3>
                 <p className="muted small">
                   {league.departed.length} to Superleague · {league.returned.length} returning ·{' '}
+                  {structuralCount > 0 ? `${structuralCount} structural · ` : ''}
                   {league.displaced.length} to pool · {league.drawn.length} drawn ·{' '}
                   {leagueRevealed}/{league.total} revealed
                   {isActive ? ' · active league' : ''}
@@ -408,9 +447,66 @@ export function RebalanceReveal({
                   </p>
                 </div>
 
+                {structuralCount > 0 ? (
+                  <div className="rebalance-zone">
+                    <p className="rebalance-zone-label">
+                      Structural cascade · up/down a tier within {league.sportingColor}
+                    </p>
+                    <p className="muted small">
+                      Competitive movement is final; the cascade repairs color shortages and
+                      overflows deterministically (best retained move up first, worst retained move
+                      down first). Up {league.upIn} in / {league.upOut} out · down {league.downIn} in /{' '}
+                      {league.downOut} out.
+                    </p>
+                    {league.structuralOut.length > 0 ? (
+                      <ol className="rebalance-tiles" aria-label={`${league.leagueName} structural departures`}>
+                        {structuralOutRevealed.map((step) => (
+                          <RebalanceTile
+                            key={step.key}
+                            step={step}
+                            sequence={order.findIndex((entry) => entry.key === step.key) + 1}
+                            total={total}
+                            isLatest={latest?.key === step.key}
+                            saveId={saveId}
+                          />
+                        ))}
+                        {structuralOutPending.map((step) => (
+                          <PendingTile
+                            key={step.key}
+                            step={step}
+                            sequence={order.findIndex((entry) => entry.key === step.key) + 1}
+                          />
+                        ))}
+                      </ol>
+                    ) : null}
+                    {league.structuralIn.length > 0 ? (
+                      <ol className="rebalance-tiles" aria-label={`${league.leagueName} structural arrivals`}>
+                        {structuralInRevealed.map((step) => (
+                          <RebalanceTile
+                            key={step.key}
+                            step={step}
+                            sequence={order.findIndex((entry) => entry.key === step.key) + 1}
+                            total={total}
+                            isLatest={latest?.key === step.key}
+                            saveId={saveId}
+                          />
+                        ))}
+                        {structuralInPending.map((step) => (
+                          <PendingTile
+                            key={step.key}
+                            step={step}
+                            sequence={order.findIndex((entry) => entry.key === step.key) + 1}
+                          />
+                        ))}
+                      </ol>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <div className="rebalance-zone rebalance-zone-pool">
                   <p className="rebalance-zone-label">
                     Common Pool · shared side area, only affected athletes shown
+                    {tiered ? ' · connects only to Feeder 3' : ''}
                   </p>
                   {!league.needsPoolAdjustment ? (
                     <p className="muted small">
@@ -492,7 +588,9 @@ export function RebalanceReveal({
               </div>
             </section>
           );
-        })}
+            })}
+          </section>
+        ))}
       </div>
 
       {isComplete ? (
