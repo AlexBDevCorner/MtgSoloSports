@@ -144,6 +144,7 @@ jobs:
           set -euo pipefail
           gh auth setup-git --hostname github.com --force || { echo 'gh auth setup-git failed' >&2; exit 1; }
       - name: Run OpenCode worker
+        id: opencode-worker
         timeout-minutes: 120
         uses: anomalyco/opencode/github@83abc64a5c4e0e0a5157f2c4435d34131009a404 # pinned 2026-09-19
         env:
@@ -177,3 +178,89 @@ jobs:
             Open/update the same PR to main titled [${{ inputs.task_id }}] <description>.
             Never merge, force-push, or commit secrets.
             You are running on Ubuntu. Use bash/POSIX syntax.
+
+
+      - name: Refresh worker GitHub App token
+        if: steps.opencode-worker.outcome == 'success'
+        id: recovery-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: MtgSoloSports
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-workflows: write
+          permission-actions: read
+          permission-checks: read
+      - name: Ensure successful worker has a pull request
+        if: steps.opencode-worker.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.recovery-token.outputs.token }}
+          BASE_BRANCH: main
+        run: |
+          set -euo pipefail
+          gh auth setup-git --hostname github.com --force
+
+          dirty="$(git status --porcelain | grep -v '^?? control/' || true)"
+          if [[ -n "${dirty}" ]]; then
+            echo 'Successful worker left uncommitted repository changes; refusing to report success without preserving them.' >&2
+            printf '%s\n' "${dirty}" >&2
+            exit 1
+          fi
+
+          preferred="autonomous/${TASK_ID}"
+          current="$(git branch --show-current)"
+          branch="${preferred}"
+
+          # The coordinator recognizes only autonomous/<task-id>. Normalize any
+          # action-owned/agent-owned working branch to that canonical ref.
+          if [[ -n "${current}" && "${current}" != "${BASE_BRANCH}" ]]; then
+            git push -u origin "HEAD:${preferred}"
+          elif git ls-remote --exit-code --heads origin "${preferred}" >/dev/null 2>&1; then
+            : # Canonical branch was already pushed by the worker.
+          else
+            echo "Successful worker left no task branch for ${TASK_ID}." >&2
+            exit 1
+          fi
+
+          git fetch origin "${BASE_BRANCH}" "${branch}"
+          ahead="$(git rev-list --count "origin/${BASE_BRANCH}..origin/${branch}")"
+          if [[ "${ahead}" -eq 0 ]]; then
+            echo "Task branch ${branch} has no commits beyond ${BASE_BRANCH}." >&2
+            exit 1
+          fi
+
+          pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [[ -z "${pr_number}" ]]; then
+            pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state closed --limit 20 --json number,mergedAt --jq '[.[] | select(.mergedAt == null)][0].number // empty')"
+            if [[ -n "${pr_number}" ]]; then
+              gh pr reopen "${pr_number}" --repo "${GH_REPO}"
+            fi
+          fi
+
+          if [[ -z "${pr_number}" ]]; then
+            commit_subject="$(git log -1 --format=%s "origin/${branch}")"
+            if [[ "${commit_subject}" == "[${TASK_ID}]"* ]]; then
+              title="${commit_subject}"
+            else
+              title="[${TASK_ID}] Autonomous implementation"
+            fi
+            body="Automated implementation for ${TASK_ID}.\n\nSource task: ${TASK_PATH}\n\nThis PR was ensured by the post-worker recovery step using a freshly minted GitHub App token."
+            gh pr create --repo "${GH_REPO}" --base "${BASE_BRANCH}" --head "${branch}" --title "${title}" --body "${body}"
+            pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          fi
+
+          if [[ -z "${pr_number}" ]]; then
+            echo "Unable to resolve a PR for ${TASK_ID} on ${branch}." >&2
+            exit 1
+          fi
+
+          if [[ "$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')" == 'true' ]]; then
+            gh pr ready "${pr_number}" --repo "${GH_REPO}"
+          fi
+
+          echo "Ensured PR #${pr_number} from ${branch} to ${BASE_BRANCH}."
