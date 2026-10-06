@@ -521,13 +521,14 @@ export function QualifierDetailPage({
               <button
                 type="button"
                 className="primary-button"
-                disabled={running}
+                disabled={running || event !== null}
                 aria-busy={running}
+                title={event ? 'Already resolved — the backend never reruns a qualifier.' : 'Runs this qualifier once on the backend.'}
                 onClick={() => {
                   void handleRunSingle();
                 }}
               >
-                {running ? 'Running…' : event ? 'Re-run is blocked — already resolved' : `Run this qualifier`}
+                {running ? 'Running…' : event ? 'Already resolved' : `Run this qualifier`}
               </button>
               <button
                 type="button"

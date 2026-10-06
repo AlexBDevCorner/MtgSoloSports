@@ -40,6 +40,11 @@ describe('season flow panel', () => {
     assert.ok(component.includes('livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })'));
   });
 
+  it('completes the global stage for every league in one step during league play', () => {
+    assert.ok(component.includes('Complete stage ${next.globalStage} for all ${next.leagueCount} leagues'));
+    assert.ok(component.includes('livePath(saveId)} className="ghost-button"'), 'individual Live inspection stays available');
+  });
+
   it('points Live to the dashboard once league play is over', () => {
     assert.ok(live.includes('Continue the postseason on the Dashboard'));
   });
