@@ -25,7 +25,7 @@ export interface FlowStep {
 }
 
 export type FlowNext =
-  | { kind: 'live'; label: string; explanation: string }
+  | { kind: 'live'; label: string; explanation: string; globalStage: number; leagueCount: number }
   | {
       kind: 'event';
       action: string;
@@ -50,6 +50,16 @@ export interface SeasonFlowView {
 
 export type SummaryTarget = 'standings' | 'cups' | 'live';
 
+/**
+ * Whether the season runs the three-division feeder pyramid (MSS-060).
+ * Derived from league data (an F2/F3 tier present), never from names.
+ */
+export function isTieredProgress(progress: SeasonProgress): boolean {
+  return progress.leagues.some(
+    (league) => league.leagueLevel === 'Feeder2' || league.leagueLevel === 'Feeder3' || league.feederDivision === 2 || league.feederDivision === 3,
+  );
+}
+
 interface StepDefinition {
   key: string;
   label: string;
@@ -65,8 +75,15 @@ interface ActionCopy {
   target: SummaryTarget;
 }
 
-function actionCopy(action: string, nextSeason: number): ActionCopy | null {
+function actionCopy(action: string, nextSeason: number, tiered: boolean): ActionCopy | null {
   switch (action) {
+    case 'CompleteNextGlobalStage':
+      return {
+        label: 'Complete global stage',
+        explanation: 'Completes the current stage for every active league in one step.',
+        summary: 'Global stage completed for every league.',
+        target: 'live',
+      };
     case 'ResolveInauguralMovement':
       return {
         label: 'Form Superleague & reveal',
@@ -77,24 +94,27 @@ function actionCopy(action: string, nextSeason: number): ActionCopy | null {
     case 'ResolveAutomaticMovement':
       return {
         label: 'Resolve & reveal promotion',
-        explanation:
-          'Superleague places 25–32 are relegated, feeder champions are promoted, and places 17–24 go to the qualifier — then reveal each movement on Live.',
+        explanation: tiered
+          ? 'Superleague places 25–32 are relegated to Feeder 1, Feeder 1 champions are promoted, and feeder champions/relegations move across Feeder 1↔Feeder 2 and Feeder 2↔Feeder 3 — then reveal each movement on Live.'
+          : 'Superleague places 25–32 are relegated, feeder champions are promoted, and places 17–24 go to the qualifier — then reveal each movement on Live.',
         summary: 'Promotion and relegation resolved.',
         target: 'standings',
       };
     case 'RunQualifier':
       return {
-        label: 'Run qualifier',
-        explanation:
-          'Superleague places 17–24 face feeder runners-up (places 2–4) for the last 8 Superleague places.',
-        summary: 'Qualifier finished.',
+        label: tiered ? 'Run 17 qualifiers' : 'Run qualifier',
+        explanation: tiered
+          ? 'Superleague places 17–24 face Feeder 1 runners-up for the last 8 Superleague places, plus 8 Feeder 1↔Feeder 2 and 8 Feeder 2↔Feeder 3 qualifiers — one step, canonical order.'
+          : 'Superleague places 17–24 face feeder runners-up (places 2–4) for the last 8 Superleague places.',
+        summary: tiered ? 'All 17 qualifiers finished.' : 'Qualifier finished.',
         target: 'standings',
       };
     case 'RebalanceFeeders':
       return {
         label: 'Rebalance & reveal feeders',
-        explanation:
-          'Every feeder league is refilled to 32 athletes from its color pool — then reveal each departure, return and pool draw on Live.',
+        explanation: tiered
+          ? 'The Feeder 1↔Feeder 2↔Feeder 3 cascade refills every league to 32 from its color; only Feeder 3 touches the common pool — then reveal each move on Live.'
+          : 'Every feeder league is refilled to 32 athletes from its color pool — then reveal each departure, return and pool draw on Live.',
         summary: 'Feeder leagues rebalanced.',
         target: 'standings',
       };
@@ -201,6 +221,7 @@ function stepDefinitions(progress: SeasonProgress, status: SeasonStatus | null, 
 
 export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null): SeasonFlowView {
   const season = status?.sourceSeasonNumber ?? progress.seasonNumber;
+  const tiered = isTieredProgress(progress);
   const definitions = stepDefinitions(progress, status, season);
   const legalAction = status?.legalNextActions[0] ?? null;
   const currentIndex = legalAction
@@ -211,11 +232,14 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
   const steps = definitions.map((step, index): FlowStep => {
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';
-    const detail = state === 'current' && eventDetail ? eventDetail : step.detail;
+    let detail = state === 'current' && eventDetail ? eventDetail : step.detail;
+    if (state === 'current' && step.key === 'qualifier' && tiered && detail) {
+      detail = `17 qualifiers · ${detail}`;
+    }
     return detail ? { key: step.key, label: step.label, detail, state } : { key: step.key, label: step.label, state };
   });
 
-  return { seasonNumber: season, steps, next: nextFor(progress, status, season, legalAction) };
+  return { seasonNumber: season, steps, next: nextFor(progress, status, season, legalAction, tiered) };
 }
 
 function nextFor(
@@ -223,20 +247,26 @@ function nextFor(
   status: SeasonStatus | null,
   season: number,
   legalAction: string | null,
+  tiered: boolean,
 ): FlowNext | null {
   const leagueRunning = status ? legalAction === 'CompleteNextGlobalStage' : !progress.isSeasonComplete;
   if (leagueRunning) {
+    const leagueCount = progress.leagues.length;
     return {
       kind: 'live',
       label: `Play stage ${progress.globalStage}`,
-      explanation: 'Run rounds for every league on Live, or fast-forward the rest of the league season.',
+      explanation: tiered
+        ? `One global stage covers all ${leagueCount} leagues (Superleague plus Feeder 1–3). Complete it for every league at once, play on Live, or fast-forward the rest of the league season.`
+        : 'Run rounds for every league on Live, or fast-forward the rest of the league season.',
+      globalStage: progress.globalStage,
+      leagueCount,
     };
   }
   if (!status || !legalAction) {
     return null;
   }
   const liveEvent = status.eventProgress ? status.eventProgress.event : null;
-  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1);
+  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered);
   if (!copy) {
     return {
       kind: 'event',
@@ -260,7 +290,7 @@ function nextFor(
 }
 
 /** One-line confirmation shown after a step runs, plus where its results live. */
-export function executedSummary(action: string, nextSeason: number): { text: string; target: SummaryTarget } {
-  const copy = actionCopy(action, nextSeason);
+export function executedSummary(action: string, nextSeason: number, tiered = false): { text: string; target: SummaryTarget } {
+  const copy = actionCopy(action, nextSeason, tiered);
   return copy ? { text: copy.summary, target: copy.target } : { text: 'Event finished.', target: 'standings' };
 }

@@ -70,6 +70,8 @@ describe('season flow steps', () => {
       kind: 'live',
       label: 'Play stage 12',
       explanation: 'Run rounds for every league on Live, or fast-forward the rest of the league season.',
+      globalStage: 12,
+      leagueCount: 0,
     });
   });
 
@@ -234,5 +236,81 @@ describe('executed step summary', () => {
     assert.deepEqual(executedSummary('SelectColorCup', 2), { text: 'Cup squads selected.', target: 'cups' });
     assert.deepEqual(executedSummary('RunTypeCupTeam', 2), { text: 'Cup team event finished.', target: 'cups' });
     assert.deepEqual(executedSummary('StartNextSeason', 2), { text: 'Season 2 started.', target: 'live' });
+    assert.deepEqual(executedSummary('CompleteNextGlobalStage', 2), {
+      text: 'Global stage completed for every league.',
+      target: 'live',
+    });
+  });
+});
+
+describe('tiered pyramid flow (MSS-060)', () => {
+  function tieredProgress(): SeasonProgress {
+    const leagues: SeasonProgress['leagues'] = [];
+    let id = 1;
+    leagues.push({ leagueId: id++, leagueName: 'Superleague', leagueKind: 'Superleague', currentStage: 33, completedStages: 32, isLeagueComplete: true });
+    for (let color = 0; color < 8; color += 1) {
+      leagues.push({ leagueId: id++, leagueName: `Color ${color} F1`, leagueKind: 'Feeder', feederDivision: 1, leagueLevel: 'Feeder1', currentStage: 33, completedStages: 32, isLeagueComplete: true });
+      leagues.push({ leagueId: id++, leagueName: `Color ${color} F2`, leagueKind: 'Feeder', feederDivision: 2, leagueLevel: 'Feeder2', currentStage: 33, completedStages: 32, isLeagueComplete: true });
+      leagues.push({ leagueId: id++, leagueName: `Color ${color} F3`, leagueKind: 'Feeder', feederDivision: 3, leagueLevel: 'Feeder3', currentStage: 33, completedStages: 32, isLeagueComplete: true });
+    }
+    return progress({ seasonNumber: 2, isSeasonComplete: true, leagues });
+  }
+
+  it('keeps one qualifier step but labels all 17 qualifiers', () => {
+    const flow = seasonFlow(
+      tieredProgress(),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        movementResolved: true,
+        legalNextActions: ['RunQualifier'],
+      }),
+    );
+    assert.deepEqual(
+      flow.steps.map((step) => step.key),
+      ['league', 'movement', 'qualifier', 'rebalance', 'cupField', 'cupIndividual', 'cupTeam', 'nextSeason'],
+    );
+    assert.equal(flow.next?.label, 'Run 17 qualifiers');
+    assert.deepEqual(executedSummary('RunQualifier', 3, true), {
+      text: 'All 17 qualifiers finished.',
+      target: 'standings',
+    });
+  });
+
+  it('describes tiered movement and rebalance without extra steps', () => {
+    const movement = seasonFlow(
+      tieredProgress(),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        legalNextActions: ['ResolveAutomaticMovement'],
+      }),
+    );
+    assert.match(movement.next?.kind === 'event' ? movement.next.explanation : '', /Feeder 1↔Feeder 2/);
+    const rebalance = seasonFlow(
+      tieredProgress(),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        movementResolved: true,
+        qualifierResolved: true,
+        legalNextActions: ['RebalanceFeeders'],
+      }),
+    );
+    assert.match(rebalance.next?.kind === 'event' ? rebalance.next.explanation : '', /only Feeder 3 touches the common pool/);
+  });
+
+  it('offers one-click global stage completion across all leagues', () => {
+    const leagues = tieredProgress().leagues.map((league) => ({ ...league, currentStage: 5, completedStages: 4, isLeagueComplete: false }));
+    const flow = seasonFlow(
+      progress({ seasonNumber: 2, globalStage: 5, leagues }),
+      status({ currentSeasonNumber: 2, globalStage: 5, legalNextActions: ['CompleteNextGlobalStage'] }),
+    );
+    assert.equal(flow.next?.kind, 'live');
+    assert.equal(flow.next?.kind === 'live' ? flow.next.leagueCount : 0, 25);
+    assert.match(flow.next?.kind === 'live' ? flow.next.explanation : '', /all 25 leagues/);
   });
 });

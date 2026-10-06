@@ -149,33 +149,37 @@ async function loadLeaders(
   progress: SeasonProgress,
   signal: AbortSignal,
 ): Promise<{ leaders: DashboardLeaderBoard[]; superleagueComposition: Array<{ color: string; count: number }> }> {
-  const results = await Promise.all(
-    progress.leagues.map(async (league) => {
-      try {
-        const standings = await fetchCurrentStandings(saveId, league.leagueId, signal);
-        return { league, standings: standings.standings };
-      } catch (failure) {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          throw failure;
-        }
-        return { league, standings: [] as CurrentStandingRow[] };
-      }
-    }),
-  );
-  const leaders: DashboardLeaderBoard[] = results.map(({ league, standings }) => ({
-    leagueId: league.leagueId,
-    leagueName: league.leagueName,
-    leagueKind: league.leagueKind ?? 'Feeder',
-    total: standings.length,
-    top: [...standings]
-      .sort((a, b) => a.seasonRank - b.seasonRank)
-      .slice(0, 5),
-  }));
-  const superleague = results.find(({ league }) => (league.leagueKind ?? '') === 'Superleague');
+  // MSS-060 scale: the Dashboard fetches only the Superleague board eagerly.
+  // Feeder division leaders load on demand from the division tabs
+  // (FeederLeaders) so a 25-league pyramid never fires 25 standings requests
+  // when only summaries are needed.
+  const superleague = progress.leagues.find((league) => (league.leagueKind ?? '') === 'Superleague') ?? null;
+  if (!superleague) {
+    return { leaders: [], superleagueComposition: [] };
+  }
+  let standings: CurrentStandingRow[] = [];
+  try {
+    const loaded = await fetchCurrentStandings(saveId, superleague.leagueId, signal);
+    standings = loaded.standings;
+  } catch (failure) {
+    if (failure instanceof DOMException && failure.name === 'AbortError') {
+      throw failure;
+    }
+    standings = [];
+  }
+  const leaders: DashboardLeaderBoard[] = [
+    {
+      leagueId: superleague.leagueId,
+      leagueName: superleague.leagueName,
+      leagueKind: superleague.leagueKind ?? 'Superleague',
+      total: standings.length,
+      top: [...standings].sort((a, b) => a.seasonRank - b.seasonRank).slice(0, 5),
+    },
+  ];
   let superleagueComposition: Array<{ color: string; count: number }> = [];
-  if (superleague && superleague.standings.length > 0) {
+  if (standings.length > 0) {
     const counts = new Map<string, number>();
-    for (const row of superleague.standings) {
+    for (const row of standings) {
       const key = (row.sportingColorName ?? 'Unknown').trim() || 'Unknown';
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
