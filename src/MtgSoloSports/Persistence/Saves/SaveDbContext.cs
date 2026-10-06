@@ -385,7 +385,12 @@ public sealed class SaveDbContext : DbContext
             entity.ToTable("Movements");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.ToSeasonId, e.SaveAthleteId }).IsUnique();
+            // MSS-059 tier cascade persists structural RebalanceUp/Down rows in
+            // addition to competitive automatic/qualifier markers, so an athlete
+            // may hold one competitive plus one structural row per destination
+            // season (distinct Kinds). Uniqueness includes Kind; each athlete
+            // still moves at most once structurally per cascade.
+            entity.HasIndex(e => new { e.ToSeasonId, e.SaveAthleteId, e.Kind }).IsUnique();
             entity.HasIndex(e => new { e.FromSeasonId, e.FromLeagueId });
             entity.HasIndex(e => new { e.ToSeasonId, e.ToLeagueId });
             // Athlete profile path filters by athlete and orders by destination

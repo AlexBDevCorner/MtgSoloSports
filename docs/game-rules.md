@@ -223,15 +223,30 @@ Canonical RNG order is Superleague first, then F1↔F2 by sporting-color enum, t
 ## 12. Feeder rebalancing and common pool
 
 All automatic movement and all qualifier outcomes are resolved first.
+Rebalancing then repairs structural color imbalance per sporting color
+through a deterministic tier cascade F1 → F2 → F3 → Pool, preserving 32
+athletes in every F1/F2/F3 league. Sporting performance controls normal
+adjacent-tier movement; rebalancing only repairs population/color composition.
+Pool is not a league, has no qualifier, and only ever connects directly to F3.
 
-For each feeder league:
+Shortage: if F1 is below 32, pull the best eligible retained F2 athlete(s)
+upward to F1; the resulting F2 vacancies pull the best eligible retained F3
+athlete(s) upward to F2; only the resulting F3 vacancies draw
+equal-probability from the same-color common pool (versioned RNG, canonical
+color order). Overflow: if F1 is above 32, push the worst eligible retained
+F1 athlete(s) down to F2; cascade any F2 overflow to F3 the same way; only F3
+overflow displaces to the common pool.
 
-1. remove athletes entering Superleague;
-2. add returning athletes of that sporting color;
-3. if above 32, send the lowest-ranked remaining athletes from the previous feeder season to the common pool;
-4. if below 32, randomly select eligible athletes from that color's common pool until 32.
+Athletes who just earned adjacent-tier movement (automatic, qualifier outcome,
+inaugural creation, Superleague return) are protected and used only when no
+retained alternative exists; corrupt rosters fail loudly. Upward refill uses
+the best source-season ranks first, downward overflow the worst, with name/id
+tie breaks. Only pool draws consume RNG. There is no Pool→F1/F2 or F1/F2→Pool
+movement; no normal F3 relegation to pool; no cooldown; bonus ages in pool.
 
-Pool selection is equal-probability. Former league athletes can return immediately; no cooldown exists.
+Structural cascade moves persist as RebalanceUp (F2→F1/F3→F2) and
+RebalanceDown (F1→F2/F2→F3), distinct from competitive promotion/relegation
+and from pool RebalanceDraw (Pool→F3) / RebalanceDisplacement (F3→Pool).
 
 ## 13. Post-season cups
 

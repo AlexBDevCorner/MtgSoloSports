@@ -75,7 +75,8 @@ public sealed class GetRebalanceResultHandler
 
         List<MovementEntity> rebalanced = await context.Movements
             .AsNoTracking()
-            .Where(e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement)
+            .Where(e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         if (rebalanced.Count == 0)
@@ -107,7 +108,8 @@ public sealed class GetRebalanceResultHandler
         int count = await context.Movements
             .CountAsync(
                 e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                    && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement),
+                    && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                        || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown),
                 cancellationToken)
             .ConfigureAwait(false);
         if (count == 0)
@@ -200,7 +202,8 @@ public sealed class GetRebalanceResultHandler
         return await context.Movements
             .AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement))
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
     }
@@ -233,6 +236,8 @@ public sealed class GetRebalanceResultHandler
 
         List<RebalanceMovementMember> draws = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById, images);
         List<RebalanceMovementMember> displacedMembers = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById, images);
+        List<RebalanceMovementMember> up = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceUp, names, leaguesById, images);
+        List<RebalanceMovementMember> down = RebalanceFeedersHandler.MapMovements(movements, MovementKind.RebalanceDown, names, leaguesById, images);
 
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
@@ -252,7 +257,13 @@ public sealed class GetRebalanceResultHandler
             departed.Count,
             returned.Count,
             pool,
-            movements.Count);
+            movements.Count)
+        {
+            RebalancedUp = up,
+            RebalancedDown = down,
+            TotalRebalancedUp = up.Count,
+            TotalRebalancedDown = down.Count,
+        };
     }
 
     internal static async Task<(IReadOnlyList<RebalanceMovementMember> Departed, IReadOnlyList<RebalanceMovementMember> Returned)> LoadSuperleagueTransfersAsync(
@@ -319,13 +330,32 @@ public sealed class GetRebalanceResultHandler
             .Where(m => m.Kind == (int)MovementKind.RebalanceDisplacement)
             .GroupBy(m => m.FromLeagueId)
             .ToDictionary(g => g.Key, g => g.Count());
+        Dictionary<int, int> upInByLeague = movements
+            .Where(m => m.Kind == (int)MovementKind.RebalanceUp)
+            .GroupBy(m => m.ToLeagueId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        Dictionary<int, int> upOutByLeague = movements
+            .Where(m => m.Kind == (int)MovementKind.RebalanceUp)
+            .GroupBy(m => m.FromLeagueId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        Dictionary<int, int> downInByLeague = movements
+            .Where(m => m.Kind == (int)MovementKind.RebalanceDown)
+            .GroupBy(m => m.ToLeagueId)
+            .ToDictionary(g => g.Key, g => g.Count());
+        Dictionary<int, int> downOutByLeague = movements
+            .Where(m => m.Kind == (int)MovementKind.RebalanceDown)
+            .GroupBy(m => m.FromLeagueId)
+            .ToDictionary(g => g.Key, g => g.Count());
         IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor =
             RebalanceSuperleagueTransfers.CountsByColor(departed, returned);
 
         List<RebalanceColorResult> colors = new(nextFeeders.Count);
         foreach (LeagueEntity feeder in nextFeeders)
         {
-            colors.Add(MapSingleColor(feeder, drawnByLeague, displacedByLeague, transfersByColor, rules));
+            colors.Add(MapSingleColor(
+                feeder, drawnByLeague, displacedByLeague,
+                upInByLeague, upOutByLeague, downInByLeague, downOutByLeague,
+                transfersByColor, rules));
         }
 
         return colors;
@@ -335,30 +365,78 @@ public sealed class GetRebalanceResultHandler
         LeagueEntity feeder,
         Dictionary<int, int> drawnByLeague,
         Dictionary<int, int> displacedByLeague,
+        Dictionary<int, int> upInByLeague,
+        Dictionary<int, int> upOutByLeague,
+        Dictionary<int, int> downInByLeague,
+        Dictionary<int, int> downOutByLeague,
         IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor,
         RulesV1 rules)
     {
         drawnByLeague.TryGetValue(feeder.Id, out int drawn);
         displacedByLeague.TryGetValue(feeder.Id, out int displaced);
-        int provisional = rules.LeagueSize - drawn + displaced;
+        upInByLeague.TryGetValue(feeder.Id, out int upIn);
+        upOutByLeague.TryGetValue(feeder.Id, out int upOut);
+        downInByLeague.TryGetValue(feeder.Id, out int downIn);
+        downOutByLeague.TryGetValue(feeder.Id, out int downOut);
+        // Final is always 32; provisional reconstructs post-competitive size
+        // without resimulation: provisional + structural_net + pool_net = 32.
+        int provisional = rules.LeagueSize - upIn - downIn + upOut + downOut - drawn + displaced;
         string colorName = ((SportingColor)feeder.SportingColor).ToString();
         bool isF1 = feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First
             || feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.None;
         if (!isF1)
         {
-            return new RebalanceColorResult(
-                feeder.Id,
-                feeder.Name,
-                colorName,
-                rules.LeagueSize,
-                0,
-                0,
-                provisional,
-                displaced,
-                drawn,
-                rules.LeagueSize);
+            return MapLowerTier(feeder, colorName, provisional, displaced, drawn, upIn, upOut, downIn, downOut, rules);
         }
 
+        return MapF1Tier(feeder, colorName, provisional, displaced, drawn, upIn, upOut, downIn, downOut, transfersByColor, rules);
+    }
+
+    internal static RebalanceColorResult MapLowerTier(
+        LeagueEntity feeder,
+        string colorName,
+        int provisional,
+        int displaced,
+        int drawn,
+        int upIn,
+        int upOut,
+        int downIn,
+        int downOut,
+        RulesV1 rules)
+    {
+        return new RebalanceColorResult(
+            feeder.Id,
+            feeder.Name,
+            colorName,
+            rules.LeagueSize,
+            0,
+            0,
+            provisional,
+            displaced,
+            drawn,
+            rules.LeagueSize)
+        {
+            FeederDivision = feeder.FeederDivision,
+            RebalancedUpIn = upIn,
+            RebalancedUpOut = upOut,
+            RebalancedDownIn = downIn,
+            RebalancedDownOut = downOut,
+        };
+    }
+
+    internal static RebalanceColorResult MapF1Tier(
+        LeagueEntity feeder,
+        string colorName,
+        int provisional,
+        int displaced,
+        int drawn,
+        int upIn,
+        int upOut,
+        int downIn,
+        int downOut,
+        IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor,
+        RulesV1 rules)
+    {
         transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
         int viaTransfers = rules.LeagueSize - transfers.Departed + transfers.Returned;
         if (viaTransfers != provisional)
@@ -377,6 +455,13 @@ public sealed class GetRebalanceResultHandler
             provisional,
             displaced,
             drawn,
-            rules.LeagueSize);
+            rules.LeagueSize)
+        {
+            FeederDivision = feeder.FeederDivision,
+            RebalancedUpIn = upIn,
+            RebalancedUpOut = upOut,
+            RebalancedDownIn = downIn,
+            RebalancedDownOut = downOut,
+        };
     }
 }

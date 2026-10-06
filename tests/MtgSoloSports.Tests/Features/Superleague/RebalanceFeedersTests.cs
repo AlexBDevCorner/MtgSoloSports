@@ -78,31 +78,21 @@ public sealed class RebalanceFeedersTests
 
             response.FromSeasonNumber.ShouldBe(1);
             response.ToSeasonNumber.ShouldBe(2);
-            response.Colors.Count.ShouldBe(24);
-            response.Colors.Count(c => c.ProvisionalCount == 28).ShouldBe(8);
-            response.Colors.Count(c => c.ProvisionalCount == 32).ShouldBe(16);
-            foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 28))
-            {
-                color.DisplacedCount.ShouldBe(0);
-                color.DrawnCount.ShouldBe(4);
-                color.FinalCount.ShouldBe(32);
-            }
-
-            foreach (RebalanceColorResult color in response.Colors.Where(c => c.ProvisionalCount == 32))
-            {
-                color.DisplacedCount.ShouldBe(0);
-                color.DrawnCount.ShouldBe(0);
-                color.FinalCount.ShouldBe(32);
-            }
+            AssertInauguralCascadeCounts(response);
 
             response.TotalDrawn.ShouldBe(32);
             response.TotalDisplaced.ShouldBe(0);
-            response.MovementCount.ShouldBe(32);
+            response.TotalRebalancedUp.ShouldBe(64);
+            response.TotalRebalancedDown.ShouldBe(0);
+            response.MovementCount.ShouldBe(96);
             response.Draws.Count.ShouldBe(32);
             response.Displaced.Count.ShouldBe(0);
+            response.RebalancedUp.Count.ShouldBe(64);
+            response.RebalancedDown.Count.ShouldBe(0);
             response.RngAfterState.ShouldNotBe(response.RngBeforeState);
 
             await AssertFinalAsync(store, created.Detail.SaveId, response);
+            await AssertNoPoolBypassAsync(store, created.Detail.SaveId, response);
             await AssertPreservationAsync(store, created.Detail.SaveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: true);
             await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
 
@@ -154,19 +144,15 @@ public sealed class RebalanceFeedersTests
 
             response.FromSeasonNumber.ShouldBe(2);
             response.ToSeasonNumber.ShouldBe(3);
-            response.Colors.Count.ShouldBe(24);
-            foreach (RebalanceColorResult color in response.Colors)
-            {
-                color.FinalCount.ShouldBe(32);
-                (color.DrawnCount == 0 || color.DisplacedCount == 0).ShouldBeTrue();
-                color.FinalCount.ShouldBe(color.ProvisionalCount - color.DisplacedCount + color.DrawnCount);
-            }
+            AssertNormalCascadeCounts(response);
 
-            int expectedMovements = response.TotalDrawn + response.TotalDisplaced;
+            int expectedMovements = response.TotalDrawn + response.TotalDisplaced
+                + response.TotalRebalancedUp + response.TotalRebalancedDown;
             response.MovementCount.ShouldBe(expectedMovements);
 
             await AssertFinalAsync(store, created.Detail.SaveId, response);
             await AssertDisplacedAreLowestAsync(store, created.Detail.SaveId, response);
+            await AssertNoPoolBypassAsync(store, created.Detail.SaveId, response);
             await AssertPreservationAsync(store, created.Detail.SaveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: response.TotalDrawn > 0);
             await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
 
@@ -293,6 +279,347 @@ public sealed class RebalanceFeedersTests
         }
     }
 
+    [Fact]
+    public void Selection_TierCascade_ShortagePullsBestRetainedThroughF2F3OnlyF3Draws()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        // White: F1 28 (short 4), F2 32 retained ranks 1..32, F3 32 retained, pool 10.
+        List<RebalanceFeedersSelection.TierMember> f1 = TierMembers(1000, "White F1", 1, 28, isProtected: false);
+        List<RebalanceFeedersSelection.TierMember> f2 = TierMembers(2000, "White F2", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.TierMember> f3 = TierMembers(3000, "White F3", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.PoolCandidate> pool = TierPool(SportingColor.White, 4000, 10);
+
+        List<RebalanceFeedersSelection.TierColorInput> inputs = TierInputs(
+            new RebalanceFeedersSelection.TierColorInput(SportingColor.White, f1, f2, f3, pool), rules);
+
+        Pcg32V1 rng = new(7UL, 11UL);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+
+        RebalanceFeedersSelection.TierColorPlan white = plan.TierPerColor.Single(p => p.Color == SportingColor.White);
+        white.F1ProvisionalCount.ShouldBe(28);
+        white.F2ProvisionalCount.ShouldBe(32);
+        white.F3ProvisionalCount.ShouldBe(32);
+        // F1 pulls best 4 retained F2 (ranks 1..4).
+        white.UpMoves.Count(m => m.FromDivision == FeederDivision.Second && m.ToDivision == FeederDivision.First).ShouldBe(4);
+        white.UpMoves.Where(m => m.FromDivision == FeederDivision.Second)
+            .Select(m => m.SourceRank).OrderBy(r => r).ShouldBe([1, 2, 3, 4]);
+        // F2 pulls best 4 retained F3.
+        white.UpMoves.Count(m => m.FromDivision == FeederDivision.Third && m.ToDivision == FeederDivision.Second).ShouldBe(4);
+        white.UpMoves.Where(m => m.FromDivision == FeederDivision.Third)
+            .Select(m => m.SourceRank).OrderBy(r => r).ShouldBe([1, 2, 3, 4]);
+        white.DownMoves.Count.ShouldBe(0);
+        // Only F3 draws from pool.
+        white.Draws.Count.ShouldBe(4);
+        white.Displaced.Count.ShouldBe(0);
+        plan.AllUpMoves.Count.ShouldBe(8);
+        plan.AllDraws.Count.ShouldBe(4);
+    }
+
+    [Fact]
+    public void Selection_TierCascade_OverflowPushesWorstRetainedOnlyF3Displaces()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        // Blue: F1 36 (32 retained ranks 1..32 + 4 protected returnees), F2/F3 balanced.
+        List<RebalanceFeedersSelection.TierMember> f1 = TierMembers(5000, "Blue F1", 1, 32, isProtected: false);
+        f1.AddRange(TierMembers(5900, "Blue Returnee", 1, 4, isProtected: true));
+        List<RebalanceFeedersSelection.TierMember> f2 = TierMembers(6000, "Blue F2", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.TierMember> f3 = TierMembers(7000, "Blue F3", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.PoolCandidate> pool = TierPool(SportingColor.Blue, 8000, 10);
+
+        List<RebalanceFeedersSelection.TierColorInput> inputs = TierInputs(
+            new RebalanceFeedersSelection.TierColorInput(SportingColor.Blue, f1, f2, f3, pool), rules);
+
+        Pcg32V1 rng = new(21UL, 22UL);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+
+        RebalanceFeedersSelection.TierColorPlan blue = plan.TierPerColor.Single(p => p.Color == SportingColor.Blue);
+        blue.F1ProvisionalCount.ShouldBe(36);
+        // F1 pushes worst 4 retained (ranks 32,31,30,29), never protected returnees.
+        blue.DownMoves.Count(m => m.FromDivision == FeederDivision.First).ShouldBe(4);
+        blue.DownMoves.Where(m => m.FromDivision == FeederDivision.First)
+            .Select(m => m.SourceRank).OrderByDescending(r => r).ShouldBe([32, 31, 30, 29]);
+        blue.DownMoves.Where(m => m.FromDivision == FeederDivision.First).All(m => m.SaveAthleteId < 5900).ShouldBeTrue();
+        // F2 overflow pushes worst retained F2 to F3 (excluding F1 arrivals).
+        blue.DownMoves.Count(m => m.FromDivision == FeederDivision.Second).ShouldBe(4);
+        blue.UpMoves.Count.ShouldBe(0);
+        blue.Draws.Count.ShouldBe(0);
+        blue.Displaced.Count.ShouldBe(4);
+        plan.AllDownMoves.Count.ShouldBe(8);
+        plan.AllDisplaced.Count.ShouldBe(4);
+    }
+
+    [Fact]
+    public void Selection_TierCascade_ProtectsNewlyPromotedFromDown()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        // F1 33: 32 retained + 1 newly promoted protected (rank 1, best).
+        // Overflow 1 must displace worst retained (rank 32), not the protected rank-1 newcomer.
+        List<RebalanceFeedersSelection.TierMember> f1 = TierMembers(9000, "Green F1", 1, 32, isProtected: false);
+        f1.Add(new RebalanceFeedersSelection.TierMember(9999, "Green Newcomer", 1, true));
+        List<RebalanceFeedersSelection.TierMember> f2 = TierMembers(9100, "Green F2", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.TierMember> f3 = TierMembers(9200, "Green F3", 1, 32, isProtected: false);
+
+        List<RebalanceFeedersSelection.TierColorInput> inputs = TierInputs(
+            new RebalanceFeedersSelection.TierColorInput(SportingColor.Green, f1, f2, f3, Pool: TierPool(SportingColor.Green, 9300, 10)), rules);
+
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, new Pcg32V1(3UL, 4UL), rules);
+        RebalanceFeedersSelection.TierColorPlan green = plan.TierPerColor.Single(p => p.Color == SportingColor.Green);
+        green.DownMoves.Count(m => m.FromDivision == FeederDivision.First).ShouldBe(1);
+        green.DownMoves.Single(m => m.FromDivision == FeederDivision.First).SaveAthleteId.ShouldNotBe(9999);
+        green.DownMoves.Single(m => m.FromDivision == FeederDivision.First).SourceRank.ShouldBe(32);
+    }
+
+    [Fact]
+    public void Selection_TierCascade_ProtectsNewlyRelegatedFromUp()
+    {
+        // F2 shortage protection: F2 has 1 newly relegated protected (rank 32, worst)
+        // plus retained ranks 1..31. Shortage 1 must pull best retained (rank 1),
+        // never the protected relegated athlete.
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<RebalanceFeedersSelection.TierMember> h1 = TierMembers(9400, "Red F1", 1, 31, isProtected: false);
+        List<RebalanceFeedersSelection.TierMember> h2 = TierMembers(9500, "Red F2", 1, 31, isProtected: false);
+        h2.Add(new RebalanceFeedersSelection.TierMember(9599, "Red Relegated", 32, true));
+        List<RebalanceFeedersSelection.TierMember> h3 = TierMembers(9600, "Red F3", 1, 32, isProtected: false);
+        List<RebalanceFeedersSelection.TierColorInput> redInputs = TierInputs(
+            new RebalanceFeedersSelection.TierColorInput(SportingColor.Red, h1, h2, h3, TierPool(SportingColor.Red, 9700, 10)), rules);
+        RebalanceFeedersSelection.RebalancePlan redPlan = RebalanceFeedersSelection.Select(redInputs, new Pcg32V1(5UL, 6UL), rules);
+        RebalanceFeedersSelection.TierColorPlan red = redPlan.TierPerColor.Single(p => p.Color == SportingColor.Red);
+        red.UpMoves.Single(m => m.FromDivision == FeederDivision.Second).SaveAthleteId.ShouldNotBe(9599);
+        red.UpMoves.Single(m => m.FromDivision == FeederDivision.Second).SourceRank.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Selection_TierCascade_NoColorChange_NeedsNoMovesOrRng()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<RebalanceFeedersSelection.TierColorInput> inputs = [];
+        foreach (SportingColor color in Enum.GetValues<SportingColor>())
+        {
+            inputs.Add(new RebalanceFeedersSelection.TierColorInput(
+                color,
+                TierMembers(10000 + ((int)color * 1000), $"{color} F1", 1, 32, isProtected: false),
+                TierMembers(20000 + ((int)color * 1000), $"{color} F2", 1, 32, isProtected: false),
+                TierMembers(30000 + ((int)color * 1000), $"{color} F3", 1, 32, isProtected: false),
+                []));
+        }
+
+        Pcg32V1 rng = new(11UL, 12UL);
+        Pcg32State before = rng.Snapshot();
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+        plan.AllUpMoves.Count.ShouldBe(0);
+        plan.AllDownMoves.Count.ShouldBe(0);
+        plan.AllDraws.Count.ShouldBe(0);
+        plan.AllDisplaced.Count.ShouldBe(0);
+        rng.Snapshot().State.ShouldBe(before.State);
+        foreach (RebalanceFeedersSelection.TierColorPlan colorPlan in plan.TierPerColor)
+        {
+            colorPlan.F1ProvisionalCount.ShouldBe(32);
+            colorPlan.F2ProvisionalCount.ShouldBe(32);
+            colorPlan.F3ProvisionalCount.ShouldBe(32);
+        }
+    }
+
+    [Fact]
+    public void Selection_TierCascade_PoolOnlyConnectsToF3_DeterministicRngOrder()
+    {
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<RebalanceFeedersSelection.TierColorInput> inputs = BuildMixedShortageOverflowInputs();
+
+        RebalanceFeedersSelection.RebalancePlan first = RebalanceFeedersSelection.Select(inputs, new Pcg32V1(77UL, 78UL), rules);
+        RebalanceFeedersSelection.RebalancePlan second = RebalanceFeedersSelection.Select(inputs, new Pcg32V1(77UL, 78UL), rules);
+        first.AllDraws.Select(d => d.SaveAthleteId).OrderBy(id => id)
+            .ShouldBe(second.AllDraws.Select(d => d.SaveAthleteId).OrderBy(id => id).ToList());
+        first.AllDisplaced.Select(d => d.SaveAthleteId).OrderBy(id => id)
+            .ShouldBe(second.AllDisplaced.Select(d => d.SaveAthleteId).OrderBy(id => id).ToList());
+
+        AssertPoolBoundaryOnlyF3(first);
+        AssertMixedCounts(first);
+    }
+
+    private static List<RebalanceFeedersSelection.TierColorInput> BuildMixedShortageOverflowInputs()
+    {
+        // White shortage 2, Blue overflow 2, others balanced.
+        List<RebalanceFeedersSelection.TierColorInput> inputs = [];
+        foreach (SportingColor color in Enum.GetValues<SportingColor>())
+        {
+            int baseId = 40000 + ((int)color * 1000);
+            if (color == SportingColor.White)
+            {
+                inputs.Add(new RebalanceFeedersSelection.TierColorInput(
+                    color,
+                    TierMembers(baseId, "White F1", 1, 30, isProtected: false),
+                    TierMembers(baseId + 100, "White F2", 1, 32, isProtected: false),
+                    TierMembers(baseId + 200, "White F3", 1, 32, isProtected: false),
+                    TierPool(color, baseId + 300, 10)));
+            }
+            else if (color == SportingColor.Blue)
+            {
+                List<RebalanceFeedersSelection.TierMember> f1 = TierMembers(baseId, "Blue F1", 1, 32, isProtected: false);
+                f1.AddRange(TierMembers(baseId + 50, "Blue Extra", 20, 2, isProtected: false));
+                inputs.Add(new RebalanceFeedersSelection.TierColorInput(
+                    color,
+                    f1,
+                    TierMembers(baseId + 100, "Blue F2", 1, 32, isProtected: false),
+                    TierMembers(baseId + 200, "Blue F3", 1, 32, isProtected: false),
+                    TierPool(color, baseId + 300, 10)));
+            }
+            else
+            {
+                inputs.Add(new RebalanceFeedersSelection.TierColorInput(
+                    color,
+                    TierMembers(baseId, $"{color} F1", 1, 32, isProtected: false),
+                    TierMembers(baseId + 100, $"{color} F2", 1, 32, isProtected: false),
+                    TierMembers(baseId + 200, $"{color} F3", 1, 32, isProtected: false),
+                    []));
+            }
+        }
+
+        return inputs;
+    }
+
+    private static void AssertPoolBoundaryOnlyF3(RebalanceFeedersSelection.RebalancePlan first)
+    {
+        // Pool boundary: every draw/displacement touches F3 only; no athlete
+        // moves twice; every division restores 32.
+        foreach (RebalanceFeedersSelection.TierColorPlan colorPlan in first.TierPerColor)
+        {
+            if (colorPlan.Draws.Count > 0 || colorPlan.Displaced.Count > 0)
+            {
+                colorPlan.Color.ShouldBeOneOf(SportingColor.White, SportingColor.Blue);
+            }
+
+            HashSet<int> moved = first.AllUpMoves.Concat(first.AllDownMoves).Select(m => m.SaveAthleteId).ToHashSet();
+            foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws)
+            {
+                moved.ShouldNotContain(draw.SaveAthleteId);
+            }
+
+            foreach (RebalanceFeedersSelection.RetainedCandidate displaced in colorPlan.Displaced)
+            {
+                moved.ShouldNotContain(displaced.SaveAthleteId);
+            }
+        }
+    }
+
+    private static void AssertMixedCounts(RebalanceFeedersSelection.RebalancePlan first)
+    {
+        RebalanceFeedersSelection.TierColorPlan white = first.TierPerColor.Single(p => p.Color == SportingColor.White);
+        white.Draws.Count.ShouldBe(2);
+        white.Displaced.Count.ShouldBe(0);
+        RebalanceFeedersSelection.TierColorPlan blue = first.TierPerColor.Single(p => p.Color == SportingColor.Blue);
+        blue.Displaced.Count.ShouldBe(2);
+        blue.Draws.Count.ShouldBe(0);
+    }
+
+    private static List<RebalanceFeedersSelection.TierMember> TierMembers(int startId, string prefix, int firstRank, int count, bool isProtected)
+    {
+        List<RebalanceFeedersSelection.TierMember> members = new(count);
+        for (int i = 0; i < count; i++)
+        {
+            int rank = firstRank + i;
+            members.Add(new RebalanceFeedersSelection.TierMember(startId + i, $"{prefix} {rank:D4}", rank, isProtected));
+        }
+
+        return members;
+    }
+
+    private static List<RebalanceFeedersSelection.PoolCandidate> TierPool(SportingColor color, int startId, int count)
+    {
+        List<RebalanceFeedersSelection.PoolCandidate> pool = new(count);
+        for (int i = 0; i < count; i++)
+        {
+            pool.Add(new RebalanceFeedersSelection.PoolCandidate(startId + i, $"Pool {color} {i:D4}", color));
+        }
+
+        return pool;
+    }
+
+    private static List<RebalanceFeedersSelection.TierColorInput> TierInputs(
+        RebalanceFeedersSelection.TierColorInput focus, RulesV1 rules)
+    {
+        List<RebalanceFeedersSelection.TierColorInput> inputs = [focus];
+        foreach (SportingColor color in Enum.GetValues<SportingColor>().Where(c => c != focus.Color))
+        {
+            int baseId = 60000 + ((int)color * 1000);
+            inputs.Add(new RebalanceFeedersSelection.TierColorInput(
+                color,
+                TierMembers(baseId, $"{color} F1", 1, 32, isProtected: false),
+                TierMembers(baseId + 100, $"{color} F2", 1, 32, isProtected: false),
+                TierMembers(baseId + 200, $"{color} F3", 1, 32, isProtected: false),
+                []));
+        }
+
+        return inputs;
+    }
+
+    private static void AssertInauguralCascadeCounts(RebalanceFeedersResponse response)
+    {
+        response.Colors.Count.ShouldBe(24);
+        response.Colors.Count(c => c.ProvisionalCount == 28).ShouldBe(8);
+        response.Colors.Count(c => c.ProvisionalCount == 32).ShouldBe(16);
+        AssertF1Shortage(response);
+        AssertF2Through(response);
+        AssertF3Draws(response);
+    }
+
+    private static void AssertF1Shortage(RebalanceFeedersResponse response)
+    {
+        foreach (RebalanceColorResult color in response.Colors.Where(c => c.FeederDivision == (int)FeederDivision.First))
+        {
+            color.ProvisionalCount.ShouldBe(28);
+            color.DisplacedCount.ShouldBe(0);
+            color.DrawnCount.ShouldBe(0);
+            color.RebalancedUpIn.ShouldBe(4);
+            color.RebalancedDownOut.ShouldBe(0);
+            color.FinalCount.ShouldBe(32);
+        }
+    }
+
+    private static void AssertF2Through(RebalanceFeedersResponse response)
+    {
+        foreach (RebalanceColorResult color in response.Colors.Where(c => c.FeederDivision == (int)FeederDivision.Second))
+        {
+            color.ProvisionalCount.ShouldBe(32);
+            color.DisplacedCount.ShouldBe(0);
+            color.DrawnCount.ShouldBe(0);
+            color.RebalancedUpOut.ShouldBe(4);
+            color.RebalancedUpIn.ShouldBe(4);
+            color.FinalCount.ShouldBe(32);
+        }
+    }
+
+    private static void AssertF3Draws(RebalanceFeedersResponse response)
+    {
+        foreach (RebalanceColorResult color in response.Colors.Where(c => c.FeederDivision == (int)FeederDivision.Third))
+        {
+            color.ProvisionalCount.ShouldBe(32);
+            color.DisplacedCount.ShouldBe(0);
+            color.DrawnCount.ShouldBe(4);
+            color.RebalancedUpOut.ShouldBe(4);
+            color.FinalCount.ShouldBe(32);
+        }
+    }
+
+    private static void AssertNormalCascadeCounts(RebalanceFeedersResponse response)
+    {
+        response.Colors.Count.ShouldBe(24);
+        foreach (RebalanceColorResult color in response.Colors)
+        {
+            color.FinalCount.ShouldBe(32);
+            (color.DrawnCount == 0 || color.DisplacedCount == 0).ShouldBeTrue();
+            if (color.FeederDivision != (int)FeederDivision.Third)
+            {
+                color.DrawnCount.ShouldBe(0);
+                color.DisplacedCount.ShouldBe(0);
+            }
+
+            int structuralNet = color.RebalancedUpIn + color.RebalancedDownIn
+                - color.RebalancedUpOut - color.RebalancedDownOut;
+            int poolNet = color.DrawnCount - color.DisplacedCount;
+            color.FinalCount.ShouldBe(color.ProvisionalCount + structuralNet + poolNet);
+        }
+    }
+
     private static async Task AssertProvisionalAsync(SaveStore store, Guid saveId, int seasonNumber, int expectedPerFeeder)
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
@@ -350,10 +677,67 @@ public sealed class RebalanceFeedersTests
 
         List<MovementEntity> movements = await context.Movements.AsNoTracking()
             .Where(e => e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement))
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown))
             .ToListAsync().ConfigureAwait(false);
         movements.Count.ShouldBe(response.MovementCount);
-        movements.Count.ShouldBe(response.TotalDrawn + response.TotalDisplaced);
+        movements.Count.ShouldBe(
+            response.TotalDrawn + response.TotalDisplaced + response.TotalRebalancedUp + response.TotalRebalancedDown);
+    }
+
+    private static async Task AssertNoPoolBypassAsync(SaveStore store, Guid saveId, RebalanceFeedersResponse response)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.FromSeasonNumber).ConfigureAwait(false);
+        SeasonEntity next = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == response.ToSeasonNumber).ConfigureAwait(false);
+        List<LeagueEntity> feeders = await context.Leagues.AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder).ToListAsync().ConfigureAwait(false);
+        Dictionary<int, LeagueEntity> byId = feeders.ToDictionary(l => l.Id);
+
+        List<MovementEntity> movements = await context.Movements.AsNoTracking()
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown))
+            .ToListAsync().ConfigureAwait(false);
+
+        foreach (MovementEntity movement in movements)
+        {
+            if (movement.Kind == (int)MovementKind.RebalanceDraw)
+            {
+                movement.FromLeagueId.ShouldBe(RebalanceFeedersHandler.PoolSentinelLeagueId);
+                byId.TryGetValue(movement.ToLeagueId, out LeagueEntity? to).ShouldBeTrue();
+                to!.FeederDivision.ShouldBe((int)FeederDivision.Third);
+            }
+            else if (movement.Kind == (int)MovementKind.RebalanceDisplacement)
+            {
+                movement.ToLeagueId.ShouldBe(RebalanceFeedersHandler.PoolSentinelLeagueId);
+                byId.TryGetValue(movement.FromLeagueId, out LeagueEntity? from).ShouldBeTrue();
+                from!.FeederDivision.ShouldBe((int)FeederDivision.Third);
+            }
+            else
+            {
+                movement.FromLeagueId.ShouldNotBe(RebalanceFeedersHandler.PoolSentinelLeagueId);
+                movement.ToLeagueId.ShouldNotBe(RebalanceFeedersHandler.PoolSentinelLeagueId);
+                byId.TryGetValue(movement.FromLeagueId, out LeagueEntity? from).ShouldBeTrue();
+                byId.TryGetValue(movement.ToLeagueId, out LeagueEntity? to).ShouldBeTrue();
+                from!.SportingColor.ShouldBe(to!.SportingColor);
+                Math.Abs(from.FeederDivision - to.FeederDivision).ShouldBe(1);
+            }
+        }
+
+        // No persisted Pool↔F1/F2 movement exists.
+        foreach (MovementEntity movement in movements.Where(m =>
+            m.Kind == (int)MovementKind.RebalanceDraw || m.Kind == (int)MovementKind.RebalanceDisplacement))
+        {
+            if (movement.Kind == (int)MovementKind.RebalanceDraw)
+            {
+                byId[movement.ToLeagueId].FeederDivision.ShouldBe((int)FeederDivision.Third);
+            }
+            else
+            {
+                byId[movement.FromLeagueId].FeederDivision.ShouldBe((int)FeederDivision.Third);
+            }
+        }
     }
 
     private static async Task AssertDisplacedAreLowestAsync(SaveStore store, Guid saveId, RebalanceFeedersResponse response)
@@ -440,36 +824,49 @@ public sealed class RebalanceFeedersTests
             RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId);
 
             AssertTieredInauguralColors(response);
+            AssertDepartedForReveal(response);
+            AssertDrawsForReveal(response);
 
-            foreach (RebalanceMovementMember member in response.Departed)
-            {
-                member.Kind.ShouldBe(RebalanceSuperleagueTransfers.DepartureKind);
-                member.ToLeagueName.ShouldBe("Superleague");
-                member.FromSeasonRank.ShouldBeInRange(1, 4);
-            }
-
-            foreach (RebalanceMovementMember member in response.Draws)
-            {
-                member.Kind.ShouldBe("RebalanceDraw");
-                member.FromLeagueName.ShouldBe("Common Pool");
-                member.FromSeasonRank.ShouldBe(0);
-            }
-
-            // Historical replay shows the exact same departures and draws.
-            GetRebalanceResultHandler query = new(store);
-            GetRebalanceResultResponse replay =
-                await query.HandleAsync(created.Detail.SaveId, fromSeasonNumber: 1);
-            replay.Departed.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
-                response.Departed.Select(m => m.AthleteId).OrderBy(id => id).ToList());
-            replay.Draws.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
-                response.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
-            replay.Colors.Select(c => c.ProvisionalCount).ShouldBe(
-                response.Colors.Select(c => c.ProvisionalCount).ToList());
+            await AssertReplayMatchesAsync(store, response);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    private static void AssertDepartedForReveal(RebalanceFeedersResponse response)
+    {
+        foreach (RebalanceMovementMember member in response.Departed)
+        {
+            member.Kind.ShouldBe(RebalanceSuperleagueTransfers.DepartureKind);
+            member.ToLeagueName.ShouldBe("Superleague");
+            member.FromSeasonRank.ShouldBeInRange(1, 4);
+        }
+    }
+
+    private static void AssertDrawsForReveal(RebalanceFeedersResponse response)
+    {
+        foreach (RebalanceMovementMember member in response.Draws)
+        {
+            member.Kind.ShouldBe("RebalanceDraw");
+            member.FromLeagueName.ShouldBe("Common Pool");
+            member.FromSeasonRank.ShouldBe(0);
+        }
+    }
+
+    private static async Task AssertReplayMatchesAsync(SaveStore store, RebalanceFeedersResponse response)
+    {
+        // Historical replay shows the exact same departures and draws.
+        GetRebalanceResultHandler query = new(store);
+        GetRebalanceResultResponse replay =
+            await query.HandleAsync(response.SaveId, fromSeasonNumber: 1).ConfigureAwait(false);
+        replay.Departed.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
+            response.Departed.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        replay.Draws.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(
+            response.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        replay.Colors.Select(c => c.ProvisionalCount).ShouldBe(
+            response.Colors.Select(c => c.ProvisionalCount).ToList());
     }
 
     private static async Task AssertQueryMatchesAsync(SaveStore store, Guid saveId, RebalanceFeedersResponse response)
@@ -481,12 +878,18 @@ public sealed class RebalanceFeedersTests
         summary.MovementCount.ShouldBe(response.MovementCount);
         summary.TotalDrawn.ShouldBe(response.TotalDrawn);
         summary.TotalDisplaced.ShouldBe(response.TotalDisplaced);
+        summary.TotalRebalancedUp.ShouldBe(response.TotalRebalancedUp);
+        summary.TotalRebalancedDown.ShouldBe(response.TotalRebalancedDown);
         summary.TotalDeparted.ShouldBe(response.TotalDeparted);
         summary.TotalReturned.ShouldBe(response.TotalReturned);
         summary.Draws.Select(m => m.AthleteId).OrderBy(id => id)
             .ShouldBe(response.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
         summary.Displaced.Select(m => m.AthleteId).OrderBy(id => id)
             .ShouldBe(response.Displaced.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        summary.RebalancedUp.Select(m => m.AthleteId).OrderBy(id => id)
+            .ShouldBe(response.RebalancedUp.Select(m => m.AthleteId).OrderBy(id => id).ToList());
+        summary.RebalancedDown.Select(m => m.AthleteId).OrderBy(id => id)
+            .ShouldBe(response.RebalancedDown.Select(m => m.AthleteId).OrderBy(id => id).ToList());
         summary.Departed.Select(m => m.AthleteId).OrderBy(id => id)
             .ShouldBe(response.Departed.Select(m => m.AthleteId).OrderBy(id => id).ToList());
         summary.Returned.Select(m => m.AthleteId).OrderBy(id => id)
@@ -494,10 +897,10 @@ public sealed class RebalanceFeedersTests
         foreach (RebalanceColorResult color in summary.Colors)
         {
             color.FinalCount.ShouldBe(32);
-            color.ProvisionalCount.ShouldBe(
-                color.StartingCount - color.DepartedCount + color.ReturnedCount);
-            color.FinalCount.ShouldBe(
-                color.ProvisionalCount - color.DisplacedCount + color.DrawnCount);
+            int structuralNet = color.RebalancedUpIn + color.RebalancedDownIn
+                - color.RebalancedUpOut - color.RebalancedDownOut;
+            int poolNet = color.DrawnCount - color.DisplacedCount;
+            color.FinalCount.ShouldBe(color.ProvisionalCount + structuralNet + poolNet);
         }
 
         GetRebalanceResultResponse again = await query.HandleAsync(saveId, fromSeasonNumber: response.FromSeasonNumber).ConfigureAwait(false);

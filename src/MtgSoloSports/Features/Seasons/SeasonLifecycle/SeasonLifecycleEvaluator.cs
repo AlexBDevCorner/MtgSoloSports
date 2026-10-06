@@ -262,7 +262,8 @@ public static class SeasonLifecycleEvaluator
 
         int rebalance = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement),
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown),
             cancellationToken).ConfigureAwait(false);
         string expectedCup = CupExtensionPoint.ExpectedCupForSource(source.SeasonNumber);
 
@@ -437,7 +438,8 @@ public static class SeasonLifecycleEvaluator
     {
         return await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement),
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown),
             cancellationToken).ConfigureAwait(false);
     }
 

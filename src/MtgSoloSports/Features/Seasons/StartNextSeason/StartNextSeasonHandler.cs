@@ -236,13 +236,73 @@ public sealed class StartNextSeasonHandler
 
         int rebalance = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement),
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown),
             cancellationToken).ConfigureAwait(false);
         if (rebalance == 0)
+        {
+            await EnsureBalancedRosterWithoutRowsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task EnsureBalancedRosterWithoutRowsAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        // Balanced cascade (all 24 feeders already 32 with no Superleague
+        // color imbalance) persists zero structural/pool rows but still sets
+        // phase Rebalanced. Require a valid 32-per-league roster here so a
+        // corrupt under/over roster can never start the next season, while a
+        // genuinely balanced transition proceeds to the Cup gate.
+        List<LeagueEntity> feeders = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        LeagueEntity? superleague = await context.Leagues
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken)
+            .ConfigureAwait(false);
+        bool rosterValid = superleague is not null
+            && feeders.Count == rules.TieredFeederLeagueCount;
+        if (rosterValid)
+        {
+            rosterValid = await CheckLeagueCountsAsync(context, next, feeders, superleague!, rules, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!rosterValid)
         {
             throw new StartNextSeasonConflictException(
                 "Feeder rebalancing must be resolved before the next season can start.");
         }
+    }
+
+    internal static async Task<bool> CheckLeagueCountsAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        List<LeagueEntity> feeders,
+        LeagueEntity superleague,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, int> counts = await context.SeasonMemberships
+            .Where(e => e.SeasonId == next.Id && e.LeagueId != null)
+            .GroupBy(e => e.LeagueId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.Count(), cancellationToken)
+            .ConfigureAwait(false);
+        foreach (LeagueEntity feeder in feeders)
+        {
+            counts.TryGetValue(feeder.Id, out int count);
+            if (count != rules.LeagueSize)
+            {
+                return false;
+            }
+        }
+
+        counts.TryGetValue(superleague.Id, out int superCount);
+        return superCount == rules.SuperleagueSize;
     }
 
     internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
