@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
 import { athletePath, dashboardPath } from '../routing/routes';
 import {
@@ -254,7 +255,9 @@ export function AthleteSearchPage({
   }));
   const leagueOptions = (options?.currentLeagues ?? []).map((row) => ({
     key: row.name,
-    label: row.name,
+    label: row.isPool
+      ? row.name
+      : `${leagueLevelLabel(row.leagueLevel ?? null, row.feederDivision ?? null, row.kind === 1 ? 'Superleague' : 'Feeder')} · ${row.name}`,
     hint: `${row.count}`,
   }));
   const typeSuggestions = options?.creatureTypes ?? [];
@@ -509,7 +512,7 @@ export function AthleteSearchPage({
               >
                 <option value="">Any</option>
                 <option value="superleague">Superleague</option>
-                <option value="feeder">Feeder only</option>
+                <option value="feeder">Feeder only (any division)</option>
                 <option value="none">Never active</option>
               </select>
             </label>
@@ -659,7 +662,21 @@ export function AthleteSearchPage({
                           </span>
                         </div>
                       </td>
-                      <td>{row.isActive ? (row.currentLeagueName ?? 'Active') : 'Common pool'}</td>
+                      <td>
+                        {row.isActive ? (
+                          <>
+                            {row.currentLeagueName ?? 'Active'}
+                            {row.currentLeagueLevel != null || row.currentLeagueDivision != null ? (
+                              <span className="card-sub">
+                                {' '}
+                                · {leagueLevelLabel(row.currentLeagueLevel ?? null, row.currentLeagueDivision ?? null, row.currentLeagueKind === 1 ? 'Superleague' : 'Feeder')}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          'Common pool'
+                        )}
+                      </td>
                       <td className="numeric">{row.nonPoolSeasons}</td>
                       <td className="numeric">{row.honoursCount}</td>
                       <td className="numeric">{row.titlesCount}</td>

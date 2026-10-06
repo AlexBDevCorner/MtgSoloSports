@@ -36,9 +36,10 @@ export function leagueLevelLabel(
   if (level === 'Feeder3' || feederDivision === 3) {
     return 'Feeder 3';
   }
-  // Feeder 1 with an explicit division, or any other feeder row carrying
-  // division 1, reads as the top feeder tier.
-  if (level === 'Feeder1' && feederDivision !== 0 && feederDivision != null) {
+  // Feeder 1 with an explicit division, or a bare Feeder1 level without
+  // division data, reads as the top feeder tier. Historical v1 rows carry
+  // division 0 and keep the original single-feeder "Feeder" label below.
+  if (level === 'Feeder1' && feederDivision !== 0) {
     return 'Feeder 1';
   }
   if (feederDivision === 1) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -28,10 +28,11 @@ import {
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
 import { fetchSeasonEvents, type SeasonEventSummary } from '../events/eventsApi';
 import { isEventKey, type EventKey } from '../events/eventModel';
+import { groupLeaguesByTier } from '../../shared/leagueTiers';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { HistoryEventView } from './HistoryEventView';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, savesPath, standingsLeaguePath } from '../routing/routes';
+import { cupsPath, qualifiersPath, savesPath, standingsLeaguePath } from '../routing/routes';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -338,6 +339,29 @@ export function HistoryPage({
   const stageStandings = standingsState.data;
   const seasonTable = tableState.data;
 
+  // Pyramid grouping from data (MSS-060): Superleague, Feeder 1/2/3, legacy
+  // single feeder. v1 seasons keep their original "Feeder" group label.
+  const competitionGroups = useMemo(() => {
+    const groups = groupLeaguesByTier(
+      competitions.map((row) => ({
+        leagueId: row.leagueId,
+        name: row.name,
+        kind: row.kind,
+        feederDivision: row.feederDivision ?? null,
+        leagueLevel: row.leagueLevel ?? null,
+      })),
+    );
+    return (
+      [
+        ['Superleague', groups.superleague],
+        ['Feeder 1', groups.feeder1],
+        ['Feeder 2', groups.feeder2],
+        ['Feeder 3', groups.feeder3],
+        ['Feeder', groups.legacyFeeder],
+      ] as const
+    ).filter(([, rows]) => rows.length > 0);
+  }, [competitions]);
+
   function pushSelection(next: HistorySelection): void {
     onHistoryChange(next);
   }
@@ -389,10 +413,14 @@ export function HistoryPage({
               pushSelection({ season: seasonNumber, competition, stage: null, round: null, event: null, group: null });
             }}
           >
-            {competitions.map((row) => (
-              <option key={row.leagueId} value={row.leagueId}>
-                {row.name}
-              </option>
+            {competitionGroups.map(([label, rows]) => (
+              <optgroup key={label} label={label}>
+                {rows.map((row) => (
+                  <option key={row.leagueId} value={row.leagueId}>
+                    {row.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
             {seasonEvents.length > 0 ? (
               <optgroup label="Postseason">
@@ -448,6 +476,11 @@ export function HistoryPage({
         </label>
         <div className="toolbar-end">
           {seasonsState.loading ? <span className="muted small">Refreshing…</span> : null}
+          {seasonNumber !== null ? (
+            <Link to={qualifiersPath(saveId, { season: seasonNumber })} className="ghost-button">
+              Qualifiers
+            </Link>
+          ) : null}
           <InfoDisclosure>
             <p>
               Season, competition and stage lists plus round summaries come from normalized

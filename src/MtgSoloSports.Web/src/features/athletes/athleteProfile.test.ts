@@ -80,4 +80,12 @@ describe('athlete profile performance architecture', () => {
       'page-wide loading only gates the core profile',
     );
   });
+
+  it('shows the feeder division for each season and tiered movement provenance', () => {
+    assert.ok(page.includes('leagueLevelLabel'), 'seasons label the division from data');
+    assert.ok(page.includes('movementKindLabel'), 'movements label automatic/qualifier/structural kinds');
+    assert.ok(page.includes('movementTierPrefix'), 'movements name the adjacent-tier endpoints');
+    assert.ok(api.includes('leagueLevel'), 'season history carries tier identity');
+    assert.ok(api.includes('fromLeagueLevel'), 'movement history carries source/destination tiers');
+  });
 });

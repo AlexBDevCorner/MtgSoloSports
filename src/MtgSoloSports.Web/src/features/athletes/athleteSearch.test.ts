@@ -94,6 +94,12 @@ describe('athlete search page', () => {
     assert.ok(page.includes('row.titlesCount'), 'titles distinguish wins from lower podiums');
   });
 
+  it('distinguishes Superleague, feeder divisions and pool in league filters', () => {
+    assert.ok(page.includes('leagueLevelLabel'), 'league options label tiers from data');
+    assert.ok(page.includes("value=\"feeder\">Feeder only (any division)"), 'highest-league filter names the division scope');
+    assert.ok(page.includes('row.currentLeagueLevel'), 'results carry the current tier');
+  });
+
   it('handles empty states clearly', () => {
     assert.ok(page.includes('No athletes match'), 'no-match state');
     assert.ok(page.includes('No athletes match “'), 'text-search no-match state');

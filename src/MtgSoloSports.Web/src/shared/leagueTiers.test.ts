@@ -25,6 +25,7 @@ describe('leagueLevelLabel', () => {
     assert.equal(leagueLevelLabel(null, 0, 'Feeder'), 'Feeder');
     assert.equal(leagueLevelLabel(null, null, 'Feeder'), 'Feeder');
     assert.equal(leagueLevelLabel(null, null, 'Superleague'), 'Superleague');
+    assert.equal(leagueLevelLabel('Feeder1', null, null), 'Feeder 1');
   });
 });
 
