@@ -18,6 +18,10 @@ export interface HistoryCompetition {
   leagueId: number;
   name: string;
   kind: string;
+  /** Persisted feeder division (0 Superleague/legacy v1, 1..3 tiered). */
+  feederDivision?: number | null;
+  /** Tier identity ("Superleague", "Feeder1", ...) without name parsing. */
+  leagueLevel?: string | null;
   sportingColor: number;
   sportingColorName: string;
   stageCount: number;

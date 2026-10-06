@@ -3,6 +3,12 @@ import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import {
+  TIER_BONUS_SCALE_LINE,
+  groupLeaguesByTier,
+  leagueLevelLabel,
+  tierBonusLabel,
+} from '../../shared/leagueTiers';
 import { fetchCurrentStandings, type CurrentStandings } from '../athletes/athleteApi';
 import {
   fetchHistoryCompetitions,
@@ -18,7 +24,7 @@ import { AthleteLink, Link } from '../routing/router';
 import { historyPath, livePath, savesPath, type StandingsView } from '../routing/routes';
 import { MovementSection } from '../movement/MovementSection';
 import { RebalanceSection } from '../rebalance/RebalanceSection';
-import { zoneLabelForRank } from './zones';
+import { zoneLabelForRank, zoneSummaryLine } from './zones';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import {
   allStageColumns,
@@ -238,10 +244,20 @@ export function StandingsPage({
 
   const placements = placementsState.data;
   const stages = stagesState.data?.stages ?? [];
+  const activeCompetition = competitions.find((row) => row.leagueId === leagueId) ?? null;
   const leagueKind =
     placements?.leagueKind ??
-    competitions.find((row) => row.leagueId === leagueId)?.kind ??
+    activeCompetition?.kind ??
     'Feeder';
+  const leagueLevel =
+    placements?.leagueLevel ??
+    activeCompetition?.leagueLevel ??
+    null;
+  const leagueDivision =
+    placements?.feederDivision ??
+    activeCompetition?.feederDivision ??
+    null;
+  const tierLabel = leagueLevelLabel(leagueLevel, leagueDivision, leagueKind);
 
   const totalsRows: TotalsRow[] = useMemo(() => {
     if (useCurrentTotals) {
@@ -381,7 +397,32 @@ export function StandingsPage({
   }
 
   const seasonOptions = [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber);
-  const leagueOptions = [...competitions].sort((a, b) => a.leagueId - b.leagueId);
+  const tierGroups = useMemo(
+    () =>
+      groupLeaguesByTier(
+        competitions.map((row) => ({
+          leagueId: row.leagueId,
+          name: row.name,
+          kind: row.kind,
+          feederDivision: row.feederDivision ?? null,
+          leagueLevel: row.leagueLevel ?? null,
+        })),
+      ),
+    [competitions],
+  );
+  const tierSections = useMemo(
+    () =>
+      (
+        [
+          ['Superleague', tierGroups.superleague],
+          ['Feeder 1', tierGroups.feeder1],
+          ['Feeder 2', tierGroups.feeder2],
+          ['Feeder 3', tierGroups.feeder3],
+          ['Feeder', tierGroups.legacyFeeder],
+        ] as const
+      ).filter(([, rows]) => rows.length > 0),
+    [tierGroups],
+  );
 
   return (
     <div className="dashboard standings-page">
@@ -390,7 +431,7 @@ export function StandingsPage({
           <span>League</span>
           <select
             value={leagueId ?? ''}
-            disabled={leagueOptions.length === 0}
+            disabled={competitions.length === 0}
             onChange={(event) => {
               const next = Number.parseInt(event.target.value, 10);
               const league = Number.isNaN(next) ? null : next;
@@ -398,11 +439,14 @@ export function StandingsPage({
               pushSelection({ league, season: seasonNumber, view });
             }}
           >
-            {leagueOptions.map((row) => (
-              <option key={row.leagueId} value={row.leagueId}>
-                {row.name}
-                {row.kind === 'Superleague' ? ' · Superleague' : ''}
-              </option>
+            {tierSections.map(([label, rows]) => (
+              <optgroup key={label} label={label}>
+                {rows.map((row) => (
+                  <option key={row.leagueId} value={row.leagueId}>
+                    {row.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
@@ -501,7 +545,7 @@ export function StandingsPage({
         eyebrow="Progress"
         title={
           placements
-            ? `${placements.leagueName} — Season ${placements.seasonNumber} · ${completedStages}/32 stages`
+            ? `${placements.leagueName} · ${tierLabel} — Season ${placements.seasonNumber} · ${completedStages}/32 stages`
             : 'Season progress'
         }
       >
@@ -541,6 +585,10 @@ export function StandingsPage({
             <p className="muted small">
               Tables accumulate persisted stage data only. An incomplete stage never
               contributes placements, points or bonus to either view.
+            </p>
+            <p className="muted small">
+              {tierLabel} bonus {tierBonusLabel(leagueLevel)} applies to future rounds; earned
+              bonus activates from the next stage. {TIER_BONUS_SCALE_LINE}
             </p>
           </>
         )}
@@ -625,7 +673,7 @@ export function StandingsPage({
                           </td>
                           <td>
                             <span className="badge badge-wait" title="Visual zone only; no quotas applied.">
-                              {zoneLabelForRank(totals.seasonRank, leagueKind)}
+                              {zoneLabelForRank(totals.seasonRank, leagueKind, leagueLevel)}
                             </span>
                           </td>
                           <td className="numeric">{formatPoints(totals.totalChampionshipPointsThousandths)}</td>
@@ -642,8 +690,8 @@ export function StandingsPage({
                 {useCurrentTotals
                   ? 'Live cumulative table from persisted completed stages; final ranks persist at season end.'
                   : 'Persisted final table; completed seasons never change when new stages run.'}{' '}
-                Zones are visual only: Superleague 1–16 safe, 17–24 qualifier, 25–32
-                relegated; feeders champion auto-promoted plus 2–4 qualifier.
+                Zones are visual only ({zoneSummaryLine(leagueKind, leagueLevel)}).
+                No color quotas are applied.
               </p>
             </>
           )}

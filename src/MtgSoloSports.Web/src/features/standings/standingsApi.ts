@@ -25,6 +25,8 @@ export interface SeasonPlacements {
   leagueId: number;
   leagueName: string;
   leagueKind: string;
+  feederDivision?: number | null;
+  leagueLevel?: string | null;
   isSeasonComplete: boolean;
   completedStages: number;
   athletes: SeasonPlacementAthlete[];

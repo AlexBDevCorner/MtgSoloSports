@@ -23,10 +23,11 @@ export interface RebalanceMovementMember {
 }
 
 /**
- * Per-feeder outcome for one rebalance transition.
- * `startingCount` is the source feeder size (32); after Superleague
- * departures/returns the league holds `provisionalCount`
- * (32 − departed + returned); pool draws/displacements restore `finalCount`.
+ * Per-league outcome for one rebalance transition. Tiered saves carry one
+ * entry per feeder league (24: F1/F2/F3 per sporting color); v1 saves carry
+ * one per color. `feederDivision` (1/2/3, 0 legacy) identifies the tier
+ * without parsing names; `rebalancedUpIn/Out` and `rebalancedDownIn/Out`
+ * count the structural F1↔F2/F2↔F3 cascade (zero for v1).
  */
 export interface RebalanceColorResult {
   leagueId: number;
@@ -39,6 +40,13 @@ export interface RebalanceColorResult {
   displacedCount: number;
   drawnCount: number;
   finalCount: number;
+  feederDivision?: number | null;
+  rebalancedUpIn?: number | null;
+  rebalancedUpOut?: number | null;
+  rebalancedDownIn?: number | null;
+  rebalancedDownOut?: number | null;
+  f2ProvisionalCount?: number | null;
+  f3ProvisionalCount?: number | null;
 }
 
 /**

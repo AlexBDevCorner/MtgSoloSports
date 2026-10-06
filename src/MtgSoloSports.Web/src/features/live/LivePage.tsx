@@ -12,7 +12,13 @@ import { AthleteLink, Link } from '../routing/router';
 import { savesPath, dashboardPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
-import { colorComposition, zoneLabelForRank } from '../standings/zones';
+import { colorComposition, zoneLabelForRank, zoneSummaryLine } from '../standings/zones';
+import {
+  TIER_BONUS_SCALE_LINE,
+  groupLeaguesByTier,
+  leagueLevelLabel,
+  tierBonusLabel,
+} from '../../shared/leagueTiers';
 import './LivePage.css';
 
 const LEAGUE_KEY_PREFIX = 'mtg-solo-sports:live-league:';
@@ -75,6 +81,30 @@ export function LivePage({
     [progress],
   );
   const league = leagues.find((entry) => entry.leagueId === leagueId) ?? null;
+  const leagueTier = league
+    ? leagueLevelLabel(league.leagueLevel ?? null, league.feederDivision ?? null, league.leagueKind)
+    : null;
+  const leagueTierBonus = league ? tierBonusLabel(league.leagueLevel ?? null) : null;
+  const tierSections = useMemo(() => {
+    const groups = groupLeaguesByTier(
+      leagues.map((entry) => ({
+        leagueId: entry.leagueId,
+        name: entry.leagueName,
+        kind: entry.leagueKind,
+        feederDivision: entry.feederDivision ?? null,
+        leagueLevel: entry.leagueLevel ?? null,
+      })),
+    );
+    return (
+      [
+        ['Superleague', groups.superleague],
+        ['Feeder 1', groups.feeder1],
+        ['Feeder 2', groups.feeder2],
+        ['Feeder 3', groups.feeder3],
+        ['Feeder', groups.legacyFeeder],
+      ] as const
+    ).filter(([, rows]) => rows.length > 0);
+  }, [leagues]);
   const stageNumber = league?.currentStage ?? progress?.globalStage ?? null;
   const effectiveStage = league?.isLeagueComplete ? null : stageNumber;
 
@@ -307,7 +337,7 @@ export function LivePage({
       <aside className="live-sidebar" aria-label="Competition management">
         <Card
           eyebrow="Live competition"
-          title={league ? `${league.leagueName} — Stage ${effectiveStage ?? '—'}` : 'Live competition'}
+          title={league ? `${league.leagueName} · ${leagueTier ?? ''} — Stage ${effectiveStage ?? '—'}` : 'Live competition'}
         >
           <div className="live-manage-controls">
             <label className="field">
@@ -326,10 +356,14 @@ export function LivePage({
                   onLeagueChange(next);
                 }}
               >
-                {leagues.map((entry) => (
-                  <option key={entry.leagueId} value={entry.leagueId}>
-                    {entry.leagueName}
-                  </option>
+                {tierSections.map(([label, rows]) => (
+                  <optgroup key={label} label={label}>
+                    {rows.map((entry) => (
+                      <option key={entry.leagueId} value={entry.leagueId}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
@@ -519,6 +553,7 @@ export function LivePage({
           <>
             {(() => {
               const kind = league?.leagueKind ?? 'Feeder';
+              const level = league?.leagueLevel ?? null;
               const composition =
                 kind === 'Superleague' ? colorComposition(standings.standings) : [];
               return composition.length > 0 ? (
@@ -551,6 +586,7 @@ export function LivePage({
                 <tbody>
                   {standings.standings.map((row) => {
                     const kind = league?.leagueKind ?? 'Feeder';
+                    const level = league?.leagueLevel ?? null;
                     return (
                       <tr key={row.athleteId}>
                         <td className="numeric">{row.seasonRank}</td>
@@ -572,7 +608,7 @@ export function LivePage({
                         <td>{row.sportingColorName}</td>
                         <td>
                           <span className="badge badge-wait" title="Visual zone only; no quotas applied.">
-                            {zoneLabelForRank(row.seasonRank, kind)}
+                            {zoneLabelForRank(row.seasonRank, kind, level)}
                           </span>
                         </td>
                         <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
@@ -588,9 +624,10 @@ export function LivePage({
         )}
         <p className="muted small">
           Standings accumulate persisted stage championship points and link each card row
-          to its career profile. Zones are visual only: Superleague 1–16 safe, 17–24
-          qualifier, 25–32 relegated; feeders champion auto-promoted plus 2–4 qualifier.
-          No color quotas are applied. The dedicated Standings page adds the full
+          to its career profile. Zones are visual only
+          ({league ? zoneSummaryLine(league.leagueKind, league.leagueLevel ?? null) : 'see Standings for zone bands'}).
+          {leagueTierBonus ? ` ${leagueTier ?? ''} bonus ${leagueTierBonus}.` : ''} {TIER_BONUS_SCALE_LINE}{' '}
+          The dedicated Standings page adds the full
           season table plus the stage-by-stage placement matrix for bonus calibration.
         </p>
       </Card>

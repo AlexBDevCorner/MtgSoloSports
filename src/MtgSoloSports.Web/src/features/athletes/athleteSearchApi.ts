@@ -11,6 +11,9 @@ export interface AthleteSearchResult {
   isActive: boolean;
   currentLeagueName: string | null;
   currentLeagueKind: number | null;
+  /** Tier identity of the current league; null for the pool. */
+  currentLeagueLevel?: string | null;
+  currentLeagueDivision?: number | null;
   nonPoolSeasons: number;
   honoursCount: number;
   titlesCount: number;
@@ -47,6 +50,9 @@ export interface AthleteSearchLeagueOption {
   kind: number | null;
   isPool: boolean;
   count: number;
+  /** Tier identity of the league option; null for the pool. */
+  leagueLevel?: string | null;
+  feederDivision?: number | null;
 }
 
 export interface AthleteSearchOptions {
