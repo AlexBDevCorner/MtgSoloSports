@@ -63,6 +63,8 @@ public sealed class PlayQualifierRoundHandler
             {
                 FromSeasonId = state.Source.Id,
                 ToSeasonId = state.Next.Id,
+                QualifierBoundary = (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                QualifierSportingColor = SimulationKernel.Leagues.QualifierIdentity.SuperleagueColorSentinel,
                 RoundNumber = payload.RoundNumber,
                 RulesVersion = payload.RulesVersion,
                 RngBeforeState = unchecked((long)payload.RngBeforeState),

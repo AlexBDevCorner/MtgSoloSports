@@ -34,11 +34,44 @@ public static class RoundSimulator
                 $"Round roster must contain exactly {rules.LeagueSize} athletes, was {roster.Count}.");
         }
 
+        return SimulateWithFieldSize(roster, rng, rules, rules.LeagueSize);
+    }
+
+    /// <summary>
+    /// Simulates one round for an explicit field size (MSS-058): league rounds
+    /// use <c>LeagueSize</c> (32); feeder qualifiers use 16. Base points come
+    /// from the snapshot scoring-table prefix, so positions 1..16 score
+    /// identically in both contexts. Never assumes
+    /// <c>LeagueSize == qualifier size</c>.
+    /// </summary>
+    public static RoundSimulationResult SimulateWithFieldSize(
+        IReadOnlyList<RoundAthleteInput> roster,
+        Pcg32V1 rng,
+        RulesV1 rules,
+        int fieldSize)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(rng);
+        ArgumentNullException.ThrowIfNull(rules);
+        rules.Validate();
+
+        if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
+        {
+            throw new InvalidOperationException(
+                $"Round field size must be {rules.LeagueSize}, {rules.FeederQualifierSize} or {rules.QualifierSize}, was {fieldSize}.");
+        }
+
+        if (roster.Count != fieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Round roster must contain exactly {fieldSize} athletes, was {roster.Count}.");
+        }
+
         ValidateInputs(roster);
         Dictionary<int, int> rankBefore = ComputeStageRanks(roster);
         List<RoundPlacement> unranked = ShuffleAndScore(roster, rng, rules, rankBefore);
         List<RoundPlacement> ranked = ApplyRanks(unranked);
-        ValidateResult(ranked, rules);
+        ValidateResultWithFieldSize(ranked, rules, fieldSize);
         return new RoundSimulationResult(ranked, rng.Snapshot(), ComputeChecksum(ranked));
     }
 
@@ -206,6 +239,14 @@ public static class RoundSimulator
 
     private static void ValidateResult(IReadOnlyList<RoundPlacement> placements, RulesV1 rules)
     {
+        ValidateResultWithFieldSize(placements, rules, rules.LeagueSize);
+    }
+
+    private static void ValidateResultWithFieldSize(
+        IReadOnlyList<RoundPlacement> placements,
+        RulesV1 rules,
+        int fieldSize)
+    {
         HashSet<int> positions = new();
         HashSet<int> ids = new();
         foreach (RoundPlacement placement in placements)
@@ -213,9 +254,10 @@ public static class RoundSimulator
             CheckPlacement(placement, rules, positions, ids);
         }
 
-        if (positions.Count != rules.LeagueSize || !positions.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
+        if (positions.Count != fieldSize || !positions.SetEquals(Enumerable.Range(1, fieldSize)))
         {
-            throw new InvalidOperationException("Round result must cover positions 1..32 exactly once.");
+            throw new InvalidOperationException(
+                $"Round result must cover positions 1..{fieldSize} exactly once.");
         }
     }
 

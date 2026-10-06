@@ -149,31 +149,87 @@ public sealed class GetAutomaticMovementHandler
         LeagueEntity nextSuperleague,
         CancellationToken cancellationToken)
     {
-        List<MovementEntity> movements = await context.Movements
-            .AsNoTracking()
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        List<MovementEntity> movements = await LoadSuperleagueMovementsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         ValidateMovements(movements);
 
-        Dictionary<int, string> names = await context.SaveAthletes
+        Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string?> images = await LoadImagesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, LeagueEntity> leaguesById = await LoadLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete = await LoadNextMembershipsAsync(context, next, cancellationToken).ConfigureAwait(false);
+        (LeagueEntity sourceSuperleague, List<SeasonStandingEntity> sourceSuperRows) = await LoadSourceSuperRowsAsync(context, source, cancellationToken).ConfigureAwait(false);
+
+        int pool = await LoadPoolCountAsync(context, next, cancellationToken).ConfigureAwait(false);
+
+        return MapResponse(saveId, source, next, nextSuperleague, movements, names, images, leaguesById, nextByAthlete, sourceSuperleague, sourceSuperRows, pool);
+    }
+
+    internal static async Task<List<MovementEntity>> LoadSuperleagueMovementsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        CancellationToken cancellationToken)
+    {
+        // Superleague read model stays scoped to Superleague kinds for backward
+        // compatibility; feeder movements (MSS-058) use distinct kinds and are
+        // exposed via the feeder qualifier/movement APIs with tier provenance.
+        return await context.Movements
+            .AsNoTracking()
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && (e.Kind == (int)MovementKind.AutomaticPromotion
+                    || e.Kind == (int)MovementKind.AutomaticRelegation
+                    || e.Kind == (int)MovementKind.QualifierIncumbent
+                    || e.Kind == (int)MovementKind.QualifierChallenger))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async Task<Dictionary<int, string>> LoadNamesAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.SaveAthletes
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, string?> images = await context.SaveAthletes
+    }
+
+    internal static async Task<Dictionary<int, string?>> LoadImagesAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.SaveAthletes
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
+    }
+
+    internal static async Task<Dictionary<int, LeagueEntity>> LoadLeaguesAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        return await context.Leagues
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, SeasonMembershipEntity> nextByAthlete = await context.SeasonMemberships
+    }
+
+    internal static async Task<Dictionary<int, SeasonMembershipEntity>> LoadNextMembershipsAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        CancellationToken cancellationToken)
+    {
+        return await context.SeasonMemberships
             .AsNoTracking()
             .Where(e => e.SeasonId == next.Id && e.LeagueId != null)
             .ToDictionaryAsync(e => e.SaveAthleteId, cancellationToken)
             .ConfigureAwait(false);
+    }
 
+    internal static async Task<(LeagueEntity SourceSuperleague, List<SeasonStandingEntity> Rows)> LoadSourceSuperRowsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
         LeagueEntity sourceSuperleague = await context.Leagues
             .AsNoTracking()
             .SingleAsync(e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken)
@@ -185,15 +241,38 @@ public sealed class GetAutomaticMovementHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        return (sourceSuperleague, sourceSuperRows);
+    }
+
+    internal static async Task<int> LoadPoolCountAsync(
+        SaveDbContext context,
+        SeasonEntity next,
+        CancellationToken cancellationToken)
+    {
+        return await context.SeasonMemberships
+            .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static GetAutomaticMovementResponse MapResponse(
+        Guid saveId,
+        SeasonEntity source,
+        SeasonEntity next,
+        LeagueEntity nextSuperleague,
+        List<MovementEntity> movements,
+        Dictionary<int, string> names,
+        Dictionary<int, string?> images,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
+        LeagueEntity sourceSuperleague,
+        List<SeasonStandingEntity> sourceSuperRows,
+        int pool)
+    {
         List<AutomaticMovementMember> safe = MapSafe(names, images, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
         List<AutomaticMovementMember> promoted = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticPromotion);
         List<AutomaticMovementMember> relegated = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticRelegation);
         List<AutomaticMovementMember> incumbents = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.QualifierIncumbent);
         List<AutomaticMovementMember> challengers = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.QualifierChallenger);
-
-        int pool = await context.SeasonMemberships
-            .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
-            .ConfigureAwait(false);
 
         return new GetAutomaticMovementResponse(
             saveId,

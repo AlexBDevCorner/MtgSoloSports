@@ -405,15 +405,24 @@ public sealed class SaveDbContext : DbContext
 
     private static void ConfigureQualifier(ModelBuilder modelBuilder)
     {
+        ConfigureQualifierRounds(modelBuilder);
+        ConfigureQualifierStandings(modelBuilder);
+    }
+
+    private static void ConfigureQualifierRounds(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<QualifierRoundEntity>(entity =>
         {
             entity.ToTable("QualifierRounds");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierBoundary, e.QualifierSportingColor, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierBoundary, e.QualifierSportingColor });
             entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId });
             entity.Property(e => e.FromSeasonId).IsRequired();
             entity.Property(e => e.ToSeasonId).IsRequired();
+            entity.Property(e => e.QualifierBoundary).IsRequired();
+            entity.Property(e => e.QualifierSportingColor).IsRequired();
             entity.Property(e => e.RoundNumber).IsRequired();
             entity.Property(e => e.RulesVersion).IsRequired();
             entity.Property(e => e.RngBeforeState).IsRequired();
@@ -423,17 +432,24 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.PayloadJson).IsRequired();
             entity.Property(e => e.PayloadChecksum).IsRequired().HasMaxLength(64);
         });
+    }
 
+    private static void ConfigureQualifierStandings(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<QualifierStandingEntity>(entity =>
         {
             entity.ToTable("QualifierStandings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.SaveAthleteId }).IsUnique();
-            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierRank }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierBoundary, e.QualifierSportingColor, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierBoundary, e.QualifierSportingColor, e.QualifierRank }).IsUnique();
+            entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId, e.QualifierBoundary, e.QualifierSportingColor });
             entity.HasIndex(e => new { e.FromSeasonId, e.ToSeasonId });
+            entity.HasIndex(e => e.SaveAthleteId);
             entity.Property(e => e.FromSeasonId).IsRequired();
             entity.Property(e => e.ToSeasonId).IsRequired();
+            entity.Property(e => e.QualifierBoundary).IsRequired();
+            entity.Property(e => e.QualifierSportingColor).IsRequired();
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.QualifierRank).IsRequired();
             entity.Property(e => e.QualifierScoreThousandths).IsRequired();

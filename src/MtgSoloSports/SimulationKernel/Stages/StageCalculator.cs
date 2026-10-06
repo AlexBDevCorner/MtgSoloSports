@@ -27,36 +27,57 @@ public static class StageCalculator
         IReadOnlyList<IReadOnlyList<StageRoundEntry>> rounds,
         RulesV1 rules)
     {
+        return AccumulateWithFieldSize(rounds, rules, rules.LeagueSize, rules.RoundsPerStage);
+    }
+
+    /// <summary>
+    /// Accumulates qualifier totals for an explicit field size (MSS-058):
+    /// Superleague qualifiers use 32, feeder qualifiers use 16. Rounds are
+    /// always 16 qualifier rounds. Never assumes
+    /// <c>LeagueSize == qualifier size</c>.
+    /// </summary>
+    public static IReadOnlyList<StageAthleteTotals> AccumulateWithFieldSize(
+        IReadOnlyList<IReadOnlyList<StageRoundEntry>> rounds,
+        RulesV1 rules,
+        int fieldSize,
+        int expectedRounds)
+    {
         ArgumentNullException.ThrowIfNull(rounds);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
 
-        if (rounds.Count != rules.RoundsPerStage)
+        if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
         {
             throw new InvalidOperationException(
-                $"Stage accumulation requires exactly {rules.RoundsPerStage} rounds, was {rounds.Count}.");
+                $"Stage field size must be {rules.LeagueSize}, {rules.FeederQualifierSize} or {rules.QualifierSize}, was {fieldSize}.");
         }
 
-        Dictionary<int, Accumulator> accumulators = new(rules.LeagueSize);
-        Dictionary<int, string> names = new(rules.LeagueSize);
+        if (rounds.Count != expectedRounds)
+        {
+            throw new InvalidOperationException(
+                $"Stage accumulation requires exactly {expectedRounds} rounds, was {rounds.Count}.");
+        }
+
+        Dictionary<int, Accumulator> accumulators = new(fieldSize);
+        Dictionary<int, string> names = new(fieldSize);
         foreach (IReadOnlyList<StageRoundEntry> round in rounds)
         {
-            ValidateRound(round, rules, accumulators, names);
+            ValidateRoundWithFieldSize(round, rules, accumulators, names, fieldSize);
         }
 
-        if (accumulators.Count != rules.LeagueSize)
+        if (accumulators.Count != fieldSize)
         {
             throw new InvalidOperationException(
-                $"Stage accumulation requires exactly {rules.LeagueSize} athletes, was {accumulators.Count}.");
+                $"Stage accumulation requires exactly {fieldSize} athletes, was {accumulators.Count}.");
         }
 
         List<StageAthleteTotals> totals = new(accumulators.Count);
         foreach ((int athleteId, Accumulator accumulator) in accumulators)
         {
-            if (accumulator.CountSum != rules.RoundsPerStage)
+            if (accumulator.CountSum != expectedRounds)
             {
                 throw new InvalidOperationException(
-                    $"Athlete '{names[athleteId]}' has {accumulator.CountSum} round appearances, expected {rules.RoundsPerStage}.");
+                    $"Athlete '{names[athleteId]}' has {accumulator.CountSum} round appearances, expected {expectedRounds}.");
             }
 
             totals.Add(new StageAthleteTotals(
@@ -87,18 +108,39 @@ public static class StageCalculator
         RulesV1 rules,
         LeagueLevel level)
     {
+        return RankWithFieldSize(totals, rng, rules, level, rules.LeagueSize);
+    }
+
+    /// <summary>
+    /// Ranks qualifier totals for an explicit field size (MSS-058): 32 for
+    /// Superleague, 16 for feeder boundaries. Tie-breaking and bonus scaling
+    /// are identical; only the field-size validation differs.
+    /// </summary>
+    public static IReadOnlyList<StageRankedAthlete> RankWithFieldSize(
+        IReadOnlyList<StageAthleteTotals> totals,
+        Pcg32V1 rng,
+        RulesV1 rules,
+        LeagueLevel level,
+        int fieldSize)
+    {
         ArgumentNullException.ThrowIfNull(totals);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
 
-        if (totals.Count != rules.LeagueSize)
+        if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
         {
             throw new InvalidOperationException(
-                $"Stage ranking requires exactly {rules.LeagueSize} athletes, was {totals.Count}.");
+                $"Stage field size must be {rules.LeagueSize}, {rules.FeederQualifierSize} or {rules.QualifierSize}, was {fieldSize}.");
         }
 
-        ValidateTotals(totals, rules);
+        if (totals.Count != fieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Stage ranking requires exactly {fieldSize} athletes, was {totals.Count}.");
+        }
+
+        ValidateTotalsWithFieldSize(totals, rules, fieldSize, rules.RoundsPerStage);
 
         List<StageAthleteTotals> byScore = SortByScore(totals);
         List<StageRankedAthlete> ranked = new(byScore.Count);
@@ -193,24 +235,35 @@ public static class StageCalculator
         Dictionary<int, Accumulator> accumulators,
         Dictionary<int, string> names)
     {
+        ValidateRoundWithFieldSize(round, rules, accumulators, names, rules.LeagueSize);
+    }
+
+    private static void ValidateRoundWithFieldSize(
+        IReadOnlyList<StageRoundEntry> round,
+        RulesV1 rules,
+        Dictionary<int, Accumulator> accumulators,
+        Dictionary<int, string> names,
+        int fieldSize)
+    {
         ArgumentNullException.ThrowIfNull(round);
-        if (round.Count != rules.LeagueSize)
+        if (round.Count != fieldSize)
         {
             throw new InvalidOperationException(
-                $"Stage round must contain exactly {rules.LeagueSize} entries, was {round.Count}.");
+                $"Stage round must contain exactly {fieldSize} entries, was {round.Count}.");
         }
 
         HashSet<int> positions = new();
         HashSet<int> athleteIds = new();
         foreach (StageRoundEntry entry in round)
         {
-            ValidateRoundEntry(entry, rules, positions, athleteIds);
-            TrackRoundEntry(entry, rules, accumulators, names);
+            ValidateRoundEntryWithFieldSize(entry, rules, positions, athleteIds, fieldSize);
+            TrackRoundEntryWithFieldSize(entry, rules, accumulators, names, fieldSize);
         }
 
-        if (!positions.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
+        if (!positions.SetEquals(Enumerable.Range(1, fieldSize)))
         {
-            throw new InvalidOperationException("Stage round must cover positions 1..32 exactly once.");
+            throw new InvalidOperationException(
+                $"Stage round must cover positions 1..{fieldSize} exactly once.");
         }
     }
 
@@ -219,6 +272,16 @@ public static class StageCalculator
         RulesV1 rules,
         HashSet<int> positions,
         HashSet<int> athleteIds)
+    {
+        ValidateRoundEntryWithFieldSize(entry, rules, positions, athleteIds, rules.LeagueSize);
+    }
+
+    private static void ValidateRoundEntryWithFieldSize(
+        StageRoundEntry entry,
+        RulesV1 rules,
+        HashSet<int> positions,
+        HashSet<int> athleteIds,
+        int fieldSize)
     {
         if (entry.AthleteId <= 0)
         {
@@ -230,7 +293,7 @@ public static class StageCalculator
             throw new InvalidOperationException("Stage round contains an athlete with an empty name.");
         }
 
-        if (entry.Position < 1 || entry.Position > rules.LeagueSize)
+        if (entry.Position < 1 || entry.Position > fieldSize)
         {
             throw new InvalidOperationException($"Stage round position {entry.Position} is out of range.");
         }
@@ -264,6 +327,16 @@ public static class StageCalculator
         Dictionary<int, Accumulator> accumulators,
         Dictionary<int, string> names)
     {
+        TrackRoundEntryWithFieldSize(entry, rules, accumulators, names, rules.LeagueSize);
+    }
+
+    private static void TrackRoundEntryWithFieldSize(
+        StageRoundEntry entry,
+        RulesV1 rules,
+        Dictionary<int, Accumulator> accumulators,
+        Dictionary<int, string> names,
+        int fieldSize)
+    {
         if (!names.TryGetValue(entry.AthleteId, out string? known))
         {
             names[entry.AthleteId] = entry.Name;
@@ -275,7 +348,7 @@ public static class StageCalculator
 
         if (!accumulators.TryGetValue(entry.AthleteId, out Accumulator? accumulator))
         {
-            accumulator = new Accumulator { Counts = new int[rules.LeagueSize] };
+            accumulator = new Accumulator { Counts = new int[fieldSize] };
             accumulators[entry.AthleteId] = accumulator;
         }
 
@@ -290,6 +363,15 @@ public static class StageCalculator
     }
 
     private static void ValidateTotals(IReadOnlyList<StageAthleteTotals> totals, RulesV1 rules)
+    {
+        ValidateTotalsWithFieldSize(totals, rules, rules.LeagueSize, rules.RoundsPerStage);
+    }
+
+    private static void ValidateTotalsWithFieldSize(
+        IReadOnlyList<StageAthleteTotals> totals,
+        RulesV1 rules,
+        int fieldSize,
+        int expectedRounds)
     {
         HashSet<int> ids = new();
         HashSet<string> athleteNames = new(StringComparer.Ordinal);
@@ -320,10 +402,10 @@ public static class StageCalculator
                 throw new InvalidOperationException($"Stage totals for '{entry.Name}' cannot be negative.");
             }
 
-            if (entry.RoundPlaceCounts.Count != rules.LeagueSize)
+            if (entry.RoundPlaceCounts.Count != fieldSize)
             {
                 throw new InvalidOperationException(
-                    $"Stage totals for '{entry.Name}' must have {rules.LeagueSize} round-place counts, was {entry.RoundPlaceCounts.Count}.");
+                    $"Stage totals for '{entry.Name}' must have {fieldSize} round-place counts, was {entry.RoundPlaceCounts.Count}.");
             }
 
             int sum = 0;
@@ -340,10 +422,10 @@ public static class StageCalculator
                 }
             }
 
-            if (sum != rules.RoundsPerStage)
+            if (sum != expectedRounds)
             {
                 throw new InvalidOperationException(
-                    $"Stage totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.RoundsPerStage}.");
+                    $"Stage totals for '{entry.Name}' sum to {sum} round appearances, expected {expectedRounds}.");
             }
         }
     }

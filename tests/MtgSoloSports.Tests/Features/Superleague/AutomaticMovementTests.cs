@@ -295,12 +295,17 @@ public sealed class AutomaticMovementTests
 
         List<MovementEntity> movements = await context.Movements.AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id).ToListAsync().ConfigureAwait(false);
-        movements.Count.ShouldBe(48);
+        // MSS-058: 48 Superleague + 512 feeder (64 per color) = 560 total.
+        movements.Count.ShouldBe(560);
         movements.Count(m => m.Kind == (int)MovementKind.AutomaticPromotion).ShouldBe(8);
         movements.Count(m => m.Kind == (int)MovementKind.AutomaticRelegation).ShouldBe(8);
         movements.Count(m => m.Kind == (int)MovementKind.QualifierIncumbent).ShouldBe(8);
         movements.Count(m => m.Kind == (int)MovementKind.QualifierChallenger).ShouldBe(8 * 3);
-        movements.Select(m => m.SaveAthleteId).Distinct().Count().ShouldBe(48);
+        movements.Count(m => m.Kind == (int)MovementKind.FeederAutomaticPromotion).ShouldBe(128);
+        movements.Count(m => m.Kind == (int)MovementKind.FeederAutomaticRelegation).ShouldBe(128);
+        movements.Count(m => m.Kind == (int)MovementKind.FeederQualifierIncumbent).ShouldBe(128);
+        movements.Count(m => m.Kind == (int)MovementKind.FeederQualifierChallenger).ShouldBe(128);
+        movements.Select(m => m.SaveAthleteId).Distinct().Count().ShouldBe(560);
 
         HashSet<int> promotedIds = response.Promoted.Select(m => m.AthleteId).ToHashSet();
         HashSet<int> relegatedIds = response.Relegated.Select(m => m.AthleteId).ToHashSet();

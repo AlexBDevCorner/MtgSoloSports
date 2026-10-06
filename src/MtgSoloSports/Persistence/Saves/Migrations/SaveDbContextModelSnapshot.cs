@@ -651,6 +651,12 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("QualifierBoundary")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("QualifierSportingColor")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("RngAfterState")
                         .HasColumnType("INTEGER");
 
@@ -676,7 +682,9 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
 
                     b.HasIndex("FromSeasonId", "ToSeasonId");
 
-                    b.HasIndex("FromSeasonId", "ToSeasonId", "RoundNumber")
+                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierBoundary", "QualifierSportingColor");
+
+                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierBoundary", "QualifierSportingColor", "RoundNumber")
                         .IsUnique();
 
                     b.ToTable("QualifierRounds", (string)null);
@@ -703,10 +711,16 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                     b.Property<bool>("IsQualified")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("QualifierBoundary")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("QualifierRank")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("QualifierScoreThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("QualifierSportingColor")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Role")
@@ -732,10 +746,14 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
 
                     b.HasIndex("FromSeasonId", "ToSeasonId");
 
-                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierRank")
+                    b.HasIndex("SaveAthleteId");
+
+                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierBoundary", "QualifierSportingColor");
+
+                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierBoundary", "QualifierSportingColor", "QualifierRank")
                         .IsUnique();
 
-                    b.HasIndex("FromSeasonId", "ToSeasonId", "SaveAthleteId")
+                    b.HasIndex("FromSeasonId", "ToSeasonId", "QualifierBoundary", "QualifierSportingColor", "SaveAthleteId")
                         .IsUnique();
 
                     b.ToTable("QualifierStandings", (string)null);

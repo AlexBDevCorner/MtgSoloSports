@@ -218,6 +218,60 @@ public class RulesV1
     public int PostInauguralActiveTotal => Season1ActiveTotal + SuperleagueSize;
 
     /// <summary>
+    /// Feeder-boundary qualifier field size (MSS-058): 16 athletes
+    /// (8 incumbents + 8 challengers) per color per boundary. Fixed sporting
+    /// rule, distinct from <see cref="QualifierSize"/> (32 for Superleague).
+    /// Feature code must use this explicitly and never assume
+    /// <c>LeagueSize == qualifier size</c> for feeder qualifiers.
+    /// </summary>
+    public int FeederQualifierSize => 16;
+
+    /// <summary>
+    /// Feeder-boundary qualifier winners per event (MSS-058): top 8 occupy or
+    /// remain in the higher tier. Identical to <see cref="QualifierWinners"/>.
+    /// </summary>
+    public int FeederQualifierWinners => QualifierWinners;
+
+    /// <summary>
+    /// Feeder-boundary qualifier rounds per event (MSS-058): 16, identical to
+    /// <see cref="QualifierRounds"/>. Same simulation principles, active bonus
+    /// applies, no new bonus or championship points.
+    /// </summary>
+    public int FeederQualifierRounds => QualifierRounds;
+
+    /// <summary>
+    /// Automatic promotion count per color per feeder boundary (MSS-058):
+    /// F2 ranks 1-8 → F1 and F3 ranks 1-8 → F2, 8 each. Fixed sporting rule.
+    /// </summary>
+    public int FeederAutoPromotionPerColor => 8;
+
+    /// <summary>
+    /// Automatic relegation count per color per feeder boundary (MSS-058):
+    /// F1 ranks 25-32 → F2 and F2 ranks 25-32 → F3, 8 each. Fixed sporting rule.
+    /// </summary>
+    public int FeederAutoRelegationPerColor => 8;
+
+    /// <summary>
+    /// Qualifier incumbent count per color per feeder boundary (MSS-058):
+    /// F1 ranks 17-24 and F2 ranks 17-24 defend, 8 each. Fixed sporting rule.
+    /// </summary>
+    public int FeederQualifierIncumbentPerColor => 8;
+
+    /// <summary>
+    /// Qualifier challenger count per color per feeder boundary (MSS-058):
+    /// F2 ranks 9-16 and F3 ranks 9-16 challenge, 8 each. Fixed sporting rule.
+    /// </summary>
+    public int FeederQualifierChallengerPerColor => 8;
+
+    /// <summary>
+    /// Required qualifier event count for an ordinary (non-inaugural) postseason
+    /// transition: 1 for v1 (Superleague only), 17 for tiered v2
+    /// (1 Superleague + 8 F1↔F2 + 8 F2↔F3). Inaugural Season 1 transition
+    /// requires 0 (no qualifiers).
+    /// </summary>
+    public int OrdinaryQualifierEventCount => FeederDivisionsPerColor == 3 ? 17 : 1;
+
+    /// <summary>
     /// Exact bonus scale for a tier under this snapshot.
     /// v1: Superleague 2/1, Feeder 1 1/1; F2/F3 throw instead of silently
     /// reinterpreting historical seasons.
@@ -516,6 +570,12 @@ public class RulesV1
 
     private void ValidateMovementCounts()
     {
+        ValidateSuperleagueCounts();
+        ValidateFeederCounts();
+    }
+
+    private void ValidateSuperleagueCounts()
+    {
         if (QualifierSize != 32)
         {
             throw new InvalidOperationException($"QualifierSize must be 32, was {QualifierSize}.");
@@ -559,6 +619,44 @@ public class RulesV1
         if (InauguralQualifiedPerLeague != 4)
         {
             throw new InvalidOperationException($"InauguralQualifiedPerLeague must be 4, was {InauguralQualifiedPerLeague}.");
+        }
+    }
+
+    private void ValidateFeederCounts()
+    {
+        if (FeederQualifierSize != 16)
+        {
+            throw new InvalidOperationException($"FeederQualifierSize must be 16, was {FeederQualifierSize}.");
+        }
+
+        if (FeederQualifierWinners != 8)
+        {
+            throw new InvalidOperationException($"FeederQualifierWinners must be 8, was {FeederQualifierWinners}.");
+        }
+
+        if (FeederQualifierRounds != 16)
+        {
+            throw new InvalidOperationException($"FeederQualifierRounds must be 16, was {FeederQualifierRounds}.");
+        }
+
+        if (FeederAutoPromotionPerColor != 8)
+        {
+            throw new InvalidOperationException($"FeederAutoPromotionPerColor must be 8, was {FeederAutoPromotionPerColor}.");
+        }
+
+        if (FeederAutoRelegationPerColor != 8)
+        {
+            throw new InvalidOperationException($"FeederAutoRelegationPerColor must be 8, was {FeederAutoRelegationPerColor}.");
+        }
+
+        if (FeederQualifierIncumbentPerColor != 8)
+        {
+            throw new InvalidOperationException($"FeederQualifierIncumbentPerColor must be 8, was {FeederQualifierIncumbentPerColor}.");
+        }
+
+        if (FeederQualifierChallengerPerColor != 8)
+        {
+            throw new InvalidOperationException($"FeederQualifierChallengerPerColor must be 8, was {FeederQualifierChallengerPerColor}.");
         }
     }
 

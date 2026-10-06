@@ -226,10 +226,11 @@ public sealed class StartNextSeasonHandler
                 e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
             int qualifierRounds = await context.QualifierRounds.CountAsync(
                 e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-            if (qualifierStandings != rules.QualifierSize || qualifierRounds != rules.QualifierRounds)
+            (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
+            if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
             {
                 throw new StartNextSeasonConflictException(
-                    "The Superleague qualifier must be resolved before the next season can start.");
+                    "All qualifiers (Superleague plus feeder boundaries) must be resolved before the next season can start.");
             }
         }
 
@@ -242,6 +243,18 @@ public sealed class StartNextSeasonHandler
             throw new StartNextSeasonConflictException(
                 "Feeder rebalancing must be resolved before the next season can start.");
         }
+    }
+
+    internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
+    {
+        if (rules.FeederDivisionsPerColor != 3)
+        {
+            return (rules.QualifierSize, rules.QualifierRounds);
+        }
+
+        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
+        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
+        return (standings, rounds);
     }
 
     internal static async Task EnsureCupCompleteAsync(
@@ -306,7 +319,8 @@ public sealed class StartNextSeasonHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         List<int> qualified = await context.QualifierStandings
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.IsQualified)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.IsQualified
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .Select(e => e.SaveAthleteId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

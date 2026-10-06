@@ -196,11 +196,11 @@ public sealed class AdvanceToNextEventHandler
 
     internal async Task<string> ExecuteQualifierAsync(Guid saveId, CancellationToken cancellationToken)
     {
-        RunQualifierHandler handler = new(_store);
-        RunQualifierResponse response = await handler
-            .RunUnderLockAsync(saveId, cancellationToken)
+        MtgSoloSports.Features.Qualifiers.RunAllQualifiersHandler handler = new(_store);
+        MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse response = await handler
+            .RunRemainingUnderLockAsync(saveId, cancellationToken)
             .ConfigureAwait(false);
-        return $"Ran Superleague qualifier Season {response.FromSeasonNumber} -> {response.ToSeasonNumber} ({response.Winners} winners from {response.QualifierSize} over {response.Rounds} rounds).";
+        return $"Ran qualifiers Season {response.FromSeasonNumber} -> {response.ToSeasonNumber} ({response.ExecutedNow.Count} events now, {response.AlreadyCompleted.Count} already complete; {response.TotalStandings} standings, {response.TotalRounds} rounds).";
     }
 
     internal async Task<string> ExecuteRebalanceAsync(Guid saveId, CancellationToken cancellationToken)

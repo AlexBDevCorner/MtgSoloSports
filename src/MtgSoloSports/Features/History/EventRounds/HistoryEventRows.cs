@@ -58,8 +58,12 @@ internal static class HistoryEventRows
                     return [];
                 }
 
+                // History event replay for the Superleague qualifier only;
+                // feeder qualifiers are queried via the qualifier-list API with
+                // boundary identity (MSS-058) to avoid mixing 17 events.
                 return (await context.QualifierRounds.AsNoTracking()
-                        .Where(e => e.FromSeasonId == season.Id && e.ToSeasonId == next.Id)
+                        .Where(e => e.FromSeasonId == season.Id && e.ToSeasonId == next.Id
+                            && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
                         .OrderBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
                     .Select(e => Stored(null, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
@@ -98,7 +102,9 @@ internal static class HistoryEventRows
 
     internal static async Task<bool> IsCompleteAsync(SaveDbContext context, SeasonEntity season, string key, CancellationToken cancellationToken) => key switch
     {
-        PostseasonEvents.Qualifier => await context.QualifierStandings.AnyAsync(e => e.FromSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
+        PostseasonEvents.Qualifier => await context.QualifierStandings.AnyAsync(
+            e => e.FromSeasonId == season.Id && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+            cancellationToken).ConfigureAwait(false),
         PostseasonEvents.ColorCupIndividual => await context.ColorCupIndividualStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
         PostseasonEvents.ColorCupTeam => await context.ColorCupTeamStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
         _ => await context.TypeCupTeamStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
