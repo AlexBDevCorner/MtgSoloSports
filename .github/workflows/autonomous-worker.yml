@@ -49,7 +49,7 @@ concurrency:
   group: autonomous-worker
   cancel-in-progress: false
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   issues: write
   actions: read
@@ -58,7 +58,7 @@ jobs:
   worker:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 135
+    timeout-minutes: 270
     env:
       GH_REPO: ${{ github.repository }}
       TASK_ID: ${{ inputs.task_id }}
@@ -114,43 +114,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CONTROL_READ_TOKEN: ${{ secrets.CONTROL_REPO_TOKEN }}
         run: node control/tools/autonomy/worker.mjs guard
-      - name: Mint worker GitHub App token
-        id: worker-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
-          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
-          owner: AlexBDevCorner
-          repositories: MtgSoloSports
-          permission-contents: write
-          permission-pull-requests: write
-          permission-issues: write
-          permission-workflows: write
-          permission-actions: read
-          permission-checks: read
-      - name: Verify worker GitHub authentication
+      - name: Prepare local task branch
         shell: bash
-        env:
-          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
         run: |
           set -euo pipefail
-          repo="$(gh api "repos/${GH_REPO}" --jq '.full_name')" || { echo 'GitHub CLI authentication failed' >&2; exit 1; }
-          if [[ "${repo}" != "${GH_REPO}" ]]; then echo "GitHub CLI authenticated against unexpected repository: ${repo}" >&2; exit 1; fi
-      - name: Wire App token into git
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          gh auth setup-git --hostname github.com --force || { echo 'gh auth setup-git failed' >&2; exit 1; }
+          branch="autonomous/${TASK_ID}"
+          git config user.name autonomous
+          git config user.email autonomous@local
+          if git ls-remote --exit-code --heads origin "${branch}" >/dev/null 2>&1; then
+            git fetch origin "${branch}"
+            git switch -C "${branch}" "origin/${branch}"
+          else
+            git switch -c "${branch}"
+          fi
+
+          # Keep the model session local. A fresh installation token is minted
+          # after it exits and owns all remote publication.
+          git remote set-url --push origin "https://github.invalid/${GH_REPO}.git"
       - name: Run OpenCode worker
         id: opencode-worker
-        timeout-minutes: 120
+        timeout-minutes: 240
         uses: anomalyco/opencode/github@83abc64a5c4e0e0a5157f2c4435d34131009a404 # pinned 2026-09-19
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-          GITHUB_TOKEN: ${{ steps.worker-token.outputs.token }}
-          GH_TOKEN: ${{ steps.worker-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENCODE_CONFIG_CONTENT: '{"permission":{"external_directory":{"*":"deny","**/Temp/**":"allow","**/_temp/**":"allow","**/tmp/**":"allow"},"edit":{"**/Temp/**":"deny","**/_temp/**":"deny","**/tmp/**":"deny"},"bash":{"*":"allow","*GITHUB_ENV*":"deny","*GITHUB_PATH*":"deny","*GITHUB_OUTPUT*":"deny","*GITHUB_STATE*":"deny","*GH_TOKEN*":"deny","*GITHUB_TOKEN*":"deny","*gh auth token*":"deny","*extraheader*":"deny","*AUTHORIZATION*":"deny"},"doom_loop":"deny","question":"deny"}}'
         with:
           model: ${{ inputs.model }}
@@ -162,26 +150,29 @@ jobs:
             Read the authoritative specification at control/${{ inputs.task_path }}.
             The control checkout is read-only. Never change it, requirements, priorities, or future tasks.
             Do not access GITHUB_EVENT_PATH or other files outside the repository and control checkout.
-            GitHub authentication is already provided by the workflow. Use gh normally.
+            The workflow has already checked out autonomous/${{ inputs.task_id }} for you.
+            Work locally: commit meaningful checkpoints, but DO NOT push, create/reopen/ready a PR, or change remote refs.
+            Remote git push is intentionally disabled during the model session. A post-worker recovery step uses a freshly minted GitHub App token to preserve your commits and manage the PR.
+            You may use gh for read-only inspection. In correction mode only, you may post the required machine-readable disagreement comment if you genuinely disagree with the blocking review.
             Never inspect, extract, decode, print, or persist GitHub credentials. Never run `gh auth token`.
             If authentication fails, stop rather than attempting credential recovery.
             Execution mode: ${{ inputs.mode }}.
             Expected existing PR head: ${{ inputs.expected_head }}.
             If mode is implementation and expected_head is non-empty, perform only the bounded CI repair for the existing task PR.
-            For normal implementation use branch autonomous/${{ inputs.task_id }} from main, push it immediately, and reuse any existing branch/PR on retry.
-            Preserve progress with meaningful checkpoint commits/pushes during long work.
-            Open one draft PR after the first pushed diff, then keep updating that same PR.
-            A successful run MUST leave the PR ready for review, never draft.
+            For normal implementation continue on the already checked-out autonomous/${{ inputs.task_id }} branch and reuse its existing work on retry.
+            Preserve progress with meaningful local checkpoint commits during long work.
+            Do not push or create/update PR state yourself; the workflow recovery step owns those remote mutations.
+            A successful run must leave locally committed, verified changes ready for the recovery step to publish.
             For correction, evaluate the trusted blocking review and fix valid blocking findings only. If you genuinely disagree technically, leave the reviewed head unchanged and post the machine-readable disagreement comment required by the AutonomousWork protocol.
             Required repository verification is defined by AGENTS.md and the task. Record real commands/results; never invent evidence.
             Keep the vertical-slice architecture. Do not add MediatR, generic repositories, horizontal Domain/Application/Infrastructure projects, message buses or unrelated architectural frameworks.
-            Open/update the same PR to main titled [${{ inputs.task_id }}] <description>.
+            Keep the implementation suitable for the task PR titled [${{ inputs.task_id }}] <description>; the recovery step owns PR creation/update.
             Never merge, force-push, or commit secrets.
             You are running on Ubuntu. Use bash/POSIX syntax.
 
 
-      - name: Refresh worker GitHub App token
-        if: steps.opencode-worker.outcome == 'success'
+      - name: Mint recovery GitHub App token
+        if: always() && steps.opencode-worker.outcome != 'skipped'
         id: recovery-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -195,72 +186,72 @@ jobs:
           permission-workflows: write
           permission-actions: read
           permission-checks: read
-      - name: Ensure successful worker has a pull request
-        if: steps.opencode-worker.outcome == 'success'
+      - name: Preserve worker progress and ensure pull request
+        if: always() && steps.opencode-worker.outcome != 'skipped' && steps.recovery-token.outcome == 'success'
         shell: bash
         env:
           GH_TOKEN: ${{ steps.recovery-token.outputs.token }}
           BASE_BRANCH: main
+          WORKER_OUTCOME: ${{ steps.opencode-worker.outcome }}
         run: |
           set -euo pipefail
+          git remote set-url --push origin "https://github.com/${GH_REPO}.git"
           gh auth setup-git --hostname github.com --force
-
-          dirty="$(git status --porcelain | grep -v '^?? control/' || true)"
-          if [[ -n "${dirty}" ]]; then
-            echo 'Successful worker left uncommitted repository changes; refusing to report success without preserving them.' >&2
-            printf '%s\n' "${dirty}" >&2
-            exit 1
-          fi
 
           preferred="autonomous/${TASK_ID}"
           current="$(git branch --show-current)"
-          branch="${preferred}"
-
-          # The coordinator recognizes only autonomous/<task-id>. Normalize any
-          # action-owned/agent-owned working branch to that canonical ref.
-          if [[ -n "${current}" && "${current}" != "${BASE_BRANCH}" ]]; then
-            git push -u origin "HEAD:${preferred}"
-          elif git ls-remote --exit-code --heads origin "${preferred}" >/dev/null 2>&1; then
-            : # Canonical branch was already pushed by the worker.
-          else
-            echo "Successful worker left no task branch for ${TASK_ID}." >&2
-            exit 1
+          if [[ "${current}" != "${preferred}" ]]; then
+            echo "Worker ended on unexpected branch ${current}; publishing HEAD only to canonical ${preferred}." >&2
           fi
 
-          git fetch origin "${BASE_BRANCH}" "${branch}"
-          ahead="$(git rev-list --count "origin/${BASE_BRANCH}..origin/${branch}")"
-          if [[ "${ahead}" -eq 0 ]]; then
-            echo "Task branch ${branch} has no commits beyond ${BASE_BRANCH}." >&2
-            exit 1
-          fi
-
-          pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
-          if [[ -z "${pr_number}" ]]; then
-            pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state closed --limit 20 --json number,mergedAt --jq '[.[] | select(.mergedAt == null)][0].number // empty')"
-            if [[ -n "${pr_number}" ]]; then
-              gh pr reopen "${pr_number}" --repo "${GH_REPO}"
+          dirty="$(git status --porcelain | grep -v '^?? control/' || true)"
+          recovery_commit=false
+          if [[ -n "${dirty}" ]]; then
+            git add -A -- . ':(exclude)control'
+            if ! git diff --cached --quiet; then
+              git commit -m "[${TASK_ID}] Preserve worker recovery checkpoint"
+              recovery_commit=true
             fi
           fi
 
+          git fetch origin "${BASE_BRANCH}"
+          ahead="$(git rev-list --count "origin/${BASE_BRANCH}..HEAD")"
+          if [[ "${ahead}" -eq 0 ]]; then
+            echo "Worker produced no task commits beyond ${BASE_BRANCH}; nothing to publish."
+            exit 0
+          fi
+
+          git push -u origin "HEAD:${preferred}"
+
+          pr_number="$(gh pr list --repo "${GH_REPO}" --head "${preferred}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
           if [[ -z "${pr_number}" ]]; then
-            commit_subject="$(git log -1 --format=%s "origin/${branch}")"
-            if [[ "${commit_subject}" == "[${TASK_ID}]"* ]]; then
-              title="${commit_subject}"
-            else
+            title="$(git log -1 --format=%s)"
+            if [[ "${title}" != "[${TASK_ID}]"* ]]; then
               title="[${TASK_ID}] Autonomous implementation"
             fi
-            body="Automated implementation for ${TASK_ID}.\n\nSource task: ${TASK_PATH}\n\nThis PR was ensured by the post-worker recovery step using a freshly minted GitHub App token."
-            gh pr create --repo "${GH_REPO}" --base "${BASE_BRANCH}" --head "${branch}" --title "${title}" --body "${body}"
-            pr_number="$(gh pr list --repo "${GH_REPO}" --head "${branch}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
+            body="Automated implementation for ${TASK_ID}.\n\nSource task: ${TASK_PATH}\n\nRemote publication is handled by the post-worker recovery step with a fresh GitHub App token."
+            if [[ "${WORKER_OUTCOME}" == "success" && "${recovery_commit}" == "false" ]]; then
+              gh pr create --repo "${GH_REPO}" --base "${BASE_BRANCH}" --head "${preferred}" --title "${title}" --body "${body}"
+            else
+              gh pr create --draft --repo "${GH_REPO}" --base "${BASE_BRANCH}" --head "${preferred}" --title "${title}" --body "${body}"
+            fi
+            pr_number="$(gh pr list --repo "${GH_REPO}" --head "${preferred}" --base "${BASE_BRANCH}" --state open --limit 1 --json number --jq '.[0].number // empty')"
           fi
 
           if [[ -z "${pr_number}" ]]; then
-            echo "Unable to resolve a PR for ${TASK_ID} on ${branch}." >&2
+            echo "Unable to resolve a PR for ${TASK_ID} on ${preferred}." >&2
             exit 1
           fi
 
-          if [[ "$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')" == 'true' ]]; then
-            gh pr ready "${pr_number}" --repo "${GH_REPO}"
+          if [[ "${WORKER_OUTCOME}" == "success" && "${recovery_commit}" == "false" ]]; then
+            if [[ "$(gh pr view "${pr_number}" --repo "${GH_REPO}" --json isDraft --jq '.isDraft')" == 'true' ]]; then
+              gh pr ready "${pr_number}" --repo "${GH_REPO}"
+            fi
+            echo "Published successful worker output to PR #${pr_number}."
+          else
+            echo "Preserved worker progress on PR #${pr_number}; run outcome=${WORKER_OUTCOME}, recovery_commit=${recovery_commit}. PR is not promoted by recovery."
+            if [[ "${WORKER_OUTCOME}" == "success" && "${recovery_commit}" == "true" ]]; then
+              echo "Worker reported success with uncommitted edits. Progress was preserved, but verification did not cover the recovery commit." >&2
+              exit 1
+            fi
           fi
-
-          echo "Ensured PR #${pr_number} from ${branch} to ${BASE_BRANCH}."
