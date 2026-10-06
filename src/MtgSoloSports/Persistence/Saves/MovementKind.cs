@@ -86,4 +86,23 @@ public enum MovementKind
     /// Winners decided by the 16-athlete qualifier.
     /// </summary>
     FeederQualifierChallenger = 11,
+
+    /// <summary>
+    /// Structural rebalance move upward between feeder tiers (MSS-059):
+    /// F2 → F1 or F3 → F2 to repair a shortage cascade after Superleague
+    /// color imbalance. Adjacent tiers only, same sporting color, never
+    /// involving the common pool. Deterministic by source-season rank
+    /// (best retained first, protected last); consumes no RNG.
+    /// Distinct from competitive <see cref="FeederAutomaticPromotion"/>.
+    /// </summary>
+    RebalanceUp = 12,
+
+    /// <summary>
+    /// Structural rebalance move downward between feeder tiers (MSS-059):
+    /// F1 → F2 or F2 → F3 to repair an overflow cascade. Adjacent tiers only,
+    /// same sporting color, never involving the common pool. Deterministic by
+    /// source-season rank (worst retained first, protected last); no RNG.
+    /// Distinct from competitive <see cref="FeederAutomaticRelegation"/>.
+    /// </summary>
+    RebalanceDown = 13,
 }

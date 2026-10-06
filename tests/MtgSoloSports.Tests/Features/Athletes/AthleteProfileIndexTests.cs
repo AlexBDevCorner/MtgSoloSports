@@ -30,7 +30,7 @@ public sealed class AthleteProfileIndexTests
         movements!.GetIndexes().Any(i =>
                 i.IsUnique &&
                 i.Properties.Select(p => p.Name).SequenceEqual(
-                    ["ToSeasonId", "SaveAthleteId"], StringComparer.Ordinal))
+                    ["ToSeasonId", "SaveAthleteId", "Kind"], StringComparer.Ordinal))
             .ShouldBeTrue();
 
         IEntityType? stories = model.FindEntityType(typeof(StoryEventEntity));

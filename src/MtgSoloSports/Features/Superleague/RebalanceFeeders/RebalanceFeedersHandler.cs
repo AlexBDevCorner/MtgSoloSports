@@ -10,13 +10,18 @@ namespace MtgSoloSports.Features.Superleague.RebalanceFeeders;
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Returns every feeder league to
 /// exactly 32 athletes after all promotion/relegation/qualifier outcomes are known.
-/// For each sporting color, starts from the provisional next-season feeder roster
-/// (previous feeder roster minus Superleague entrants plus returning athletes),
-/// displaces the lowest-ranked retained athletes when over 32, or draws
-/// equal-probability replacements from that color's common pool with the versioned
-/// simulation RNG when under 32. Pool vacancies are never filled before movement
-/// and qualifier outcomes resolve; former stars and pool athletes are eligible
-/// immediately with no cooldown or weighting. Persists structured
+/// For each sporting color independently, repairs structural color imbalance
+/// through a deterministic tier cascade F1 → F2 → F3 → Pool: F1 shortage pulls
+/// the best eligible retained F2 upward (creating F2 vacancies that pull the
+/// best retained F3 upward, with only F3 vacancies drawing equal-probability
+/// from the same-color common pool with the versioned simulation RNG); F1
+/// overflow pushes the worst eligible retained F1 down to F2, cascading any F2
+/// overflow to F3, with only F3 overflow displacing to pool. Pool only ever
+/// connects directly to F3. Athletes who just earned adjacent-tier movement
+/// (automatic, qualifier outcome, inaugural, Superleague return) are protected
+/// and used only when no retained alternative exists; corrupt rosters fail
+/// loudly. Persists structured <see cref="MovementKind.RebalanceUp"/>,
+/// <see cref="MovementKind.RebalanceDown"/>,
 /// <see cref="MovementKind.RebalanceDraw"/> and
 /// <see cref="MovementKind.RebalanceDisplacement"/> rows and commits the RNG-after
 /// state in the same transaction as memberships and refreshed projections.
@@ -78,6 +83,9 @@ public sealed class RebalanceFeedersHandler
         List<LeagueEntity> sourceFeeders = await LoadFeedersAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         List<LeagueEntity> nextFeeders = await LoadFeedersAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         LeagueEntity nextSuperleague = await LoadSuperleagueAsync(context, next, cancellationToken).ConfigureAwait(false);
+        LeagueEntity? sourceSuperleague = isInaugural
+            ? null
+            : await LoadSuperleagueAsync(context, source, cancellationToken).ConfigureAwait(false);
         Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings =
             await LoadSourceStandingsAsync(context, source, sourceFeeders, rules, cancellationToken).ConfigureAwait(false);
         List<SeasonMembershipEntity> sourceMemberships =
@@ -85,17 +93,12 @@ public sealed class RebalanceFeedersHandler
         List<SeasonMembershipEntity> nextMemberships =
             await LoadMembershipsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
-        HashSet<int> movedAthletes = await LoadMovedAthletesAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
-        List<RebalanceFeedersSelection.ColorInput> inputs = BuildColorInputs(
-            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules, movedAthletes);
+        (RebalanceFeedersSelection.RebalancePlan plan, Pcg32State rngAfter) = await SelectValidatedPlanAsync(
+            context, source, next, sourceSuperleague, sourceFeeders, nextFeeders,
+            sourceStandings, sourceMemberships, nextMemberships, names, rules, rngBefore, cancellationToken).ConfigureAwait(false);
 
-        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
-        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
-        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
-        Pcg32State rngAfter = rng.Snapshot();
-
-        ApplyPlan(context, next, nextFeeders, nextMemberships, plan, sourceStandings);
+        ApplyTierPlan(context, next, nextFeeders, nextMemberships, plan);
         await PersistRebalanceMovementsAsync(context, source, next, nextFeeders, nextMemberships, plan, rngAfter, metadata, cancellationToken).ConfigureAwait(false);
 
         await Features.Athletes.Projections.AthleteProjectionUpdater.RebuildAllAsync(context, rules, cancellationToken).ConfigureAwait(false);
@@ -111,6 +114,91 @@ public sealed class RebalanceFeedersHandler
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return await BuildResponseAsync(_store, saveId, source, next, plan, rngBefore, rngAfter, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Selects and validates the rebalance plan for the active rules version.
+    /// Tiered (v2) saves use the F1→F2→F3→pool cascade; legacy v1 saves keep
+    /// the historical single-feeder F1↔pool repair so pre-upgrade transitions
+    /// and the tier-upgrade safe boundary keep working.
+    /// </summary>
+    internal static async Task<(RebalanceFeedersSelection.RebalancePlan Plan, Pcg32State RngAfter)> SelectValidatedPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        LeagueEntity? sourceSuperleague,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32State rngBefore,
+        CancellationToken cancellationToken)
+    {
+        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
+        RebalanceFeedersSelection.RebalancePlan plan;
+        if (rules.FeederDivisionsPerColor == 3)
+        {
+            plan = await SelectTieredPlanAsync(
+                context, source, sourceSuperleague, sourceFeeders, nextFeeders,
+                sourceMemberships, nextMemberships, names, rules, rng, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            plan = await SelectLegacyPlanAsync(
+                context, source, next, sourceFeeders, nextFeeders, sourceStandings,
+                sourceMemberships, nextMemberships, names, rules, rng, cancellationToken).ConfigureAwait(false);
+        }
+
+        return (plan, rng.Snapshot());
+    }
+
+    internal static async Task<RebalanceFeedersSelection.RebalancePlan> SelectTieredPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        LeagueEntity? sourceSuperleague,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32V1 rng,
+        CancellationToken cancellationToken)
+    {
+        _ = context;
+        _ = source;
+        _ = cancellationToken;
+        Dictionary<int, int> sourceRanks = await LoadAllSourceRanksAsync(context, source, sourceFeeders, sourceSuperleague, cancellationToken).ConfigureAwait(false);
+        List<RebalanceFeedersSelection.TierColorInput> inputs = BuildTierColorInputs(
+            sourceFeeders, sourceSuperleague, nextFeeders, sourceMemberships, nextMemberships, sourceRanks, names, rules);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
+        return plan;
+    }
+
+    internal static async Task<RebalanceFeedersSelection.RebalancePlan> SelectLegacyPlanAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        Pcg32V1 rng,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> moved = await LoadMovedAthletesAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        List<RebalanceFeedersSelection.ColorInput> inputs = BuildColorInputs(
+            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules, moved);
+        RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
+        RebalanceFeedersInvariants.ValidatePlan(plan, inputs, rules);
+        return plan;
     }
 
     internal static async Task<List<MovementEntity>> PersistRebalanceMovementsAsync(
@@ -145,8 +233,9 @@ public sealed class RebalanceFeedersHandler
 
     /// <summary>
     /// Emits return-from-pool story events transactionally with feeder
-    /// rebalancing. One event per pool draw (pool to feeder); displacements
-    /// (feeder to pool) emit nothing at this stage. Idempotent via dedup keys.
+    /// rebalancing. One event per pool draw (pool to F3); displacements
+    /// (F3 to pool) and structural F1↔F2/F2↔F3 moves emit nothing at this
+    /// stage. Idempotent via dedup keys.
     /// </summary>
     internal static async Task EmitReturnFromPoolStoriesAsync(
         SaveDbContext context,
@@ -163,13 +252,16 @@ public sealed class RebalanceFeedersHandler
         ArgumentNullException.ThrowIfNull(plan);
         bool tieredNames = nextFeeders.Count == 24;
         Dictionary<string, string> feederNames = (tieredNames
-            ? nextFeeders.Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            ? nextFeeders.Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.Third)
             : nextFeeders).ToDictionary(
             l => ((SportingColor)l.SportingColor).ToString(), l => l.Name, StringComparer.Ordinal);
         string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
             source.SeasonNumber, next.SeasonNumber);
         bool emitted = false;
-        foreach (RebalanceFeedersSelection.ColorPlan colorPlan in plan.PerColor.OrderBy(p => p.Color))
+        IReadOnlyList<RebalanceFeedersSelection.TierColorPlan> perColor = plan.TierPerColor.Count > 0
+            ? plan.TierPerColor
+            : plan.PerColor.Select(ToTierView).ToList();
+        foreach (RebalanceFeedersSelection.TierColorPlan colorPlan in perColor.OrderBy(p => p.Color))
         {
             feederNames.TryGetValue(colorPlan.Color.ToString(), out string? feederName);
             foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws.OrderBy(d => d.SaveAthleteId))
@@ -228,7 +320,8 @@ public sealed class RebalanceFeedersHandler
         }
 
         bool anyRebalanced = await context.Movements.AnyAsync(
-            e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement,
+            e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown,
             cancellationToken).ConfigureAwait(false);
         if (anyRebalanced)
         {
@@ -245,7 +338,8 @@ public sealed class RebalanceFeedersHandler
     {
         bool exists = await context.Movements.AnyAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement),
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown),
             cancellationToken).ConfigureAwait(false);
         if (exists)
         {
@@ -447,6 +541,234 @@ public sealed class RebalanceFeedersHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadAllSourceRanksAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<LeagueEntity> sourceFeeders,
+        LeagueEntity? sourceSuperleague,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, int> ranks = new();
+        List<LeagueEntity> leagues = [.. sourceFeeders];
+        if (sourceSuperleague is not null)
+        {
+            leagues.Add(sourceSuperleague);
+        }
+
+        foreach (LeagueEntity league in leagues)
+        {
+            List<SeasonStandingEntity> rows = await context.SeasonStandings
+                .AsNoTracking()
+                .Where(e => e.SeasonId == source.Id && e.LeagueId == league.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            foreach (SeasonStandingEntity row in rows)
+            {
+                ranks[row.SaveAthleteId] = row.SeasonRank;
+            }
+        }
+
+        return ranks;
+    }
+
+    /// <summary>
+    /// Builds tier-cascade inputs per sporting color. Provisional F1/F2/F3
+    /// rosters come from next-season memberships; pool comes from next-season
+    /// pool memberships of the same color. <c>IsProtected</c> marks athletes
+    /// whose source division differs from their provisional destination
+    /// division (just changed tiers via automatic movement, qualifier outcome,
+    /// inaugural creation or Superleague return) so structural rebalance uses
+    /// retained athletes first and never immediately reverses earned movement
+    /// when alternatives exist.
+    /// </summary>
+    internal static List<RebalanceFeedersSelection.TierColorInput> BuildTierColorInputs(
+        List<LeagueEntity> sourceFeeders,
+        LeagueEntity? sourceSuperleague,
+        List<LeagueEntity> nextFeeders,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, int> sourceRanks,
+        Dictionary<int, string> names,
+        RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(sourceFeeders);
+        ArgumentNullException.ThrowIfNull(nextFeeders);
+        ArgumentNullException.ThrowIfNull(sourceMemberships);
+        ArgumentNullException.ThrowIfNull(nextMemberships);
+        ArgumentNullException.ThrowIfNull(sourceRanks);
+        ArgumentNullException.ThrowIfNull(names);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        Dictionary<int, LeagueEntity> sourceByLeague = sourceFeeders.ToDictionary(l => l.Id);
+        if (sourceSuperleague is not null)
+        {
+            sourceByLeague[sourceSuperleague.Id] = sourceSuperleague;
+        }
+
+        Dictionary<(int Color, int Division), LeagueEntity> nextByColorDivision = nextFeeders
+            .Where(l => l.Kind == (int)LeagueKind.Feeder)
+            .ToDictionary(l => (l.SportingColor, l.FeederDivision));
+        Dictionary<int, LeagueEntity> nextByLeague = nextFeeders.ToDictionary(l => l.Id);
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete = sourceMemberships.ToDictionary(m => m.SaveAthleteId);
+        Dictionary<int, List<SeasonMembershipEntity>> nextByLeagueMembers = nextMemberships
+            .Where(m => m.LeagueId.HasValue)
+            .GroupBy(m => m.LeagueId!.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        Dictionary<int, List<SeasonMembershipEntity>> nextPoolByColor = nextMemberships
+            .Where(m => m.LeagueId is null)
+            .GroupBy(m => m.SportingColor)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        List<RebalanceFeedersSelection.TierColorInput> inputs = new(rules.RegularLeagueCount);
+        foreach (SportingColor color in Enum.GetValues<SportingColor>())
+        {
+            inputs.Add(BuildSingleTierColor(
+                color, sourceByLeague, nextByColorDivision, nextByLeague, sourceByAthlete,
+                nextByLeagueMembers, nextPoolByColor, sourceRanks, names));
+        }
+
+        return inputs;
+    }
+
+    internal static RebalanceFeedersSelection.TierColorInput BuildSingleTierColor(
+        SportingColor color,
+        Dictionary<int, LeagueEntity> sourceByLeague,
+        Dictionary<(int Color, int Division), LeagueEntity> nextByColorDivision,
+        Dictionary<int, LeagueEntity> nextByLeague,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, List<SeasonMembershipEntity>> nextByLeagueMembers,
+        Dictionary<int, List<SeasonMembershipEntity>> nextPoolByColor,
+        Dictionary<int, int> sourceRanks,
+        Dictionary<int, string> names)
+    {
+        List<RebalanceFeedersSelection.TierMember> f1 = BuildTierDivisionMembers(
+            color, SimulationKernel.Leagues.FeederDivision.First,
+            sourceByLeague, nextByColorDivision, nextByLeague, sourceByAthlete,
+            nextByLeagueMembers, sourceRanks, names);
+        List<RebalanceFeedersSelection.TierMember> f2 = BuildTierDivisionMembers(
+            color, SimulationKernel.Leagues.FeederDivision.Second,
+            sourceByLeague, nextByColorDivision, nextByLeague, sourceByAthlete,
+            nextByLeagueMembers, sourceRanks, names);
+        List<RebalanceFeedersSelection.TierMember> f3 = BuildTierDivisionMembers(
+            color, SimulationKernel.Leagues.FeederDivision.Third,
+            sourceByLeague, nextByColorDivision, nextByLeague, sourceByAthlete,
+            nextByLeagueMembers, sourceRanks, names);
+        List<RebalanceFeedersSelection.PoolCandidate> pool = BuildTierPoolCandidates(
+            color, nextPoolByColor, names);
+        return new RebalanceFeedersSelection.TierColorInput(color, f1, f2, f3, pool);
+    }
+
+    internal static List<RebalanceFeedersSelection.TierMember> BuildTierDivisionMembers(
+        SportingColor color,
+        SimulationKernel.Leagues.FeederDivision division,
+        Dictionary<int, LeagueEntity> sourceByLeague,
+        Dictionary<(int Color, int Division), LeagueEntity> nextByColorDivision,
+        Dictionary<int, LeagueEntity> nextByLeague,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, List<SeasonMembershipEntity>> nextByLeagueMembers,
+        Dictionary<int, int> sourceRanks,
+        Dictionary<int, string> names)
+    {
+        if (!nextByColorDivision.TryGetValue(((int)color, (int)division), out LeagueEntity? nextLeague))
+        {
+            throw new InvalidOperationException($"Next season is missing the {color} {division} feeder.");
+        }
+
+        List<SeasonMembershipEntity> provisional = nextByLeagueMembers.TryGetValue(nextLeague.Id, out List<SeasonMembershipEntity>? members)
+            ? members
+            : [];
+        List<RebalanceFeedersSelection.TierMember> result = new(provisional.Count);
+        foreach (SeasonMembershipEntity membership in provisional.OrderBy(m => m.SaveAthleteId))
+        {
+            result.Add(MapSingleTierMember(color, division, membership, sourceByAthlete, sourceByLeague, sourceRanks, names));
+        }
+
+        return result;
+    }
+
+    internal static RebalanceFeedersSelection.TierMember MapSingleTierMember(
+        SportingColor color,
+        SimulationKernel.Leagues.FeederDivision division,
+        SeasonMembershipEntity membership,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, LeagueEntity> sourceByLeague,
+        Dictionary<int, int> sourceRanks,
+        Dictionary<int, string> names)
+    {
+        if (membership.SportingColor != (int)color)
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match feeder {color} {division}.");
+        }
+
+        if (!sourceByAthlete.TryGetValue(membership.SaveAthleteId, out SeasonMembershipEntity? source))
+        {
+            throw new InvalidOperationException($"Athlete {membership.SaveAthleteId} has no source membership.");
+        }
+
+        if (source.SportingColor != membership.SportingColor)
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} changed sporting color; returning athletes keep their color.");
+        }
+
+        if (source.LeagueId is null)
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} entered the {color} {division} feeder from the common pool before rebalancing; pool vacancies fill only here.");
+        }
+
+        if (!sourceByLeague.TryGetValue(source.LeagueId.Value, out LeagueEntity? sourceLeague))
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} source league {source.LeagueId.Value} is unknown.");
+        }
+
+        bool sourceIsSuperleague = sourceLeague.Kind == (int)LeagueKind.Superleague;
+        bool isProtected = sourceIsSuperleague
+            || sourceLeague.FeederDivision != (int)division;
+        if (!sourceRanks.TryGetValue(membership.SaveAthleteId, out int sourceRank))
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} has no source-season rank.");
+        }
+
+        if (sourceRank < 1 || sourceRank > 32)
+        {
+            throw new InvalidOperationException(
+                $"Athlete {membership.SaveAthleteId} has corrupt source rank {sourceRank}.");
+        }
+
+        names.TryGetValue(membership.SaveAthleteId, out string? name);
+        return new RebalanceFeedersSelection.TierMember(
+            membership.SaveAthleteId, name ?? $"Athlete {membership.SaveAthleteId}", sourceRank, isProtected);
+    }
+
+    internal static List<RebalanceFeedersSelection.PoolCandidate> BuildTierPoolCandidates(
+        SportingColor color,
+        Dictionary<int, List<SeasonMembershipEntity>> nextPoolByColor,
+        Dictionary<int, string> names)
+    {
+        List<SeasonMembershipEntity> pool = nextPoolByColor.TryGetValue((int)color, out List<SeasonMembershipEntity>? members)
+            ? members
+            : [];
+        List<RebalanceFeedersSelection.PoolCandidate> candidates = new(pool.Count);
+        foreach (SeasonMembershipEntity membership in pool)
+        {
+            if (membership.SportingColor != (int)color)
+            {
+                throw new InvalidOperationException(
+                    $"Pool athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match pool {color}.");
+            }
+
+            names.TryGetValue(membership.SaveAthleteId, out string? name);
+            candidates.Add(new RebalanceFeedersSelection.PoolCandidate(
+                membership.SaveAthleteId, name ?? $"Athlete {membership.SaveAthleteId}", color));
+        }
+
+        return candidates;
     }
 
     internal static List<RebalanceFeedersSelection.ColorInput> BuildColorInputs(
@@ -758,19 +1080,166 @@ public sealed class RebalanceFeedersHandler
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(sourceStandings);
 
-        Dictionary<int, SeasonMembershipEntity> byAthlete = nextMemberships.ToDictionary(m => m.SaveAthleteId);
-        bool tiered = nextFeeders.Count == 24;
-        Dictionary<string, int> feederByColor = tiered
-            ? nextFeeders
-                .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
-                .ToDictionary(l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
-            : nextFeeders.ToDictionary(
-                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
+        ApplyTierPlan(context, next, nextFeeders, nextMemberships, plan);
+    }
 
-        foreach (RebalanceFeedersSelection.ColorPlan colorPlan in plan.PerColor)
+    internal static void ApplyTierPlan(
+        SaveDbContext context,
+        SeasonEntity next,
+        List<LeagueEntity> nextFeeders,
+        List<SeasonMembershipEntity> nextMemberships,
+        RebalanceFeedersSelection.RebalancePlan plan)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+        ArgumentNullException.ThrowIfNull(nextFeeders);
+        ArgumentNullException.ThrowIfNull(nextMemberships);
+        ArgumentNullException.ThrowIfNull(plan);
+
+        Dictionary<int, SeasonMembershipEntity> byAthlete = nextMemberships.ToDictionary(m => m.SaveAthleteId);
+        Dictionary<(int Color, int Division), int> leagueByColorDivision = nextFeeders
+            .Where(l => l.Kind == (int)LeagueKind.Feeder)
+            .ToDictionary(l => (l.SportingColor, l.FeederDivision), l => l.Id);
+
+        ApplyStructuralMoves(byAthlete, leagueByColorDivision, plan);
+        ApplyPoolBoundary(byAthlete, nextFeeders, plan);
+    }
+
+    internal static void ApplyStructuralMoves(
+        Dictionary<int, SeasonMembershipEntity> byAthlete,
+        Dictionary<(int Color, int Division), int> leagueByColorDivision,
+        RebalanceFeedersSelection.RebalancePlan plan)
+    {
+        foreach (RebalanceFeedersSelection.StructuralMove move in plan.AllUpMoves.Concat(plan.AllDownMoves))
         {
-            ApplySingleColor(byAthlete, feederByColor, colorPlan);
+            ApplySingleStructuralMove(byAthlete, leagueByColorDivision, move);
         }
+    }
+
+    internal static void ApplySingleStructuralMove(
+        Dictionary<int, SeasonMembershipEntity> byAthlete,
+        Dictionary<(int Color, int Division), int> leagueByColorDivision,
+        RebalanceFeedersSelection.StructuralMove move)
+    {
+        if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.FromDivision), out int fromId))
+        {
+            throw new InvalidOperationException(
+                $"Next season is missing the {move.Color} {move.FromDivision} feeder for structural move {move.SaveAthleteId}.");
+        }
+
+        if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.ToDivision), out int toId))
+        {
+            throw new InvalidOperationException(
+                $"Next season is missing the {move.Color} {move.ToDivision} feeder for structural move {move.SaveAthleteId}.");
+        }
+
+        if (!byAthlete.TryGetValue(move.SaveAthleteId, out SeasonMembershipEntity? membership))
+        {
+            throw new InvalidOperationException($"Structural move athlete {move.SaveAthleteId} has no next-season membership.");
+        }
+
+        if (membership.LeagueId != fromId)
+        {
+            throw new InvalidOperationException(
+                $"Structural move athlete {move.SaveAthleteId} is not in the expected {move.Color} {move.FromDivision} feeder.");
+        }
+
+        if (membership.SportingColor != (int)move.Color)
+        {
+            throw new InvalidOperationException($"Structural move athlete {move.SaveAthleteId} has the wrong sporting color.");
+        }
+
+        membership.LeagueId = toId;
+    }
+
+    internal static void ApplyPoolBoundary(
+        Dictionary<int, SeasonMembershipEntity> byAthlete,
+        List<LeagueEntity> nextFeeders,
+        RebalanceFeedersSelection.RebalancePlan plan)
+    {
+        Dictionary<int, int> f3ByColor = nextFeeders
+            .Where(l => l.Kind == (int)LeagueKind.Feeder
+                && l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.Third)
+            .ToDictionary(l => l.SportingColor, l => l.Id);
+        bool legacySingle = nextFeeders.Count == 8;
+        Dictionary<string, int> legacyByColor = legacySingle
+            ? nextFeeders.ToDictionary(
+                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
+            : new Dictionary<string, int>(StringComparer.Ordinal);
+
+        IReadOnlyList<RebalanceFeedersSelection.TierColorPlan> perColor = plan.TierPerColor.Count > 0
+            ? plan.TierPerColor
+            : plan.PerColor.Select(ToTierView).ToList();
+        foreach (RebalanceFeedersSelection.TierColorPlan colorPlan in perColor)
+        {
+            ApplySinglePoolBoundary(byAthlete, f3ByColor, legacyByColor, colorPlan);
+        }
+    }
+
+    internal static void ApplySinglePoolBoundary(
+        Dictionary<int, SeasonMembershipEntity> byAthlete,
+        Dictionary<int, int> f3ByColor,
+        Dictionary<string, int> legacyByColor,
+        RebalanceFeedersSelection.TierColorPlan colorPlan)
+    {
+        int f3Id;
+        if (!f3ByColor.TryGetValue((int)colorPlan.Color, out f3Id))
+        {
+            if (!legacyByColor.TryGetValue(colorPlan.Color.ToString(), out f3Id))
+            {
+                throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} F3 feeder.");
+            }
+        }
+
+        foreach (RebalanceFeedersSelection.RetainedCandidate displaced in colorPlan.Displaced)
+        {
+            if (!byAthlete.TryGetValue(displaced.SaveAthleteId, out SeasonMembershipEntity? membership))
+            {
+                throw new InvalidOperationException($"Displaced athlete {displaced.SaveAthleteId} has no next-season membership.");
+            }
+
+            if (membership.LeagueId != f3Id)
+            {
+                throw new InvalidOperationException(
+                    $"Displaced athlete {displaced.SaveAthleteId} is not in the {colorPlan.Color} F3 feeder; only F3 may displace to pool.");
+            }
+
+            membership.LeagueId = null;
+        }
+
+        foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws)
+        {
+            if (!byAthlete.TryGetValue(draw.SaveAthleteId, out SeasonMembershipEntity? membership))
+            {
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
+            }
+
+            if (membership.LeagueId is not null)
+            {
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
+            }
+
+            if (membership.SportingColor != (int)colorPlan.Color)
+            {
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
+            }
+
+            membership.LeagueId = f3Id;
+        }
+    }
+
+    internal static RebalanceFeedersSelection.TierColorPlan ToTierView(RebalanceFeedersSelection.ColorPlan legacy)
+    {
+        ArgumentNullException.ThrowIfNull(legacy);
+        return new RebalanceFeedersSelection.TierColorPlan(
+            legacy.Color,
+            legacy.ProvisionalCount,
+            32,
+            32,
+            legacy.UpMoves,
+            legacy.DownMoves,
+            legacy.Draws,
+            legacy.Displaced);
     }
 
     internal static void ApplySingleColor(
@@ -826,59 +1295,142 @@ public sealed class RebalanceFeedersHandler
         RebalanceFeedersSelection.RebalancePlan plan,
         List<SeasonMembershipEntity> nextMemberships)
     {
-        bool tiered = nextFeeders.Count == 24;
-        Dictionary<string, int> feederByColor = tiered
-            ? nextFeeders
-                .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
-                .ToDictionary(l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
-            : nextFeeders.ToDictionary(
-                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal);
+        Dictionary<(int Color, int Division), int> leagueByColorDivision = nextFeeders
+            .Where(l => l.Kind == (int)LeagueKind.Feeder)
+            .ToDictionary(l => (l.SportingColor, l.FeederDivision), l => l.Id);
+        Dictionary<int, int> f3ByColor = nextFeeders
+            .Where(l => l.Kind == (int)LeagueKind.Feeder
+                && l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.Third)
+            .ToDictionary(l => l.SportingColor, l => l.Id);
+        bool legacySingle = nextFeeders.Count == 8;
+        Dictionary<string, int> legacyByColor = legacySingle
+            ? nextFeeders.ToDictionary(
+                l => ((SportingColor)l.SportingColor).ToString(), l => l.Id, StringComparer.Ordinal)
+            : new Dictionary<string, int>(StringComparer.Ordinal);
         Dictionary<int, int> colorByAthlete = nextMemberships.ToDictionary(m => m.SaveAthleteId, m => m.SportingColor);
-        List<MovementEntity> movements = new(plan.AllDraws.Count + plan.AllDisplaced.Count);
+        List<MovementEntity> movements = new(
+            plan.AllDraws.Count + plan.AllDisplaced.Count + plan.AllUpMoves.Count + plan.AllDownMoves.Count);
 
-        foreach (RebalanceFeedersSelection.ColorPlan colorPlan in plan.PerColor.OrderBy(p => p.Color))
-        {
-            if (!feederByColor.TryGetValue(colorPlan.Color.ToString(), out int feederId))
-            {
-                throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} feeder.");
-            }
-
-            foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws.OrderBy(d => d.SaveAthleteId))
-            {
-                movements.Add(new MovementEntity
-                {
-                    SaveAthleteId = draw.SaveAthleteId,
-                    FromSeasonId = source.Id,
-                    ToSeasonId = next.Id,
-                    FromLeagueId = PoolSentinelLeagueId,
-                    ToLeagueId = feederId,
-                    Kind = (int)MovementKind.RebalanceDraw,
-                    FromSeasonRank = 0,
-                    SportingColor = colorByAthlete.TryGetValue(draw.SaveAthleteId, out int color) ? color : (int)colorPlan.Color,
-                });
-            }
-
-            foreach (RebalanceFeedersSelection.RetainedCandidate displaced in colorPlan.Displaced.OrderBy(d => d.SaveAthleteId))
-            {
-                movements.Add(new MovementEntity
-                {
-                    SaveAthleteId = displaced.SaveAthleteId,
-                    FromSeasonId = source.Id,
-                    ToSeasonId = next.Id,
-                    FromLeagueId = feederId,
-                    ToLeagueId = PoolSentinelLeagueId,
-                    Kind = (int)MovementKind.RebalanceDisplacement,
-                    FromSeasonRank = displaced.SourceRank,
-                    SportingColor = colorByAthlete.TryGetValue(displaced.SaveAthleteId, out int color) ? color : (int)colorPlan.Color,
-                });
-            }
-        }
+        AppendStructuralMovements(movements, source, next, leagueByColorDivision, colorByAthlete, plan);
+        AppendPoolMovements(movements, source, next, f3ByColor, legacyByColor, colorByAthlete, plan);
 
         return movements
             .OrderBy(m => m.Kind)
             .ThenBy(m => m.FromLeagueId)
             .ThenBy(m => m.SaveAthleteId)
             .ToList();
+    }
+
+    internal static void AppendStructuralMovements(
+        List<MovementEntity> movements,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<(int Color, int Division), int> leagueByColorDivision,
+        Dictionary<int, int> colorByAthlete,
+        RebalanceFeedersSelection.RebalancePlan plan)
+    {
+        foreach (RebalanceFeedersSelection.StructuralMove move in plan.AllUpMoves.OrderBy(m => m.SaveAthleteId))
+        {
+            AppendSingleStructural(movements, source, next, leagueByColorDivision, colorByAthlete, move, isUp: true);
+        }
+
+        foreach (RebalanceFeedersSelection.StructuralMove move in plan.AllDownMoves.OrderBy(m => m.SaveAthleteId))
+        {
+            AppendSingleStructural(movements, source, next, leagueByColorDivision, colorByAthlete, move, isUp: false);
+        }
+    }
+
+    internal static void AppendSingleStructural(
+        List<MovementEntity> movements,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<(int Color, int Division), int> leagueByColorDivision,
+        Dictionary<int, int> colorByAthlete,
+        RebalanceFeedersSelection.StructuralMove move,
+        bool isUp)
+    {
+        if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.FromDivision), out int fromId)
+            || !leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.ToDivision), out int toId))
+        {
+            throw new InvalidOperationException($"Next season is missing feeder leagues for structural move {move.SaveAthleteId}.");
+        }
+
+        movements.Add(new MovementEntity
+        {
+            SaveAthleteId = move.SaveAthleteId,
+            FromSeasonId = source.Id,
+            ToSeasonId = next.Id,
+            FromLeagueId = fromId,
+            ToLeagueId = toId,
+            Kind = (int)(isUp ? MovementKind.RebalanceUp : MovementKind.RebalanceDown),
+            FromSeasonRank = move.SourceRank,
+            SportingColor = colorByAthlete.TryGetValue(move.SaveAthleteId, out int color) ? color : (int)move.Color,
+        });
+    }
+
+    internal static void AppendPoolMovements(
+        List<MovementEntity> movements,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<int, int> f3ByColor,
+        Dictionary<string, int> legacyByColor,
+        Dictionary<int, int> colorByAthlete,
+        RebalanceFeedersSelection.RebalancePlan plan)
+    {
+        IReadOnlyList<RebalanceFeedersSelection.TierColorPlan> perColor = plan.TierPerColor.Count > 0
+            ? plan.TierPerColor
+            : plan.PerColor.Select(ToTierView).ToList();
+        foreach (RebalanceFeedersSelection.TierColorPlan colorPlan in perColor.OrderBy(p => p.Color))
+        {
+            AppendSinglePool(movements, source, next, f3ByColor, legacyByColor, colorByAthlete, colorPlan);
+        }
+    }
+
+    internal static void AppendSinglePool(
+        List<MovementEntity> movements,
+        SeasonEntity source,
+        SeasonEntity next,
+        Dictionary<int, int> f3ByColor,
+        Dictionary<string, int> legacyByColor,
+        Dictionary<int, int> colorByAthlete,
+        RebalanceFeedersSelection.TierColorPlan colorPlan)
+    {
+        int f3Id;
+        if (!f3ByColor.TryGetValue((int)colorPlan.Color, out f3Id)
+            && !legacyByColor.TryGetValue(colorPlan.Color.ToString(), out f3Id))
+        {
+            throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} F3 feeder.");
+        }
+
+        foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws.OrderBy(d => d.SaveAthleteId))
+        {
+            movements.Add(new MovementEntity
+            {
+                SaveAthleteId = draw.SaveAthleteId,
+                FromSeasonId = source.Id,
+                ToSeasonId = next.Id,
+                FromLeagueId = PoolSentinelLeagueId,
+                ToLeagueId = f3Id,
+                Kind = (int)MovementKind.RebalanceDraw,
+                FromSeasonRank = 0,
+                SportingColor = colorByAthlete.TryGetValue(draw.SaveAthleteId, out int color) ? color : (int)colorPlan.Color,
+            });
+        }
+
+        foreach (RebalanceFeedersSelection.RetainedCandidate displaced in colorPlan.Displaced.OrderBy(d => d.SaveAthleteId))
+        {
+            movements.Add(new MovementEntity
+            {
+                SaveAthleteId = displaced.SaveAthleteId,
+                FromSeasonId = source.Id,
+                ToSeasonId = next.Id,
+                FromLeagueId = f3Id,
+                ToLeagueId = PoolSentinelLeagueId,
+                Kind = (int)MovementKind.RebalanceDisplacement,
+                FromSeasonRank = displaced.SourceRank,
+                SportingColor = colorByAthlete.TryGetValue(displaced.SaveAthleteId, out int color) ? color : (int)colorPlan.Color,
+            });
+        }
     }
 
     internal static async Task ValidatePersistedAsync(
@@ -905,7 +1457,8 @@ public sealed class RebalanceFeedersHandler
             .ConfigureAwait(false);
         List<MovementEntity> persistedMovements = await context.Movements
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement))
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         RebalanceFeedersInvariants.ValidateCreated(
@@ -976,9 +1529,11 @@ public sealed class RebalanceFeedersHandler
 
         List<RebalanceMovementMember> draws = MapMovements(movements, MovementKind.RebalanceDraw, names, leaguesById, images);
         List<RebalanceMovementMember> displaced = MapMovements(movements, MovementKind.RebalanceDisplacement, names, leaguesById, images);
+        List<RebalanceMovementMember> up = MapMovements(movements, MovementKind.RebalanceUp, names, leaguesById, images);
+        List<RebalanceMovementMember> down = MapMovements(movements, MovementKind.RebalanceDown, names, leaguesById, images);
         (IReadOnlyList<RebalanceMovementMember> departed, IReadOnlyList<RebalanceMovementMember> returned) =
             await LoadSuperleagueTransfersAsync(context, source, next, names, images, leaguesById, cancellationToken).ConfigureAwait(false);
-        List<RebalanceColorResult> colors = await MapColorResultsAsync(context, next, plan, departed, returned, cancellationToken).ConfigureAwait(false);
+        List<RebalanceColorResult> colors = await MapColorResultsAsync(context, next, plan, movements, departed, returned, cancellationToken).ConfigureAwait(false);
 
         int pool = await context.SeasonMemberships
             .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken)
@@ -1002,7 +1557,13 @@ public sealed class RebalanceFeedersHandler
             rngBefore.State,
             rngBefore.Stream,
             rngAfter.State,
-            rngAfter.Stream);
+            rngAfter.Stream)
+        {
+            RebalancedUp = up,
+            RebalancedDown = down,
+            TotalRebalancedUp = up.Count,
+            TotalRebalancedDown = down.Count,
+        };
     }
 
     internal static async Task<Dictionary<int, string?>> LoadAthleteImagesAsync(
@@ -1088,6 +1649,7 @@ public sealed class RebalanceFeedersHandler
         SaveDbContext context,
         SeasonEntity next,
         RebalanceFeedersSelection.RebalancePlan plan,
+        List<MovementEntity> movements,
         IReadOnlyList<RebalanceMovementMember> departed,
         IReadOnlyList<RebalanceMovementMember> returned,
         CancellationToken cancellationToken)
@@ -1100,7 +1662,7 @@ public sealed class RebalanceFeedersHandler
         List<RebalanceColorResult> colors = new(nextFeeders.Count);
         foreach (LeagueEntity feeder in nextFeeders)
         {
-            colors.Add(MapSingleColorResult(feeder, plan, counts, transfersByColor));
+            colors.Add(MapSingleColorResult(feeder, plan, movements, counts, transfersByColor));
         }
 
         return colors;
@@ -1132,27 +1694,66 @@ public sealed class RebalanceFeedersHandler
     internal static RebalanceColorResult MapSingleColorResult(
         LeagueEntity feeder,
         RebalanceFeedersSelection.RebalancePlan plan,
+        List<MovementEntity> movements,
         Dictionary<int, int> counts,
         IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor)
     {
-        bool isF1 = feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First;
-        RebalanceFeedersSelection.ColorPlan colorPlan = plan.PerColor.Single(p => p.Color == (SportingColor)feeder.SportingColor);
         counts.TryGetValue(feeder.Id, out int finalCount);
         string colorName = ((SportingColor)feeder.SportingColor).ToString();
         transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
-        if (!isF1)
-        {
-            return MapLowerDivisionResult(feeder, colorName, finalCount);
-        }
 
-        return MapF1Result(feeder, colorPlan, colorName, transfers, finalCount);
+        RebalanceFeedersSelection.TierColorPlan? tier = plan.TierPerColor.SingleOrDefault(
+            p => p.Color == (SportingColor)feeder.SportingColor);
+        int f1Provisional = tier?.F1ProvisionalCount ?? 32;
+        int f2Provisional = tier?.F2ProvisionalCount ?? 32;
+        int f3Provisional = tier?.F3ProvisionalCount ?? 32;
+
+        int upIn = movements.Count(m => m.ToLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceUp);
+        int upOut = movements.Count(m => m.FromLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceUp);
+        int downIn = movements.Count(m => m.ToLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceDown);
+        int downOut = movements.Count(m => m.FromLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceDown);
+        int drawn = movements.Count(m => m.ToLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceDraw);
+        int displaced = movements.Count(m => m.FromLeagueId == feeder.Id && m.Kind == (int)MovementKind.RebalanceDisplacement);
+
+        bool isF1 = feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First
+            || (feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.None && tier is null);
+        int provisional = feeder.FeederDivision switch
+        {
+            (int)SimulationKernel.Leagues.FeederDivision.First => f1Provisional,
+            (int)SimulationKernel.Leagues.FeederDivision.Second => f2Provisional,
+            (int)SimulationKernel.Leagues.FeederDivision.Third => f3Provisional,
+            _ => 32,
+        };
+        int departed = isF1 ? transfers.Departed : 0;
+        int returned = isF1 ? transfers.Returned : 0;
+
+        return new RebalanceColorResult(
+            feeder.Id,
+            feeder.Name,
+            colorName,
+            32,
+            departed,
+            returned,
+            provisional,
+            displaced,
+            drawn,
+            finalCount)
+        {
+            FeederDivision = feeder.FeederDivision,
+            RebalancedUpIn = upIn,
+            RebalancedUpOut = upOut,
+            RebalancedDownIn = downIn,
+            RebalancedDownOut = downOut,
+            F2ProvisionalCount = f2Provisional,
+            F3ProvisionalCount = f3Provisional,
+        };
     }
 
     internal static RebalanceColorResult MapLowerDivisionResult(
         LeagueEntity feeder, string colorName, int finalCount)
     {
-        // MSS-057: F2/F3 carry over at 32 with no Superleague transfers;
-        // provisional is 32 and no draws/displacements occur.
+        // Legacy helper retained for unit-test compatibility; tier results use
+        // MapSingleColorResult with full structural provenance.
         return new RebalanceColorResult(
             feeder.Id,
             feeder.Name,
@@ -1163,7 +1764,10 @@ public sealed class RebalanceFeedersHandler
             32,
             0,
             0,
-            finalCount);
+            finalCount)
+        {
+            FeederDivision = feeder.FeederDivision,
+        };
     }
 
     internal static RebalanceColorResult MapF1Result(
@@ -1190,7 +1794,16 @@ public sealed class RebalanceFeedersHandler
             colorPlan.ProvisionalCount,
             colorPlan.Displaced.Count,
             colorPlan.Draws.Count,
-            finalCount);
+            finalCount)
+        {
+            FeederDivision = feeder.FeederDivision,
+            RebalancedUpIn = colorPlan.UpMoves.Count(m => m.ToDivision == SimulationKernel.Leagues.FeederDivision.First),
+            RebalancedUpOut = 0,
+            RebalancedDownIn = 0,
+            RebalancedDownOut = colorPlan.DownMoves.Count(m => m.FromDivision == SimulationKernel.Leagues.FeederDivision.First),
+            F2ProvisionalCount = colorPlan.F2ProvisionalCount,
+            F3ProvisionalCount = colorPlan.F3ProvisionalCount,
+        };
     }
 
     internal static async Task<List<MovementEntity>> LoadRebalanceMovementsAsync(
@@ -1202,7 +1815,8 @@ public sealed class RebalanceFeedersHandler
         return await context.Movements
             .AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement))
+                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
     }
