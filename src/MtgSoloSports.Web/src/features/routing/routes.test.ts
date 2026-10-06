@@ -10,6 +10,8 @@ import {
   leagueStandingsPath,
   livePath,
   parseRoute,
+  qualifierPath,
+  qualifiersPath,
   recordsPath,
   savesPath,
   standingsLeaguePath,
@@ -289,6 +291,68 @@ describe('Cup history routes', () => {
       'cups/color/3/extra',
       'cups/color/teams/red/extra',
       'cups/type/teams/%20',
+    ]) {
+      assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
+    }
+  });
+});
+
+describe('MSS-060 qualifier routes', () => {
+  it('builds overview and per-event paths with qualifier identity as route data', () => {
+    assert.equal(qualifiersPath(SAVE), `/saves/${SAVE}/qualifiers`);
+    assert.equal(qualifiersPath(SAVE, { season: 2 }), `/saves/${SAVE}/qualifiers?season=2`);
+    assert.equal(
+      qualifierPath(SAVE, 'Feeder1Feeder2', 'White', { season: 2 }),
+      `/saves/${SAVE}/qualifiers/f1f2/white?season=2`,
+    );
+    assert.equal(
+      qualifierPath(SAVE, 'Superleague', null, { season: 2 }),
+      `/saves/${SAVE}/qualifiers/superleague?season=2`,
+    );
+    assert.equal(
+      qualifierPath(SAVE, 'Feeder2Feeder3', 'Azorius, Maybe'),
+      `/saves/${SAVE}/qualifiers/f2f3/azorius%2C%20maybe`,
+    );
+  });
+
+  it('parses overview, Superleague and feeder qualifier routes', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/qualifiers`, '?season=2'), {
+      name: 'qualifiers',
+      saveId: SAVE,
+      boundary: null,
+      color: null,
+      season: 2,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/qualifiers/superleague`, '?season=2'), {
+      name: 'qualifiers',
+      saveId: SAVE,
+      boundary: 'Superleague',
+      color: null,
+      season: 2,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/qualifiers/f1f2/white`, '?season=2'), {
+      name: 'qualifiers',
+      saveId: SAVE,
+      boundary: 'Feeder1Feeder2',
+      color: 'white',
+      season: 2,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/qualifiers/F2-F3/BLACK`, ''), {
+      name: 'qualifiers',
+      saveId: SAVE,
+      boundary: 'Feeder2Feeder3',
+      color: 'BLACK',
+      season: null,
+    });
+  });
+
+  it('treats malformed qualifier paths as not found', () => {
+    for (const tail of [
+      'qualifiers/gold',
+      'qualifiers/f1f2',
+      'qualifiers/f1f2/white/extra',
+      'qualifiers/superleague/white',
+      'qualifiers/f1f2/%20',
     ]) {
       assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
     }

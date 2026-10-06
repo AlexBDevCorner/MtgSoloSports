@@ -15,6 +15,7 @@ import { selectionForAction } from './features/events/eventModel';
 import { HistoryPage } from './features/history/HistoryPage';
 import { LiveEventView } from './features/live/LiveEventView';
 import { LivePage } from './features/live/LivePage';
+import { QualifierDetailPage, QualifiersPage } from './features/qualifiers/QualifiersPage';
 import { RecordsPage } from './features/records/RecordsPage';
 import { StandingsPage } from './features/standings/StandingsPage';
 import { TransitionRevealView } from './features/transitions/TransitionRevealView';
@@ -30,6 +31,7 @@ import {
   dashboardPath,
   historyPath,
   livePath,
+  qualifiersPath,
   routeSaveId as getRouteSaveId,
   savesPath,
   standingsLeaguePath,
@@ -49,6 +51,8 @@ function viewForRoute(route: Route): View {
       return 'live';
     case 'standings':
       return 'standings';
+    case 'qualifiers':
+      return 'qualifiers';
     case 'history':
       return 'history';
     case 'records':
@@ -340,6 +344,26 @@ export default function App() {
         );
       case 'records':
         return <RecordsPage saveId={saveId} />;
+      case 'qualifiers':
+        if (route.boundary) {
+          return (
+            <QualifierDetailPage
+              saveId={saveId}
+              boundary={route.boundary}
+              color={route.color}
+              urlSeason={route.season}
+            />
+          );
+        }
+        return (
+          <QualifiersPage
+            saveId={saveId}
+            urlSeason={route.season}
+            onQualifiersChange={(selection) => {
+              navigate(qualifiersPath(saveId, { season: selection.season }));
+            }}
+          />
+        );
       case 'cups':
         if (route.view.kind === 'edition') {
           return <CupEditionPage saveId={saveId} cup={route.view.cup} season={route.view.season} />;

@@ -132,9 +132,11 @@ export function buildQualifierOverview(
 
 export interface QualifierFieldRow {
   athleteId: number;
+  name: string;
   sportingColor: string;
   role: string;
   fromLeagueId: number;
+  fromLeagueName: string;
   fromSeasonRank: number;
   qualifierRank: number;
   qualifierScoreThousandths: number;

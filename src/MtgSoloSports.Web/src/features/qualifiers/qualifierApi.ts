@@ -7,9 +7,11 @@ import { fetchJson } from '../../shared/api/http';
  */
 export interface QualifierEventMember {
   athleteId: number;
+  name: string;
   sportingColor: string;
   role: string;
   fromLeagueId: number;
+  fromLeagueName: string;
   fromSeasonRank: number;
   qualifierRank: number;
   qualifierScoreThousandths: number;
@@ -51,10 +53,11 @@ export interface QualifierList {
 
 export async function fetchQualifierList(
   saveId: string,
-  fromSeason: number,
+  fromSeason?: number | null,
   signal?: AbortSignal,
 ): Promise<QualifierList> {
-  return fetchJson<QualifierList>(`/api/saves/${saveId}/qualifiers?fromSeason=${fromSeason}`, {
+  const query = fromSeason === null || fromSeason === undefined ? '' : `?fromSeason=${fromSeason}`;
+  return fetchJson<QualifierList>(`/api/saves/${saveId}/qualifiers${query}`, {
     signal,
   });
 }
@@ -63,11 +66,12 @@ export async function fetchQualifierEvent(
   saveId: string,
   boundary: string,
   color: string,
-  fromSeason: number,
+  fromSeason?: number | null,
   signal?: AbortSignal,
 ): Promise<QualifierEvent> {
+  const query = fromSeason === null || fromSeason === undefined ? '' : `?fromSeason=${fromSeason}`;
   return fetchJson<QualifierEvent>(
-    `/api/saves/${saveId}/qualifiers/${encodeURIComponent(boundary)}/${encodeURIComponent(color)}?fromSeason=${fromSeason}`,
+    `/api/saves/${saveId}/qualifiers/${encodeURIComponent(boundary)}/${encodeURIComponent(color)}${query}`,
     { signal },
   );
 }

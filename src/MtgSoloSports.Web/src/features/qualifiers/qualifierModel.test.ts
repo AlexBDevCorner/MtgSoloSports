@@ -74,9 +74,11 @@ describe('qualifierFieldRows', () => {
         standings: [
           {
             athleteId: 2,
+            name: 'Card Two',
             sportingColor: 'Black',
             role: 'Challenger',
             fromLeagueId: 5,
+            fromLeagueName: 'Black League F3',
             fromSeasonRank: 9,
             qualifierRank: 2,
             qualifierScoreThousandths: 1000,
@@ -86,9 +88,11 @@ describe('qualifierFieldRows', () => {
           },
           {
             athleteId: 1,
+            name: 'Card One',
             sportingColor: 'Black',
             role: 'Incumbent',
             fromLeagueId: 4,
+            fromLeagueName: 'Black League F2',
             fromSeasonRank: 17,
             qualifierRank: 1,
             qualifierScoreThousandths: 2000,

@@ -15,6 +15,10 @@
  * - `/saves/:saveId/standings?league=<id>&season=<n>&view=season|matrix`
  * - `/saves/:saveId/leagues/:leagueId` (MSS-040 reservation, now a Standings alias)
  * - `/saves/:saveId/leagues/:leagueId/standings?season=<n>&view=season|matrix`
+ * - `/saves/:saveId/qualifiers?season=<n>` -> qualifier overview (MSS-060)
+ * - `/saves/:saveId/qualifiers/superleague?season=<n>` -> one Superleague qualifier
+ * - `/saves/:saveId/qualifiers/f1f2/:color?season=<n>` -> one F1↔F2 qualifier
+ * - `/saves/:saveId/qualifiers/f2f3/:color?season=<n>` -> one F2↔F3 qualifier
  * - `/saves/:saveId/records`
  * - `/saves/:saveId/cups`
  * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type`) -> one Cup edition
@@ -54,6 +58,7 @@ import {
   type SelectionKey,
   type TransitionKey,
 } from '../events/eventModel.ts';
+import { qualifierBoundaryFromSegment, type QualifierBoundary } from '../../shared/leagueTiers.ts';
 
 export type StandingsView = 'season' | 'matrix';
 
@@ -103,6 +108,16 @@ export type Route =
       leagueId: number | null;
       season: number | null;
       view: StandingsView | null;
+    }
+  | {
+      name: 'qualifiers';
+      saveId: string;
+      /** Qualifier boundary (`superleague` | `f1f2` | `f2f3`); null shows the overview. */
+      boundary: QualifierBoundary | null;
+      /** Sporting color name for feeder qualifiers; null for the overview and Superleague. */
+      color: string | null;
+      /** Source season of the transition; null follows the latest resolved qualifiers. */
+      season: number | null;
     }
   | { name: 'records'; saveId: string }
   | { name: 'cups'; saveId: string; view: CupsView }
@@ -185,6 +200,46 @@ export function historyPath(
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/history${suffix}`;
+}
+
+/**
+ * Qualifier overview for a transition, e.g. `/saves/:saveId/qualifiers?season=2`.
+ * Season is the source season; absent follows the latest resolved qualifiers.
+ * One row per qualifier (1 v1, 17 tiered: Superleague plus 8 F1↔F2 and
+ * 8 F2↔F3 colors) with completion state from persisted facts.
+ */
+export function qualifiersPath(saveId: string, query?: { season?: number | null }): string {
+  const params = new URLSearchParams();
+  if (query?.season !== undefined && query.season !== null) {
+    params.set('season', String(query.season));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  return `/saves/${encodeURIComponent(saveId)}/qualifiers${suffix}`;
+}
+
+/**
+ * One qualifier event, e.g. `/saves/:saveId/qualifiers/f1f2/white?season=2`
+ * or `/saves/:saveId/qualifiers/superleague?season=2`. Boundary segments are
+ * `superleague` | `f1f2` | `f2f3`; color is the sporting-color name (any
+ * case). The same page serves 32-athlete Superleague and 16-athlete feeder
+ * fields from data.
+ */
+export function qualifierPath(
+  saveId: string,
+  boundary: QualifierBoundary,
+  color: string | null,
+  query?: { season?: number | null },
+): string {
+  const params = new URLSearchParams();
+  if (query?.season !== undefined && query.season !== null) {
+    params.set('season', String(query.season));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  const segment =
+    boundary === 'Feeder1Feeder2' ? 'f1f2' : boundary === 'Feeder2Feeder3' ? 'f2f3' : 'superleague';
+  const colorPart =
+    boundary === 'Superleague' || !color ? '' : `/${encodeURIComponent(color.toLowerCase())}`;
+  return `/saves/${encodeURIComponent(saveId)}/qualifiers/${segment}${colorPart}${suffix}`;
 }
 
 export function recordsPath(saveId: string): string {
@@ -279,6 +334,7 @@ export function routeSaveId(route: Route): string | null {
     case 'live':
     case 'history':
     case 'standings':
+    case 'qualifiers':
     case 'records':
     case 'cups':
     case 'athlete':
@@ -410,6 +466,55 @@ export function parseRoute(pathname: string, search: string): Route {
         return { name: 'notFound', path: pathname + search };
       }
       return { name: 'records', saveId };
+    case 'qualifiers': {
+      // MSS-060 qualifier overview plus per-event detail:
+      // `/saves/:saveId/qualifiers?season=N`,
+      // `/saves/:saveId/qualifiers/superleague?season=N`,
+      // `/saves/:saveId/qualifiers/f1f2/:color?season=N`.
+      // segments: ['saves', saveId, 'qualifiers', boundary?, color?]
+      if (segments.length === 3) {
+        return {
+          name: 'qualifiers',
+          saveId,
+          boundary: null,
+          color: null,
+          season: parseOptionalPositiveInt(params, 'season'),
+        };
+      }
+      if (segments.length === 4 || segments.length === 5) {
+        const boundary = qualifierBoundaryFromSegment(segments[3] ?? '');
+        if (boundary === null) {
+          return { name: 'notFound', path: pathname + search };
+        }
+        if (boundary === 'Superleague') {
+          if (segments.length !== 4) {
+            return { name: 'notFound', path: pathname + search };
+          }
+          return {
+            name: 'qualifiers',
+            saveId,
+            boundary,
+            color: null,
+            season: parseOptionalPositiveInt(params, 'season'),
+          };
+        }
+        if (segments.length !== 5) {
+          return { name: 'notFound', path: pathname + search };
+        }
+        const color = decodeURIComponentSafe(segments[4] ?? '').trim();
+        if (!color) {
+          return { name: 'notFound', path: pathname + search };
+        }
+        return {
+          name: 'qualifiers',
+          saveId,
+          boundary,
+          color,
+          season: parseOptionalPositiveInt(params, 'season'),
+        };
+      }
+      return { name: 'notFound', path: pathname + search };
+    }
     case 'cups': {
       const view = parseCupsView(segments.slice(3));
       return view ? { name: 'cups', saveId, view } : { name: 'notFound', path: pathname + search };
