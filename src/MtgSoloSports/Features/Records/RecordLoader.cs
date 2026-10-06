@@ -183,6 +183,7 @@ public static class RecordLoader
             .ConfigureAwait(false);
         List<QualifierProbe> qualifiers = await context.QualifierStandings
             .AsNoTracking()
+            .Where(e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .Select(e => new QualifierProbe(e.SaveAthleteId, e.Role, e.IsQualified))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

@@ -311,8 +311,9 @@ public static class SeasonLifecycleEvaluator
         await EnsureAutomaticMovementCompleteAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         (int qualifierStandings, int qualifierRounds) = await LoadQualifierCountsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         string expectedCup = CupExtensionPoint.ExpectedCupForSource(source.SeasonNumber);
+        (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
 
-        if (qualifierStandings != rules.QualifierSize || qualifierRounds != rules.QualifierRounds)
+        if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
         {
             return SnapshotAutomaticResolved(saveId, source, next, rules, persistedPhase, expectedCup);
         }
@@ -348,6 +349,50 @@ public static class SeasonLifecycleEvaluator
             throw new InvalidOperationException(
                 $"Season {next.SeasonNumber} exists but automatic movement is incomplete ({counts.Promotions}/8 promotions, {counts.Relegations}/8 relegations, {counts.Incumbents}/8 incumbents, {counts.Challengers}/24 challengers); corrupted sporting state.");
         }
+
+        if (rules.FeederDivisionsPerColor == 3)
+        {
+            await EnsureFeederMovementCompleteAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task EnsureFeederMovementCompleteAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        int promos = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.FeederAutomaticPromotion,
+            cancellationToken).ConfigureAwait(false);
+        int relegations = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.FeederAutomaticRelegation,
+            cancellationToken).ConfigureAwait(false);
+        int incumbents = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.FeederQualifierIncumbent,
+            cancellationToken).ConfigureAwait(false);
+        int challengers = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.FeederQualifierChallenger,
+            cancellationToken).ConfigureAwait(false);
+        int expectedEach = rules.SportingColorCount * 8 * 2;
+        if (promos != expectedEach || relegations != expectedEach || incumbents != expectedEach || challengers != expectedEach)
+        {
+            throw new InvalidOperationException(
+                $"Season {next.SeasonNumber} exists but feeder automatic movement is incomplete ({promos}/{expectedEach} promotions, {relegations}/{expectedEach} relegations, {incumbents}/{expectedEach} incumbents, {challengers}/{expectedEach} challengers); corrupted sporting state.");
+        }
+    }
+
+    internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
+    {
+        if (rules.FeederDivisionsPerColor != 3)
+        {
+            return (rules.QualifierSize, rules.QualifierRounds);
+        }
+
+        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
+        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
+        return (standings, rounds);
     }
 
     internal static async Task<MovementCounts> LoadMovementCountsAsync(

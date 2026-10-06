@@ -328,8 +328,11 @@ public static class ScoreRecordLoader
         Dictionary<int, int> seasonNumbers,
         CancellationToken cancellationToken)
     {
+        // Records track Superleague qualifier feats only; feeder qualifiers are
+        // retained via the qualifier-list API without pretending major honours.
         List<QualifierRoundProbe> rows = await context.QualifierRounds
             .AsNoTracking()
+            .Where(e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .Select(e => new QualifierRoundProbe(e.FromSeasonId, e.ToSeasonId, e.RoundNumber, e.PayloadJson))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -374,6 +377,7 @@ public static class ScoreRecordLoader
     {
         List<QualifierStageProbe> rows = await context.QualifierStandings
             .AsNoTracking()
+            .Where(e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .Select(e => new QualifierStageProbe(e.FromSeasonId, e.ToSeasonId, e.SaveAthleteId, e.QualifierScoreThousandths))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

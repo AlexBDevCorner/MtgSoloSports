@@ -11,15 +11,25 @@ namespace MtgSoloSports.Persistence.Saves;
 /// <see cref="MovementKind.QualifierChallenger"/> rows (48 total) per
 /// completed Superleague season. MSS-017 adds <see cref="MovementKind.RebalanceDraw"/>
 /// (pool to feeder) and <see cref="MovementKind.RebalanceDisplacement"/>
-/// (feeder to pool) rows without rewriting existing rows. Later slices add new
-/// <see cref="MovementKind"/> values without rewriting existing rows.
+/// (feeder to pool) rows without rewriting existing rows. MSS-058 adds feeder
+/// automatic movement across adjacent tiers without rewriting existing rows:
+/// per color, F2 1-8 and F3 1-8 auto-promote
+/// (<see cref="MovementKind.FeederAutomaticPromotion"/>), F1 25-32 and F2 25-32
+/// auto-relegate (<see cref="MovementKind.FeederAutomaticRelegation"/>), F1/F2
+/// 17-24 defend as incumbents
+/// (<see cref="MovementKind.FeederQualifierIncumbent"/>), F2/F3 9-16 challenge
+/// (<see cref="MovementKind.FeederQualifierChallenger"/>): 64 per color, 512
+/// total per ordinary tiered transition, plus the 48 Superleague rows. Later
+/// slices add new <see cref="MovementKind"/> values without rewriting existing rows.
 /// <see cref="FromSeasonRank"/> is the athlete's final rank in its source
 /// league (1-32), or 0 for pool-origin draws with no source rank.
 /// <see cref="SportingColor"/> is the athlete's sporting color
 /// at movement time and determines the returning feeder color for relegation
 /// flows. Qualifier-candidate rows are provisional markers only: qualifier
-/// winners (MSS-016) and feeder rebalancing (MSS-017) resolve the final
-/// next-season roster.
+/// winners (MSS-016/MSS-058) and feeder rebalancing (MSS-017) resolve the final
+/// next-season roster. Every normal movement is between adjacent levels only;
+/// source/destination tiers derive from <c>FromLeagueId</c>/<c>ToLeagueId</c>
+/// via league levels and must never skip a division.
 /// Pool transfers use league id 0 as the pool sentinel: draws carry
 /// <c>FromLeagueId = 0</c> with the feeder as destination, displacements carry
 /// the feeder as origin with <c>ToLeagueId = 0</c>.

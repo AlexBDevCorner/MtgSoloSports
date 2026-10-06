@@ -79,6 +79,7 @@ public sealed class GetQualifierResultHandler
 
         List<QualifierStandingEntity> any = await context.QualifierStandings
             .AsNoTracking()
+            .Where(e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         if (any.Count == 0)
@@ -108,7 +109,9 @@ public sealed class GetQualifierResultHandler
         SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
     {
         int count = await context.QualifierStandings.CountAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+            cancellationToken).ConfigureAwait(false);
         if (count == 0)
         {
             throw new QualifierResultNotFoundException(
@@ -137,7 +140,8 @@ public sealed class GetQualifierResultHandler
     {
         return await context.QualifierStandings
             .AsNoTracking()
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .OrderBy(e => e.QualifierRank)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -148,7 +152,8 @@ public sealed class GetQualifierResultHandler
     {
         return await context.QualifierRounds
             .AsNoTracking()
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);

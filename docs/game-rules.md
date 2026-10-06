@@ -169,24 +169,60 @@ upgrading a live season.
 At season end:
 
 - Superleague positions 1-16 are safe.
-- positions 25-32 (8 athletes) are automatically relegated;
-- positions 17-24 (8 athletes) enter the Superleague Qualifier;
-- every feeder-league champion (8 athletes) is automatically promoted;
-- feeder-league positions 2-4 (24 athletes) enter the qualifier.
+- positions 25-32 (8 athletes) are automatically relegated to F1 of their sporting color;
+- positions 17-24 (8 athletes) enter the Superleague Qualifier as incumbents;
+- every F1 champion (rank 1 from each of the eight colors, 8 total) is automatically promoted;
+- F1 positions 2-4 from each color (24 total) enter the qualifier as challengers.
 
 The next Superleague therefore contains:
 
-`16 safe incumbents + 8 feeder champions + 8 qualifier winners = 32`.
+`16 safe incumbents + 8 F1 champions + 8 qualifier winners = 32`.
 
-There are no color quotas in Superleague.
+There are no color quotas in Superleague. Every move is one adjacent tier only; there is no division skipping.
 
 ## 11. Superleague Qualifier
 
-The qualifier contains 32 athletes: 8 Superleague incumbents plus 24 feeder challengers. It behaves like one standard 16-round stage. Active bonus applies; no new bonus is generated. The top 8 qualify/remain in Superleague. Results are career history but not normal league championship points.
+The qualifier contains 32 athletes: 8 Superleague incumbents plus 24 F1 challengers. It behaves like one standard 16-round stage. Active bonus applies; no new bonus or championship points are generated. The top 8 qualify/remain in Superleague. Results are career history but not normal league championship points.
+
+## 11a. Feeder movement: F1↔F2 and F2↔F3 (per sporting color)
+
+For each color independently, from the just-completed source season standings:
+
+**F1**
+
+- ranks 17-24: qualifier incumbents (8);
+- ranks 25-32: automatically relegated to F2 (8).
+
+**F2**
+
+- ranks 1-8: automatically promoted to F1 (8);
+- ranks 9-16: qualifier challengers for F1↔F2 (8);
+- ranks 17-24: qualifier incumbents for F2↔F3 (8);
+- ranks 25-32: automatically relegated to F3 (8).
+
+**F3**
+
+- ranks 1-8: automatically promoted to F2 (8);
+- ranks 9-16: qualifier challengers for F2↔F3 (8);
+- ranks 17-32: remain in F3 (no automatic pool relegation).
+
+F2 ranks 1-8 are automatic-up only, 9-16 challenge upward only, 17-24 defend downward only, 25-32 automatic-down only. No F2 athlete appears in both qualifiers. An athlete moves at most one tier per postseason; all bands come from the just-completed standings, never provisional positions. No cross-color movement. Pool is not a competitive tier and never participates in a qualifier.
+
+This permits 8 guaranteed plus up to 8 qualifier promotions into F1 per color (at most 16/32 new F1 athletes), and likewise into F2.
+
+## 11b. Feeder qualifiers (16 athletes each)
+
+One 16-athlete / 16-round qualifier per color per boundary (8 F1↔F2 + 8 F2↔F3 = 16 feeder events, plus 1 Superleague = 17 total per ordinary postseason):
+
+- 8 upper-tier incumbents + 8 lower-tier challengers;
+- same 16-round simulation principles, active bonus applies, no new bonus or championship points;
+- top 8 occupy/remain in the higher tier, bottom 8 occupy/remain in the lower tier.
+
+Canonical RNG order is Superleague first, then F1↔F2 by sporting-color enum, then F2↔F3 by color enum, so equivalent state consumes RNG identically. Each event persists immutable replay payload/checksum/RNG before/after with boundary + color identity; retry resumes from completed events and never reruns them. The qualifiers phase is complete only when all required events are resolved. Qualifier participation is retained as history without counting as a major honour/title.
 
 ## 12. Feeder rebalancing and common pool
 
-All Superleague movement/qualifier outcomes are resolved first.
+All automatic movement and all qualifier outcomes are resolved first.
 
 For each feeder league:
 

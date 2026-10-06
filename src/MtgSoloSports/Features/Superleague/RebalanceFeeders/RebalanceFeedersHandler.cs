@@ -85,9 +85,10 @@ public sealed class RebalanceFeedersHandler
         List<SeasonMembershipEntity> nextMemberships =
             await LoadMembershipsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        HashSet<int> movedAthletes = await LoadMovedAthletesAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
         List<RebalanceFeedersSelection.ColorInput> inputs = BuildColorInputs(
-            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules);
+            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules, movedAthletes);
 
         Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
         RebalanceFeedersSelection.RebalancePlan plan = RebalanceFeedersSelection.Select(inputs, rng, rules);
@@ -300,11 +301,35 @@ public sealed class RebalanceFeedersHandler
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
         int qualifierRounds = await context.QualifierRounds.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-        if (qualifierStandings != rules.QualifierSize || qualifierRounds != rules.QualifierRounds)
+        (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
+        if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
         {
             throw new RebalanceFeedersConflictException(
-                "The Superleague qualifier must be resolved before feeder rebalancing can run.");
+                "All qualifiers (Superleague plus feeder boundaries) must be resolved before feeder rebalancing can run.");
         }
+    }
+
+    internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
+    {
+        if (rules.FeederDivisionsPerColor != 3)
+        {
+            return (rules.QualifierSize, rules.QualifierRounds);
+        }
+
+        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
+        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
+        return (standings, rounds);
+    }
+
+    internal static async Task<HashSet<int>> LoadMovedAthletesAsync(
+        SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
+    {
+        List<int> ids = await context.Movements
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Select(e => e.SaveAthleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return ids.ToHashSet();
     }
 
     internal static async Task<(int Stages, int Seasons, int Rounds, int QualifierRounds, int QualifierStandings)> CapturePreservationAsync(
@@ -433,6 +458,21 @@ public sealed class RebalanceFeedersHandler
         Dictionary<int, string> names,
         RulesV1 rules)
     {
+        return BuildColorInputs(
+            sourceFeeders, nextFeeders, sourceStandings, sourceMemberships, nextMemberships, names, rules,
+            movedAthletes: []);
+    }
+
+    internal static List<RebalanceFeedersSelection.ColorInput> BuildColorInputs(
+        List<LeagueEntity> sourceFeeders,
+        List<LeagueEntity> nextFeeders,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        List<SeasonMembershipEntity> sourceMemberships,
+        List<SeasonMembershipEntity> nextMemberships,
+        Dictionary<int, string> names,
+        RulesV1 rules,
+        HashSet<int> movedAthletes)
+    {
         bool tiered = rules.FeederDivisionsPerColor == 3;
         List<LeagueEntity> sourceF1 = tiered
             ? sourceFeeders.Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First).ToList()
@@ -462,7 +502,7 @@ public sealed class RebalanceFeedersHandler
         {
             inputs.Add(BuildSingleColorInput(
                 color, sourceByColor, nextByColor, sourceStandings,
-                sourceByAthlete, nextByLeague, nextPoolByColor, names));
+                sourceByAthlete, nextByLeague, nextPoolByColor, names, movedAthletes));
         }
 
         return inputs;
@@ -515,10 +555,26 @@ public sealed class RebalanceFeedersHandler
         Dictionary<int, List<SeasonMembershipEntity>> nextPoolByColor,
         Dictionary<int, string> names)
     {
+        return BuildSingleColorInput(
+            color, sourceByColor, nextByColor, sourceStandings,
+            sourceByAthlete, nextByLeague, nextPoolByColor, names, movedAthletes: []);
+    }
+
+    internal static RebalanceFeedersSelection.ColorInput BuildSingleColorInput(
+        SportingColor color,
+        Dictionary<int, LeagueEntity> sourceByColor,
+        Dictionary<int, LeagueEntity> nextByColor,
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> sourceStandings,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, List<SeasonMembershipEntity>> nextByLeague,
+        Dictionary<int, List<SeasonMembershipEntity>> nextPoolByColor,
+        Dictionary<int, string> names,
+        HashSet<int> movedAthletes)
+    {
         (LeagueEntity sourceFeeder, LeagueEntity nextFeeder, Dictionary<int, int> rankByAthlete) =
             ResolveColorLeagues(color, sourceByColor, nextByColor, sourceStandings);
         List<RebalanceFeedersSelection.ProvisionalMember> provisionalMembers = BuildProvisionalMembers(
-            color, sourceFeeder, nextFeeder, rankByAthlete, sourceByAthlete, nextByLeague, names);
+            color, sourceFeeder, nextFeeder, rankByAthlete, sourceByAthlete, nextByLeague, names, movedAthletes);
         List<RebalanceFeedersSelection.PoolCandidate> candidates = BuildPoolCandidates(
             color, nextPoolByColor, names);
         return new RebalanceFeedersSelection.ColorInput(color, provisionalMembers, candidates);
@@ -557,13 +613,27 @@ public sealed class RebalanceFeedersHandler
         Dictionary<int, List<SeasonMembershipEntity>> nextByLeague,
         Dictionary<int, string> names)
     {
+        return BuildProvisionalMembers(
+            color, sourceFeeder, nextFeeder, rankByAthlete, sourceByAthlete, nextByLeague, names, movedAthletes: []);
+    }
+
+    internal static List<RebalanceFeedersSelection.ProvisionalMember> BuildProvisionalMembers(
+        SportingColor color,
+        LeagueEntity sourceFeeder,
+        LeagueEntity nextFeeder,
+        Dictionary<int, int> rankByAthlete,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, List<SeasonMembershipEntity>> nextByLeague,
+        Dictionary<int, string> names,
+        HashSet<int> movedAthletes)
+    {
         List<SeasonMembershipEntity> provisional = nextByLeague.TryGetValue(nextFeeder.Id, out List<SeasonMembershipEntity>? members)
             ? members
             : [];
         List<RebalanceFeedersSelection.ProvisionalMember> provisionalMembers = new(provisional.Count);
         foreach (SeasonMembershipEntity membership in provisional.OrderBy(m => m.SaveAthleteId))
         {
-            provisionalMembers.Add(MapProvisionalMember(color, sourceFeeder, rankByAthlete, sourceByAthlete, names, membership));
+            provisionalMembers.Add(MapProvisionalMember(color, sourceFeeder, rankByAthlete, sourceByAthlete, names, membership, movedAthletes));
         }
 
         return provisionalMembers;
@@ -576,6 +646,18 @@ public sealed class RebalanceFeedersHandler
         Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
         Dictionary<int, string> names,
         SeasonMembershipEntity membership)
+    {
+        return MapProvisionalMember(color, sourceFeeder, rankByAthlete, sourceByAthlete, names, membership, movedAthletes: []);
+    }
+
+    internal static RebalanceFeedersSelection.ProvisionalMember MapProvisionalMember(
+        SportingColor color,
+        LeagueEntity sourceFeeder,
+        Dictionary<int, int> rankByAthlete,
+        Dictionary<int, SeasonMembershipEntity> sourceByAthlete,
+        Dictionary<int, string> names,
+        SeasonMembershipEntity membership,
+        HashSet<int> movedAthletes)
     {
         if (membership.SportingColor != (int)color)
         {
@@ -599,6 +681,16 @@ public sealed class RebalanceFeedersHandler
         {
             throw new InvalidOperationException(
                 $"Athlete {membership.SaveAthleteId} entered the {color} feeder from the common pool before rebalancing; pool vacancies fill only here.");
+        }
+
+        // MSS-058: athletes with an existing postseason movement (automatic or
+        // qualifier marker) already occupy exactly one movement row for this
+        // transition (unique ToSeasonId+AthleteId). Displacing them again would
+        // create a contradictory second movement and violate the one-tier rule,
+        // so they are protected like returning athletes (not displaceable).
+        if (isRetained && movedAthletes.Contains(membership.SaveAthleteId))
+        {
+            isRetained = false;
         }
 
         int sourceRank = ResolveRetainedRank(membership, isRetained, rankByAthlete);

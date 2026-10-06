@@ -180,39 +180,50 @@ public static class LongRunInvariantChecks
 
     internal static InvariantResult CheckQualifierCounts(Snapshot snapshot, SimulationKernel.Rules.RulesV1 rules)
     {
-        var groups = snapshot.Qualifiers.GroupBy(q => (q.FromSeasonId, q.ToSeasonId)).ToList();
+        var groups = snapshot.Qualifiers
+            .GroupBy(q => (q.FromSeasonId, q.ToSeasonId, q.QualifierBoundary, q.QualifierSportingColor))
+            .ToList();
         foreach (var group in groups)
         {
             List<QualifierStandingEntity> rows = group.ToList();
-            if (rows.Count != rules.QualifierSize)
+            bool isSuperleague = group.Key.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague;
+            int expectedSize = isSuperleague ? rules.QualifierSize : rules.FeederQualifierSize;
+            int expectedWinners = isSuperleague ? rules.QualifierWinners : rules.FeederQualifierWinners;
+            int expectedIncumbents = isSuperleague
+                ? rules.SuperleagueQualifierIncumbentCount
+                : rules.FeederQualifierIncumbentPerColor;
+            int expectedChallengers = isSuperleague
+                ? rules.FeederQualifierCount
+                : rules.FeederQualifierChallengerPerColor;
+            if (rows.Count != expectedSize)
             {
                 return new InvariantResult("qualifier_counts", false,
-                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} has {rows.Count} athletes, expected {rules.QualifierSize}.");
+                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} boundary {group.Key.QualifierBoundary} has {rows.Count} athletes, expected {expectedSize}.");
             }
 
             int qualified = rows.Count(r => r.IsQualified);
-            if (qualified != rules.QualifierWinners)
+            if (qualified != expectedWinners)
             {
                 return new InvariantResult("qualifier_counts", false,
-                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} has {qualified} winners, expected {rules.QualifierWinners}.");
+                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} boundary {group.Key.QualifierBoundary} has {qualified} winners, expected {expectedWinners}.");
             }
 
             int incumbents = rows.Count(r => r.Role == (int)QualifierRole.Incumbent);
             int challengers = rows.Count(r => r.Role == (int)QualifierRole.Challenger);
-            if (incumbents != rules.SuperleagueQualifierIncumbentCount || challengers != rules.FeederQualifierCount)
+            if (incumbents != expectedIncumbents || challengers != expectedChallengers)
             {
                 return new InvariantResult("qualifier_counts", false,
-                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} roles {incumbents}/{challengers}, expected {rules.SuperleagueQualifierIncumbentCount}/{rules.FeederQualifierCount}.");
+                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} boundary {group.Key.QualifierBoundary} roles {incumbents}/{challengers}, expected {expectedIncumbents}/{expectedChallengers}.");
             }
 
-            if (!rows.Select(r => r.QualifierRank).ToHashSet().SetEquals(Enumerable.Range(1, rules.QualifierSize)))
+            if (!rows.Select(r => r.QualifierRank).ToHashSet().SetEquals(Enumerable.Range(1, expectedSize)))
             {
                 return new InvariantResult("qualifier_counts", false,
-                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} has corrupt ranks.");
+                    $"Qualifier {group.Key.FromSeasonId}->{group.Key.ToSeasonId} boundary {group.Key.QualifierBoundary} has corrupt ranks.");
             }
         }
 
-        return new InvariantResult("qualifier_counts", true, $"Checked {groups.Count} qualifier transitions.");
+        return new InvariantResult("qualifier_counts", true, $"Checked {groups.Count} qualifier events.");
     }
 
     internal static InvariantResult CheckNationalityImmutability(Snapshot snapshot)

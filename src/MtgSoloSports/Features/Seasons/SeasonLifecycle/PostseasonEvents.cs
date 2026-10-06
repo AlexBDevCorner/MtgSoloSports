@@ -78,12 +78,25 @@ public static class PostseasonEvents
         ArgumentNullException.ThrowIfNull(rules);
         return key switch
         {
-            Qualifier => new EventShape(1, rules.QualifierRounds),
+            Qualifier => QualifierShape(rules),
             ColorCupIndividual => new EventShape(1, rules.ColorCupIndividualRounds),
             ColorCupTeam => new EventShape(rules.ColorCupTeamSize, rules.ColorCupTeamGroupRounds),
             TypeCupTeam => new EventShape(rules.TypeCupMinTeamSize, rules.TypeCupGroupRounds),
             _ => throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown postseason event."),
         };
+    }
+
+    internal static EventShape QualifierShape(RulesV1 rules)
+    {
+        if (rules.FeederDivisionsPerColor != 3)
+        {
+            return new EventShape(1, rules.QualifierRounds);
+        }
+
+        int totalRounds = rules.QualifierRounds
+            + (8 * rules.FeederQualifierRounds)
+            + (8 * rules.FeederQualifierRounds);
+        return new EventShape(1, totalRounds);
     }
 
     /// <summary>Group and round (both 1-based) of the next round after <paramref name="played"/> rounds.</summary>
@@ -221,9 +234,7 @@ public static class PostseasonEvents
         int? colorTeam = Except(key, ColorCupTeam, sourceSeasonId);
         int? typeTeam = Except(key, TypeCupTeam, sourceSeasonId);
 
-        if (await context.QualifierRounds.AnyAsync(
-                r => r.FromSeasonId != qualifier && !context.QualifierStandings.Any(s => s.FromSeasonId == r.FromSeasonId),
-                cancellationToken).ConfigureAwait(false))
+        if (await HasQualifierPartialAsync(context, qualifier, cancellationToken).ConfigureAwait(false))
         {
             return Title(Qualifier);
         }
@@ -251,6 +262,31 @@ public static class PostseasonEvents
 
     private static int? Except(string key, string candidate, int sourceSeasonId) =>
         string.Equals(key, candidate, StringComparison.Ordinal) ? sourceSeasonId : null;
+
+    internal static async Task<bool> HasQualifierPartialAsync(
+        SaveDbContext context, int? excludedFromSeasonId, CancellationToken cancellationToken)
+    {
+        List<QualifierRoundEntity> rounds = await context.QualifierRounds
+            .AsNoTracking()
+            .Where(r => r.FromSeasonId != excludedFromSeasonId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (QualifierRoundEntity round in rounds)
+        {
+            bool hasStandings = await context.QualifierStandings.AnyAsync(
+                s => s.FromSeasonId == round.FromSeasonId
+                    && s.ToSeasonId == round.ToSeasonId
+                    && s.QualifierBoundary == round.QualifierBoundary
+                    && s.QualifierSportingColor == round.QualifierSportingColor,
+                cancellationToken).ConfigureAwait(false);
+            if (!hasStandings)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static async Task<int> CountQualifierRoundsAsync(SaveDbContext context, SeasonEntity source, CancellationToken cancellationToken)
     {

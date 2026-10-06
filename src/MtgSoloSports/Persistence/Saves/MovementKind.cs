@@ -58,4 +58,32 @@ public enum MovementKind
     /// divisions. Exactly 512 per upgrade (32 F2 + 32 F3 per color).
     /// </summary>
     TierUpgradeSeed = 7,
+
+    /// <summary>
+    /// Feeder athlete automatically promoted across a feeder boundary (MSS-058):
+    /// F2 ranks 1-8 → F1 or F3 ranks 1-8 → F2, 8 per color per boundary.
+    /// Source/destination tiers are adjacent; sporting color never changes.
+    /// </summary>
+    FeederAutomaticPromotion = 8,
+
+    /// <summary>
+    /// Feeder athlete automatically relegated across a feeder boundary (MSS-058):
+    /// F1 ranks 25-32 → F2 or F2 ranks 25-32 → F3, 8 per color per boundary.
+    /// Adjacent tiers only; no division skipping.
+    /// </summary>
+    FeederAutomaticRelegation = 9,
+
+    /// <summary>
+    /// Feeder athlete entering a feeder qualifier as an incumbent (MSS-058):
+    /// F1 ranks 17-24 or F2 ranks 17-24 defend, 8 per color per boundary.
+    /// Winners decided by the 16-athlete qualifier.
+    /// </summary>
+    FeederQualifierIncumbent = 10,
+
+    /// <summary>
+    /// Feeder athlete entering a feeder qualifier as a challenger (MSS-058):
+    /// F2 ranks 9-16 or F3 ranks 9-16 challenge, 8 per color per boundary.
+    /// Winners decided by the 16-athlete qualifier.
+    /// </summary>
+    FeederQualifierChallenger = 11,
 }

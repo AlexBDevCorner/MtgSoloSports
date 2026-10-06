@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -125,7 +126,7 @@ public sealed class SimulateSeasonsHandler
         CompleteStageForAllLeaguesHandler BulkStages,
         CreateInauguralSuperleagueHandler Inaugural,
         ResolveAutomaticMovementHandler Automatic,
-        RunQualifierHandler Qualifier,
+        RunAllQualifiersHandler Qualifier,
         RebalanceFeedersHandler Rebalance,
         SelectColorCupTeamsHandler SelectColorCup,
         RunColorCupIndividualHandler RunColorCupIndividual,
@@ -142,7 +143,7 @@ public sealed class SimulateSeasonsHandler
             new CompleteStageForAllLeaguesHandler(_store),
             new CreateInauguralSuperleagueHandler(_store),
             new ResolveAutomaticMovementHandler(_store),
-            new RunQualifierHandler(_store),
+            new RunAllQualifiersHandler(_store),
             new RebalanceFeedersHandler(_store),
             new SelectColorCupTeamsHandler(_store),
             new RunColorCupIndividualHandler(_store),
@@ -245,7 +246,7 @@ public sealed class SimulateSeasonsHandler
                 _ = await handlers.Automatic.ResolveUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
                 return (false, false);
             case SeasonLifecycleActions.RunQualifier:
-                _ = await handlers.Qualifier.RunUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+                _ = await handlers.Qualifier.RunRemainingUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
                 return (false, false);
             case SeasonLifecycleActions.RebalanceFeeders:
                 _ = await handlers.Rebalance.RebalanceUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);

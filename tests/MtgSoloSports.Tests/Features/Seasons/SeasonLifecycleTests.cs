@@ -430,7 +430,8 @@ public sealed class SeasonLifecycleTests
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticPromotion)
             .Select(e => e.SaveAthleteId).ToListAsync().ConfigureAwait(false)).ToHashSet();
         HashSet<int> qualified = (await context.QualifierStandings.AsNoTracking()
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.IsQualified)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.IsQualified
+                && e.QualifierBoundary == (int)MtgSoloSports.SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .Select(e => e.SaveAthleteId).ToListAsync().ConfigureAwait(false)).ToHashSet();
         HashSet<int> super = (await context.SeasonMemberships.AsNoTracking()
             .Where(e => e.SeasonId == next.Id && e.LeagueId == nextSuper.Id)

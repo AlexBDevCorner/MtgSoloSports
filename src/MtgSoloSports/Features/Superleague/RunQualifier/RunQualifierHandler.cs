@@ -135,7 +135,8 @@ public sealed class RunQualifierHandler
     {
         List<QualifierRoundEntity> rows = await context.QualifierRounds
             .AsNoTracking()
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -564,6 +565,8 @@ public sealed class RunQualifierHandler
             {
                 FromSeasonId = source.Id,
                 ToSeasonId = next.Id,
+                QualifierBoundary = (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                QualifierSportingColor = SimulationKernel.Leagues.QualifierIdentity.SuperleagueColorSentinel,
                 RoundNumber = payload.RoundNumber,
                 RulesVersion = payload.RulesVersion,
                 RngBeforeState = unchecked((long)payload.RngBeforeState),
@@ -588,6 +591,8 @@ public sealed class RunQualifierHandler
             {
                 FromSeasonId = source.Id,
                 ToSeasonId = next.Id,
+                QualifierBoundary = (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                QualifierSportingColor = SimulationKernel.Leagues.QualifierIdentity.SuperleagueColorSentinel,
                 SaveAthleteId = entry.AthleteId,
                 QualifierRank = entry.StageRank,
                 QualifierScoreThousandths = entry.StageScoreThousandths,
@@ -788,11 +793,13 @@ public sealed class RunQualifierHandler
         CancellationToken cancellationToken)
     {
         List<QualifierRoundEntity> rounds = await context.QualifierRounds
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         List<QualifierStandingEntity> standings = await context.QualifierStandings
-            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id)
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         QualifierInvariants.ValidatePersisted(source, next, rounds, standings, rules);
@@ -994,7 +1001,9 @@ public sealed class RunQualifierHandler
             }
 
             bool hasQualifier = await context.QualifierStandings.AnyAsync(
-                e => e.FromSeasonId == candidate.Id && e.ToSeasonId == successor.Id, cancellationToken).ConfigureAwait(false);
+                e => e.FromSeasonId == candidate.Id && e.ToSeasonId == successor.Id
+                    && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                cancellationToken).ConfigureAwait(false);
             if (hasQualifier)
             {
                 continue;
@@ -1003,7 +1012,9 @@ public sealed class RunQualifierHandler
             return (candidate, successor);
         }
 
-        bool anyQualifier = await context.QualifierStandings.AnyAsync(cancellationToken).ConfigureAwait(false);
+        bool anyQualifier = await context.QualifierStandings.AnyAsync(
+            e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+            cancellationToken).ConfigureAwait(false);
         if (anyQualifier)
         {
             throw new RunQualifierConflictException(
@@ -1040,7 +1051,9 @@ public sealed class RunQualifierHandler
         SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
     {
         bool hasStandings = await context.QualifierStandings.AnyAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+            cancellationToken).ConfigureAwait(false);
         if (hasStandings)
         {
             throw new RunQualifierConflictException(
