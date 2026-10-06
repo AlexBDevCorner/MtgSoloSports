@@ -290,9 +290,9 @@ public sealed class StoryEventsTests
 
             ResolveAutomaticMovementHandler movement = new(store);
             await movement.HandleAsync(created.Detail.SaveId);
-            RunQualifierHandler qualifier = new(store);
-            RunQualifierResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
-            qualifierResponse.Winners.ShouldBe(8);
+            MtgSoloSports.Features.Qualifiers.RunAllQualifiersHandler qualifier = new(store);
+            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
+            qualifierResponse.TotalStandings.ShouldBe(288);
 
             await AssertQualifierMovementStoriesAsync(store, created.Detail.SaveId);
 
@@ -300,7 +300,9 @@ public sealed class StoryEventsTests
             await AssertStoryKeysUniqueAsync(store, created.Detail.SaveId);
 
             int rerunPromotions = await CountByTypeAsync(store, created.Detail.SaveId, StoryEventType.Promotion);
-            await Should.ThrowAsync<RunQualifierConflictException>(() => qualifier.HandleAsync(created.Detail.SaveId));
+            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse rerun = await qualifier.HandleAsync(created.Detail.SaveId);
+            rerun.AlreadyCompleted.Count.ShouldBe(17);
+            rerun.ExecutedNow.Count.ShouldBe(0);
             int afterRerun = await CountByTypeAsync(store, created.Detail.SaveId, StoryEventType.Promotion);
             afterRerun.ShouldBe(rerunPromotions);
         }

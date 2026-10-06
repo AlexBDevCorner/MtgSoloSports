@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.GetRebalanceResult;
@@ -138,9 +139,10 @@ public sealed class RebalanceFeedersTests
             await Should.ThrowAsync<RebalanceFeedersConflictException>(
                 () => rebalance.HandleAsync(created.Detail.SaveId));
 
-            RunQualifierHandler qualifier = new(store);
-            RunQualifierResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
-            qualifierResponse.Winners.ShouldBe(8);
+            RunAllQualifiersHandler qualifier = new(store);
+            RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
+            qualifierResponse.TotalStandings.ShouldBe(288);
+            qualifierResponse.ExecutedNow.Count.ShouldBe(17);
 
             Dictionary<int, int> provisional = await LoadFeederCountsAsync(store, created.Detail.SaveId, 3);
             provisional.Values.Sum().ShouldBe(768);
