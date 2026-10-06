@@ -24,9 +24,9 @@ public sealed class EventProgressTests
             status.EventProgress!.Event.ShouldBe("qualifier");
             status.EventProgress.SourceSeasonNumber.ShouldBe(status.SourceSeasonNumber!.Value);
             status.EventProgress.RoundsPlayed.ShouldBe(0);
-            status.EventProgress.TotalRounds.ShouldBe(16);
+            status.EventProgress.TotalRounds.ShouldBe(272);
             status.EventProgress.GroupCount.ShouldBe(1);
-            status.EventProgress.RoundsPerGroup.ShouldBe(16);
+            status.EventProgress.RoundsPerGroup.ShouldBe(272);
             status.EventProgress.Group.ShouldBeNull();
             status.EventProgress.RoundInGroup.ShouldBeNull();
             string.Equals(status.ComputedPhase, "QualifierInProgress", StringComparison.Ordinal).ShouldBeFalse();
@@ -70,8 +70,8 @@ public sealed class EventProgressTests
             advanced.QualifierResolved.ShouldBeTrue();
             advanced.EventProgress.ShouldBeNull();
             using SaveDbContext context = store.OpenDbContext(saveId);
-            (await context.QualifierRounds.CountAsync()).ShouldBe(16);
-            (await context.QualifierStandings.CountAsync()).ShouldBe(32);
+            (await context.QualifierRounds.CountAsync()).ShouldBe(272);
+            (await context.QualifierStandings.CountAsync()).ShouldBe(288);
         }
         finally
         {

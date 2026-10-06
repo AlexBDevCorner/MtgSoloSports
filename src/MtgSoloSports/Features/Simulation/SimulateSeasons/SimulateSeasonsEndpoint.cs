@@ -1,3 +1,4 @@
+using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
@@ -61,6 +62,7 @@ public static class SimulateSeasonsEndpoint
             CreateInauguralSuperleagueConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             ResolveAutomaticMovementConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RunQualifierConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            RunFeederQualifierConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RebalanceFeedersConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             StartNextSeasonConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             _ => Results.BadRequest(new { error = ex.Message }),

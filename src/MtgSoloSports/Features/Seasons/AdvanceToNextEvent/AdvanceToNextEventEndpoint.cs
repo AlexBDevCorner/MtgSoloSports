@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
@@ -60,6 +61,7 @@ public static class AdvanceToNextEventEndpoint
             CreateInauguralSuperleagueConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             ResolveAutomaticMovementConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RunQualifierConflictException conflict => Results.Conflict(new { error = conflict.Message }),
+            RunFeederQualifierConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RebalanceFeedersConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             SelectColorCupTeamsConflictException conflict => Results.Conflict(new { error = conflict.Message }),
             RunColorCupIndividualConflictException conflict => Results.Conflict(new { error = conflict.Message }),
