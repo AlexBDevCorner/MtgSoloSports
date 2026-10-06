@@ -1618,6 +1618,7 @@ public sealed class ResolveAutomaticMovementHandler
         List<SeasonStandingEntity> sourceSuperRows)
     {
         _ = leaguesById;
+        string level = LeagueEntityLevels.GetLevel(sourceSuperleague).ToString();
         List<AutomaticMovementMember> members = new(16);
         foreach (SeasonStandingEntity row in sourceSuperRows.Where(r => r.SeasonRank >= 1 && r.SeasonRank <= 16).OrderBy(r => r.SeasonRank))
         {
@@ -1635,7 +1636,9 @@ public sealed class ResolveAutomaticMovementHandler
                 nextSuperleague.Id,
                 nextSuperleague.Name,
                 "Safe",
-                imageUrl));
+                imageUrl,
+                level,
+                level));
         }
 
         return members;
@@ -1659,6 +1662,9 @@ public sealed class ResolveAutomaticMovementHandler
             string toName = nextMembership?.LeagueId is not null && leaguesById.TryGetValue(nextMembership.LeagueId.Value, out LeagueEntity? to)
                 ? to.Name
                 : string.Empty;
+            string? toLevel = nextMembership?.LeagueId is not null && leaguesById.TryGetValue(nextMembership.LeagueId.Value, out LeagueEntity? toLeagueEntity)
+                ? LeagueEntityLevels.GetLevel(toLeagueEntity).ToString()
+                : null;
             string color = nextMembership is null ? "Unknown" : ((SportingColor)nextMembership.SportingColor).ToString();
             members.Add(new AutomaticMovementMember(
                 pick.SaveAthleteId,
@@ -1670,7 +1676,9 @@ public sealed class ResolveAutomaticMovementHandler
                 toLeague,
                 toName,
                 pick.Kind.ToString(),
-                imageUrl));
+                imageUrl,
+                from is null ? null : LeagueEntityLevels.GetLevel(from).ToString(),
+                toLevel));
         }
 
         return members;

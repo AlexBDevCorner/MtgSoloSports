@@ -58,7 +58,9 @@ public sealed class GetAthleteProfileHandler
         List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupHistoryDto> cupHistory = await LoadCupHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory);
+        Dictionary<int, (string Level, int Division)> levels = await LoadLeagueLevelsAsync(
+            context, summaries, cancellationToken).ConfigureAwait(false);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, levels);
     }
 
     internal static async Task<SaveAthleteEntity> LoadAthleteAsync(
@@ -134,13 +136,14 @@ public sealed class GetAthleteProfileHandler
         IReadOnlyList<AthleteHonourDto>? honours = null,
         IReadOnlyList<AthleteMovementDto>? movements = null,
         IReadOnlyList<AthleteCupSelectionDto>? selections = null,
-        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null)
+        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null,
+        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null)
     {
         AthleteCardDto card = MapCard(athlete);
         AthleteCareerDto careerDto = MapCareer(career);
         List<AthleteSeasonDto> seasons = summaries
             .OrderBy(s => s.SeasonNumber)
-            .Select(MapSeason)
+            .Select(s => MapSeason(s, levelsByLeague))
             .ToList();
         return new GetAthleteProfileResponse(
             saveId,
@@ -203,7 +206,7 @@ public sealed class GetAthleteProfileHandler
         }
 
         AthleteCareerEntity career = AthleteProjectionUpdater.BuildCareer(athlete.Id, history, rules);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, ToLevels(history.LeaguesById));
     }
 
     internal static async Task<List<AthleteHonourDto>> LoadHonoursAsync(
@@ -521,40 +524,59 @@ public sealed class GetAthleteProfileHandler
             .SelectMany(r => new[] { r.FromLeagueId, r.ToLeagueId })
             .Where(id => id != 0)
             .ToHashSet();
-        Dictionary<int, string> leagueNames = leagueIds.Count == 0
-            ? new Dictionary<int, string>()
+        Dictionary<int, LeagueEntity> leaguesById = leagueIds.Count == 0
+            ? new Dictionary<int, LeagueEntity>()
             : await context.Leagues
                 .AsNoTracking()
                 .Where(e => leagueIds.Contains(e.Id))
-                .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+                .ToDictionaryAsync(e => e.Id, cancellationToken)
                 .ConfigureAwait(false);
+        Dictionary<int, string> leagueNames = leaguesById.ToDictionary(kv => kv.Key, kv => kv.Value.Name);
         List<AthleteMovementDto> movements = new(rows.Count);
         foreach (MovementEntity row in rows)
         {
             seasonNumbers.TryGetValue(row.FromSeasonId, out int fromSeason);
             seasonNumbers.TryGetValue(row.ToSeasonId, out int toSeason);
-            string fromLeague = row.FromLeagueId == 0
-                ? "Common pool"
-                : leagueNames.TryGetValue(row.FromLeagueId, out string? fromName) ? fromName : $"League {row.FromLeagueId}";
-            string toLeague = row.ToLeagueId == 0
-                ? "Common pool"
-                : leagueNames.TryGetValue(row.ToLeagueId, out string? toName) ? toName : $"League {row.ToLeagueId}";
-            string kind = Enum.IsDefined(typeof(MovementKind), row.Kind)
-                ? ((MovementKind)row.Kind).ToString()
-                : $"Movement{row.Kind}";
-            movements.Add(new AthleteMovementDto(
-                fromSeason,
-                toSeason,
-                fromLeague,
-                toLeague,
-                kind,
-                row.FromSeasonRank));
+            movements.Add(MapMovement(row, fromSeason, toSeason, leagueNames, leaguesById));
         }
 
         return movements
             .OrderBy(e => e.ToSeasonNumber)
             .ThenBy(e => e.Kind, StringComparer.Ordinal)
             .ToList();
+    }
+
+    internal static AthleteMovementDto MapMovement(
+        MovementEntity row,
+        int fromSeason,
+        int toSeason,
+        IReadOnlyDictionary<int, string> leagueNames,
+        IReadOnlyDictionary<int, LeagueEntity> leaguesById)
+    {
+        string fromLeague = row.FromLeagueId == 0
+            ? "Common pool"
+            : leagueNames.TryGetValue(row.FromLeagueId, out string? fromName) ? fromName : $"League {row.FromLeagueId}";
+        string toLeague = row.ToLeagueId == 0
+            ? "Common pool"
+            : leagueNames.TryGetValue(row.ToLeagueId, out string? toName) ? toName : $"League {row.ToLeagueId}";
+        string? fromLevel = row.FromLeagueId != 0 && leaguesById.TryGetValue(row.FromLeagueId, out LeagueEntity? from)
+            ? LeagueEntityLevels.GetLevel(from).ToString()
+            : null;
+        string? toLevel = row.ToLeagueId != 0 && leaguesById.TryGetValue(row.ToLeagueId, out LeagueEntity? to)
+            ? LeagueEntityLevels.GetLevel(to).ToString()
+            : null;
+        string kind = Enum.IsDefined(typeof(MovementKind), row.Kind)
+            ? ((MovementKind)row.Kind).ToString()
+            : $"Movement{row.Kind}";
+        return new AthleteMovementDto(
+            fromSeason,
+            toSeason,
+            fromLeague,
+            toLeague,
+            kind,
+            row.FromSeasonRank,
+            fromLevel,
+            toLevel);
     }
 
     internal static async Task<List<AthleteCupSelectionDto>> LoadCupSelectionsAsync(
@@ -860,8 +882,19 @@ public sealed class GetAthleteProfileHandler
         }
     }
 
-    internal static AthleteSeasonDto MapSeason(AthleteSeasonSummaryEntity summary)
+    internal static AthleteSeasonDto MapSeason(
+        AthleteSeasonSummaryEntity summary,
+        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null)
     {
+        string? level = null;
+        int? division = null;
+        if (summary.LeagueId.HasValue && levelsByLeague is not null
+            && levelsByLeague.TryGetValue(summary.LeagueId.Value, out (string Level, int Division) resolved))
+        {
+            level = resolved.Level;
+            division = resolved.Division;
+        }
+
         return new AthleteSeasonDto(
             summary.SeasonNumber,
             summary.SeasonId,
@@ -878,6 +911,46 @@ public sealed class GetAthleteProfileHandler
             summary.EarnedBonusThousandths,
             summary.TotalChampionshipPointsThousandths,
             summary.TotalStageScoreThousandths,
-            summary.TotalBaseScoreThousandths);
+            summary.TotalBaseScoreThousandths,
+            level,
+            division);
+    }
+
+    /// <summary>
+    /// Targeted tier lookup for one athlete's season leagues: only the league
+    /// rows referenced by the athlete's own season summaries, never the full
+    /// save dictionary. Tiers derive from league rows, never from names.
+    /// </summary>
+    internal static async Task<Dictionary<int, (string Level, int Division)>> LoadLeagueLevelsAsync(
+        SaveDbContext context,
+        List<AthleteSeasonSummaryEntity> summaries,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> leagueIds = summaries
+            .Where(s => s.LeagueId.HasValue)
+            .Select(s => s.LeagueId!.Value)
+            .ToHashSet();
+        if (leagueIds.Count == 0)
+        {
+            return new Dictionary<int, (string Level, int Division)>();
+        }
+
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => leagueIds.Contains(e.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return ToLevels(leagues.ToDictionary(e => e.Id));
+    }
+
+    internal static Dictionary<int, (string Level, int Division)> ToLevels(Dictionary<int, LeagueEntity> leaguesById)
+    {
+        Dictionary<int, (string Level, int Division)> levels = new(leaguesById.Count);
+        foreach ((int id, LeagueEntity league) in leaguesById)
+        {
+            levels[id] = (LeagueEntityLevels.GetLevel(league).ToString(), league.FeederDivision);
+        }
+
+        return levels;
     }
 }
