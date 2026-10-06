@@ -1,3 +1,4 @@
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
@@ -76,13 +77,15 @@ public static class StageCalculator
     /// counts best-downward, then raw base totals, then a seeded draw that
     /// consumes <paramref name="rng"/> only for exactly tied groups. Groups are
     /// canonically ordered before shuffling so input enumeration order cannot
-    /// affect the result.
+    /// affect the result. Newly earned career bonus is scaled by league level
+    /// (Superleague 2/1, F1 1/1, F2 1/2, F3 1/4 under v2); championship points
+    /// use the snapshot table with no tier multiplier.
     /// </summary>
     public static IReadOnlyList<StageRankedAthlete> Rank(
         IReadOnlyList<StageAthleteTotals> totals,
         Pcg32V1 rng,
         RulesV1 rules,
-        bool isSuperleague)
+        LeagueLevel level)
     {
         ArgumentNullException.ThrowIfNull(totals);
         ArgumentNullException.ThrowIfNull(rng);
@@ -99,9 +102,20 @@ public static class StageCalculator
 
         List<StageAthleteTotals> byScore = SortByScore(totals);
         List<StageRankedAthlete> ranked = new(byScore.Count);
-        RankScoreGroups(byScore, ranked, rng, rules, isSuperleague);
+        RankScoreGroups(byScore, ranked, rng, rules, level);
         return ranked;
     }
+
+    /// <summary>
+    /// v1 compatibility path: <c>true</c> ranks as Superleague, <c>false</c> as
+    /// Feeder 1. New code should pass a <see cref="LeagueLevel"/> instead.
+    /// </summary>
+    public static IReadOnlyList<StageRankedAthlete> Rank(
+        IReadOnlyList<StageAthleteTotals> totals,
+        Pcg32V1 rng,
+        RulesV1 rules,
+        bool isSuperleague) =>
+        Rank(totals, rng, rules, LeagueHierarchy.FromLegacySuperleagueFlag(isSuperleague));
 
     private static List<StageAthleteTotals> SortByScore(IReadOnlyList<StageAthleteTotals> totals)
     {
@@ -119,7 +133,7 @@ public static class StageCalculator
         List<StageRankedAthlete> ranked,
         Pcg32V1 rng,
         RulesV1 rules,
-        bool isSuperleague)
+        LeagueLevel level)
     {
         int index = 0;
         while (index < byScore.Count)
@@ -129,7 +143,7 @@ public static class StageCalculator
             IReadOnlyList<StageAthleteTotals> ordered = OrderTiedGroup(group, rng, rules);
             foreach (StageAthleteTotals entry in ordered)
             {
-                ranked.Add(AwardStanding(ranked.Count + 1, entry, rules, isSuperleague));
+                ranked.Add(AwardStanding(ranked.Count + 1, entry, rules, level));
             }
 
             index = runEnd;
@@ -148,11 +162,11 @@ public static class StageCalculator
         return runEnd;
     }
 
-    private static StageRankedAthlete AwardStanding(int rank, StageAthleteTotals entry, RulesV1 rules, bool isSuperleague)
+    private static StageRankedAthlete AwardStanding(int rank, StageAthleteTotals entry, RulesV1 rules, LeagueLevel level)
     {
         int championship = rules.ScoringTable[rank - 1] * RulesV1.FixedScale;
-        int earned = checked(ComputeRoundBonusTotal(entry, rules, isSuperleague) +
-            ScoringCalculator.StageBonusForPosition(rank, rules, isSuperleague).Thousandths);
+        int earned = checked(ComputeRoundBonusTotal(entry, rules, level) +
+            ScoringCalculator.StageBonusForPosition(rank, rules, level).Thousandths);
         return new StageRankedAthlete(
             entry.AthleteId,
             entry.Name,
@@ -355,7 +369,7 @@ public static class StageCalculator
         return ranked.Select(r => r.Entry).ToList();
     }
 
-    private static int ComputeRoundBonusTotal(StageAthleteTotals entry, RulesV1 rules, bool isSuperleague)
+    private static int ComputeRoundBonusTotal(StageAthleteTotals entry, RulesV1 rules, LeagueLevel level)
     {
         int total = 0;
         checked
@@ -368,7 +382,7 @@ public static class StageCalculator
                     continue;
                 }
 
-                int perFinish = ScoringCalculator.RoundBonusForPosition(position, rules, isSuperleague).Thousandths;
+                int perFinish = ScoringCalculator.RoundBonusForPosition(position, rules, level).Thousandths;
                 total += checked(count * perFinish);
             }
         }

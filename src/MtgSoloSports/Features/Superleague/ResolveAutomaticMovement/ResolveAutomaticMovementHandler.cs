@@ -565,6 +565,7 @@ public sealed class ResolveAutomaticMovementHandler
                 SeasonId = next.Id,
                 SportingColor = (int)color,
                 Kind = (int)LeagueKind.Feeder,
+                FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.First,
                 Name = $"{color} League",
             });
         }
@@ -586,6 +587,7 @@ public sealed class ResolveAutomaticMovementHandler
             SeasonId = next.Id,
             SportingColor = (int)SportingColor.White,
             Kind = (int)LeagueKind.Superleague,
+            FeederDivision = (int)SimulationKernel.Leagues.FeederDivision.None,
             Name = "Superleague",
         };
         context.Leagues.Add(league);

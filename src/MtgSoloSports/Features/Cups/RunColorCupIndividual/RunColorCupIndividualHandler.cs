@@ -215,7 +215,9 @@ public sealed class RunColorCupIndividualHandler
         IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
         ColorCupIndividualRoundPayloadDocument last = payloads[^1];
         Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
-        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, isSuperleague: false);
+        // Cups award no new bonus; the kernel still reports earned at the
+        // baseline Feeder 1 scale, which cup invariants intentionally ignore.
+        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
         ColorCupIndividualInvariants.ValidateCompletedCup(ranked, totals, rules);
         Pcg32State rngAfter = tieBreakRng.Snapshot();
         string checksum = ComputeChecksum(ranked);

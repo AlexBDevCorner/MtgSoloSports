@@ -562,6 +562,9 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("FeederDivision")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Kind")
                         .HasColumnType("INTEGER");
 
@@ -580,7 +583,7 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
 
                     b.HasIndex("SeasonId");
 
-                    b.HasIndex("SeasonId", "Kind", "SportingColor")
+                    b.HasIndex("SeasonId", "Kind", "FeederDivision", "SportingColor")
                         .IsUnique();
 
                     b.ToTable("Leagues", (string)null);

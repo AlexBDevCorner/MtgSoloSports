@@ -21,6 +21,8 @@ public static class GlobalStageGate
         int LeagueId,
         string LeagueName,
         string LeagueKind,
+        int FeederDivision,
+        string LeagueLevel,
         int? CurrentStage,
         int CompletedStages,
         bool IsLeagueComplete);
@@ -113,7 +115,8 @@ public static class GlobalStageGate
         ValidateStageRows(league, leagueStages, rules);
         if (leagueStages.Count == 0)
         {
-            return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), 1, 0, false);
+            SimulationKernel.Leagues.LeagueLevel emptyLevel = LeagueEntityLevels.GetLevel(league);
+            return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), league.FeederDivision, emptyLevel.ToString(), 1, 0, false);
         }
 
         List<StageEntity> ordered = CheckContiguous(league, leagueStages);
@@ -166,12 +169,16 @@ public static class GlobalStageGate
 
     private static LeagueStageStatus ResolveLeagueStatus(LeagueEntity league, List<StageEntity> ordered, RulesV1 rules)
     {
+        SimulationKernel.Leagues.LeagueLevel level = LeagueEntityLevels.GetLevel(league);
+        string kind = ((LeagueKind)league.Kind).ToString();
+        int division = league.FeederDivision;
+        string levelName = level.ToString();
         StageEntity max = ordered[^1];
         if (max.IsComplete)
         {
             if (max.StageNumber == rules.StagesPerSeason)
             {
-                return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), null, rules.StagesPerSeason, true);
+                return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, null, rules.StagesPerSeason, true);
             }
 
             throw new InvalidOperationException(
@@ -185,7 +192,7 @@ public static class GlobalStageGate
                 $"League '{league.Name}' has non-contiguous completion; all stages before {max.StageNumber} must be complete.");
         }
 
-        return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), max.StageNumber, completed, false);
+        return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, max.StageNumber, completed, false);
     }
 
     internal static string DescribeKind(LeagueEntity league)

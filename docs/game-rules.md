@@ -100,6 +100,30 @@ Regular-league stage bonus for places 1-10:
 
 Superleague awards double these bonus amounts.
 
+### 8a. Tiered feeder model (Rules v2)
+
+New saves use Rules v2 with a four-level pyramid (each league still 32 athletes):
+
+**Superleague → Feeder 1 → Feeder 2 → Feeder 3**
+
+Only newly earned career bonus is scaled; championship points, base round
+scoring, stage/season ranking, shuffle probability, tie-breaks, Cup scoring,
+and Cup no-new-bonus behavior are unchanged:
+
+- Superleague: **2/1** (double the v1 regular bonus);
+- Feeder 1: **1/1** (the v1 regular bonus);
+- Feeder 2: **1/2** (half, truncated);
+- Feeder 3: **1/4** (quarter, truncated).
+
+Fractional scaling is exact fixed-point integer arithmetic with one rule:
+multiply first, then integer-divide, truncating toward zero
+(for example a base +0.09% at Feeder 3 earns +0.02%).
+Historical v1 snapshots stay valid through the v1 compatibility path and are
+never reinterpreted as tiered; historical contributions keep the amount earned
+at their original tier and are never rescaled by later movement. A feeder
+championship remains a feeder championship for honours/prestige regardless of
+division.
+
 Bonus earned during a stage becomes active only from the **next stage**. Stage 32 bonus first becomes usable in the next season.
 
 Bonus contribution weight by season age is linear:

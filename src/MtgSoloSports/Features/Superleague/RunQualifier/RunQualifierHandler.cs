@@ -235,7 +235,9 @@ public sealed class RunQualifierHandler
         IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
         QualifierRoundPayloadDocument last = payloads[^1];
         Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
-        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, isSuperleague: false);
+        // The qualifier awards no new bonus; the kernel still reports earned at
+        // the baseline Feeder 1 scale, which qualifier invariants ignore.
+        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
         QualifierInvariants.ValidateCompletedQualifier(ranked, totals, rules);
         Pcg32State rngAfter = tieBreakRng.Snapshot();
         string checksum = ComputeChecksum(ranked);

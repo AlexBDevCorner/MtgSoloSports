@@ -323,7 +323,7 @@ public sealed class Season1LeaguesTests
         int id = 1;
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
-            leagues.Add(new PersistedLeague(id++, color, 0, $"{color} League"));
+            leagues.Add(new PersistedLeague(id++, color, 0, 1, $"{color} League"));
         }
 
         return leagues;

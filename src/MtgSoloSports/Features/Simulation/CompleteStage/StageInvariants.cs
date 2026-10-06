@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
 
@@ -15,14 +16,14 @@ public static class StageInvariants
     /// Validates a freshly completed stage before commit: exactly 16 rounds of
     /// 32, stage scores chaining from round payloads, ranks 1..32 exactly once,
     /// championship points matching the snapshot table with no bonus multiplier,
-    /// earned bonus matching round-plus-stage tables, and round-place counts
-    /// summing to 16 per athlete.
+    /// earned bonus matching round-plus-stage tables at the league's tier scale,
+    /// and round-place counts summing to 16 per athlete.
     /// </summary>
     public static void ValidateCompletedStage(
         IReadOnlyList<StageRankedAthlete> ranked,
         IReadOnlyList<StageAthleteTotals> totals,
         RulesV1 rules,
-        bool isSuperleague)
+        LeagueLevel level)
     {
         ArgumentNullException.ThrowIfNull(ranked);
         ArgumentNullException.ThrowIfNull(totals);
@@ -47,7 +48,7 @@ public static class StageInvariants
         foreach (StageRankedAthlete entry in ranked)
         {
             CheckStandingIdentity(entry, ranks, athleteIds, names, rules);
-            CheckStandingTotals(entry, totalsById, rules, isSuperleague);
+            CheckStandingTotals(entry, totalsById, rules, level);
         }
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
@@ -55,6 +56,16 @@ public static class StageInvariants
             throw new InvalidOperationException("Completed stage must cover ranks 1..32 exactly once.");
         }
     }
+
+    /// <summary>
+    /// v1 compatibility path. New code should pass a <see cref="LeagueLevel"/>.
+    /// </summary>
+    public static void ValidateCompletedStage(
+        IReadOnlyList<StageRankedAthlete> ranked,
+        IReadOnlyList<StageAthleteTotals> totals,
+        RulesV1 rules,
+        bool isSuperleague) =>
+        ValidateCompletedStage(ranked, totals, rules, LeagueHierarchy.FromLegacySuperleagueFlag(isSuperleague));
 
     /// <summary>
     /// Fingerprints stage standings: lowercase hex SHA-256 over lines of
@@ -128,7 +139,7 @@ public static class StageInvariants
         StageRankedAthlete entry,
         Dictionary<int, StageAthleteTotals> totalsById,
         RulesV1 rules,
-        bool isSuperleague)
+        LeagueLevel level)
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out StageAthleteTotals? totals))
         {
@@ -157,7 +168,7 @@ public static class StageInvariants
                 $"Completed stage championship points for '{entry.Name}' must be {expectedChampionship}, was {entry.ChampionshipPointsThousandths}.");
         }
 
-        int expectedEarned = ComputeExpectedEarned(entry, rules, isSuperleague);
+        int expectedEarned = ComputeExpectedEarned(entry, rules, level);
         if (entry.EarnedBonusThousandths != expectedEarned)
         {
             throw new InvalidOperationException(
@@ -183,8 +194,9 @@ public static class StageInvariants
         }
     }
 
-    private static int ComputeExpectedEarned(StageRankedAthlete entry, RulesV1 rules, bool isSuperleague)
+    private static int ComputeExpectedEarned(StageRankedAthlete entry, RulesV1 rules, LeagueLevel level)
     {
+        TierBonusScale scale = rules.GetBonusScale(level);
         int roundTotal = 0;
         checked
         {
@@ -199,10 +211,7 @@ public static class StageInvariants
                 int perFinish = position <= rules.RoundBonusThousandths.Count
                     ? rules.RoundBonusThousandths[position - 1]
                     : 0;
-                if (isSuperleague)
-                {
-                    perFinish = checked(perFinish * rules.SuperleagueBonusMultiplier);
-                }
+                perFinish = scale.ScaleThousandths(perFinish);
 
                 roundTotal = checked(roundTotal + (count * perFinish));
             }
@@ -210,10 +219,7 @@ public static class StageInvariants
             int stageBonus = entry.StageRank <= rules.StageBonusThousandths.Count
                 ? rules.StageBonusThousandths[entry.StageRank - 1]
                 : 0;
-            if (isSuperleague)
-            {
-                stageBonus = checked(stageBonus * rules.SuperleagueBonusMultiplier);
-            }
+            stageBonus = scale.ScaleThousandths(stageBonus);
 
             return checked(roundTotal + stageBonus);
         }

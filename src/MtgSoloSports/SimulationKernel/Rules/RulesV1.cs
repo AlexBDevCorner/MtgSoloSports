@@ -1,3 +1,5 @@
+using MtgSoloSports.SimulationKernel.Leagues;
+
 namespace MtgSoloSports.SimulationKernel.Rules;
 
 /// <summary>
@@ -5,8 +7,13 @@ namespace MtgSoloSports.SimulationKernel.Rules;
 /// Each save owns one snapshot so later default changes never silently alter existing universes.
 /// All sporting mathematics must read from the snapshot, never from hard-coded literals.
 /// Tables are defensively copied and exposed as read-only lists.
+/// v1 knows only the single-tier feeder model: Superleague earns double via
+/// <see cref="SuperleagueBonusMultiplier"/>, every feeder earns the baseline.
+/// v1 supports <see cref="LeagueLevel.Superleague"/> and
+/// <see cref="LeagueLevel.Feeder1"/> only; F2/F3 throw rather than silently
+/// reinterpreting historical seasons. Tiered saves use <see cref="RulesV2"/>.
 /// </summary>
-public sealed class RulesV1
+public class RulesV1
 {
     public const int RulesVersion = 1;
     public const string RngAlgorithm = "Pcg32V1";
@@ -43,7 +50,7 @@ public sealed class RulesV1
     public const int DefaultPrestigeStageThirdPoints = 2;
     public const int DefaultPrestigeOtherMajorHonourPoints = 150;
 
-    private RulesV1(
+    protected RulesV1(
         int sportingColorCount,
         int athletesPerSportingColor,
         int totalAthletesInSave,
@@ -117,7 +124,7 @@ public sealed class RulesV1
         RecentFormWeights = Array.AsReadOnly(recentFormWeights);
     }
 
-    public int Version => RulesVersion;
+    public virtual int Version => RulesVersion;
 
     public string Algorithm => RngAlgorithm;
 
@@ -158,6 +165,27 @@ public sealed class RulesV1
     public int InauguralQualifiedPerLeague { get; }
 
     public int SuperleagueBonusMultiplier { get; }
+
+    /// <summary>
+    /// Whether this snapshot supports the given competitive tier.
+    /// v1 supports Superleague and Feeder 1 only; tiered saves use v2.
+    /// </summary>
+    public virtual bool SupportsLevel(LeagueLevel level) =>
+        level is LeagueLevel.Superleague or LeagueLevel.Feeder1;
+
+    /// <summary>
+    /// Exact bonus scale for a tier under this snapshot.
+    /// v1: Superleague 2/1, Feeder 1 1/1; F2/F3 throw instead of silently
+    /// reinterpreting historical seasons.
+    /// </summary>
+    public virtual TierBonusScale GetBonusScale(LeagueLevel level) => level switch
+    {
+        LeagueLevel.Superleague => new TierBonusScale(2, 1),
+        LeagueLevel.Feeder1 => new TierBonusScale(1, 1),
+        LeagueLevel.Feeder2 or LeagueLevel.Feeder3 => throw new InvalidOperationException(
+            $"Rules v1 has no tier scale for {LeagueHierarchy.DisplayName(level)}; tiered saves require rules v2."),
+        _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
+    };
 
     public int ColorCupColorCount { get; }
 
@@ -303,7 +331,7 @@ public sealed class RulesV1
     /// Verifies the snapshot is internally consistent. Throws on the first violation.
     /// Fundamental invariant failures must abort the mutation, never silently repair state.
     /// </summary>
-    public void Validate()
+    public virtual void Validate()
     {
         if (SportingColorCount != 8)
         {

@@ -136,7 +136,7 @@ public sealed class AdvanceRoundHandler
             throw new InvalidOperationException("Save is missing its rules snapshot.");
         }
 
-        return RulesSnapshotDocument.FromJson(row.RulesJson).ToRules();
+        return RulesSnapshotCodec.Decode(row.RulesJson);
     }
 
     internal static async Task<RngStateEntity> LoadRngAsync(SaveDbContext context, CancellationToken cancellationToken)

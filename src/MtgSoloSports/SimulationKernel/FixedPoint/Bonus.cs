@@ -40,6 +40,8 @@ public readonly record struct Bonus
 
     /// <summary>
     /// Scales a bonus by an integer multiplier (for example Superleague x2).
+    /// Kept for the v1 compatibility path; tiered math prefers
+    /// <see cref="ScaleRatio(int, int)"/>.
     /// </summary>
     public Bonus Scale(int multiplier)
     {
@@ -51,6 +53,30 @@ public readonly record struct Bonus
         checked
         {
             return new Bonus(Thousandths * multiplier);
+        }
+    }
+
+    /// <summary>
+    /// Scales a bonus by an exact rational numerator/denominator (for example
+    /// Feeder 2 at 1/2 or Feeder 3 at 1/4). Deterministic truncation rule:
+    /// multiply first, then integer-divide, truncating toward zero.
+    /// Integer-only; no <c>double</c>/<c>float</c> drift.
+    /// </summary>
+    public Bonus ScaleRatio(int numerator, int denominator)
+    {
+        if (numerator < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(numerator), "Numerator cannot be negative.");
+        }
+
+        if (denominator <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(denominator), "Denominator must be positive.");
+        }
+
+        checked
+        {
+            return new Bonus((int)(((long)Thousandths * numerator) / denominator));
         }
     }
 

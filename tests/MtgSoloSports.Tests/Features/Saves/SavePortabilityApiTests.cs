@@ -57,7 +57,7 @@ public sealed class SavePortabilityApiTests
             detail.SaveId.ShouldBe(createdPayload.SaveId);
             detail.Name.ShouldBe("Portable Universe");
             detail.SchemaVersion.ShouldBe(SaveSchemaVersion.Current);
-            detail.RulesVersion.ShouldBe(1);
+            detail.RulesVersion.ShouldBe(MtgSoloSports.SimulationKernel.Rules.RulesV2.RulesVersion);
             detail.RngState.ShouldBe(createdPayload.RngState);
             detail.RngStream.ShouldBe(createdPayload.RngStream);
 

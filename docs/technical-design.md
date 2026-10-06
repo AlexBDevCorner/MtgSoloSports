@@ -91,6 +91,8 @@ This keeps simulation deterministic across runtime/database behavior.
 
 Each save owns an immutable rules snapshot containing at least league size, stages/rounds, scoring table, bonus tables, Superleague bonus multiplier, bonus decay and Cup selection weights.
 
+Rules v2 (tiered feeder model) keeps the same sporting core and replaces the single integer Superleague multiplier with an explicit per-tier rational scale (Superleague 2/1, Feeder 1 1/1, Feeder 2 1/2, Feeder 3 1/4) stored in the snapshot. v1 snapshots stay readable through the v1 compatibility path; new saves use v2. League rows carry an explicit feeder division (None/First/Second/Third) with a unique index on (season, kind, division, color) so tiers never depend on league-name parsing.
+
 Application defaults may evolve, but existing saves do not silently change sporting mathematics.
 
 ## 8. Storage model

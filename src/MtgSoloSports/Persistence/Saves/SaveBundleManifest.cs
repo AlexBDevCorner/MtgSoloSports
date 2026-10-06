@@ -1,6 +1,5 @@
 using System.Text.Json;
 using MtgSoloSports.SimulationKernel.Random;
-using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Persistence.Saves;
 
@@ -82,10 +81,10 @@ public sealed record SaveBundleManifest(
                 $"Save bundle schema version must be {SaveSchemaVersion.Current}, was {SchemaVersion}.");
         }
 
-        if (RulesVersion != RulesV1.RulesVersion)
+        if (!RulesSnapshotCodec.SupportedVersions.Contains(RulesVersion))
         {
             throw new InvalidOperationException(
-                $"Save bundle rules version must be {RulesV1.RulesVersion}, was {RulesVersion}.");
+                $"Save bundle rules version must be v1 or v2, was {RulesVersion}.");
         }
 
         if (!string.Equals(RngAlgorithm, Pcg32V1.AlgorithmName, StringComparison.Ordinal)

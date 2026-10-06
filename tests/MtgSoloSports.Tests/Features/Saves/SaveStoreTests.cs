@@ -34,7 +34,7 @@ public sealed class SaveStoreTests
             detail.Phase.ShouldBe("SeasonInProgress");
             detail.RngAlgorithm.ShouldBe(Pcg32V1.AlgorithmName);
             detail.RngVersion.ShouldBe(Pcg32V1.AlgorithmVersion);
-            detail.RulesVersion.ShouldBe(RulesV1.RulesVersion);
+            detail.RulesVersion.ShouldBe(RulesV2.RulesVersion);
             detail.CreatedUtc.ShouldBeInRange(before.AddSeconds(-1), after.AddSeconds(1));
 
             // Persisted RNG state is the post-draw state (universe selection plus
@@ -62,9 +62,10 @@ public sealed class SaveStoreTests
 
             File.Exists(store.GetSaveFilePath(detail.SaveId)).ShouldBeTrue();
 
-            string expectedRulesJson = RulesSnapshotDocument.FromRules(RulesV1.CreateDefault()).ToJson();
+            string expectedRulesJson = RulesSnapshotCodec.Encode(RulesV2.CreateDefault());
             detail.RulesJson.ShouldBe(expectedRulesJson);
-            RulesV1 rules = RulesSnapshotDocument.FromJson(detail.RulesJson).ToRules();
+            RulesV1 rules = RulesSnapshotCodec.Decode(detail.RulesJson);
+            rules.Version.ShouldBe(RulesV2.RulesVersion);
             rules.LeagueSize.ShouldBe(32);
             rules.RoundsPerStage.ShouldBe(16);
 
