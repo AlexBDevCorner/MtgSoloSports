@@ -1127,25 +1127,25 @@ public sealed class RebalanceFeedersHandler
             membership.LeagueId = null;
         }
 
-            foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws)
+        foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws)
+        {
+            if (!byAthlete.TryGetValue(draw.SaveAthleteId, out SeasonMembershipEntity? membership))
             {
-                if (!byAthlete.TryGetValue(draw.SaveAthleteId, out SeasonMembershipEntity? membership))
-                {
-                    throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
-                }
-
-                if (membership.LeagueId is not null)
-                {
-                    throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
-                }
-
-                if (membership.SportingColor != (int)colorPlan.Color)
-                {
-                    throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
-                }
-
-                membership.LeagueId = f3Id;
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
             }
+
+            if (membership.LeagueId is not null)
+            {
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
+            }
+
+            if (membership.SportingColor != (int)colorPlan.Color)
+            {
+                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
+            }
+
+            membership.LeagueId = f3Id;
+        }
     }
 
     internal static RebalanceFeedersSelection.TierColorPlan ToTierView(RebalanceFeedersSelection.ColorPlan legacy)
