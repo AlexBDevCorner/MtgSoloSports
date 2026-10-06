@@ -6,7 +6,8 @@ namespace MtgSoloSports.Features.Superleague.RunQualifier;
 /// <summary>
 /// Pure qualifier-field selection for a completed Superleague season.
 /// The field is exactly 32 athletes: 8 Superleague incumbents from ranks 17-24
-/// plus 24 feeder challengers from ranks 2-4 across all eight leagues.
+/// plus 24 feeder challengers from ranks 2-4 across all eight F1 leagues
+/// (F2/F3 never skip tiers into the qualifier).
 /// No color quota is enforced and no RNG is consumed; final ranks are already
 /// deterministic. Incumbents and challengers are selected by identical rank-band
 /// rules; later simulation treats both roles identically (provenance only).
@@ -31,7 +32,8 @@ public static class QualifierFieldSelection
     /// Returns 8 incumbents plus 24 challengers ordered deterministically by
     /// role, source league then rank. Names come from the save athlete table;
     /// sporting colors come from source memberships so returning-color logic
-    /// stays consistent with automatic movement.
+    /// stays consistent with automatic movement. Tiered saves supply 24
+    /// feeders but only F1 contributes.
     /// </summary>
     public static QualifierField Select(
         IReadOnlyList<SeasonStandingEntity> superleagueStandings,
@@ -50,16 +52,11 @@ public static class QualifierFieldSelection
         ArgumentNullException.ThrowIfNull(namesByAthlete);
         ArgumentNullException.ThrowIfNull(rules);
 
-        if (feederLeagues.Count != rules.RegularLeagueCount)
-        {
-            throw new InvalidOperationException(
-                $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
-        }
-
+        List<LeagueEntity> sources = ResolveSources(feederLeagues, rules);
         List<QualifierPick> incumbents = SelectIncumbents(
             superleagueStandings, superleague, membershipByAthlete, namesByAthlete, rules);
         List<QualifierPick> challengers = SelectChallengers(
-            feederStandingsByLeague, feederLeagues, membershipByAthlete, namesByAthlete, rules);
+            feederStandingsByLeague, sources, membershipByAthlete, namesByAthlete, rules);
 
         List<QualifierPick> all = new(incumbents.Count + challengers.Count);
         all.AddRange(incumbents);
@@ -77,6 +74,40 @@ public static class QualifierFieldSelection
         });
 
         return new QualifierField(incumbents, challengers, all);
+    }
+
+    internal static List<LeagueEntity> ResolveSources(IReadOnlyList<LeagueEntity> feederLeagues, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(feederLeagues);
+        ArgumentNullException.ThrowIfNull(rules);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (!tiered)
+        {
+            if (feederLeagues.Count != rules.RegularLeagueCount)
+            {
+                throw new InvalidOperationException(
+                    $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
+            }
+
+            return [.. feederLeagues];
+        }
+
+        if (feederLeagues.Count != rules.TieredFeederLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feederLeagues.Count}.");
+        }
+
+        List<LeagueEntity> first = feederLeagues
+            .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .ToList();
+        if (first.Count != rules.RegularLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered season must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
+        }
+
+        return first;
     }
 
     private static List<QualifierPick> SelectIncumbents(

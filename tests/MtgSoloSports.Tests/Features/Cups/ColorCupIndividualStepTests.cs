@@ -21,8 +21,8 @@ public sealed class ColorCupIndividualStepTests
         try
         {
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("8415c918d1c40433d1b3efd38e8d6e063a9672c049b73e47b62cea3f80051aca");
-            (await LoadRngAsync(store, saveId)).ShouldBe((1359818132912649409L, 8181L));
+            response.Checksum.ShouldBe("73f03d689c86de3506bcc46c0c573b8d2239d53b95dd8816868ec367b3ba7a87");
+            (await LoadRngAsync(store, saveId)).ShouldBe((5256838557070595265L, 8181L));
         }
         finally
         {

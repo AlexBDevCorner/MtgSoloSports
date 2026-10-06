@@ -649,13 +649,24 @@ public sealed class RunQualifierHandler
             .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (feeders.Count != rules.RegularLeagueCount)
+        if (feeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {feeders.Count}.");
+                $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feeders.Count}.");
         }
 
-        return (superleague, feeders.ToDictionary(l => l.SportingColor, l => l.Id));
+        // Tiered saves carry 24 feeders; qualifier mapping only needs F1.
+        // F2/F3 never enter the qualifier, so resolve via F1-only map.
+        List<LeagueEntity> f1 = feeders
+            .Where(l => rules.FeederDivisionsPerColor != 3 || l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .ToList();
+        if (f1.Count != rules.RegularLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} F1 leagues, was {f1.Count}.");
+        }
+
+        return (superleague, f1.ToDictionary(l => l.SportingColor, l => l.Id));
     }
 
     internal static HashSet<int> ResolveFieldIds(QualifierSimulation simulation, RulesV1 rules)
@@ -1052,10 +1063,10 @@ public sealed class RunQualifierHandler
             .OrderBy(e => e.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (leagues.Count != rules.RegularLeagueCount)
+        if (leagues.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {source.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {leagues.Count}.");
+                $"Season {source.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {leagues.Count}.");
         }
 
         return leagues;

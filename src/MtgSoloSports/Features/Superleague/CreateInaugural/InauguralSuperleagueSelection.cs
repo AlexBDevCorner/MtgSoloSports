@@ -4,10 +4,12 @@ using MtgSoloSports.SimulationKernel.Rules;
 namespace MtgSoloSports.Features.Superleague.CreateInaugural;
 
 /// <summary>
-/// Pure inaugural selection: places 1-4 from each Season 1 feeder league enter
-/// the first 32-athlete Superleague (8 x 4 = 32). Input is the persisted final
-/// Season 1 standings; no RNG is consumed because final ranks are already
-/// deterministic (seeded draws resolved at season finalization).
+/// Pure inaugural selection: places 1-4 from each Season 1 F1 feeder league enter
+/// the first 32-athlete Superleague (8 x 4 = 32). For tiered saves only F1 is a
+/// source; F2/F3 and pool athletes never skip tiers directly into the inaugural
+/// Superleague. Input is the persisted final Season 1 standings; no RNG is
+/// consumed because final ranks are already deterministic (seeded draws resolved
+/// at season finalization).
 /// </summary>
 public static class InauguralSuperleagueSelection
 {
@@ -17,6 +19,8 @@ public static class InauguralSuperleagueSelection
     /// Selects the inaugural Superleague field from final Season 1 standings.
     /// Returns 32 picks ordered by source league id then season rank so
     /// persistence order is deterministic without relying on database order.
+    /// v1 saves supply 8 feeders; tiered saves supply 24 (F1/F2/F3) and only
+    /// the 8 F1 leagues contribute.
     /// </summary>
     public static IReadOnlyList<InauguralPick> Select(
         IReadOnlyList<SeasonStandingEntity> seasonStandings,
@@ -27,15 +31,10 @@ public static class InauguralSuperleagueSelection
         ArgumentNullException.ThrowIfNull(feederLeagues);
         ArgumentNullException.ThrowIfNull(rules);
 
-        if (feederLeagues.Count != rules.RegularLeagueCount)
-        {
-            throw new InvalidOperationException(
-                $"Season 1 must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
-        }
-
-        Dictionary<int, LeagueEntity> leaguesById = feederLeagues.ToDictionary(l => l.Id);
+        List<LeagueEntity> sources = ResolveSources(feederLeagues, rules);
+        Dictionary<int, LeagueEntity> leaguesById = sources.ToDictionary(l => l.Id);
         List<InauguralPick> picks = new(rules.SuperleagueSize);
-        foreach (LeagueEntity league in feederLeagues.OrderBy(l => l.Id))
+        foreach (LeagueEntity league in sources.OrderBy(l => l.Id))
         {
             List<SeasonStandingEntity> leagueRows = seasonStandings
                 .Where(r => r.LeagueId == league.Id)
@@ -69,5 +68,39 @@ public static class InauguralSuperleagueSelection
         }
 
         return picks;
+    }
+
+    internal static List<LeagueEntity> ResolveSources(IReadOnlyList<LeagueEntity> feederLeagues, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(feederLeagues);
+        ArgumentNullException.ThrowIfNull(rules);
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (!tiered)
+        {
+            if (feederLeagues.Count != rules.RegularLeagueCount)
+            {
+                throw new InvalidOperationException(
+                    $"Season 1 must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
+            }
+
+            return [.. feederLeagues];
+        }
+
+        if (feederLeagues.Count != rules.Season1FeederLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered Season 1 must have exactly {rules.Season1FeederLeagueCount} feeder leagues (F1/F2/F3), was {feederLeagues.Count}.");
+        }
+
+        List<LeagueEntity> first = feederLeagues
+            .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .ToList();
+        if (first.Count != rules.RegularLeagueCount)
+        {
+            throw new InvalidOperationException(
+                $"Tiered Season 1 must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
+        }
+
+        return first;
     }
 }

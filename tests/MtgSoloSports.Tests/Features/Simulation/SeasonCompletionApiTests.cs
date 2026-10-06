@@ -32,7 +32,7 @@ public sealed class SeasonCompletionApiTests
             bulkPayload.CompletedStage.ShouldBe(1);
             bulkPayload.GlobalStageAfter.ShouldBe(2);
             bulkPayload.IsSeasonComplete.ShouldBeFalse();
-            bulkPayload.Leagues.Count.ShouldBe(8);
+            bulkPayload.Leagues.Count.ShouldBe(24);
 
             // Progress tracks the new global stage.
             using HttpResponseMessage progress = await client.GetAsync(
@@ -42,7 +42,7 @@ public sealed class SeasonCompletionApiTests
             progressPayload.ShouldNotBeNull();
             progressPayload.GlobalStage.ShouldBe(2);
             progressPayload.IsSeasonComplete.ShouldBeFalse();
-            progressPayload.Leagues.Count.ShouldBe(8);
+            progressPayload.Leagues.Count.ShouldBe(24);
 
             // Current standings for the first league accumulate Stage 1.
             int firstLeague = bulkPayload.Leagues[0].LeagueId;

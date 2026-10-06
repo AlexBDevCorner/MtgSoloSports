@@ -167,12 +167,13 @@ public sealed class GetRebalanceResultHandler
             .AsNoTracking()
             .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
             .OrderBy(e => e.SportingColor)
+            .ThenBy(e => e.FeederDivision)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (nextFeeders.Count != rules.RegularLeagueCount)
+        if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} feeder leagues, was {nextFeeders.Count}.");
+                $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         foreach (LeagueEntity feeder in nextFeeders)
@@ -324,31 +325,58 @@ public sealed class GetRebalanceResultHandler
         List<RebalanceColorResult> colors = new(nextFeeders.Count);
         foreach (LeagueEntity feeder in nextFeeders)
         {
-            drawnByLeague.TryGetValue(feeder.Id, out int drawn);
-            displacedByLeague.TryGetValue(feeder.Id, out int displaced);
-            int provisional = rules.LeagueSize - drawn + displaced;
-            string colorName = ((SportingColor)feeder.SportingColor).ToString();
-            transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
-            int viaTransfers = rules.LeagueSize - transfers.Departed + transfers.Returned;
-            if (viaTransfers != provisional)
-            {
-                throw new InvalidOperationException(
-                    $"League '{feeder.Name}' provisional count {provisional} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {viaTransfers}).");
-            }
+            colors.Add(MapSingleColor(feeder, drawnByLeague, displacedByLeague, transfersByColor, rules));
+        }
 
-            colors.Add(new RebalanceColorResult(
+        return colors;
+    }
+
+    internal static RebalanceColorResult MapSingleColor(
+        LeagueEntity feeder,
+        Dictionary<int, int> drawnByLeague,
+        Dictionary<int, int> displacedByLeague,
+        IReadOnlyDictionary<string, (int Departed, int Returned)> transfersByColor,
+        RulesV1 rules)
+    {
+        drawnByLeague.TryGetValue(feeder.Id, out int drawn);
+        displacedByLeague.TryGetValue(feeder.Id, out int displaced);
+        int provisional = rules.LeagueSize - drawn + displaced;
+        string colorName = ((SportingColor)feeder.SportingColor).ToString();
+        bool isF1 = feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First
+            || feeder.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.None;
+        if (!isF1)
+        {
+            return new RebalanceColorResult(
                 feeder.Id,
                 feeder.Name,
                 colorName,
                 rules.LeagueSize,
-                transfers.Departed,
-                transfers.Returned,
+                0,
+                0,
                 provisional,
                 displaced,
                 drawn,
-                rules.LeagueSize));
+                rules.LeagueSize);
         }
 
-        return colors;
+        transfersByColor.TryGetValue(colorName, out (int Departed, int Returned) transfers);
+        int viaTransfers = rules.LeagueSize - transfers.Departed + transfers.Returned;
+        if (viaTransfers != provisional)
+        {
+            throw new InvalidOperationException(
+                $"League '{feeder.Name}' provisional count {provisional} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {viaTransfers}).");
+        }
+
+        return new RebalanceColorResult(
+            feeder.Id,
+            feeder.Name,
+            colorName,
+            rules.LeagueSize,
+            transfers.Departed,
+            transfers.Returned,
+            provisional,
+            displaced,
+            drawn,
+            rules.LeagueSize);
     }
 }

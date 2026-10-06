@@ -6,14 +6,17 @@ namespace MtgSoloSports.Features.Leagues.InauguralDraw;
 /// <summary>
 /// Structural invariants for Season 1 leagues and common pools. Fundamental
 /// failures throw and abort the mutation; corrupted sporting state is never
-/// silently repaired.
+/// silently repaired. Version-aware: v1 expects 32 active / 224 pool per color
+/// (8 leagues, 256 active globally); v2 tiered expects 96 active / 160 pool
+/// per color (24 leagues F1/F2/F3, 768 active globally) with divisions derived
+/// from draw index (0..31 F1, 32..63 F2, 64..95 F3, 96..255 pool).
 /// </summary>
 public static class Season1Invariants
 {
     /// <summary>
     /// Validates an in-memory draw result: exact total, exact per-color league
     /// and pool counts, unique draw indices per color, no duplicate athletes and
-    /// league membership matching the first <c>LeagueSize</c> draw positions.
+    /// league membership matching the first <c>Season1ActivePerColor</c> draw positions.
     /// </summary>
     public static void ValidateDrawResult(IReadOnlyList<InauguralDrawEntry> entries, RulesV1 rules)
     {
@@ -90,7 +93,7 @@ public static class Season1Invariants
                 $"Season 1 draw contains duplicate draw index {entry.DrawIndex} for {entry.SportingColor}.");
         }
 
-        bool expectedMember = entry.DrawIndex < rules.LeagueSize;
+        bool expectedMember = entry.DrawIndex < rules.Season1ActivePerColor;
         if (entry.IsLeagueMember != expectedMember)
         {
             throw new InvalidOperationException(
@@ -100,13 +103,14 @@ public static class Season1Invariants
 
     private static void EnsureDrawPerColor(DrawCounts counts, RulesV1 rules)
     {
-        int expectedPool = rules.AthletesPerSportingColor - rules.LeagueSize;
+        int expectedLeague = rules.Season1ActivePerColor;
+        int expectedPool = rules.Season1PoolPerColor;
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
-            if (counts.LeaguePerColor[color] != rules.LeagueSize)
+            if (counts.LeaguePerColor[color] != expectedLeague)
             {
                 throw new InvalidOperationException(
-                    $"Season 1 league {color} must contain exactly {rules.LeagueSize} athletes, was {counts.LeaguePerColor[color]}.");
+                    $"Season 1 league {color} must contain exactly {expectedLeague} athletes, was {counts.LeaguePerColor[color]}.");
             }
 
             if (counts.PoolPerColor[color] != expectedPool)
@@ -126,7 +130,7 @@ public static class Season1Invariants
     private static void EnsureDrawActiveTotal(DrawCounts counts, RulesV1 rules)
     {
         int active = counts.LeaguePerColor.Values.Sum();
-        int expected = rules.RegularLeagueCount * rules.LeagueSize;
+        int expected = rules.Season1ActiveTotal;
         if (active != expected)
         {
             throw new InvalidOperationException(

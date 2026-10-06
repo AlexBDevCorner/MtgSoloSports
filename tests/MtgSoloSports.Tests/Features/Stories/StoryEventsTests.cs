@@ -182,12 +182,12 @@ public sealed class StoryEventsTests
             using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
             List<SeasonStandingEntity> champions = await context.SeasonStandings
                 .AsNoTracking().Where(e => e.IsChampion).ToListAsync();
-            champions.Count.ShouldBe(8);
+            champions.Count.ShouldBe(24);
 
             List<StoryEventEntity> stories = await LoadStoriesAsync(store, created.Detail.SaveId);
             List<StoryEventEntity> titles = stories
                 .Where(e => string.Equals(e.EventType, StoryEventType.FirstLeagueTitle, StringComparison.Ordinal)).ToList();
-            titles.Count.ShouldBe(8);
+            titles.Count.ShouldBe(24);
             foreach (SeasonStandingEntity champion in champions)
             {
                 titles.Any(e => e.SaveAthleteId == champion.SaveAthleteId).ShouldBeTrue();
@@ -375,7 +375,7 @@ public sealed class StoryEventsTests
             .Where(e => e.SeasonId == seasonTwo.Id)
             .OrderBy(e => e.Id)
             .ToListAsync().ConfigureAwait(false);
-        leagues.Count.ShouldBe(9);
+        leagues.Count.ShouldBe(25);
 
         foreach (LeagueEntity league in leagues)
         {

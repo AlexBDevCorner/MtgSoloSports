@@ -68,11 +68,9 @@ public sealed class InauguralSuperleagueTests
             response.Members.Count.ShouldBe(32);
             response.MovementCount.ShouldBe(32);
             response.SuperleagueLeagueName.ShouldBe("Superleague");
-            response.FeederRetention.Count.ShouldBe(8);
-            foreach (InauguralFeederRetention retention in response.FeederRetention)
-            {
-                retention.RetainedCount.ShouldBe(28);
-            }
+            response.FeederRetention.Count.ShouldBe(24);
+            response.FeederRetention.Count(r => r.RetainedCount == 28).ShouldBe(8);
+            response.FeederRetention.Count(r => r.RetainedCount == 32).ShouldBe(16);
 
             await AssertTransitionAsync(store, created.Detail.SaveId, response);
 
@@ -168,9 +166,9 @@ public sealed class InauguralSuperleagueTests
         state.SeasonTwo.HasSuperleague.ShouldBeTrue();
         state.SeasonTwo.IsComplete.ShouldBeFalse();
         state.CurrentSeason.ShouldBe(1);
-        state.LeaguesTwo.Count.ShouldBe(9);
+        state.LeaguesTwo.Count.ShouldBe(25);
         state.LeaguesTwo.Count(l => l.Kind == (int)LeagueKind.Superleague).ShouldBe(1);
-        state.LeaguesTwo.Count(l => l.Kind == (int)LeagueKind.Feeder).ShouldBe(8);
+        state.LeaguesTwo.Count(l => l.Kind == (int)LeagueKind.Feeder).ShouldBe(24);
         state.MembershipsOne.Count.ShouldBe(2048);
         state.MembershipsTwo.Count.ShouldBe(2048);
     }
@@ -182,7 +180,7 @@ public sealed class InauguralSuperleagueTests
         superIds.Distinct().Count().ShouldBe(32);
         superIds.ToHashSet().SetEquals(response.Members.Select(m => m.AthleteId).ToHashSet()).ShouldBeTrue();
         HashSet<int> activeTwo = state.MembershipsTwo.Where(m => m.LeagueId is not null).Select(m => m.SaveAthleteId).ToHashSet();
-        activeTwo.Count.ShouldBe(32 + (8 * 28));
+        activeTwo.Count.ShouldBe(32 + (8 * 28) + (16 * 32));
         foreach (var group in response.Members.GroupBy(m => m.FromLeagueId))
         {
             group.Count().ShouldBe(4);
@@ -218,13 +216,16 @@ public sealed class InauguralSuperleagueTests
         HashSet<int> poolOne = state.MembershipsOne.Where(m => m.LeagueId is null).Select(m => m.SaveAthleteId).ToHashSet();
         HashSet<int> poolTwo = state.MembershipsTwo.Where(m => m.LeagueId is null).Select(m => m.SaveAthleteId).ToHashSet();
         poolOne.SetEquals(poolTwo).ShouldBeTrue();
-        poolTwo.Count.ShouldBe(2048 - (8 * 32));
+        poolTwo.Count.ShouldBe(2048 - 768);
     }
 
     private static void AssertFeederRetention(TransitionState state, CreateInauguralSuperleagueResponse response)
     {
         Dictionary<int, int> colorByAthleteOne = state.MembershipsOne.ToDictionary(m => m.SaveAthleteId, m => m.SportingColor);
-        Dictionary<int, LeagueEntity> feederTwoByColor = state.LeaguesTwo.Where(l => l.Kind == (int)LeagueKind.Feeder).ToDictionary(l => l.SportingColor);
+        Dictionary<(int Color, int Division), LeagueEntity> feederTwoByColorDivision = state.LeaguesTwo
+            .Where(l => l.Kind == (int)LeagueKind.Feeder)
+            .ToDictionary(l => (l.SportingColor, l.FeederDivision));
+        Dictionary<int, SeasonMembershipEntity> oneByAthlete = state.MembershipsOne.ToDictionary(m => m.SaveAthleteId);
         foreach (SeasonMembershipEntity membership in state.MembershipsTwo)
         {
             if (membership.LeagueId is null || membership.LeagueId == response.SuperleagueLeagueId)
@@ -234,7 +235,9 @@ public sealed class InauguralSuperleagueTests
 
             state.MembershipsOne.Single(m => m.SaveAthleteId == membership.SaveAthleteId).LeagueId.ShouldNotBeNull();
             colorByAthleteOne[membership.SaveAthleteId].ShouldBe(membership.SportingColor);
-            feederTwoByColor[membership.SportingColor].Id.ShouldBe(membership.LeagueId.Value);
+            SeasonMembershipEntity source = oneByAthlete[membership.SaveAthleteId];
+            int sourceDivision = source.DrawIndex < 32 ? 1 : source.DrawIndex < 64 ? 2 : 3;
+            feederTwoByColorDivision[(membership.SportingColor, sourceDivision)].Id.ShouldBe(membership.LeagueId.Value);
         }
     }
 

@@ -40,7 +40,7 @@ public sealed class Season1LeaguesApiTests
             LeaguesPayload? replayed = await replay.Content.ReadFromJsonAsync<LeaguesPayload>();
             replayed.ShouldNotBeNull();
             replayed.DrawChecksum.ShouldBe(payload.DrawChecksum);
-            replayed.Leagues.Count.ShouldBe(8);
+            replayed.Leagues.Count.ShouldBe(24);
         }
         finally
         {
@@ -70,10 +70,10 @@ public sealed class Season1LeaguesApiTests
     {
         payload.SeasonNumber.ShouldBe(1);
         payload.HasSuperleague.ShouldBeFalse();
-        payload.ActiveAthletes.ShouldBe(256);
-        payload.PoolAthletes.ShouldBe(1792);
+        payload.ActiveAthletes.ShouldBe(768);
+        payload.PoolAthletes.ShouldBe(1280);
         payload.DrawChecksum.Length.ShouldBe(64);
-        payload.Leagues.Count.ShouldBe(8);
+        payload.Leagues.Count.ShouldBe(24);
         payload.PoolCounts.Count.ShouldBe(8);
         foreach (LeaguePayload league in payload.Leagues)
         {
@@ -82,12 +82,12 @@ public sealed class Season1LeaguesApiTests
 
         foreach (PoolPayload pool in payload.PoolCounts)
         {
-            pool.Count.ShouldBe(224);
+            pool.Count.ShouldBe(160);
         }
 
         List<string> names = payload.Leagues.SelectMany(l => l.Athletes).Select(a => a.Name).ToList();
-        names.Count.ShouldBe(256);
-        names.Distinct(StringComparer.Ordinal).Count().ShouldBe(256);
+        names.Count.ShouldBe(768);
+        names.Distinct(StringComparer.Ordinal).Count().ShouldBe(768);
     }
 
     private static async Task SeedCatalogAsync(HttpClient client)

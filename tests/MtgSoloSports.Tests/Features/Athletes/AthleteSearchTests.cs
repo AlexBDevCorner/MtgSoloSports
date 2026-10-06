@@ -148,7 +148,7 @@ public sealed class AthleteSearchTests
     {
         SearchAthletesHandler handler = new(store);
         SearchAthletesResponse activePage = await handler.HandleAsync(saveId, SearchAthletesQuery.Empty with { MinNonPoolSeasons = 1, Take = 500 }).ConfigureAwait(false);
-        activePage.TotalCount.ShouldBe(256);
+        activePage.TotalCount.ShouldBe(768);
         activePage.Results.All(e => e.NonPoolSeasons >= 1).ShouldBeTrue();
 
         using SaveDbContext context = store.OpenDbContext(saveId);
@@ -179,7 +179,7 @@ public sealed class AthleteSearchTests
 
         SearchAthletesResponse filtered = await handler.HandleAsync(saveId, new SearchAthletesQuery(
             null, 1, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 500)).ConfigureAwait(false);
-        filtered.TotalCount.ShouldBe(256);
+        filtered.TotalCount.ShouldBe(768);
         filtered.Results.All(e => e.NonPoolSeasons >= 1).ShouldBeTrue();
     }
 
@@ -248,20 +248,20 @@ public sealed class AthleteSearchTests
         SearchAthletesHandler handler = new(store);
         SearchAthletesResponse champions = await handler.HandleAsync(
             saveId, SearchAthletesQuery.Empty with { MinTitles = 1, Take = 500 }).ConfigureAwait(false);
-        champions.TotalCount.ShouldBe(8);
+        champions.TotalCount.ShouldBe(24);
 
         SearchAthletesResponse honoured = await handler.HandleAsync(
             saveId, SearchAthletesQuery.Empty with { MinHonours = 1, Take = 500 }).ConfigureAwait(false);
-        honoured.TotalCount.ShouldBe(24);
+        honoured.TotalCount.ShouldBe(72);
 
         SearchAthletesResponse podiumsOnly = await handler.HandleAsync(
             saveId, SearchAthletesQuery.Empty with { MinHonours = 1, HasTitle = "none", Take = 500 }).ConfigureAwait(false);
-        podiumsOnly.TotalCount.ShouldBe(16);
+        podiumsOnly.TotalCount.ShouldBe(48);
         podiumsOnly.Results.All(e => e.TitlesCount == 0 && e.HonoursCount >= 1).ShouldBeTrue();
 
         SearchAthletesResponse best = await handler.HandleAsync(
             saveId, SearchAthletesQuery.Empty with { BestFinishMax = 1, Take = 500 }).ConfigureAwait(false);
-        best.TotalCount.ShouldBe(8);
+        best.TotalCount.ShouldBe(24);
     }
 
     [Fact]
@@ -341,9 +341,17 @@ public sealed class AthleteSearchTests
 
         SearchAthletesResponse poolNow = await handler.HandleAsync(
             saveId, SearchAthletesQuery.Empty with { CurrentLeagues = ["Common pool"], MinNonPoolSeasons = 1, Take = 500 }).ConfigureAwait(false);
-        poolNow.TotalCount.ShouldBe(256);
+        poolNow.TotalCount.ShouldBe(768);
         poolNow.Results.All(e => !e.IsActive && e.NonPoolSeasons >= 1).ShouldBeTrue();
-        poolNow.Results.Any(e => e.AthleteId == activeId).ShouldBeTrue();
+        string activePoolName;
+        using (SaveDbContext context = store.OpenDbContext(saveId))
+        {
+            activePoolName = await context.SaveAthletes.AsNoTracking().Where(e => e.Id == activeId).Select(e => e.Name).SingleAsync().ConfigureAwait(false);
+        }
+
+        SearchAthletesResponse targeted = await handler.HandleAsync(
+            saveId, SearchAthletesQuery.Empty with { Search = activePoolName, CurrentLeagues = ["Common pool"], Take = 10 }).ConfigureAwait(false);
+        targeted.Results.Any(e => e.AthleteId == activeId).ShouldBeTrue();
     }
 
     private static SearchAthletesFilter.Candidate BuildCandidate(

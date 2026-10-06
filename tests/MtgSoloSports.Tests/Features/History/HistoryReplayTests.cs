@@ -237,7 +237,7 @@ public sealed class HistoryReplayTests
 
         ListHistoryCompetitionsHandler competitions = new(store);
         ListHistoryCompetitionsResponse competitionList = await competitions.HandleAsync(saveId, 1).ConfigureAwait(false);
-        competitionList.Competitions.Count.ShouldBe(8);
+        competitionList.Competitions.Count.ShouldBe(24);
         competitionList.Competitions.ShouldContain(c => c.LeagueId == leagueId);
 
         ListHistoryStagesHandler stages = new(store);
@@ -284,7 +284,7 @@ public sealed class HistoryReplayTests
 
         ListHistoryCompetitionsHandler competitions = new(store);
         ListHistoryCompetitionsResponse competitionList = await competitions.HandleAsync(saveId, 1).ConfigureAwait(false);
-        competitionList.Competitions.Count.ShouldBe(8);
+        competitionList.Competitions.Count.ShouldBe(24);
 
         ListHistoryStagesHandler stages = new(store);
         ListHistoryStagesResponse stageList = await stages.HandleAsync(saveId, 1, leagueId).ConfigureAwait(false);

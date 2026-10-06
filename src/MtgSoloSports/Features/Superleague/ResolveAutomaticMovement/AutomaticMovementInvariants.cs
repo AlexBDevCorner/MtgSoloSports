@@ -126,10 +126,10 @@ public static class AutomaticMovementInvariants
             throw new InvalidOperationException("Next Superleague league row is corrupt.");
         }
 
-        if (nextFeeders.Count != rules.RegularLeagueCount)
+        if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
             throw new InvalidOperationException(
-                $"Next season must have exactly {rules.RegularLeagueCount} feeder leagues, was {nextFeeders.Count}.");
+                $"Next season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         if (sourceMemberships.Count != rules.TotalAthletesInSave || nextMemberships.Count != rules.TotalAthletesInSave)
@@ -258,12 +258,13 @@ public static class AutomaticMovementInvariants
         IReadOnlyList<LeagueEntity> feederLeagues,
         RulesV1 rules)
     {
-        HashSet<int> feederIds = feederLeagues.Select(l => l.Id).ToHashSet();
+        IReadOnlyList<LeagueEntity> sources = ResolveExpectedSources(feederLeagues, rules);
+        HashSet<int> feederIds = sources.Select(l => l.Id).ToHashSet();
 
         Dictionary<int, int> promotionsPerLeague = CountByLeague(plan.Promotions);
         Dictionary<int, int> challengersPerLeague = CountByLeague(plan.QualifierChallengers);
 
-        foreach (LeagueEntity league in feederLeagues)
+        foreach (LeagueEntity league in sources)
         {
             if (!promotionsPerLeague.TryGetValue(league.Id, out int promoted) || promoted != 1)
             {
@@ -285,6 +286,21 @@ public static class AutomaticMovementInvariants
                 throw new InvalidOperationException($"Feeder pick {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
             }
         }
+    }
+
+    private static IReadOnlyList<LeagueEntity> ResolveExpectedSources(
+        IReadOnlyList<LeagueEntity> feederLeagues,
+        RulesV1 rules)
+    {
+        bool tiered = rules.FeederDivisionsPerColor == 3;
+        if (!tiered)
+        {
+            return feederLeagues;
+        }
+
+        return feederLeagues
+            .Where(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .ToList();
     }
 
     private static Dictionary<int, int> CountByLeague(IReadOnlyList<AutomaticMovementSelection.AutomaticPick> picks)
@@ -373,7 +389,7 @@ public static class AutomaticMovementInvariants
     {
         HashSet<int> feederIds = nextFeeders.Select(l => l.Id).ToHashSet();
         int feederTotal = nextMemberships.Count(m => m.LeagueId is not null && feederIds.Contains(m.LeagueId.Value));
-        int expectedFeeders = rules.RegularLeagueCount * rules.LeagueSize - rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount;
+        int expectedFeeders = rules.TieredFeederLeagueCount * rules.LeagueSize - rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount;
         if (feederTotal != expectedFeeders)
         {
             throw new InvalidOperationException(

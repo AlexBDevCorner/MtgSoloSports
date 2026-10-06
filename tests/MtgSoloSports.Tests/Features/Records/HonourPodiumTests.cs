@@ -99,13 +99,13 @@ public sealed class HonourPodiumTests
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
         List<HonourEntity> honours = await context.Honours.AsNoTracking().ToListAsync().ConfigureAwait(false);
-        honours.Count.ShouldBe(24);
+        honours.Count.ShouldBe(72);
 
         List<SeasonStandingEntity> podiums = await context.SeasonStandings
             .AsNoTracking()
             .Where(e => e.SeasonRank >= 1 && e.SeasonRank <= 3)
             .ToListAsync().ConfigureAwait(false);
-        podiums.Count.ShouldBe(24);
+        podiums.Count.ShouldBe(72);
 
         foreach (SeasonStandingEntity podium in podiums)
         {
@@ -124,7 +124,7 @@ public sealed class HonourPodiumTests
             .AsNoTracking()
             .Where(e => e.SeasonRank == 4)
             .ToListAsync().ConfigureAwait(false);
-        fourths.Count.ShouldBe(8);
+        fourths.Count.ShouldBe(24);
         foreach (SeasonStandingEntity fourth in fourths)
         {
             honours.Any(h => h.SeasonId == fourth.SeasonId && h.LeagueId == fourth.LeagueId && h.SaveAthleteId == fourth.SaveAthleteId)
@@ -138,7 +138,7 @@ public sealed class HonourPodiumTests
         GetRecordsResponse records = await recordsHandler.HandleAsync(saveId).ConfigureAwait(false);
         RecordEntry feeder = records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.FeederTitles, StringComparison.Ordinal));
         feeder.Value.ShouldBe(1);
-        feeder.Holders.Count.ShouldBe(8);
+        feeder.Holders.Count.ShouldBe(24);
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed class HonourPodiumTests
         List<HonourEntity> podiumRows = await context.Honours
             .Where(e => e.Kind == runnerUpKind || e.Kind == thirdKind)
             .ToListAsync().ConfigureAwait(false);
-        podiumRows.Count.ShouldBe(16);
+        podiumRows.Count.ShouldBe(48);
         context.Honours.RemoveRange(podiumRows);
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
@@ -179,14 +179,14 @@ public sealed class HonourPodiumTests
     {
         using (SaveDbContext context = store.OpenDbContext(saveId))
         {
-            (await context.Honours.CountAsync().ConfigureAwait(false)).ShouldBe(8);
+            (await context.Honours.CountAsync().ConfigureAwait(false)).ShouldBe(24);
         }
 
         ListHonoursHandler listHandler = new(store);
         ListHonoursResponse listed = await listHandler.HandleAsync(saveId).ConfigureAwait(false);
-        listed.Honours.Count.ShouldBe(24);
-        listed.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederRunnerUp), StringComparison.Ordinal)).ShouldBe(8);
-        listed.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederThirdPlace), StringComparison.Ordinal)).ShouldBe(8);
+        listed.Honours.Count.ShouldBe(72);
+        listed.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederRunnerUp), StringComparison.Ordinal)).ShouldBe(24);
+        listed.Honours.Count(h => string.Equals(h.HonourKind, nameof(HonourKind.FeederThirdPlace), StringComparison.Ordinal)).ShouldBe(24);
     }
 
     private static async Task AssertProfileInterpretsRunnerUpAsync(SaveStore store, Guid saveId)
@@ -253,7 +253,7 @@ public sealed class HonourPodiumTests
                 .Select(h => $"{h.SeasonId}:{h.LeagueId}:{h.HonourKind}:{h.AthleteId}")
                 .ToList();
             keys.Distinct(StringComparer.Ordinal).Count().ShouldBe(keys.Count);
-            response.Honours.Count.ShouldBe(24);
+            response.Honours.Count.ShouldBe(72);
 
             int anyAthlete = response.Honours[0].AthleteId;
             ListHonoursResponse filtered = await listHandler.HandleAsync(saveId, anyAthlete);

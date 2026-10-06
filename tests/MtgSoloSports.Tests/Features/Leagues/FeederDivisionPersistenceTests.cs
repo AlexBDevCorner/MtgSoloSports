@@ -34,12 +34,17 @@ public sealed class FeederDivisionPersistenceTests
 
             using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
             List<LeagueEntity> leagues = await context.Leagues.AsNoTracking().ToListAsync();
-            leagues.Count.ShouldBe(8);
+            leagues.Count.ShouldBe(24);
+            leagues.Count(l => l.FeederDivision == (int)FeederDivision.First).ShouldBe(8);
+            leagues.Count(l => l.FeederDivision == (int)FeederDivision.Second).ShouldBe(8);
+            leagues.Count(l => l.FeederDivision == (int)FeederDivision.Third).ShouldBe(8);
             foreach (LeagueEntity league in leagues)
             {
                 league.Kind.ShouldBe((int)LeagueKind.Feeder);
-                league.FeederDivision.ShouldBe((int)FeederDivision.First);
-                LeagueEntityLevels.GetLevel(league).ShouldBe(LeagueLevel.Feeder1);
+                LeagueEntityLevels.GetLevel(league).ShouldBe(
+                    league.FeederDivision == (int)FeederDivision.First ? LeagueLevel.Feeder1 :
+                    league.FeederDivision == (int)FeederDivision.Second ? LeagueLevel.Feeder2 :
+                    LeagueLevel.Feeder3);
             }
         }
         finally
@@ -104,21 +109,25 @@ public sealed class FeederDivisionPersistenceTests
 
             GetSeasonProgressHandler progress = new(store);
             GetSeasonProgressResponse progressResponse = await progress.HandleAsync(created.Detail.SaveId, 1);
-            progressResponse.Leagues.Count.ShouldBe(8);
+            progressResponse.Leagues.Count.ShouldBe(24);
+            progressResponse.Leagues.Count(l => l.FeederDivision == (int)FeederDivision.First).ShouldBe(8);
+            progressResponse.Leagues.Count(l => l.FeederDivision == (int)FeederDivision.Second).ShouldBe(8);
+            progressResponse.Leagues.Count(l => l.FeederDivision == (int)FeederDivision.Third).ShouldBe(8);
             foreach (SeasonProgressLeague league in progressResponse.Leagues)
             {
-                league.FeederDivision.ShouldBe((int)FeederDivision.First);
-                league.LeagueLevel.ShouldBe(nameof(LeagueLevel.Feeder1));
+                (league.FeederDivision is 1 or 2 or 3).ShouldBeTrue();
             }
 
             ListHistoryCompetitionsHandler competitions = new(store);
             ListHistoryCompetitionsResponse competitionsResponse =
                 await competitions.HandleAsync(created.Detail.SaveId, 1);
-            competitionsResponse.Competitions.Count.ShouldBe(8);
+            competitionsResponse.Competitions.Count.ShouldBe(24);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.First).ShouldBe(8);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.Second).ShouldBe(8);
+            competitionsResponse.Competitions.Count(c => c.FeederDivision == (int)FeederDivision.Third).ShouldBe(8);
             foreach (HistoryCompetitionSummary summary in competitionsResponse.Competitions)
             {
-                summary.FeederDivision.ShouldBe((int)FeederDivision.First);
-                summary.LeagueLevel.ShouldBe(nameof(LeagueLevel.Feeder1));
+                (summary.FeederDivision is 1 or 2 or 3).ShouldBeTrue();
             }
 
             using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))

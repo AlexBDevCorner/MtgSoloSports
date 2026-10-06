@@ -21,8 +21,8 @@ public sealed class ColorCupTeamStepTests
         try
         {
             RunColorCupTeamResponse response = await new RunColorCupTeamHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("49e93049472867a3d6e4e77af021fa3ef2bd5e78395cdf31f9533c87dcc36dc8");
-            (await LoadRngAsync(store, saveId)).ShouldBe((-6031596366428605271L, 9292L));
+            response.Checksum.ShouldBe("3b34e3f642d57699eac39563e09d193342ed8b181ad0c783673641087fb5f266");
+            (await LoadRngAsync(store, saveId)).ShouldBe((-3128078357953407831L, 9292L));
         }
         finally
         {

@@ -94,7 +94,7 @@ public static class LongRunInvariantChecks
         foreach (SeasonEntity season in snapshot.Seasons)
         {
             List<LeagueEntity> leagues = snapshot.Leagues.Where(l => l.SeasonId == season.Id).ToList();
-            int expectedLeagues = season.SeasonNumber == 1 ? rules.RegularLeagueCount : rules.RegularLeagueCount + 1;
+            int expectedLeagues = season.SeasonNumber == 1 ? rules.Season1FeederLeagueCount : rules.PostInauguralLeagueCount;
             if (leagues.Count != expectedLeagues)
             {
                 return new InvariantResult("league_sizes", false,
@@ -131,8 +131,8 @@ public static class LongRunInvariantChecks
             }
 
             int expectedActive = season.SeasonNumber == 1
-                ? rules.RegularLeagueCount * rules.LeagueSize
-                : (rules.RegularLeagueCount + 1) * rules.LeagueSize;
+                ? rules.Season1ActiveTotal
+                : rules.PostInauguralActiveTotal;
             if (active.Count != expectedActive)
             {
                 return new InvariantResult("no_duplicates", false,
