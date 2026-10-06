@@ -166,7 +166,7 @@ jobs:
             For correction, evaluate the trusted blocking review and fix valid blocking findings only. If you genuinely disagree technically, leave the reviewed head unchanged and post the machine-readable disagreement comment required by the AutonomousWork protocol.
             Required repository verification is defined by AGENTS.md and the task. Record real commands/results; never invent evidence.
             Keep the vertical-slice architecture. Do not add MediatR, generic repositories, horizontal Domain/Application/Infrastructure projects, message buses or unrelated architectural frameworks.
-            Open/update the same PR to main titled [${{ inputs.task_id }}] <description>.
+            Keep the implementation suitable for the task PR titled [${{ inputs.task_id }}] <description>; the recovery step owns PR creation/update.
             Never merge, force-push, or commit secrets.
             You are running on Ubuntu. Use bash/POSIX syntax.
 
@@ -250,4 +250,8 @@ jobs:
             echo "Published successful worker output to PR #${pr_number}."
           else
             echo "Preserved worker progress on PR #${pr_number}; run outcome=${WORKER_OUTCOME}, recovery_commit=${recovery_commit}. PR is not promoted by recovery."
+            if [[ "${WORKER_OUTCOME}" == "success" && "${recovery_commit}" == "true" ]]; then
+              echo "Worker reported success with uncommitted edits. Progress was preserved, but verification did not cover the recovery commit." >&2
+              exit 1
+            fi
           fi
