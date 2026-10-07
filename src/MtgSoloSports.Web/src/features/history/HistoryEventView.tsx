@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { optionalTournament } from '../cups/typeCupTournamentApi';
+import type { TypeCupTournament } from '../cups/typeCupTournamentApi';
 import {
   fetchEventRound,
   fetchEventRounds,
@@ -13,7 +15,7 @@ import {
 import { EVENT_TITLES, isTeamEvent, roundLabel, type EventKey } from '../events/eventModel';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { Link } from '../routing/router';
-import { qualifiersPath } from '../routing/routes';
+import { cupEditionPath, qualifiersPath } from '../routing/routes';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -43,8 +45,10 @@ export function HistoryEventView({
   const [rounds, setRounds] = useState<PlayedRound[] | null>(null);
   const [roundView, setRoundView] = useState<EventRoundView | null>(null);
   const [teams, setTeams] = useState<EventTeamStandings | null>(null);
+  const [tournament, setTournament] = useState<TypeCupTournament | null>(null);
   const [error, setError] = useState<string | null>(null);
   const team = isTeamEvent(event);
+  const isTypeTournamentHistory = event === 'type-cup-team';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,8 +68,15 @@ export function HistoryEventView({
     } else {
       setTeams(null);
     }
+    if (isTypeTournamentHistory) {
+      optionalTournament(saveId, season, controller.signal)
+        .then(setTournament)
+        .catch(() => setTournament(null));
+    } else {
+      setTournament(null);
+    }
     return () => controller.abort();
-  }, [saveId, season, event, team]);
+  }, [saveId, season, event, team, isTypeTournamentHistory]);
 
   const selected: PlayedRound | null = useMemo(() => {
     if (!rounds || rounds.length === 0) {
@@ -110,9 +121,17 @@ export function HistoryEventView({
             <Link to={qualifiersPath(saveId, { season })}>open all qualifiers with boundary and color</Link>.
           </p>
         ) : null}
+        {isTypeTournamentHistory && tournament && !tournament.isDirectFinal ? (
+          <p className="muted small">
+            Rank groups below are squad positions (#1 vs #1, …) inside one stage — not the
+            qualification groups themselves. Qualification draw, per-group tables with cutoffs and
+            the fresh 32-team Final live on the{' '}
+            <Link to={cupEditionPath(saveId, 'type', season)}>Type Cup edition page</Link>.
+          </p>
+        ) : null}
         {team ? (
           <label className="field">
-            <span>Group</span>
+            <span>{isTypeTournamentHistory && tournament && !tournament.isDirectFinal ? 'Squad rank group' : 'Group'}</span>
             <select
               value={visibleGroup ?? ''}
               disabled={groups.length === 0}
@@ -180,8 +199,22 @@ export function HistoryEventView({
       {team && teams ? (
         <Card
           eyebrow={EVENT_TITLES[event]}
-          title={teams.isFinal ? 'Team standings' : `Team standings so far — ${teams.groupsCompleted} of 4 groups`}
+          title={
+            teams.isFinal
+              ? isTypeTournamentHistory && tournament && !tournament.isDirectFinal
+                ? 'Team standings — Type Cup Final'
+                : 'Team standings'
+              : `Team standings so far — ${teams.groupsCompleted} of 4 groups`
+          }
         >
+          {isTypeTournamentHistory && tournament && !tournament.isDirectFinal ? (
+            <p className="muted small">
+              Final standings once the Cup completes; qualification-only teams keep their appearance
+              on the{' '}
+              <Link to={cupEditionPath(saveId, 'type', season)}>Type Cup edition page</Link> with
+              per-group cutoffs.
+            </p>
+          ) : null}
           <div className="table-wrap">
             <table className="data-table">
               <thead>

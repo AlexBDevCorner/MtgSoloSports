@@ -260,6 +260,101 @@ public sealed class AthleteCupHistoryTests
         }
     }
 
+    [Fact]
+    public async Task TypeTournament_QualificationOnly_KeepsParticipation_WithoutHonour()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Hist Type Qual", 1717UL, 1818UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            int seasonId = await SeasonIdAsync(store, saveId, 1);
+            int athleteId = await FirstAthleteAsync(store, saveId);
+
+            // Qualification group B table: team ranks 5th, no medal. No Final
+            // row for this team: eliminated before the Final.
+            await InsertTypeTournamentLegAsync(store, saveId, seasonId, seasonNumber: 2, athleteId, creatureType: "Elf", phase: 1, qualGroup: 2, teamRank: 5, medal: 0, groupRank: 3);
+
+            List<AthleteCupHistoryDto> history = await LoadHistoryAsync(store, saveId, athleteId);
+            AthleteCupHistoryDto entry = history.Single();
+            entry.SourceSeasonNumber.ShouldBe(2);
+            entry.Cup.ShouldBe("Type");
+            entry.Place.ShouldBe(5);
+            entry.Medal.ShouldBe("None");
+            entry.TournamentPhase.ShouldBe(1);
+            entry.QualificationGroup.ShouldBe(2);
+            entry.TournamentStage.ShouldBe("Qualification Group B");
+
+            GetAthleteProfileResponse profile = await new GetAthleteProfileHandler(store).HandleAsync(saveId, athleteId);
+            profile.Honours.ShouldBeEmpty();
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task TypeTournament_Finalist_HasQualificationAndFinalRows_FinalHonourOnly()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Hist Type Finalist", 1919UL, 2020UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            int seasonId = await SeasonIdAsync(store, saveId, 1);
+            int athleteId = await FirstAthleteAsync(store, saveId);
+
+            await InsertTypeTournamentLegAsync(store, saveId, seasonId, seasonNumber: 2, athleteId, creatureType: "Goblin", phase: 1, qualGroup: 1, teamRank: 1, medal: 0, groupRank: 2);
+            await InsertTypeTournamentLegAsync(store, saveId, seasonId, seasonNumber: 2, athleteId, creatureType: "Goblin", phase: 2, qualGroup: 0, teamRank: 2, medal: 2, groupRank: 1);
+
+            List<AthleteCupHistoryDto> history = await LoadHistoryAsync(store, saveId, athleteId);
+            history.Count.ShouldBe(2);
+            AthleteCupHistoryDto qual = history.Single(e => e.TournamentPhase == 1);
+            qual.TournamentStage.ShouldBe("Qualification Group A");
+            qual.Place.ShouldBe(1);
+            qual.Medal.ShouldBe("None");
+            AthleteCupHistoryDto final = history.Single(e => e.TournamentPhase == 2);
+            final.TournamentStage.ShouldBe("Final");
+            final.Place.ShouldBe(2);
+            final.Medal.ShouldBe("Silver");
+            final.QualificationGroup.ShouldBeNull();
+
+            // Qualification group victory is not a major honour; only the
+            // Final silver counts.
+            GetAthleteProfileResponse profile = await new GetAthleteProfileHandler(store).HandleAsync(saveId, athleteId);
+            profile.Honours.Count.ShouldBe(1);
+            profile.Honours.Single().HonourKind.ShouldBe("TypeCupTeamRunnerUp");
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task TypeTournament_QualificationGroupWinner_HasNoHonour()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Cup Hist Type Qual Win", 2121UL, 2222UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            int seasonId = await SeasonIdAsync(store, saveId, 1);
+            int athleteId = await FirstAthleteAsync(store, saveId);
+
+            await InsertTypeTournamentLegAsync(store, saveId, seasonId, seasonNumber: 2, athleteId, creatureType: "Dragon", phase: 1, qualGroup: 1, teamRank: 1, medal: 0, groupRank: 1);
+
+            GetAthleteProfileResponse profile = await new GetAthleteProfileHandler(store).HandleAsync(saveId, athleteId);
+            profile.Honours.ShouldBeEmpty();
+            profile.CupHistory.Single().TournamentStage.ShouldBe("Qualification Group A");
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static async Task<List<AthleteCupHistoryDto>> LoadHistoryAsync(SaveStore store, Guid saveId, int athleteId)
     {
         GetAthleteProfileResponse profile = await new GetAthleteProfileHandler(store).HandleAsync(saveId, athleteId).ConfigureAwait(false);
@@ -385,11 +480,19 @@ public sealed class AthleteCupHistoryTests
     private static async Task InsertTypeTeamAsync(
         SaveStore store, Guid saveId, int seasonId, int seasonNumber, int athleteId, string creatureType, int teamRank, int medal, int groupRank)
     {
+        await InsertTypeTournamentLegAsync(store, saveId, seasonId, seasonNumber, athleteId, creatureType, phase: 0, qualGroup: 0, teamRank, medal, groupRank).ConfigureAwait(false);
+    }
+
+    private static async Task InsertTypeTournamentLegAsync(
+        SaveStore store, Guid saveId, int seasonId, int seasonNumber, int athleteId, string creatureType, int phase, int qualGroup, int teamRank, int medal, int groupRank)
+    {
         using SaveDbContext context = store.OpenDbContext(saveId);
         context.TypeCupTeamGroupStandings.Add(new TypeCupTeamGroupStandingEntity
         {
             SourceSeasonId = seasonId,
             SourceSeasonNumber = seasonNumber,
+            TournamentPhase = phase,
+            QualificationGroup = qualGroup,
             GroupNumber = 2,
             SaveAthleteId = athleteId,
             GroupRank = groupRank,
@@ -400,20 +503,30 @@ public sealed class AthleteCupHistoryTests
             CreatureType = creatureType,
             SelectionRank = 2,
         });
-        context.TypeCupTeamStandings.Add(new TypeCupTeamStandingEntity
+        // One standing per stage for the same team: qualification tables and
+        // the Final never collide because phase/qual differ.
+        bool exists = await context.TypeCupTeamStandings.AsNoTracking().AnyAsync(e =>
+            e.SourceSeasonId == seasonId && e.TournamentPhase == phase && e.QualificationGroup == qualGroup && e.CreatureType == creatureType).ConfigureAwait(false);
+        if (!exists)
         {
-            SourceSeasonId = seasonId,
-            SourceSeasonNumber = seasonNumber,
-            CreatureType = creatureType,
-            TeamRank = teamRank,
-            TeamScoreThousandths = 210000,
-            TeamBaseThousandths = 190000,
-            GroupWins = 1,
-            RoundWins = 3,
-            GroupPlaceCountsJson = "[]",
-            RoundPlaceCountsJson = "[]",
-            Medal = medal,
-        });
+            context.TypeCupTeamStandings.Add(new TypeCupTeamStandingEntity
+            {
+                SourceSeasonId = seasonId,
+                SourceSeasonNumber = seasonNumber,
+                TournamentPhase = phase,
+                QualificationGroup = qualGroup,
+                CreatureType = creatureType,
+                TeamRank = teamRank,
+                TeamScoreThousandths = 210000,
+                TeamBaseThousandths = 190000,
+                GroupWins = 1,
+                RoundWins = 3,
+                GroupPlaceCountsJson = "[]",
+                RoundPlaceCountsJson = "[]",
+                Medal = medal,
+            });
+        }
+
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 

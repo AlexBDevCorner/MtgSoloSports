@@ -95,6 +95,10 @@ export interface AthleteCupHistory {
   scoreThousandths: number;
   groupRank: number | null;
   groupNumber: number | null;
+  /** Type Cup tournament stage (MSS-063 additive); null for Color Cup entries. */
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
+  tournamentStage?: string | null;
 }
 
 export interface AthleteProfile {

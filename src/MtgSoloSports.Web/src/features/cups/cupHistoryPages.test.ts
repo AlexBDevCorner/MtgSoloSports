@@ -71,8 +71,7 @@ describe('cup edition page', () => {
   });
 });
 
-describe('cup team page', () => {
-  it('reads the team history and recovers from an unknown team', () => {
+describe('cup team page', () => {  it('reads the team history and recovers from an unknown team', () => {
     assert.ok(team.includes('fetchCupTeamHistory(saveId, cup, teamKey'));
     assert.ok(team.includes('failure.status === 404'));
     assert.ok(team.includes('No such team'));
@@ -98,5 +97,46 @@ describe('cup team page', () => {
   it('copes with a season that has no result yet', () => {
     assert.ok(team.includes('season.teamRank !== null'));
     assert.ok(team.includes('member.leg ?'));
+  });
+});
+
+describe('type cup tournament edition', () => {
+  it('loads the persisted tournament summary and draw alongside the Final result', () => {
+    assert.ok(edition.includes('optionalTournament(saveId, season'), 'tournament summary first');
+    assert.ok(edition.includes('optionalDraw(saveId, season'), 'persisted draw alongside');
+    assert.ok(edition.includes('fetchTypeCupTeam(saveId, season'), 'Final result still loads');
+    assert.ok(edition.includes('<TypeCupTournamentSection'), 'tournament section for qual fields');
+  });
+
+  it('keeps direct-final Cups free of qualification scaffolding', () => {
+    assert.ok(edition.includes('!tournament.isDirectFinal'), 'qual UI gated on persisted facts');
+    assert.ok(edition.includes('isTypeTournament'), 'direct-final keeps the familiar Final flow');
+    assert.ok(!/Qualification Group \{\}/.test(edition), 'no fabricated groups');
+  });
+
+  it('shows draw, cutoff tables and a fresh Final from persisted facts', () => {
+    const section = read('TypeCupTournamentSection.tsx');
+    assert.ok(section.includes('Qualification Group'), 'groups under Qualification Group A/B/C');
+    assert.ok(section.includes('not strength seeded'), 'explicitly random, not seeded');
+    assert.ok(section.includes('never redraws'), 'no client-side redraw');
+    assert.ok(section.includes('Qualified'), 'qualified status');
+    assert.ok(section.includes('Eliminated'), 'eliminated status');
+    assert.ok(section.includes('cut-line'), 'visible cut line after the final qualifying place');
+    assert.ok(section.includes('Type Cup Final'), 'Final as a new stage');
+    assert.ok(section.includes('starts every team at zero') || section.includes('start at zero'), 'points reset explained');
+    assert.ok(section.includes('Squad #'), 'data-driven rank-group labels');
+  });
+
+  it('bounds large tournaments with on-demand legs and squads', () => {
+    const section = read('TypeCupTournamentSection.tsx');
+    assert.ok(section.includes('Show group legs'), 'legs render on demand');
+    assert.ok(section.includes('Show Final legs'), 'Final legs render on demand');
+    assert.ok(edition.includes('Show squads'), 'squads render per group on demand');
+  });
+
+  it('distinguishes Final from qualification-only participation on team pages', () => {
+    assert.ok(team.includes('tournamentStage'), 'stage from persisted results');
+    assert.ok(team.includes('Eliminated'), 'eliminated badge with text, not color alone');
+    assert.ok(team.includes('Qualified for Final'), 'qualified badge with text');
   });
 });

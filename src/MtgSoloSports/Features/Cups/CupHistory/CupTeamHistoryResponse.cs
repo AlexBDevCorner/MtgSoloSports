@@ -39,7 +39,12 @@ public sealed record CupTeamHistoryResponse(
         int? TeamBaseThousandths,
         int? GroupWins,
         int? RoundWins,
-        IReadOnlyList<SquadMember> Squad);
+        IReadOnlyList<SquadMember> Squad,
+        string? TournamentStage = null,
+        int? TournamentPhase = null,
+        int? QualificationGroup = null,
+        bool QualifiedForFinal = false,
+        bool EliminatedInQualification = false);
 
     /// <summary>
     /// <see cref="Reason"/> is Type Cup only and null when no selection report

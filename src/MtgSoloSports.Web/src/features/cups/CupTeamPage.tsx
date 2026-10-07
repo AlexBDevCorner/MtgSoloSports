@@ -128,7 +128,12 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
         }
       >
         {history.seasons.map((season) => (
-          <SeasonBlock key={season.sourceSeasonNumber} saveId={saveId} cup={cup} season={season} />
+          <SeasonBlock
+            key={`${season.sourceSeasonNumber}:${season.tournamentPhase ?? 0}:${season.qualificationGroup ?? 0}`}
+            saveId={saveId}
+            cup={cup}
+            season={season}
+          />
         ))}
       </Card>
 
@@ -218,8 +223,21 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function SeasonBlock({ saveId, cup, season }: { saveId: string; cup: CupKind; season: CupTeamSeason }) {
+  const stageBadge =
+    cup === 'type' && season.tournamentStage
+      ? ` · ${season.tournamentStage}`
+      : '';
+  const fateBadge =
+    cup === 'type' && season.eliminatedInQualification
+      ? ' · Eliminated'
+      : cup === 'type' && season.qualifiedForFinal
+        ? ' · Qualified for Final'
+        : '';
   return (
-    <section className="team-season" aria-label={`Season ${season.sourceSeasonNumber}`}>
+    <section
+      className="team-season"
+      aria-label={season.tournamentStage ? `Season ${season.sourceSeasonNumber} ${season.tournamentStage}` : `Season ${season.sourceSeasonNumber}`}
+    >
       <div className="team-season-head">
         <Link to={cupEditionPath(saveId, cup, season.sourceSeasonNumber)} className="card-name card-link">
           Season {season.sourceSeasonNumber}
@@ -227,6 +245,8 @@ function SeasonBlock({ saveId, cup, season }: { saveId: string; cup: CupKind; se
         {season.teamRank !== null ? (
           <span className="team-season-result">
             {rankOf(season.teamRank, season.teamCount)}
+            {stageBadge}
+            {fateBadge}
             {season.medal && season.medal !== 'None' ? ` · ${medalBadge(season.medal)}` : ''}
             {season.teamScoreThousandths !== null ? ` · ${formatPoints(season.teamScoreThousandths)}` : ''}
           </span>
@@ -234,6 +254,15 @@ function SeasonBlock({ saveId, cup, season }: { saveId: string; cup: CupKind; se
           <span className="team-season-result">{stateLabel(season.state)} — no result yet</span>
         )}
       </div>
+      {cup === 'type' && season.tournamentStage ? (
+        <p className="muted small">
+          {season.eliminatedInQualification
+            ? 'Eliminated in qualification: the team keeps this Cup appearance, but only Final ranks carry medals and honours.'
+            : season.qualifiedForFinal
+              ? 'Reached the fresh 32-team Final: qualification points reset and only Final ranks carry medals and honours.'
+              : 'Tournament stage from persisted results.'}
+        </p>
+      ) : null}
       <SquadTiles
         saveId={saveId}
         members={season.squad}
@@ -255,6 +284,8 @@ function MemberDetail({
   member: CupTeamSquadMember;
 }) {
   const reason = reasonLabel(member.reason);
+  const stagePrefix =
+    cup === 'type' && season.tournamentStage ? `${season.tournamentStage} · Squad #${member.leg?.groupNumber ?? '?'} leg: ` : null;
   return (
     <>
       {member.leg ? (
@@ -265,9 +296,12 @@ function MemberDetail({
             group: member.leg.groupNumber,
           })}
           className="card-link"
-          title="Replay this group in History"
+          title="Replay this rank group in History"
         >
-          Leg: {rankOf(member.leg.groupRank, member.leg.groupSize)} · {formatPoints(member.leg.groupScoreThousandths)}
+          {stagePrefix ?? `Leg: ${rankOf(member.leg.groupRank, member.leg.groupSize)} · `}
+          {stagePrefix
+            ? `${ordinal(member.leg.groupRank)} · ${formatPoints(member.leg.groupScoreThousandths)}`
+            : `${formatPoints(member.leg.groupScoreThousandths)}`}
         </Link>
       ) : (
         <span>Leg not played yet</span>

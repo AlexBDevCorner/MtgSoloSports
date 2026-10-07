@@ -54,6 +54,13 @@ describe('athlete cup history', () => {
     assert.ok(page.includes('cupHistory.length === 0'), 'empty branch');
   });
 
+  it('distinguishes Final participation from qualification-only participation', () => {
+    assert.ok(api.includes('tournamentStage'), 'stage in the cup history model');
+    assert.ok(page.includes('entry.tournamentStage'), 'stage badge per row');
+    assert.ok(page.includes('qualification only'), 'qualification-only wording');
+    assert.ok(page.includes('Final'), 'Final wording');
+  });
+
   it('preserves the existing league history table and statistics', () => {
     assert.ok(page.includes('Season-by-season'), 'league history card intact');
     assert.ok(page.includes('season.seasonNumber'), 'league season column intact');

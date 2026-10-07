@@ -18,6 +18,16 @@ namespace MtgSoloSports.Features.Athletes.GetProfile;
 /// (individual Cup score or team score, fixed-point thousandths).
 /// <c>GroupRank</c>/<c>GroupNumber</c> carry the athlete's own leg context
 /// for team events and are null for individual events.
+/// <c>TournamentPhase</c> is Type Cup only (0 legacy single-field, 1
+/// qualification, 2 Final; null for Color Cup entries).
+/// <c>QualificationGroup</c> is the persisted qualification group (1..G) for
+/// qualification-stage Type Cup legs and null otherwise.
+/// <c>TournamentStage</c> is a data-driven stage label for Type Cup team
+/// entries ("Final", "Qualification Group A", ...; "Single field" for legacy
+/// rows) and null for Color Cup entries, so Final participation is
+/// distinguishable from qualification-only participation without parsing
+/// names. Qualification rows never carry official medals/honours; only Final
+/// ranks 1-3 hold them.
 /// Read from persisted Cup standings only (no round payloads, no current
 /// membership); historical rows stay correct even if the athlete later
 /// changes team or becomes inactive.
@@ -33,4 +43,7 @@ public sealed record AthleteCupHistoryDto(
     string Medal,
     int ScoreThousandths,
     int? GroupRank,
-    int? GroupNumber);
+    int? GroupNumber,
+    int? TournamentPhase = null,
+    int? QualificationGroup = null,
+    string? TournamentStage = null);
