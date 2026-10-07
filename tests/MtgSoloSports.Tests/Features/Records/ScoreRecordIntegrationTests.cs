@@ -131,11 +131,21 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task Historical_OlderSeasonHoldsRecordAfterAdvancing()
     {
+        // MSS-067: previously SimulateSeasons(2); now one completed Season 1
+        // plus a synthetic Season 2 shell (same pattern as
+        // MembershipChanges_DoNotRewriteHistoricalOwnership). The invariant is
+        // record ownership across seasons, not Season 2 simulation itself.
         var (store, root) = CreateStore();
         try
         {
             SaveStore.CreationRecord created = await store.CreateAsync("Score Historical", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new SimulateSeasonsHandler(store).HandleAsync(created.Detail.SaveId, new SimulateSeasonsRequest(2));
+            await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId);
+            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            {
+                SeasonEntity seasonTwo = new() { SeasonNumber = 2, HasSuperleague = false, IsComplete = false };
+                context.Seasons.Add(seasonTwo);
+                await context.SaveChangesAsync();
+            }
 
             int boostedAthlete;
             using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))

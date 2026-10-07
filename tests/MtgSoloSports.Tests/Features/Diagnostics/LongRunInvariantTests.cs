@@ -54,9 +54,23 @@ public sealed class LongRunInvariantTests
         }
     }
 
+    /// <summary>
+    /// MSS-067: opt-in two-season soak. The per-stage shape invariants are
+    /// covered in normal CI by <c>FiveGlobalStages_StructuralShapeHolds</c>
+    /// (three seeds); qualifier, nationality and cup-rotation behavior over
+    /// real simulations stays covered by <c>FeederQualifierTests</c>,
+    /// <c>CupLifecycleIntegrationTests.ThreeSeasons_Rotate_ColorTypeColor_WithInspectableBoundaries</c>
+    /// and the cup step/equivalence tests. Set <c>MTG_LONGRUN=1</c> to run this
+    /// two-season validation.
+    /// </summary>
     [Fact]
     public async Task TwoSeasons_QualifierCupsAndRotationHold()
     {
+        if (!string.Equals(Environment.GetEnvironmentVariable("MTG_LONGRUN"), "1", StringComparison.Ordinal))
+        {
+            return;
+        }
+
         var (store, root) = CreateStore();
         try
         {

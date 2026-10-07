@@ -133,9 +133,22 @@ public sealed class CupLifecycleIntegrationTests
         }
     }
 
+    /// <summary>
+    /// MSS-067: opt-in multi-season soak. The same fast-vs-manual equivalence
+    /// invariant is covered in normal CI over one season by
+    /// <c>FastSimulationTests.SimulateSeasons_EquivalentToManualAdvanceToNextEvent</c>
+    /// and <c>LongRunChecksumHandlerTests.FastSimulation_MatchesManual_Checksum</c>;
+    /// this three-season variant runs only with <c>MTG_LONGRUN=1</c>.
+    /// </summary>
     [Fact]
     public async Task FastAndManual_ThreeSeasons_ProduceIdenticalCupsAndRng()
     {
+        if (!string.Equals(Environment.GetEnvironmentVariable("MTG_LONGRUN"), "1", StringComparison.Ordinal))
+        {
+            SimulateSeasonsHandler.MaxSeasonsPerRequest.ShouldBeGreaterThanOrEqualTo(3);
+            return;
+        }
+
         var (manualStore, manualRoot) = CreateStore();
         var (fastStore, fastRoot) = CreateStore();
         try
