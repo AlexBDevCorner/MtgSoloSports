@@ -60,7 +60,12 @@ public sealed record GetTypeCupSelectionReportResponse(
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
-        int PrestigeRaw);
+        int PrestigeRaw,
+        string? SourceLeagueName,
+        int? SourceLeagueLevel,
+        int StrengthFactorPermille,
+        int UnadjustedPerformanceThousandths,
+        int UnadjustedFormAggregate);
 
     public sealed record Alternative(string TeamName, int Rank, bool FieldsTeam);
 

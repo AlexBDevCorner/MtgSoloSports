@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
 
@@ -18,8 +19,37 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, List<BonusContribution>> contributions = GroupContributions(inputs);
         Dictionary<int, int> bonusByAthlete = ComputeBonusByAthlete(inputs, contributions, rules);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
+        Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete = BuildMetricsMap(inputs, rules, stagesByAthlete);
         PrestigeCounts counts = CountPrestige(inputs);
-        return AssembleCandidates(inputs, rules, bonusByAthlete, stagesByAthlete, counts);
+        return AssembleCandidates(inputs, rules, bonusByAthlete, metricsByAthlete, counts);
+    }
+
+    internal static Dictionary<int, CupSelectionMetrics.CupMetrics> BuildMetricsMap(
+        SelectionInputs inputs,
+        RulesV1 rules,
+        Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(stagesByAthlete);
+        Dictionary<int, CupSelectionMetrics.CupMetrics> map = new(inputs.Athletes.Count);
+        foreach (SaveAthleteEntity athlete in inputs.Athletes)
+        {
+            LeagueLevel? level = CupSelectionMetrics.ResolveLevel(
+                inputs.SourceLeagueLevels, inputs.SourceLeagueIdByAthlete, athlete.Id, inputs.SourceSeasonNumber);
+            inputs.PerformanceByAthlete.TryGetValue(athlete.Id, out int unadjusted);
+            bool hasStanding = inputs.PerformanceByAthlete.ContainsKey(athlete.Id);
+            stagesByAthlete.TryGetValue(athlete.Id, out List<ColorCupSelection.StageFormEntry>? stages);
+            CupSelectionMetrics.CupMetrics metrics = CupSelectionMetrics.Build(
+                hasStanding ? unadjusted : (int?)null,
+                stages ?? [],
+                inputs.SourceSeasonNumber,
+                level,
+                rules);
+            map[athlete.Id] = metrics;
+        }
+
+        return map;
     }
 
     internal sealed record PrestigeCounts(
@@ -202,7 +232,7 @@ public sealed partial class SelectColorCupTeamsHandler
         SelectionInputs inputs,
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
-        Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete,
+        Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
         PrestigeCounts counts)
     {
         Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = [];
@@ -214,7 +244,7 @@ public sealed partial class SelectColorCupTeamsHandler
         foreach (SaveAthleteEntity athlete in inputs.Athletes)
         {
             ColorCupSelection.CandidateRaw candidate = BuildSingleCandidate(
-                athlete, inputs, rules, bonusByAthlete, stagesByAthlete, counts);
+                athlete, inputs, rules, bonusByAthlete, metricsByAthlete, counts);
             byColor[athlete.SportingColor].Add(candidate);
         }
 
@@ -234,13 +264,17 @@ public sealed partial class SelectColorCupTeamsHandler
         SelectionInputs inputs,
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
-        Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete,
+        Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
         PrestigeCounts counts)
     {
         int bonusRaw = bonusByAthlete.TryGetValue(athlete.Id, out int bonus) ? bonus : 0;
-        int performanceRaw = inputs.PerformanceByAthlete.TryGetValue(athlete.Id, out int perf) ? perf : 0;
-        stagesByAthlete.TryGetValue(athlete.Id, out List<ColorCupSelection.StageFormEntry>? stages);
-        int formRaw = ColorCupSelection.ComputeFormRaw(stages ?? [], rules);
+        if (!metricsByAthlete.TryGetValue(athlete.Id, out CupSelectionMetrics.CupMetrics? metrics))
+        {
+            throw new InvalidOperationException($"Color Cup selection is missing metrics for athlete {athlete.Id}.");
+        }
+
+        int performanceRaw = metrics.AdjustedPerformanceThousandths;
+        int formRaw = metrics.AdjustedFormRaw;
         int prestigeRaw = rules.Prestige.ComputeRaw(
             counts.FeederTitles.TryGetValue(athlete.Id, out int feeder) ? feeder : 0,
             counts.SuperTitles.TryGetValue(athlete.Id, out int super) ? super : 0,

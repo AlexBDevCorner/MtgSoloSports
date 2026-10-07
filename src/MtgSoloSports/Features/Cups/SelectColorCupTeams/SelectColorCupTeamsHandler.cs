@@ -72,9 +72,10 @@ public sealed partial class SelectColorCupTeamsHandler
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         SelectionInputs inputs = await LoadInputsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings = RankAllColors(inputs, rules);
+        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics) =
+            RankAllColors(inputs, rules);
         IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, rules);
-        AddReport(context, source, BuildReport(rankings, rules), rules);
+        AddReport(context, source, BuildReport(rankings, metrics, inputs, rules), rules);
         await PersistSelectionsAsync(context, source, all, rules, cancellationToken).ConfigureAwait(false);
 
         List<ColorCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -93,7 +94,12 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, int> PerformanceByAthlete,
         List<HonourEntity> Honours,
         List<SeasonMembershipEntity> Memberships,
-        Dictionary<int, int> LeagueKinds);
+        Dictionary<int, int> LeagueKinds,
+        int SourceSeasonId,
+        int SourceSeasonNumber,
+        Dictionary<int, int> SourceLeagueIdByAthlete,
+        Dictionary<int, int> SourceLeagueLevels,
+        Dictionary<int, string> SourceLeagueNames);
 
     internal static async Task<SeasonEntity> LoadSourceSeasonAsync(
         SaveDbContext context,
@@ -165,7 +171,11 @@ public sealed partial class SelectColorCupTeamsHandler
         List<HonourEntity> honours = await LoadHonoursAsync(context, source, cancellationToken).ConfigureAwait(false);
         (List<SeasonMembershipEntity> memberships, Dictionary<int, int> leagueKinds) =
             await LoadMembershipInputsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
-        return new SelectionInputs(athletes, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds);
+        (Dictionary<int, int> leagueIdByAthlete, Dictionary<int, int> levels, Dictionary<int, string> names) =
+            await LoadSourceLeagueInputsAsync(context, source, athletes, cancellationToken).ConfigureAwait(false);
+        return new SelectionInputs(
+            athletes, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds,
+            source.Id, source.SeasonNumber, leagueIdByAthlete, levels, names);
     }
 
     internal static async Task<List<SaveAthleteEntity>> LoadAthletesAsync(
@@ -271,11 +281,57 @@ public sealed partial class SelectColorCupTeamsHandler
         return (memberships, kinds);
     }
 
+    internal static async Task<(Dictionary<int, int> LeagueIdByAthlete, Dictionary<int, int> Levels, Dictionary<int, string> Names)> LoadSourceLeagueInputsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<SaveAthleteEntity> athletes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(athletes);
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> levels = new(leagues.Count);
+        Dictionary<int, string> names = new(leagues.Count);
+        foreach (LeagueEntity league in leagues)
+        {
+            levels[league.Id] = (int)LeagueEntityLevels.GetLevel(league);
+            names[league.Id] = league.Name;
+        }
+
+        Dictionary<int, int?> membershipLeague = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToDictionaryAsync(e => e.SaveAthleteId, e => e.LeagueId, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> leagueIdByAthlete = new(athletes.Count);
+        foreach (SaveAthleteEntity athlete in athletes)
+        {
+            if (membershipLeague.TryGetValue(athlete.Id, out int? leagueId) && leagueId.HasValue)
+            {
+                if (!levels.ContainsKey(leagueId.Value))
+                {
+                    throw new InvalidOperationException(
+                        $"Source season {source.SeasonNumber} membership for athlete {athlete.Id} references unknown league {leagueId.Value}.");
+                }
+
+                leagueIdByAthlete[athlete.Id] = leagueId.Value;
+            }
+        }
+
+        return (leagueIdByAthlete, levels, names);
+    }
+
     internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> ScoreAllColors(SelectionInputs inputs, RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
-        return TakeTeams(RankAllColors(inputs, rules), rules);
+        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, _) = RankAllColors(inputs, rules);
+        return TakeTeams(rankings, rules);
     }
 
     internal static void ValidateEightColors(Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor, RulesV1 rules)

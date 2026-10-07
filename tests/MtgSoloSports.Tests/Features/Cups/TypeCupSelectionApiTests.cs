@@ -524,12 +524,24 @@ public sealed class TypeCupSelectionApiTests
         };
         context.Leagues.Add(league);
         await context.SaveChangesAsync().ConfigureAwait(false);
+        AddMemberships(context, season.Id, league.Id, activeIds, poolIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+        AddZeroStandings(context, season, league, activeIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+        AddZeroFinalWindow(context, season, league, activeIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+        return season.Id;
+    }
+
+    private static void AddMemberships(
+        SaveDbContext context, int seasonId, int leagueId, List<int> activeIds, List<int> poolIds)
+    {
         foreach (int id in activeIds)
         {
             context.SeasonMemberships.Add(new SeasonMembershipEntity
             {
-                SeasonId = season.Id,
-                LeagueId = league.Id,
+                SeasonId = seasonId,
+                LeagueId = leagueId,
                 SaveAthleteId = id,
                 SportingColor = 0,
                 DrawIndex = 0,
@@ -540,16 +552,62 @@ public sealed class TypeCupSelectionApiTests
         {
             context.SeasonMemberships.Add(new SeasonMembershipEntity
             {
-                SeasonId = season.Id,
+                SeasonId = seasonId,
                 LeagueId = null,
                 SaveAthleteId = id,
                 SportingColor = 0,
                 DrawIndex = 0,
             });
         }
+    }
 
-        await context.SaveChangesAsync().ConfigureAwait(false);
-        return season.Id;
+    private static void AddZeroStandings(
+        SaveDbContext context, SeasonEntity season, LeagueEntity league, List<int> activeIds)
+    {
+        for (int i = 0; i < activeIds.Count; i++)
+        {
+            context.SeasonStandings.Add(new SeasonStandingEntity
+            {
+                SeasonId = season.Id,
+                LeagueId = league.Id,
+                SaveAthleteId = activeIds[i],
+                SeasonRank = i + 1,
+                TotalChampionshipPointsThousandths = 0,
+                TotalStageScoreThousandths = 0,
+                TotalBaseScoreThousandths = 0,
+                StageWins = 0,
+                RoundWins = 0,
+                StagePlaceCountsJson = "[]",
+                RoundPlaceCountsJson = "[]",
+                IsChampion = i == 0,
+            });
+        }
+    }
+
+    private static void AddZeroFinalWindow(
+        SaveDbContext context, SeasonEntity season, LeagueEntity league, List<int> activeIds)
+    {
+        foreach (int id in activeIds)
+        {
+            for (int stage = 23; stage <= 32; stage++)
+            {
+                context.StageStandings.Add(new StageStandingEntity
+                {
+                    SeasonId = season.Id,
+                    LeagueId = league.Id,
+                    StageId = stage,
+                    StageNumber = stage,
+                    SaveAthleteId = id,
+                    StageRank = 10,
+                    StageScoreThousandths = 0,
+                    BaseScoreThousandths = 0,
+                    ChampionshipPointsThousandths = 0,
+                    RoundWins = 0,
+                    RoundPlaceCountsJson = "[]",
+                    EarnedBonusThousandths = 0,
+                });
+            }
+        }
     }
 
     private static async Task MarkSeasonCompleteAsync(SaveStore store, Guid saveId, int seasonNumber)

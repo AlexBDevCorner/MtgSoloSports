@@ -39,5 +39,10 @@ public sealed record GetColorCupSelectionReportResponse(
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
-        int PrestigeRaw);
+        int PrestigeRaw,
+        string? SourceLeagueName,
+        int? SourceLeagueLevel,
+        int StrengthFactorPermille,
+        int UnadjustedPerformanceThousandths,
+        int UnadjustedFormAggregate);
 }

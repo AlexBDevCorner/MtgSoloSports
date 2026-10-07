@@ -12,6 +12,11 @@ namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 /// once with the selection rows and replayed by the selection event; never
 /// recomputed, because nationality and honours change afterwards. Stored
 /// Brotli-compressed via <see cref="RoundPayloadCodec"/>.
+/// v2 (MSS-064) adds source-league strength explanation per candidate: source league
+/// name/level, competition-strength factor, unadjusted source-season championship
+/// points, adjusted performance raw, unadjusted final-ten-stage form aggregate and
+/// adjusted form raw. v1 payloads remain readable (missing fields decode to
+/// defaults) and are never rewritten.
 /// </summary>
 public sealed record TypeCupSelectionReportDocument(
     int Version,
@@ -23,7 +28,9 @@ public sealed record TypeCupSelectionReportDocument(
     IReadOnlyList<TypeCupSelectionReportDocument.Team> Teams,
     IReadOnlyList<TypeCupSelectionReportDocument.MissedType> MissedTypes)
 {
-    public const int PayloadVersion = 1;
+    public const int PayloadVersion = 2;
+
+    public const int LegacyPayloadVersion = 1;
 
     /// <summary>Top type-ranked athletes kept per team, in addition to the four members.</summary>
     public const int ShortlistSize = 12;
@@ -58,7 +65,12 @@ public sealed record TypeCupSelectionReportDocument(
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
-        int PrestigeRaw);
+        int PrestigeRaw,
+        string? SourceLeagueName = null,
+        int? SourceLeagueLevel = null,
+        int StrengthFactorPermille = 0,
+        int UnadjustedPerformanceThousandths = 0,
+        int UnadjustedFormAggregate = 0);
 
     /// <summary>Another type with four or more eligible athletes this athlete could represent.</summary>
     public sealed record Alternative(string CreatureType, int TypeRank, bool FieldsTeam);

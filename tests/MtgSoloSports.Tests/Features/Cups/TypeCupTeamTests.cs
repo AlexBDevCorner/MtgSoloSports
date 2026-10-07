@@ -832,6 +832,10 @@ public sealed class TypeCupTeamTests
         LeagueEntity league = await EnsureEvenLeagueAsync(context, season).ConfigureAwait(false);
         await AddEvenMembershipsAsync(context, season, league, activeIds, poolIds).ConfigureAwait(false);
         await context.SaveChangesAsync().ConfigureAwait(false);
+        AddZeroStandings(context, season, league, activeIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+        AddZeroFinalWindow(context, season, league, activeIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
         return season.Id;
     }
 
@@ -902,6 +906,55 @@ public sealed class TypeCupTeamTests
                     SaveAthleteId = id,
                     SportingColor = 0,
                     DrawIndex = 0,
+                });
+            }
+        }
+    }
+
+    private static void AddZeroStandings(
+        SaveDbContext context, SeasonEntity season, LeagueEntity league, List<int> activeIds)
+    {
+        for (int i = 0; i < activeIds.Count; i++)
+        {
+            context.SeasonStandings.Add(new SeasonStandingEntity
+            {
+                SeasonId = season.Id,
+                LeagueId = league.Id,
+                SaveAthleteId = activeIds[i],
+                SeasonRank = i + 1,
+                TotalChampionshipPointsThousandths = 0,
+                TotalStageScoreThousandths = 0,
+                TotalBaseScoreThousandths = 0,
+                StageWins = 0,
+                RoundWins = 0,
+                StagePlaceCountsJson = "[]",
+                RoundPlaceCountsJson = "[]",
+                IsChampion = i == 0,
+            });
+        }
+    }
+
+    private static void AddZeroFinalWindow(
+        SaveDbContext context, SeasonEntity season, LeagueEntity league, List<int> activeIds)
+    {
+        foreach (int id in activeIds)
+        {
+            for (int stage = 23; stage <= 32; stage++)
+            {
+                context.StageStandings.Add(new StageStandingEntity
+                {
+                    SeasonId = season.Id,
+                    LeagueId = league.Id,
+                    StageId = stage,
+                    StageNumber = stage,
+                    SaveAthleteId = id,
+                    StageRank = 10,
+                    StageScoreThousandths = 0,
+                    BaseScoreThousandths = 0,
+                    ChampionshipPointsThousandths = 0,
+                    RoundWins = 0,
+                    RoundPlaceCountsJson = "[]",
+                    EarnedBonusThousandths = 0,
                 });
             }
         }

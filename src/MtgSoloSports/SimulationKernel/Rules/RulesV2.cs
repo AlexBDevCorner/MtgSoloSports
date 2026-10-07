@@ -25,6 +25,14 @@ public sealed class RulesV2 : RulesV1
     public const int Feeder3BonusNumeratorDefault = 1;
     public const int Feeder3BonusDenominatorDefault = 4;
 
+    public const int CupSuperleagueStrengthPermilleDefault = 1000;
+
+    public const int CupFeeder1StrengthPermilleDefault = 800;
+
+    public const int CupFeeder2StrengthPermilleDefault = 600;
+
+    public const int CupFeeder3StrengthPermilleDefault = 400;
+
     private RulesV2(
         int sportingColorCount,
         int athletesPerSportingColor,
@@ -70,7 +78,11 @@ public sealed class RulesV2 : RulesV1
         int feeder2BonusNumerator,
         int feeder2BonusDenominator,
         int feeder3BonusNumerator,
-        int feeder3BonusDenominator)
+        int feeder3BonusDenominator,
+        int cupSuperleagueStrengthPermille,
+        int cupFeeder1StrengthPermille,
+        int cupFeeder2StrengthPermille,
+        int cupFeeder3StrengthPermille)
         : base(
             sportingColorCount,
             athletesPerSportingColor,
@@ -119,6 +131,10 @@ public sealed class RulesV2 : RulesV1
         Feeder2BonusDenominator = feeder2BonusDenominator;
         Feeder3BonusNumerator = feeder3BonusNumerator;
         Feeder3BonusDenominator = feeder3BonusDenominator;
+        CupSuperleagueStrengthPermille = cupSuperleagueStrengthPermille;
+        CupFeeder1StrengthPermille = cupFeeder1StrengthPermille;
+        CupFeeder2StrengthPermille = cupFeeder2StrengthPermille;
+        CupFeeder3StrengthPermille = cupFeeder3StrengthPermille;
     }
 
     public override int Version => RulesVersion;
@@ -139,6 +155,20 @@ public sealed class RulesV2 : RulesV1
 
     public int Feeder3BonusDenominator { get; }
 
+    /// <summary>
+    /// Versioned Cup selection competition-strength factors in permille (MSS-064).
+    /// Stored in every tiered save snapshot: Superleague 1000, F1 800, F2 600, F3 400.
+    /// Softer than the bonus 2×/1×/1/2×/1/4× scale by design so tier strength is
+    /// not counted three times at the same severity. Selection-rating only.
+    /// </summary>
+    public int CupSuperleagueStrengthPermille { get; }
+
+    public int CupFeeder1StrengthPermille { get; }
+
+    public int CupFeeder2StrengthPermille { get; }
+
+    public int CupFeeder3StrengthPermille { get; }
+
     public override bool SupportsLevel(LeagueLevel level) => true;
 
     public override TierBonusScale GetBonusScale(LeagueLevel level) => level switch
@@ -147,6 +177,15 @@ public sealed class RulesV2 : RulesV1
         LeagueLevel.Feeder1 => new TierBonusScale(Feeder1BonusNumerator, Feeder1BonusDenominator),
         LeagueLevel.Feeder2 => new TierBonusScale(Feeder2BonusNumerator, Feeder2BonusDenominator),
         LeagueLevel.Feeder3 => new TierBonusScale(Feeder3BonusNumerator, Feeder3BonusDenominator),
+        _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
+    };
+
+    public override int GetCupStrengthFactor(LeagueLevel level) => level switch
+    {
+        LeagueLevel.Superleague => CupSuperleagueStrengthPermille,
+        LeagueLevel.Feeder1 => CupFeeder1StrengthPermille,
+        LeagueLevel.Feeder2 => CupFeeder2StrengthPermille,
+        LeagueLevel.Feeder3 => CupFeeder3StrengthPermille,
         _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
     };
 
@@ -213,7 +252,11 @@ public sealed class RulesV2 : RulesV1
             Feeder2BonusNumeratorDefault,
             Feeder2BonusDenominatorDefault,
             Feeder3BonusNumeratorDefault,
-            Feeder3BonusDenominatorDefault);
+            Feeder3BonusDenominatorDefault,
+            CupSuperleagueStrengthPermilleDefault,
+            CupFeeder1StrengthPermilleDefault,
+            CupFeeder2StrengthPermilleDefault,
+            CupFeeder3StrengthPermilleDefault);
         candidate.Validate();
         return candidate;
     }
@@ -227,7 +270,11 @@ public sealed class RulesV2 : RulesV1
         int feeder2Numerator = Feeder2BonusNumeratorDefault,
         int feeder2Denominator = Feeder2BonusDenominatorDefault,
         int feeder3Numerator = Feeder3BonusNumeratorDefault,
-        int feeder3Denominator = Feeder3BonusDenominatorDefault)
+        int feeder3Denominator = Feeder3BonusDenominatorDefault,
+        int cupSuperleagueStrengthPermille = CupSuperleagueStrengthPermilleDefault,
+        int cupFeeder1StrengthPermille = CupFeeder1StrengthPermilleDefault,
+        int cupFeeder2StrengthPermille = CupFeeder2StrengthPermilleDefault,
+        int cupFeeder3StrengthPermille = CupFeeder3StrengthPermilleDefault)
     {
         RulesV1Overrides active = overrides ?? new RulesV1Overrides();
         RulesV1 core = RulesV1.Create(active);
@@ -276,7 +323,11 @@ public sealed class RulesV2 : RulesV1
             feeder2Numerator,
             feeder2Denominator,
             feeder3Numerator,
-            feeder3Denominator);
+            feeder3Denominator,
+            cupSuperleagueStrengthPermille,
+            cupFeeder1StrengthPermille,
+            cupFeeder2StrengthPermille,
+            cupFeeder3StrengthPermille);
         candidate.Validate();
         return candidate;
     }
@@ -312,6 +363,44 @@ public sealed class RulesV2 : RulesV1
             Feeder3BonusNumeratorDefault,
             Feeder3BonusDenominatorDefault,
             LeagueLevel.Feeder3);
+        ValidateCupStrengthFactors();
+    }
+
+    private void ValidateCupStrengthFactors()
+    {
+        if (CupSuperleagueStrengthPermille <= 0
+            || CupFeeder1StrengthPermille <= 0
+            || CupFeeder2StrengthPermille <= 0
+            || CupFeeder3StrengthPermille <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Cup competition-strength factors must all be positive, was " +
+                $"{CupSuperleagueStrengthPermille}/{CupFeeder1StrengthPermille}/" +
+                $"{CupFeeder2StrengthPermille}/{CupFeeder3StrengthPermille}.");
+        }
+
+        if (!(CupSuperleagueStrengthPermille > CupFeeder1StrengthPermille
+            && CupFeeder1StrengthPermille > CupFeeder2StrengthPermille
+            && CupFeeder2StrengthPermille > CupFeeder3StrengthPermille))
+        {
+            throw new InvalidOperationException(
+                $"Cup competition-strength factors must satisfy Superleague > F1 > F2 > F3 > 0, was " +
+                $"{CupSuperleagueStrengthPermille}/{CupFeeder1StrengthPermille}/" +
+                $"{CupFeeder2StrengthPermille}/{CupFeeder3StrengthPermille}.");
+        }
+
+        if (CupSuperleagueStrengthPermille != CupSuperleagueStrengthPermilleDefault
+            || CupFeeder1StrengthPermille != CupFeeder1StrengthPermilleDefault
+            || CupFeeder2StrengthPermille != CupFeeder2StrengthPermilleDefault
+            || CupFeeder3StrengthPermille != CupFeeder3StrengthPermilleDefault)
+        {
+            throw new InvalidOperationException(
+                $"Cup competition-strength factors must be " +
+                $"{CupSuperleagueStrengthPermilleDefault}/{CupFeeder1StrengthPermilleDefault}/" +
+                $"{CupFeeder2StrengthPermilleDefault}/{CupFeeder3StrengthPermilleDefault} permille, was " +
+                $"{CupSuperleagueStrengthPermille}/{CupFeeder1StrengthPermille}/" +
+                $"{CupFeeder2StrengthPermille}/{CupFeeder3StrengthPermille}.");
+        }
     }
 
     private static void ValidateTierScale(

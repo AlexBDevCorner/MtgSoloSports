@@ -40,6 +40,10 @@ public sealed record RulesV2SnapshotDocument(
     int Feeder2BonusDenominator,
     int Feeder3BonusNumerator,
     int Feeder3BonusDenominator,
+    int CupSuperleagueStrengthPermille,
+    int CupFeeder1StrengthPermille,
+    int CupFeeder2StrengthPermille,
+    int CupFeeder3StrengthPermille,
     int ColorCupColorCount,
     int ColorCupTeamSize,
     int ColorCupIndividualRounds,
@@ -97,14 +101,12 @@ public sealed record RulesV2SnapshotDocument(
             rules.FeederAutoPromotedCount,
             rules.FeederQualifierCount,
             rules.InauguralQualifiedPerLeague,
-            rules.SuperleagueBonusNumerator,
-            rules.SuperleagueBonusDenominator,
-            rules.Feeder1BonusNumerator,
-            rules.Feeder1BonusDenominator,
-            rules.Feeder2BonusNumerator,
-            rules.Feeder2BonusDenominator,
-            rules.Feeder3BonusNumerator,
-            rules.Feeder3BonusDenominator,
+            rules.SuperleagueBonusNumerator, rules.SuperleagueBonusDenominator,
+            rules.Feeder1BonusNumerator, rules.Feeder1BonusDenominator,
+            rules.Feeder2BonusNumerator, rules.Feeder2BonusDenominator,
+            rules.Feeder3BonusNumerator, rules.Feeder3BonusDenominator,
+            rules.CupSuperleagueStrengthPermille, rules.CupFeeder1StrengthPermille,
+            rules.CupFeeder2StrengthPermille, rules.CupFeeder3StrengthPermille,
             rules.ColorCupColorCount,
             rules.ColorCupTeamSize,
             rules.ColorCupIndividualRounds,
@@ -147,7 +149,11 @@ public sealed record RulesV2SnapshotDocument(
             Feeder2BonusNumerator,
             Feeder2BonusDenominator,
             Feeder3BonusNumerator,
-            Feeder3BonusDenominator);
+            Feeder3BonusDenominator,
+            ResolveStrength(CupSuperleagueStrengthPermille, RulesV2.CupSuperleagueStrengthPermilleDefault),
+            ResolveStrength(CupFeeder1StrengthPermille, RulesV2.CupFeeder1StrengthPermilleDefault),
+            ResolveStrength(CupFeeder2StrengthPermille, RulesV2.CupFeeder2StrengthPermilleDefault),
+            ResolveStrength(CupFeeder3StrengthPermille, RulesV2.CupFeeder3StrengthPermilleDefault));
 
         if (rules.Version != Version)
         {
@@ -214,6 +220,8 @@ public sealed record RulesV2SnapshotDocument(
     }
 
     private static int ResolvePrestige(int stored, int @default) => stored == 0 ? @default : stored;
+
+    private static int ResolveStrength(int stored, int @default) => stored == 0 ? @default : stored;
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
