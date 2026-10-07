@@ -25,13 +25,10 @@ public sealed class AthleteRecordHoldingsTests
     [Fact]
     public async Task Holdings_MatchAuthoritativeCareerRecords_IncludingTies()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-holdings-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync(
-                "Holdings Match", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            await new CompleteSeasonHandler(store).HandleAsync(saveId);
 
             GetRecordsResponse records = await new GetRecordsHandler(store).HandleAsync(saveId);
             records.Records.Count.ShouldBe(RecordKey.All.Count);
@@ -54,13 +51,10 @@ public sealed class AthleteRecordHoldingsTests
     [Fact]
     public async Task Holdings_DoNotDecodeScoringPayloads()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-holdings-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync(
-                "Holdings No Payloads", 555007UL, 666008UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            await new CompleteSeasonHandler(store).HandleAsync(saveId);
 
             int athleteId = await FirstAthleteAsync(store, saveId);
             GetAthleteRecordHoldingsHandler holdingsHandler = new(store);

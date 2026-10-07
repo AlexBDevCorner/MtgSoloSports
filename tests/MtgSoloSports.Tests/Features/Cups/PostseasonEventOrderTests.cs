@@ -18,7 +18,8 @@ public sealed class PostseasonEventOrderTests
     [Fact]
     public async Task Team_WhileIndividualInProgress_ConflictsAndIndividualStillCompletes()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(2525UL, 2626UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventorder-");
         try
         {
             PlayColorCupIndividualRoundHandler individualStep = new(store);
@@ -43,7 +44,8 @@ public sealed class PostseasonEventOrderTests
     [Fact]
     public async Task Individual_WhileTeamInProgress_Conflicts()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(2727UL, 2828UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventorder-");
         try
         {
             PlayColorCupTeamRoundHandler teamStep = new(store);

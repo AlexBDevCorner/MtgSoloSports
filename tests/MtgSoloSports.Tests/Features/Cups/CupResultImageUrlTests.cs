@@ -17,7 +17,8 @@ public sealed class CupResultImageUrlTests
     [Fact]
     public async Task ColorCupResults_CarryCardArt_AndKeepChecksums()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(6161UL, 7272UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cupimage-");
         try
         {
             await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
