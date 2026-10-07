@@ -154,6 +154,141 @@ public sealed class CupTeamHistoryBuilderTests
         Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("athlete 2");
     }
 
+    [Fact]
+    public void Build_TypeTournamentFinalist_PreservesQualificationAndFinal()
+    {
+        Input input = TypeTournamentFinalist();
+
+        CupTeamHistoryResponse response = Build(input);
+
+        // One season number, two tournament stages: the Final leads so the
+        // official result stays prominent, qualification follows.
+        response.Seasons.Count.ShouldBe(2);
+        response.Seasons.ShouldAllBe(s => s.SourceSeasonNumber == 2);
+        CupTeamHistoryResponse.Season final = response.Seasons[0];
+        final.TournamentPhase.ShouldBe(2);
+        final.TournamentStage.ShouldBe("Final");
+        final.TeamRank.ShouldBe(2);
+        final.Medal.ShouldBe("Silver");
+        final.QualifiedForFinal.ShouldBeTrue();
+        final.EliminatedInQualification.ShouldBeFalse();
+        CupTeamHistoryResponse.Season qual = response.Seasons[1];
+        qual.TournamentPhase.ShouldBe(1);
+        qual.QualificationGroup.ShouldBe(1);
+        qual.TournamentStage.ShouldBe("Qualification Group A");
+        qual.TeamRank.ShouldBe(5);
+        qual.Medal.ShouldBe("None");
+        qual.QualifiedForFinal.ShouldBeTrue();
+        qual.EliminatedInQualification.ShouldBeFalse();
+
+        // Stage-aware legs: the Final entry carries Final legs, the
+        // qualification entry carries qualification legs, never merged.
+        final.Squad.Select(m => m.Leg!.GroupRank).ShouldBe([1, 1, 2, 3]);
+        final.Squad.Select(m => m.Leg!.GroupScoreThousandths).ShouldAllBe(v => v == 150_000);
+        qual.Squad.Select(m => m.Leg!.GroupRank).ShouldBe([3, 4, 5, 6]);
+        qual.Squad.Select(m => m.Leg!.GroupScoreThousandths).ShouldAllBe(v => v == 60_000);
+
+        // Qualification victory is not an honour; only the Final silver counts.
+        response.Honours.Editions.ShouldBe(1);
+        response.Honours.Gold.ShouldBe(0);
+        response.Honours.Silver.ShouldBe(1);
+        response.Honours.Bronze.ShouldBe(0);
+        response.Honours.BestRank.ShouldBe(2);
+        response.Honours.BestRankSeasonNumber.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Build_TypeTournamentEliminated_ShowsQualificationCutoff()
+    {
+        Input source = TypeTournamentFinalist();
+        StandingRow qualRow = source.Standings.Single(s => s.TournamentPhase == 1);
+        StandingRow eliminated = qualRow with { QualifiedForFinal = false, EliminatedInQualification = true };
+        Input input = source with
+        {
+            Standings = [eliminated],
+            Legs = source.Legs.Where(l => l.TournamentPhase == 1).ToList(),
+        };
+
+        CupTeamHistoryResponse response = Build(input);
+
+        CupTeamHistoryResponse.Season qualSeason = response.Seasons.Single();
+        qualSeason.SourceSeasonNumber.ShouldBe(2);
+        qualSeason.TournamentStage.ShouldBe("Qualification Group A");
+        qualSeason.TeamRank.ShouldBe(5);
+        qualSeason.EliminatedInQualification.ShouldBeTrue();
+        qualSeason.QualifiedForFinal.ShouldBeFalse();
+        response.Honours.Gold.ShouldBe(0);
+        response.Honours.Silver.ShouldBe(0);
+        response.Honours.Bronze.ShouldBe(0);
+        response.Honours.BestRank.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Build_DuplicateStageStanding_Aborts()
+    {
+        Input source = TypeTournamentFinalist();
+        StandingRow duplicate = source.Standings.First(s => s.TournamentPhase == 2);
+        Input input = source with { Standings = [.. source.Standings, duplicate] };
+        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("duplicate");
+    }
+
+    [Fact]
+    public void Build_LegWithoutStageStanding_Aborts()
+    {
+        Input source = TypeTournamentFinalist();
+        Input input = source with
+        {
+            Standings = source.Standings.Where(s => s.TournamentPhase == 2).ToList(),
+        };
+        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("without a matching tournament stage");
+    }
+
+    /// <summary>Goblin: Season 2 squad 11..14, 5th in Qualification Group A then 2nd in the Final.</summary>
+    private static Input TypeTournamentFinalist()
+    {
+        static SelectionRow Pick(int athlete, int rank) =>
+            new(2, athlete, rank, 900_000 - (rank * 10_000), 1000, 800, 600, 400, null);
+
+        return new Input(
+            Save,
+            "Type",
+            "Goblin",
+            "Goblin",
+            TeamSize: 4,
+            Selections:
+            [
+                Pick(11, 1), Pick(12, 2), Pick(13, 3), Pick(14, 4),
+            ],
+            Standings:
+            [
+                new StandingRow(2, 5, 210_000, 190_000, 1, 3, "None", TournamentPhase: 1, QualificationGroup: 1, IsHonourEligible: false, QualifiedForFinal: true, EliminatedInQualification: false),
+                new StandingRow(2, 2, 500_000, 470_000, 2, 6, "Silver", TournamentPhase: 2, QualificationGroup: 0, IsHonourEligible: true, QualifiedForFinal: true, EliminatedInQualification: false),
+            ],
+            Legs:
+            [
+                new LegRow(2, 11, 1, 3, 60_000, 55_000, 1, TournamentPhase: 1, QualificationGroup: 1),
+                new LegRow(2, 12, 2, 4, 60_000, 55_000, 1, TournamentPhase: 1, QualificationGroup: 1),
+                new LegRow(2, 13, 3, 5, 60_000, 55_000, 0, TournamentPhase: 1, QualificationGroup: 1),
+                new LegRow(2, 14, 4, 6, 60_000, 55_000, 0, TournamentPhase: 1, QualificationGroup: 1),
+                new LegRow(2, 11, 1, 1, 150_000, 140_000, 3, TournamentPhase: 2, QualificationGroup: 0),
+                new LegRow(2, 12, 2, 1, 150_000, 140_000, 2, TournamentPhase: 2, QualificationGroup: 0),
+                new LegRow(2, 13, 3, 2, 150_000, 140_000, 1, TournamentPhase: 2, QualificationGroup: 0),
+                new LegRow(2, 14, 4, 3, 150_000, 140_000, 0, TournamentPhase: 2, QualificationGroup: 0),
+            ],
+            Individuals: [],
+            Seasons: new Dictionary<int, SeasonFacts>
+            {
+                [2] = new SeasonFacts(40, AnyRoundPlayed: true, IndividualComplete: true),
+            },
+            Athletes: new Dictionary<int, SaveAthleteEntity>
+            {
+                [11] = new SaveAthleteEntity { Id = 11, Name = "GobA", ImageUrl = null },
+                [12] = new SaveAthleteEntity { Id = 12, Name = "GobB", ImageUrl = null },
+                [13] = new SaveAthleteEntity { Id = 13, Name = "GobC", ImageUrl = null },
+                [14] = new SaveAthleteEntity { Id = 14, Name = "GobD", ImageUrl = null },
+            });
+    }
+
     /// <summary>Red: Season 1 squad 1,2,3,4 finished 3rd; Season 3 squad 1,2,3,5 won.</summary>
     private static Input TwoEditions()
     {

@@ -7,7 +7,10 @@ namespace MtgSoloSports.Features.Cups.CupHistory;
 /// Color and Type slices load their own tables and hand over neutral rows, so
 /// both Cups share one set of rules: a squad must have exactly the Cup's team
 /// size, every leg must belong to a squad member and every standing to a
-/// selected season. Violations abort; nothing is repaired.
+/// selected season. A Type Cup tournament season may hold several stages for
+/// the same team (one qualification table plus the Final for finalists); each
+/// stage becomes its own season entry so qualification and Final history are
+/// both preserved. Violations abort; nothing is repaired.
 /// </summary>
 public static class CupTeamHistoryBuilder
 {
@@ -45,7 +48,9 @@ public static class CupTeamHistoryBuilder
         int GroupRank,
         int GroupScoreThousandths,
         int BaseScoreThousandths,
-        int RoundWins);
+        int RoundWins,
+        int TournamentPhase = 0,
+        int QualificationGroup = 0);
 
     public sealed record IndividualRow(int SeasonNumber, int AthleteId, int CupRank, int CupScoreThousandths, string Medal);
 
@@ -94,7 +99,7 @@ public static class CupTeamHistoryBuilder
             input.TeamKey,
             input.TeamName,
             BuildHonours(input, seasonNumbers.Count),
-            seasonNumbers.Select(number => BuildSeason(input, number)).ToList(),
+            seasonNumbers.SelectMany(number => BuildSeasons(input, number)).ToList(),
             BuildRoster(input),
             input.Individuals
                 .Where(i => !string.Equals(i.Medal, NoMedal, StringComparison.Ordinal))
@@ -135,7 +140,37 @@ public static class CupTeamHistoryBuilder
             official.Sum(s => (long)s.TeamScoreThousandths));
     }
 
-    private static CupTeamHistoryResponse.Season BuildSeason(Input input, int seasonNumber)
+    private static List<CupTeamHistoryResponse.Season> BuildSeasons(Input input, int seasonNumber)
+    {
+        List<SelectionRow> squad = LoadSquad(input, seasonNumber);
+        SeasonFacts facts = LoadFacts(input, seasonNumber);
+        List<LegRow> legs = input.Legs.Where(l => l.SeasonNumber == seasonNumber).ToList();
+        ThrowOnStrayLeg(input, seasonNumber, squad, legs);
+        List<StandingRow> standings = input.Standings
+            .Where(s => s.SeasonNumber == seasonNumber)
+            .ToList();
+        ThrowOnDuplicateStage(input, seasonNumber, standings);
+
+        if (standings.Count == 0)
+        {
+            return [BuildStage(input, seasonNumber, squad, facts, null, legs)];
+        }
+
+        List<StandingRow> ordered = OrderStages(standings);
+        ThrowOnOrphanStageLeg(input, seasonNumber, legs, ordered);
+
+        return ordered
+            .Select(standing => BuildStage(
+                input,
+                seasonNumber,
+                squad,
+                facts,
+                standing,
+                legs.Where(l => l.TournamentPhase == standing.TournamentPhase && l.QualificationGroup == standing.QualificationGroup).ToList()))
+            .ToList();
+    }
+
+    private static List<SelectionRow> LoadSquad(Input input, int seasonNumber)
     {
         List<SelectionRow> squad = input.Selections
             .Where(s => s.SeasonNumber == seasonNumber)
@@ -147,26 +182,78 @@ public static class CupTeamHistoryBuilder
                 $"{input.Cup} Cup team '{input.TeamKey}' has {squad.Count} selected athletes in Season {seasonNumber}; expected {input.TeamSize}.");
         }
 
+        return squad;
+    }
+
+    private static SeasonFacts LoadFacts(Input input, int seasonNumber)
+    {
         if (!input.Seasons.TryGetValue(seasonNumber, out SeasonFacts? facts))
         {
             throw new InvalidOperationException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has no edition facts for Season {seasonNumber}.");
         }
 
+        return facts;
+    }
+
+    private static void ThrowOnStrayLeg(Input input, int seasonNumber, List<SelectionRow> squad, List<LegRow> legs)
+    {
         HashSet<int> squadIds = squad.Select(s => s.AthleteId).ToHashSet();
-        List<LegRow> legs = input.Legs.Where(l => l.SeasonNumber == seasonNumber).ToList();
         LegRow? stray = legs.FirstOrDefault(l => !squadIds.Contains(l.AthleteId));
         if (stray is not null)
         {
             throw new InvalidOperationException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has a Season {seasonNumber} leg for athlete {stray.AthleteId}, who is not in the squad.");
         }
+    }
 
-        StandingRow? standing = input.Standings.SingleOrDefault(s => s.SeasonNumber == seasonNumber);
+    private static void ThrowOnDuplicateStage(Input input, int seasonNumber, List<StandingRow> standings)
+    {
+        // A team holds at most one standing per tournament stage: the
+        // (season, phase, qualification-group) key is the persisted stage
+        // identity. Duplicates mean corrupt standings, never a merge.
+        if (standings.GroupBy(s => (s.TournamentPhase, s.QualificationGroup)).Any(g => g.Count() > 1))
+        {
+            throw new InvalidOperationException(
+                $"{input.Cup} Cup team '{input.TeamKey}' has duplicate Season {seasonNumber} standings for one tournament stage.");
+        }
+    }
+
+    private static List<StandingRow> OrderStages(List<StandingRow> standings)
+    {
+        // Official (honour-eligible) stages first so the Final leads
+        // qualification history for finalists; qualification groups follow in
+        // persisted group order.
+        return standings
+            .OrderByDescending(s => s.IsHonourEligible)
+            .ThenByDescending(s => s.TournamentPhase)
+            .ThenBy(s => s.QualificationGroup)
+            .ToList();
+    }
+
+    private static void ThrowOnOrphanStageLeg(Input input, int seasonNumber, List<LegRow> legs, List<StandingRow> ordered)
+    {
+        HashSet<(int Phase, int Qual)> stages = ordered.Select(s => (s.TournamentPhase, s.QualificationGroup)).ToHashSet();
+        LegRow? orphanLeg = legs.FirstOrDefault(l => !stages.Contains((l.TournamentPhase, l.QualificationGroup)));
+        if (orphanLeg is not null)
+        {
+            throw new InvalidOperationException(
+                $"{input.Cup} Cup team '{input.TeamKey}' has a Season {seasonNumber} leg without a matching tournament stage standing.");
+        }
+    }
+
+    private static CupTeamHistoryResponse.Season BuildStage(
+        Input input,
+        int seasonNumber,
+        List<SelectionRow> squad,
+        SeasonFacts facts,
+        StandingRow? standing,
+        List<LegRow> stageLegs)
+    {
         bool complete = standing is not null && facts.IndividualComplete;
-        bool anyPlayed = facts.AnyRoundPlayed || standing is not null || legs.Count > 0;
+        bool anyPlayed = facts.AnyRoundPlayed || standing is not null || stageLegs.Count > 0;
         List<CupTeamHistoryResponse.SquadMember> members = squad
-            .Select(pick => BuildMember(input, pick, legs, facts.TeamCount))
+            .Select(pick => BuildMember(input, pick, stageLegs, facts.TeamCount))
             .ToList();
         return new CupTeamHistoryResponse.Season(
             seasonNumber,

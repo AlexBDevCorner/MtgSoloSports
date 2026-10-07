@@ -128,7 +128,12 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
         }
       >
         {history.seasons.map((season) => (
-          <SeasonBlock key={season.sourceSeasonNumber} saveId={saveId} cup={cup} season={season} />
+          <SeasonBlock
+            key={`${season.sourceSeasonNumber}:${season.tournamentPhase ?? 0}:${season.qualificationGroup ?? 0}`}
+            saveId={saveId}
+            cup={cup}
+            season={season}
+          />
         ))}
       </Card>
 
@@ -229,7 +234,10 @@ function SeasonBlock({ saveId, cup, season }: { saveId: string; cup: CupKind; se
         ? ' · Qualified for Final'
         : '';
   return (
-    <section className="team-season" aria-label={`Season ${season.sourceSeasonNumber}`}>
+    <section
+      className="team-season"
+      aria-label={season.tournamentStage ? `Season ${season.sourceSeasonNumber} ${season.tournamentStage}` : `Season ${season.sourceSeasonNumber}`}
+    >
       <div className="team-season-head">
         <Link to={cupEditionPath(saveId, cup, season.sourceSeasonNumber)} className="card-name card-link">
           Season {season.sourceSeasonNumber}

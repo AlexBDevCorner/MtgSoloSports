@@ -49,26 +49,9 @@ public sealed class GetTypeCupTeamHistoryHandler
             await LoadTeamRowsAsync(context, teamKey, cancellationToken).ConfigureAwait(false);
 
         List<int> seasons = selections.Select(s => s.SourceSeasonNumber).Distinct().ToList();
-        List<int> roundSeasons = await context.TypeCupTeamRounds
-            .AsNoTracking().Where(e => seasons.Contains(e.SourceSeasonNumber))
-            .Select(e => e.SourceSeasonNumber).Distinct().ToListAsync(cancellationToken).ConfigureAwait(false);
-        // Seasons with any persisted Final (or legacy) result: a qualification
-        // table in such a season means the team was eliminated; without a Final
-        // the tournament is still in progress and qualification fate is pending.
-        HashSet<int> seasonsWithFinal = (await context.TypeCupTeamStandings
-            .AsNoTracking()
-            .Where(e => seasons.Contains(e.SourceSeasonNumber)
-                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
-                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
-            .Select(e => e.SourceSeasonNumber)
-            .Distinct()
-            .ToListAsync(cancellationToken).ConfigureAwait(false)).ToHashSet();
-        Dictionary<int, CupTeamHistoryBuilder.SeasonFacts> facts = seasons.ToDictionary(
-            season => season,
-            season => new CupTeamHistoryBuilder.SeasonFacts(
-                fields.Where(f => f.SourceSeasonNumber == season).Select(f => f.CreatureType).Distinct(StringComparer.Ordinal).Count(),
-                roundSeasons.Contains(season),
-                IndividualComplete: true));
+        HashSet<int> seasonsWithFinal = await LoadSeasonsWithFinalAsync(context, seasons, cancellationToken).ConfigureAwait(false);
+        HashSet<int> teamFinalSeasons = TeamFinalSeasons(standings);
+        Dictionary<int, CupTeamHistoryBuilder.SeasonFacts> facts = await LoadFactsAsync(context, fields, seasons, cancellationToken).ConfigureAwait(false);
 
         Dictionary<(int Season, int Athlete), string> reasons =
             await LoadReasonsAsync(context, selections, teamKey, cancellationToken).ConfigureAwait(false);
@@ -84,7 +67,7 @@ public sealed class GetTypeCupTeamHistoryHandler
             teamKey,
             rules.TypeCupMinTeamSize,
             MapSelections(selections, reasons),
-            MapStandings(standings, seasonsWithFinal),
+            MapStandings(standings, seasonsWithFinal, teamFinalSeasons),
             MapLegs(legs),
             [],
             facts,
@@ -93,6 +76,49 @@ public sealed class GetTypeCupTeamHistoryHandler
 
     private static bool IsTeam(string creatureType, string teamKey) =>
         string.Equals(creatureType, teamKey, StringComparison.Ordinal);
+
+    private static async Task<HashSet<int>> LoadSeasonsWithFinalAsync(
+        SaveDbContext context,
+        List<int> seasons,
+        CancellationToken cancellationToken)
+    {
+        // Seasons with any persisted Final (or legacy) result anywhere in the
+        // save: a qualification table in such a season is decided. Whether
+        // this team was eliminated or advanced depends on its own rows.
+        return (await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasons.Contains(e.SourceSeasonNumber)
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
+            .Select(e => e.SourceSeasonNumber)
+            .Distinct()
+            .ToListAsync(cancellationToken).ConfigureAwait(false)).ToHashSet();
+    }
+
+    private static HashSet<int> TeamFinalSeasons(List<TypeCupTeamStandingEntity> standings)
+    {
+        return standings
+            .Where(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            .Select(e => e.SourceSeasonNumber)
+            .ToHashSet();
+    }
+
+    private static async Task<Dictionary<int, CupTeamHistoryBuilder.SeasonFacts>> LoadFactsAsync(
+        SaveDbContext context,
+        List<TypeCupSelectionEntity> fields,
+        List<int> seasons,
+        CancellationToken cancellationToken)
+    {
+        List<int> roundSeasons = await context.TypeCupTeamRounds
+            .AsNoTracking().Where(e => seasons.Contains(e.SourceSeasonNumber))
+            .Select(e => e.SourceSeasonNumber).Distinct().ToListAsync(cancellationToken).ConfigureAwait(false);
+        return seasons.ToDictionary(
+            season => season,
+            season => new CupTeamHistoryBuilder.SeasonFacts(
+                fields.Where(f => f.SourceSeasonNumber == season).Select(f => f.CreatureType).Distinct(StringComparer.Ordinal).Count(),
+                roundSeasons.Contains(season),
+                IndividualComplete: true));
+    }
 
     private static async Task<Dictionary<(int Season, int Athlete), string>> LoadReasonsAsync(
         SaveDbContext context,
@@ -114,13 +140,17 @@ public sealed class GetTypeCupTeamHistoryHandler
         List<TypeCupSelectionEntity> fields = await context.TypeCupSelections
             .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
         List<TypeCupSelectionEntity> selections = fields.Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
+        // Tournament-stage aware: preserve every stage for this team (a
+        // finalist keeps both its qualification table and the Final) so team
+        // history never collapses stages. The stage-aware builder selects the
+        // official result per stage instead of SingleOrDefault per season.
         List<TypeCupTeamStandingEntity> allStandings = (await context.TypeCupTeamStandings
             .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
             .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
         List<TypeCupTeamGroupStandingEntity> allLegs = (await context.TypeCupTeamGroupStandings
             .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
             .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
-        return (fields, selections, SelectOfficialStandings(allStandings), SelectOfficialLegs(allStandings, allLegs));
+        return (fields, selections, allStandings, allLegs);
     }
 
     /// <summary>The stored reason of each member of this team, per edition that has a report.</summary>
@@ -167,7 +197,8 @@ public sealed class GetTypeCupTeamHistoryHandler
 
     private static List<CupTeamHistoryBuilder.StandingRow> MapStandings(
         List<TypeCupTeamStandingEntity> standings,
-        HashSet<int> seasonsWithFinal)
+        HashSet<int> seasonsWithFinal,
+        HashSet<int> teamFinalSeasons)
     {
         return standings.Select(s => new CupTeamHistoryBuilder.StandingRow(
             s.SourceSeasonNumber,
@@ -180,9 +211,12 @@ public sealed class GetTypeCupTeamHistoryHandler
             s.TournamentPhase,
             s.QualificationGroup,
             IsHonourEligible: s.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification,
-            QualifiedForFinal: s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final,
+            QualifiedForFinal: s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final
+                || (s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
+                    && teamFinalSeasons.Contains(s.SourceSeasonNumber)),
             EliminatedInQualification: s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
-                && seasonsWithFinal.Contains(s.SourceSeasonNumber))).ToList();
+                && seasonsWithFinal.Contains(s.SourceSeasonNumber)
+                && !teamFinalSeasons.Contains(s.SourceSeasonNumber))).ToList();
     }
 
     private static List<CupTeamHistoryBuilder.LegRow> MapLegs(List<TypeCupTeamGroupStandingEntity> legs)
@@ -194,58 +228,8 @@ public sealed class GetTypeCupTeamHistoryHandler
             l.GroupRank,
             l.GroupScoreThousandths,
             l.BaseScoreThousandths,
-            l.RoundWins)).ToList();
-    }
-
-    private static List<TypeCupTeamStandingEntity> SelectOfficialStandings(
-        List<TypeCupTeamStandingEntity> all)
-    {
-        List<TypeCupTeamStandingEntity> official = new(all.Count);
-        foreach (IGrouping<int, TypeCupTeamStandingEntity> season in all.GroupBy(e => e.SourceSeasonNumber))
-        {
-            TypeCupTeamStandingEntity? legacy = season.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
-            if (legacy is not null)
-            {
-                official.Add(legacy);
-                continue;
-            }
-
-            TypeCupTeamStandingEntity? final = season.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final);
-            if (final is not null)
-            {
-                official.Add(final);
-                continue;
-            }
-
-            official.AddRange(season);
-        }
-
-        return official;
-    }
-
-    private static List<TypeCupTeamGroupStandingEntity> SelectOfficialLegs(
-        List<TypeCupTeamStandingEntity> allStandings,
-        List<TypeCupTeamGroupStandingEntity> allLegs)
-    {
-        HashSet<(int Season, int Phase, int Qual)> officialStages = allStandings
-            .GroupBy(e => e.SourceSeasonNumber)
-            .SelectMany(g =>
-            {
-                TypeCupTeamStandingEntity? legacy = g.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
-                if (legacy is not null)
-                {
-                    return [(g.Key, legacy.TournamentPhase, legacy.QualificationGroup)];
-                }
-
-                TypeCupTeamStandingEntity? final = g.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final);
-                if (final is not null)
-                {
-                    return [(g.Key, final.TournamentPhase, final.QualificationGroup)];
-                }
-
-                return g.Select(e => (e.SourceSeasonNumber, e.TournamentPhase, e.QualificationGroup)).Distinct().ToList();
-            })
-            .ToHashSet();
-        return allLegs.Where(l => officialStages.Contains((l.SourceSeasonNumber, l.TournamentPhase, l.QualificationGroup))).ToList();
+            l.RoundWins,
+            l.TournamentPhase,
+            l.QualificationGroup)).ToList();
     }
 }
