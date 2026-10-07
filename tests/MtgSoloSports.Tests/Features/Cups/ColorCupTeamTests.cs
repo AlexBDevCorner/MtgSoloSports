@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Cups.GetColorCupSelection;
 using MtgSoloSports.Features.Cups.GetColorCupTeamResult;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
@@ -42,18 +43,15 @@ public sealed class ColorCupTeamTests
     [Fact]
     public async Task Run_EvenSeason_Conflicts()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Team Even", 3033UL, 4044UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            SelectColorCupTeamsHandler select = new(store);
-            await select.HandleAsync(created.Detail.SaveId, sourceSeasonNumber: 1);
-            await MarkSeasonTwoCompleteAsync(store, created.Detail.SaveId);
+            await MarkSeasonTwoCompleteAsync(store, saveId);
 
             RunColorCupTeamHandler handler = new(store);
             await Should.ThrowAsync<RunColorCupTeamConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId, sourceSeasonNumber: 2));
+                () => handler.HandleAsync(saveId, sourceSeasonNumber: 2));
         }
         finally
         {
@@ -81,15 +79,12 @@ public sealed class ColorCupTeamTests
     [Fact]
     public async Task WrongRankGroup_Aborts()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Team Wrong", 7077UL, 8088UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            SelectColorCupTeamsHandler select = new(store);
-            await select.HandleAsync(created.Detail.SaveId);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1);
             List<ColorCupSelectionEntity> selection = await context.ColorCupSelections.AsNoTracking()
                 .Where(e => e.SourceSeasonId == source.Id).ToListAsync();
@@ -123,27 +118,25 @@ public sealed class ColorCupTeamTests
     [Fact]
     public async Task Run_AfterSelection_ProducesFourGroupsEightRoundsWithMedalsHonourAndPreservesHistory()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Team Full", 9091UL, 1011UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            SelectColorCupTeamsHandler select = new(store);
-            SelectColorCupTeamsResponse selection = await select.HandleAsync(created.Detail.SaveId);
+            GetColorCupSelectionResponse selection = await new GetColorCupSelectionHandler(store).HandleAsync(saveId, sourceSeasonNumber: 1);
             selection.TotalSelected.ShouldBe(32);
 
             (int stages, int seasons, int rounds, long lifetime, long effective, long championship, ulong rng) =
-                await CapturePreservationAsync(store, created.Detail.SaveId);
+                await CapturePreservationAsync(store, saveId);
 
             RunColorCupTeamHandler handler = new(store);
-            RunColorCupTeamResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RunColorCupTeamResponse response = await handler.HandleAsync(saveId);
 
             AssertResponseBasics(response);
             AssertGroupStructure(response);
-            await AssertFullHistoryAsync(store, created.Detail.SaveId, response, stages, seasons, rounds, lifetime, effective, championship, rng);
+            await AssertFullHistoryAsync(store, saveId, response, stages, seasons, rounds, lifetime, effective, championship, rng);
 
             await Should.ThrowAsync<RunColorCupTeamConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -210,39 +203,36 @@ public sealed class ColorCupTeamTests
     [Fact]
     public async Task Run_ParticipationCannotChangeCareerBonus()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Team Bonus", 1213UL, 1415UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            SelectColorCupTeamsHandler select = new(store);
-            await select.HandleAsync(created.Detail.SaveId);
 
-            Dictionary<int, int> lifetimeBefore = await LoadCareerBonusAsync(store, created.Detail.SaveId, lifetime: true);
-            Dictionary<int, int> effectiveBefore = await LoadCareerBonusAsync(store, created.Detail.SaveId, lifetime: false);
+            Dictionary<int, int> lifetimeBefore = await LoadCareerBonusAsync(store, saveId, lifetime: true);
+            Dictionary<int, int> effectiveBefore = await LoadCareerBonusAsync(store, saveId, lifetime: false);
             (int stagesBefore, int seasonsBefore, int roundsBefore, long championshipBefore) =
-                await CaptureLeagueCountsAsync(store, created.Detail.SaveId);
+                await CaptureLeagueCountsAsync(store, saveId);
 
             RunColorCupTeamHandler handler = new(store);
-            RunColorCupTeamResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RunColorCupTeamResponse response = await handler.HandleAsync(saveId);
             response.Teams.Count.ShouldBe(8);
             response.Legs.Count.ShouldBe(32);
 
-            Dictionary<int, int> lifetimeAfter = await LoadCareerBonusAsync(store, created.Detail.SaveId, lifetime: true);
-            Dictionary<int, int> effectiveAfter = await LoadCareerBonusAsync(store, created.Detail.SaveId, lifetime: false);
+            Dictionary<int, int> lifetimeAfter = await LoadCareerBonusAsync(store, saveId, lifetime: true);
+            Dictionary<int, int> effectiveAfter = await LoadCareerBonusAsync(store, saveId, lifetime: false);
             lifetimeAfter.ShouldBe(lifetimeBefore);
             effectiveAfter.ShouldBe(effectiveBefore);
 
             (int stagesAfter, int seasonsAfter, int roundsAfter, long championshipAfter) =
-                await CaptureLeagueCountsAsync(store, created.Detail.SaveId);
+                await CaptureLeagueCountsAsync(store, saveId);
             stagesAfter.ShouldBe(stagesBefore);
             seasonsAfter.ShouldBe(seasonsBefore);
             roundsAfter.ShouldBe(roundsBefore);
             championshipAfter.ShouldBe(championshipBefore);
 
-            await AssertActiveBonusUsedAsync(store, created.Detail.SaveId, response);
-            await AssertTeamScoresAreSumsAsync(store, created.Detail.SaveId, response);
-            await AssertNoWrongRankGroupAsync(store, created.Detail.SaveId, response);
+            await AssertActiveBonusUsedAsync(store, saveId, response);
+            await AssertTeamScoresAreSumsAsync(store, saveId, response);
+            await AssertNoWrongRankGroupAsync(store, saveId, response);
         }
         finally
         {
