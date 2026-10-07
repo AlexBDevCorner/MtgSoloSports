@@ -36,6 +36,9 @@ public sealed record RulesSnapshotDocument(
     int ColorCupTeamGroupRounds,
     int TypeCupMinTeamSize,
     int TypeCupGroupRounds,
+    int TypeCupTournamentFormatVersion,
+    int TypeCupMaxDirectFinalTeams,
+    int TypeCupFinalTeamCount,
     int RecentFormStageCount,
     int CupBonusWeightPermille,
     int CupPerformanceWeightPermille,
@@ -91,6 +94,9 @@ public sealed record RulesSnapshotDocument(
             rules.ColorCupTeamGroupRounds,
             rules.TypeCupMinTeamSize,
             rules.TypeCupGroupRounds,
+            rules.TypeCupTournamentFormatVersion,
+            rules.TypeCupMaxDirectFinalTeams,
+            rules.TypeCupFinalTeamCount,
             rules.RecentFormStageCount,
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
@@ -136,6 +142,11 @@ public sealed record RulesSnapshotDocument(
         // Backward compatibility: saves persisted before MSS-023 have zeroed
         // prestige fields (missing JSON properties deserialize to 0). Zero is
         // never a valid v1 prestige constant, so substitute the v1 defaults.
+        // MSS-061: snapshots before the scalable Type Cup format have zeroed
+        // tournament fields (missing JSON deserializes to 0). Zero format
+        // version means the legacy unbounded single-field format and is kept
+        // as-is so old universes never silently change format; zeroed
+        // direct-final/final counts resolve to the 32-team defaults.
         return BuildCoreOverrides(
             ResolvePrestige(CupPrestigeFeederTitlePoints, RulesV1.DefaultPrestigeFeederTitlePoints),
             ResolvePrestige(CupPrestigeSuperleagueTitlePoints, RulesV1.DefaultPrestigeSuperleagueTitlePoints),
@@ -181,6 +192,9 @@ public sealed record RulesSnapshotDocument(
             ColorCupTeamGroupRounds = ColorCupTeamGroupRounds,
             TypeCupMinTeamSize = TypeCupMinTeamSize,
             TypeCupGroupRounds = TypeCupGroupRounds,
+            TypeCupTournamentFormatVersion = TypeCupTournamentFormatVersion,
+            TypeCupMaxDirectFinalTeams = ResolveTypeCupCount(TypeCupMaxDirectFinalTeams),
+            TypeCupFinalTeamCount = ResolveTypeCupCount(TypeCupFinalTeamCount),
             RecentFormStageCount = RecentFormStageCount,
             CupBonusWeightPermille = CupBonusWeightPermille,
             CupPerformanceWeightPermille = CupPerformanceWeightPermille,
@@ -202,6 +216,9 @@ public sealed record RulesSnapshotDocument(
     }
 
     private static int ResolvePrestige(int stored, int @default) => stored == 0 ? @default : stored;
+
+    private static int ResolveTypeCupCount(int stored) =>
+        stored == 0 ? RulesV1.DefaultTypeCupFinalTeamCount : stored;
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 

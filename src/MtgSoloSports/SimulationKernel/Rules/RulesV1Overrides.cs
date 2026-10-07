@@ -54,6 +54,12 @@ public sealed class RulesV1Overrides
 
     public int? TypeCupGroupRounds { get; init; }
 
+    public int? TypeCupTournamentFormatVersion { get; init; }
+
+    public int? TypeCupMaxDirectFinalTeams { get; init; }
+
+    public int? TypeCupFinalTeamCount { get; init; }
+
     public int? RecentFormStageCount { get; init; }
 
     public int? CupBonusWeightPermille { get; init; }

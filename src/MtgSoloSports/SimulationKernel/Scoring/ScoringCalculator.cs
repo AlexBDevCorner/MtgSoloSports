@@ -40,6 +40,12 @@ public static class ScoringCalculator
     /// the extension is deterministic, integer-only, monotonic non-increasing, and
     /// additive, so existing saves and persisted replays for 2–32-team fields are
     /// byte-identical and no rules-version bump is required.
+    /// Legacy compatibility path (MSS-061): retained only to replay/read historical
+    /// single-field Type Cups persisted before the scalable qualification plus
+    /// 32-team Final format. New-format qualification and Final rounds must never
+    /// generate a placement greater than 32; use
+    /// <see cref="TypeCupBasePointsForNewFormatPosition"/> for new competition
+    /// fields so any regression fails loudly instead of silently extending.
     /// </summary>
     public static Points TypeCupBasePointsForPosition(int position, RulesV1 rules)
     {
@@ -61,10 +67,44 @@ public static class ScoringCalculator
     /// <summary>
     /// Type Cup team-event final points for a 1-based finishing position with the
     /// given active bonus, using <see cref="TypeCupBasePointsForPosition"/>.
+    /// Legacy compatibility path; see that method for the MSS-061 distinction.
     /// </summary>
     public static Points TypeCupFinalPointsForPosition(int position, Bonus activeBonus, RulesV1 rules)
     {
         Points basePoints = TypeCupBasePointsForPosition(position, rules);
+        return ApplyBonus(basePoints, activeBonus);
+    }
+
+    /// <summary>
+    /// New-format (MSS-061 scalable qualification plus 32-team Final) base points.
+    /// Identical to <see cref="TypeCupBasePointsForPosition"/> for positions 1..32
+    /// but rejects any position beyond the 32-entry table instead of extending to
+    /// the table minimum. Qualification groups and the Final each hold at most 32
+    /// teams, so a greater placement is a corruption signal and must abort.
+    /// </summary>
+    public static Points TypeCupBasePointsForNewFormatPosition(int position, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        if (position < 1 || position > rules.ScoringTable.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(position),
+                $"New-format Type Cup position must be 1..{rules.ScoringTable.Count}, was {position}.");
+        }
+
+        checked
+        {
+            return Points.FromPoints(rules.ScoringTable[position - 1]);
+        }
+    }
+
+    /// <summary>
+    /// New-format final points with the given active bonus, using
+    /// <see cref="TypeCupBasePointsForNewFormatPosition"/>.
+    /// </summary>
+    public static Points TypeCupFinalPointsForNewFormatPosition(int position, Bonus activeBonus, RulesV1 rules)
+    {
+        Points basePoints = TypeCupBasePointsForNewFormatPosition(position, rules);
         return ApplyBonus(basePoints, activeBonus);
     }
 

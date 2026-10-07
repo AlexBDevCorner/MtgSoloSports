@@ -746,7 +746,7 @@ public static class TypeCupTeamInvariants
         RulesV1 rules,
         int teamCount)
     {
-        HashSet<(int Group, int Round)> seen = new();
+        HashSet<(int Phase, int QualGroup, int Group, int Round)> seen = new();
         foreach (TypeCupTeamRoundEntity round in rounds)
         {
             CheckSinglePersistedRound(round, source, rules, seen);
@@ -756,7 +756,7 @@ public static class TypeCupTeamInvariants
         {
             for (int number = 1; number <= rules.TypeCupGroupRounds; number++)
             {
-                if (!seen.Contains((group, number)))
+                if (!seen.Contains((0, 0, group, number)))
                 {
                     throw new InvalidOperationException($"Type Cup team is missing group {group} round {number}.");
                 }
@@ -768,12 +768,14 @@ public static class TypeCupTeamInvariants
         TypeCupTeamRoundEntity round,
         SeasonEntity source,
         RulesV1 rules,
-        HashSet<(int Group, int Round)> seen)
+        HashSet<(int Phase, int QualGroup, int Group, int Round)> seen)
     {
         if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
         {
             throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt source linkage.");
         }
+
+        ValidateTournamentIdentity(round.TournamentPhase, round.QualificationGroup, "round");
 
         if (round.GroupNumber < 1 || round.GroupNumber > rules.TypeCupMinTeamSize)
         {
@@ -785,9 +787,9 @@ public static class TypeCupTeamInvariants
             throw new InvalidOperationException($"Type Cup team round number {round.RoundNumber} is out of range.");
         }
 
-        if (!seen.Add((round.GroupNumber, round.RoundNumber)))
+        if (!seen.Add((round.TournamentPhase, round.QualificationGroup, round.GroupNumber, round.RoundNumber)))
         {
-            throw new InvalidOperationException($"Type Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber}.");
+            throw new InvalidOperationException($"Type Cup team contains duplicate phase {round.TournamentPhase} qual {round.QualificationGroup} group {round.GroupNumber} round {round.RoundNumber}.");
         }
 
         if (round.RulesVersion != rules.Version)
@@ -818,8 +820,8 @@ public static class TypeCupTeamInvariants
         RulesV1 rules,
         int teamCount)
     {
-        HashSet<int> athletes = new();
-        Dictionary<int, HashSet<int>> ranksByGroup = new();
+        HashSet<(int Phase, int QualGroup, int Athlete)> athletes = new();
+        Dictionary<(int Phase, int QualGroup, int Group), HashSet<int>> ranksByGroup = new();
         foreach (TypeCupTeamGroupStandingEntity leg in legs)
         {
             CheckSinglePersistedLeg(leg, source, rules, teamCount, athletes, ranksByGroup);
@@ -827,7 +829,7 @@ public static class TypeCupTeamInvariants
 
         foreach (int group in Enumerable.Range(1, rules.TypeCupMinTeamSize))
         {
-            if (!ranksByGroup.TryGetValue(group, out HashSet<int>? ranks) ||
+            if (!ranksByGroup.TryGetValue((0, 0, group), out HashSet<int>? ranks) ||
                 !ranks.SetEquals(Enumerable.Range(1, teamCount)))
             {
                 throw new InvalidOperationException($"Type Cup team group {group} must cover ranks 1..{teamCount} exactly once.");
@@ -840,13 +842,15 @@ public static class TypeCupTeamInvariants
         SeasonEntity source,
         RulesV1 rules,
         int teamCount,
-        HashSet<int> athletes,
-        Dictionary<int, HashSet<int>> ranksByGroup)
+        HashSet<(int Phase, int QualGroup, int Athlete)> athletes,
+        Dictionary<(int Phase, int QualGroup, int Group), HashSet<int>> ranksByGroup)
     {
         if (leg.SourceSeasonId != source.Id || leg.SourceSeasonNumber != source.SeasonNumber)
         {
             throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
         }
+
+        ValidateTournamentIdentity(leg.TournamentPhase, leg.QualificationGroup, "leg");
 
         if (leg.GroupNumber < 1 || leg.GroupNumber > rules.TypeCupMinTeamSize)
         {
@@ -868,15 +872,15 @@ public static class TypeCupTeamInvariants
             throw new InvalidOperationException($"Type Cup team leg group rank {leg.GroupRank} is out of range.");
         }
 
-        if (!athletes.Add(leg.SaveAthleteId))
+        if (!athletes.Add((leg.TournamentPhase, leg.QualificationGroup, leg.SaveAthleteId)))
         {
             throw new InvalidOperationException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId}.");
         }
 
-        if (!ranksByGroup.TryGetValue(leg.GroupNumber, out HashSet<int>? ranks))
+        if (!ranksByGroup.TryGetValue((leg.TournamentPhase, leg.QualificationGroup, leg.GroupNumber), out HashSet<int>? ranks))
         {
             ranks = new HashSet<int>();
-            ranksByGroup[leg.GroupNumber] = ranks;
+            ranksByGroup[(leg.TournamentPhase, leg.QualificationGroup, leg.GroupNumber)] = ranks;
         }
 
         if (!ranks.Add(leg.GroupRank))
@@ -921,14 +925,23 @@ public static class TypeCupTeamInvariants
         RulesV1 rules,
         int teamCount)
     {
-        HashSet<int> ranks = new();
-        HashSet<string> types = new(StringComparer.Ordinal);
+        HashSet<(int Phase, int QualGroup, int Rank)> ranks = new();
+        HashSet<(int Phase, int QualGroup, string Type)> types = new();
         foreach (TypeCupTeamStandingEntity team in teams)
         {
             CheckSinglePersistedTeam(team, source, rules, teamCount, ranks, types);
         }
 
-        if (!ranks.SetEquals(Enumerable.Range(1, teamCount)))
+        HashSet<int> legacyRanks = new();
+        foreach ((int Phase, int QualGroup, int Rank) key in ranks)
+        {
+            if (key.Phase == 0 && key.QualGroup == 0)
+            {
+                legacyRanks.Add(key.Rank);
+            }
+        }
+
+        if (!legacyRanks.SetEquals(Enumerable.Range(1, teamCount)))
         {
             throw new InvalidOperationException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once.");
         }
@@ -939,13 +952,15 @@ public static class TypeCupTeamInvariants
         SeasonEntity source,
         RulesV1 rules,
         int teamCount,
-        HashSet<int> ranks,
-        HashSet<string> types)
+        HashSet<(int Phase, int QualGroup, int Rank)> ranks,
+        HashSet<(int Phase, int QualGroup, string Type)> types)
     {
         if (team.SourceSeasonId != source.Id || team.SourceSeasonNumber != source.SeasonNumber)
         {
             throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt source linkage.");
         }
+
+        ValidateTournamentIdentity(team.TournamentPhase, team.QualificationGroup, "team");
 
         if (string.IsNullOrWhiteSpace(team.CreatureType))
         {
@@ -957,12 +972,12 @@ public static class TypeCupTeamInvariants
             throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} is out of range.");
         }
 
-        if (!ranks.Add(team.TeamRank))
+        if (!ranks.Add((team.TournamentPhase, team.QualificationGroup, team.TeamRank)))
         {
             throw new InvalidOperationException($"Type Cup team championship contains duplicate rank {team.TeamRank}.");
         }
 
-        if (!types.Add(team.CreatureType))
+        if (!types.Add((team.TournamentPhase, team.QualificationGroup, team.CreatureType)))
         {
             throw new InvalidOperationException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}'.");
         }
@@ -1029,6 +1044,34 @@ public static class TypeCupTeamInvariants
         if (roundSum != expectedRounds)
         {
             throw new InvalidOperationException($"Type Cup team {team.Id} round counts sum to {roundSum}, expected {expectedRounds}.");
+        }
+    }
+
+    /// <summary>
+    /// Validates explicit tournament identity (MSS-061): phase 0 is the legacy
+    /// single-field format, 1 is qualification, 2 is the Final. Qualification
+    /// groups are 1..G; legacy and Final rows use 0. Rank-group and round numbers
+    /// stay in their own fields and are never overloaded here.
+    /// </summary>
+    internal static void ValidateTournamentIdentity(int phase, int qualificationGroup, string kind)
+    {
+        if (phase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+            && phase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
+            && phase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+        {
+            throw new InvalidOperationException($"Type Cup team {kind} tournament phase {phase} is out of range.");
+        }
+
+        if (phase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification)
+        {
+            if (qualificationGroup < 1)
+            {
+                throw new InvalidOperationException($"Type Cup team {kind} qualification group {qualificationGroup} is out of range.");
+            }
+        }
+        else if (qualificationGroup != 0)
+        {
+            throw new InvalidOperationException($"Type Cup team {kind} qualification group must be 0 outside qualification, was {qualificationGroup}.");
         }
     }
 

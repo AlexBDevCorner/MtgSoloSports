@@ -71,6 +71,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<TypeCupTeamStandingEntity> TypeCupTeamStandings => Set<TypeCupTeamStandingEntity>();
 
+    public DbSet<TypeCupTournamentDrawEntity> TypeCupTournamentDraws => Set<TypeCupTournamentDrawEntity>();
+
     public DbSet<CupSelectionReportEntity> CupSelectionReports => Set<CupSelectionReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -90,6 +92,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureColorCupTeam(modelBuilder);
         ConfigureTypeCupSelections(modelBuilder);
         ConfigureTypeCupTeam(modelBuilder);
+        ConfigureTypeCupTournamentDraw(modelBuilder);
         ConfigureCupSelectionReports(modelBuilder);
     }
 
@@ -710,10 +713,12 @@ public sealed class SaveDbContext : DbContext
             entity.ToTable("TypeCupTeamRounds");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.SourceSeasonId, e.GroupNumber, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.TournamentPhase, e.QualificationGroup, e.GroupNumber, e.RoundNumber }).IsUnique();
             entity.HasIndex(e => e.SourceSeasonId);
             entity.Property(e => e.SourceSeasonId).IsRequired();
             entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.TournamentPhase).IsRequired();
+            entity.Property(e => e.QualificationGroup).IsRequired();
             entity.Property(e => e.GroupNumber).IsRequired();
             entity.Property(e => e.RoundNumber).IsRequired();
             entity.Property(e => e.RulesVersion).IsRequired();
@@ -733,12 +738,14 @@ public sealed class SaveDbContext : DbContext
             entity.ToTable("TypeCupTeamGroupStandings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.SourceSeasonId, e.SaveAthleteId }).IsUnique();
-            entity.HasIndex(e => new { e.SourceSeasonId, e.GroupNumber, e.GroupRank }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.TournamentPhase, e.QualificationGroup, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.TournamentPhase, e.QualificationGroup, e.GroupNumber, e.GroupRank }).IsUnique();
             entity.HasIndex(e => e.SourceSeasonId);
             entity.HasIndex(e => e.SaveAthleteId);
             entity.Property(e => e.SourceSeasonId).IsRequired();
             entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.TournamentPhase).IsRequired();
+            entity.Property(e => e.QualificationGroup).IsRequired();
             entity.Property(e => e.GroupNumber).IsRequired();
             entity.Property(e => e.SaveAthleteId).IsRequired();
             entity.Property(e => e.GroupRank).IsRequired();
@@ -758,11 +765,13 @@ public sealed class SaveDbContext : DbContext
             entity.ToTable("TypeCupTeamStandings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.HasIndex(e => new { e.SourceSeasonId, e.CreatureType }).IsUnique();
-            entity.HasIndex(e => new { e.SourceSeasonId, e.TeamRank }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.TournamentPhase, e.QualificationGroup, e.CreatureType }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.TournamentPhase, e.QualificationGroup, e.TeamRank }).IsUnique();
             entity.HasIndex(e => e.SourceSeasonId);
             entity.Property(e => e.SourceSeasonId).IsRequired();
             entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.TournamentPhase).IsRequired();
+            entity.Property(e => e.QualificationGroup).IsRequired();
             entity.Property(e => e.CreatureType).IsRequired().HasMaxLength(64);
             entity.Property(e => e.TeamRank).IsRequired();
             entity.Property(e => e.TeamScoreThousandths).IsRequired();
@@ -772,6 +781,35 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.GroupPlaceCountsJson).IsRequired();
             entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
             entity.Property(e => e.Medal).IsRequired();
+        });
+    }
+
+    private static void ConfigureTypeCupTournamentDraw(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+        modelBuilder.Entity<TypeCupTournamentDrawEntity>(entity =>
+        {
+            entity.ToTable("TypeCupTournamentDraws");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.CreatureType }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.QualificationGroup });
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.CreatureType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.QualificationGroup).IsRequired();
+            entity.Property(e => e.GroupSize).IsRequired();
+            entity.Property(e => e.FieldTeamCount).IsRequired();
+            entity.Property(e => e.QualificationGroupCount).IsRequired();
+            entity.Property(e => e.FinalPlacesForGroup).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.TournamentFormatVersion).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.DrawChecksum).IsRequired().HasMaxLength(64);
         });
     }
 
