@@ -28,28 +28,33 @@ public sealed class SeasonLifecycleTests
     [Fact]
     public async Task AdvanceToNextEvent_SingleStage_EquivalentToBulk()
     {
+        // MSS-067: second save forked instead of creating the same universe twice.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord first = await firstStore.CreateAsync("Lifecycle Equiv A", 4242UL, 777UL, catalog);
-            SaveStore.CreationRecord second = await secondStore.CreateAsync("Lifecycle Equiv B", 4242UL, 777UL, catalog);
+            var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(firstStore, first.Detail.SaveId, "mtgsolosports-lifecycle-");
+            try
+            {
+                AdvanceToNextEventHandler advance = new(firstStore);
+                AdvanceToNextEventResponse stepped = await advance.HandleAsync(first.Detail.SaveId);
+                stepped.ExecutedAction.ShouldBe(SeasonLifecycleActions.CompleteNextGlobalStage);
 
-            AdvanceToNextEventHandler advance = new(firstStore);
-            AdvanceToNextEventResponse stepped = await advance.HandleAsync(first.Detail.SaveId);
-            stepped.ExecutedAction.ShouldBe(SeasonLifecycleActions.CompleteNextGlobalStage);
+                CompleteStageForAllLeaguesHandler bulk = new(secondStore);
+                CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(secondId);
+                bulkResponse.CompletedStage.ShouldBe(1);
 
-            CompleteStageForAllLeaguesHandler bulk = new(secondStore);
-            CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(second.Detail.SaveId);
-            bulkResponse.CompletedStage.ShouldBe(1);
-
-            await AssertSingleStageEquivalentAsync(firstStore, secondStore, first.Detail.SaveId, second.Detail.SaveId, bulkResponse);
+                await AssertSingleStageEquivalentAsync(firstStore, secondStore, first.Detail.SaveId, secondId, bulkResponse);
+            }
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
         }
     }
 
