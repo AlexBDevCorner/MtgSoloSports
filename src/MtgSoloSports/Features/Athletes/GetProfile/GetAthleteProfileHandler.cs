@@ -319,15 +319,32 @@ public sealed class GetAthleteProfileHandler
         }
 
         HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        // Official podiums only: legacy single-field rows plus Final rows.
+        // Qualification group tables never produce medals/honours.
         List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
             .AsNoTracking()
-            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         int count = 0;
         foreach (TypeCupTeamGroupStandingEntity leg in legs)
         {
-            bool podium = teams.Any(t => t.SourceSeasonId == leg.SourceSeasonId && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
+            // A leg counts only when its own stage is honours-eligible and its
+            // team holds the matching official podium: legacy legs match legacy
+            // standings, Final legs match Final standings. Qualification legs
+            // never count, even when their group table ranks 1-3.
+            if (leg.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                && leg.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            {
+                continue;
+            }
+
+            bool podium = teams.Any(t => t.SourceSeasonId == leg.SourceSeasonId
+                && t.TournamentPhase == leg.TournamentPhase
+                && t.QualificationGroup == leg.QualificationGroup
+                && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
             if (podium)
             {
                 count++;
@@ -474,15 +491,28 @@ public sealed class GetAthleteProfileHandler
         }
 
         HashSet<int> seasonIds = legs.Select(l => l.SourceSeasonId).ToHashSet();
+        // Official podiums only: legacy plus Final. Qualification tables never
+        // produce honours, even for group winners.
         List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
             .AsNoTracking()
-            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3)
+            .Where(e => seasonIds.Contains(e.SourceSeasonId) && e.TeamRank >= 1 && e.TeamRank <= 3
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         List<AthleteHonourDto> honours = [];
         foreach (TypeCupTeamGroupStandingEntity leg in legs)
         {
-            TypeCupTeamStandingEntity? team = teams.FirstOrDefault(t => t.SourceSeasonId == leg.SourceSeasonId && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
+            if (leg.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                && leg.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            {
+                continue;
+            }
+
+            TypeCupTeamStandingEntity? team = teams.FirstOrDefault(t => t.SourceSeasonId == leg.SourceSeasonId
+                && t.TournamentPhase == leg.TournamentPhase
+                && t.QualificationGroup == leg.QualificationGroup
+                && string.Equals(t.CreatureType, leg.CreatureType, StringComparison.Ordinal));
             if (team is null)
             {
                 continue;
@@ -783,8 +813,14 @@ public sealed class GetAthleteProfileHandler
     {
         ArgumentNullException.ThrowIfNull(leg);
         ArgumentNullException.ThrowIfNull(typeTeams);
+        // Phase-aware match: a leg belongs to exactly one tournament stage.
+        // Qualification legs match their own group's qualification table so
+        // eliminated teams retain participation; Final legs match the Final.
+        // Legacy rows (phase 0) match by season+type as before.
         TypeCupTeamStandingEntity? team = typeTeams.FirstOrDefault(candidate =>
             candidate.SourceSeasonId == leg.SourceSeasonId &&
+            candidate.TournamentPhase == leg.TournamentPhase &&
+            candidate.QualificationGroup == leg.QualificationGroup &&
             string.Equals(candidate.CreatureType, leg.CreatureType, StringComparison.Ordinal));
         if (team is null)
         {
@@ -822,7 +858,48 @@ public sealed class GetAthleteProfileHandler
             ((TypeCupMedal)team.Medal).ToString(),
             team.TeamScoreThousandths,
             leg.GroupRank,
-            leg.GroupNumber);
+            leg.GroupNumber,
+            leg.TournamentPhase,
+            leg.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
+                ? leg.QualificationGroup
+                : null,
+            TournamentStageFor(leg.TournamentPhase, leg.QualificationGroup));
+    }
+
+    internal static string TournamentStageFor(int phase, int qualificationGroup)
+    {
+        if (phase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+        {
+            return "Final";
+        }
+
+        if (phase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification)
+        {
+            return $"Qualification Group {QualificationGroupLetter(qualificationGroup)}";
+        }
+
+        return "Single field";
+    }
+
+    internal static string QualificationGroupLetter(int qualificationGroup)
+    {
+        // Data-driven 1-based letter: 1 -> A, 2 -> B, ... 27 -> AA. Persisted
+        // group numbers stay authoritative; the letter is display only.
+        if (qualificationGroup < 1)
+        {
+            return qualificationGroup.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        System.Text.StringBuilder builder = new();
+        int value = qualificationGroup;
+        while (value > 0)
+        {
+            value--;
+            builder.Insert(0, (char)('A' + (value % 26)));
+            value /= 26;
+        }
+
+        return builder.ToString();
     }
 
     internal static List<AthleteCupHistoryDto> OrderCupHistory(List<AthleteCupHistoryDto> history)
@@ -833,6 +910,8 @@ public sealed class GetAthleteProfileHandler
             .ThenBy(e => e.Cup, StringComparer.Ordinal)
             .ThenBy(e => e.Event, StringComparer.Ordinal)
             .ThenBy(e => e.TeamKey, StringComparer.Ordinal)
+            .ThenBy(e => e.TournamentPhase ?? -1)
+            .ThenBy(e => e.QualificationGroup ?? 0)
             .ThenBy(e => e.Place)
             .ToList();
     }

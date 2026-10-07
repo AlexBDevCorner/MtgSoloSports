@@ -31,7 +31,12 @@ public static class CupTeamHistoryBuilder
         int TeamBaseThousandths,
         int GroupWins,
         int RoundWins,
-        string Medal);
+        string Medal,
+        int TournamentPhase = 0,
+        int QualificationGroup = 0,
+        bool IsHonourEligible = true,
+        bool QualifiedForFinal = false,
+        bool EliminatedInQualification = false);
 
     public sealed record LegRow(
         int SeasonNumber,
@@ -111,20 +116,23 @@ public static class CupTeamHistoryBuilder
 
     private static CupTeamHistoryResponse.TeamHonours BuildHonours(Input input, int editions)
     {
-        StandingRow? best = input.Standings
+        // Official honours only: qualification group tables never produce
+        // medals or titles, even for group winners.
+        List<StandingRow> official = input.Standings.Where(s => s.IsHonourEligible).ToList();
+        StandingRow? best = official
             .OrderBy(s => s.TeamRank)
             .ThenByDescending(s => s.SeasonNumber)
             .FirstOrDefault();
         return new CupTeamHistoryResponse.TeamHonours(
             editions,
-            input.Standings.Count(s => s.TeamRank == 1),
-            input.Standings.Count(s => s.TeamRank == 2),
-            input.Standings.Count(s => s.TeamRank == 3),
+            official.Count(s => s.TeamRank == 1),
+            official.Count(s => s.TeamRank == 2),
+            official.Count(s => s.TeamRank == 3),
             best?.TeamRank,
             best?.SeasonNumber,
-            input.Standings.Sum(s => s.GroupWins),
-            input.Standings.Sum(s => s.RoundWins),
-            input.Standings.Sum(s => (long)s.TeamScoreThousandths));
+            official.Sum(s => s.GroupWins),
+            official.Sum(s => s.RoundWins),
+            official.Sum(s => (long)s.TeamScoreThousandths));
     }
 
     private static CupTeamHistoryResponse.Season BuildSeason(Input input, int seasonNumber)
@@ -170,7 +178,12 @@ public static class CupTeamHistoryBuilder
             standing?.TeamBaseThousandths,
             standing?.GroupWins,
             standing?.RoundWins,
-            members);
+            members,
+            TournamentStageLabel(standing),
+            standing?.TournamentPhase,
+            standing?.TournamentPhase == 1 ? standing?.QualificationGroup : null,
+            standing?.QualifiedForFinal ?? false,
+            standing?.EliminatedInQualification ?? false);
     }
 
     private static CupTeamHistoryResponse.SquadMember BuildMember(
@@ -206,6 +219,45 @@ public static class CupTeamHistoryBuilder
             individual is null
                 ? null
                 : new CupTeamHistoryResponse.Individual(individual.CupRank, individual.CupScoreThousandths, individual.Medal));
+    }
+
+    internal static string? TournamentStageLabel(StandingRow? standing)
+    {
+        if (standing is null)
+        {
+            return null;
+        }
+
+        if (standing.TournamentPhase == 2)
+        {
+            return "Final";
+        }
+
+        if (standing.TournamentPhase == 1)
+        {
+            return $"Qualification Group {GroupLetter(standing.QualificationGroup)}";
+        }
+
+        return null;
+    }
+
+    internal static string GroupLetter(int qualificationGroup)
+    {
+        if (qualificationGroup < 1)
+        {
+            return qualificationGroup.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        System.Text.StringBuilder builder = new();
+        int value = qualificationGroup;
+        while (value > 0)
+        {
+            value--;
+            builder.Insert(0, (char)('A' + (value % 26)));
+            value /= 26;
+        }
+
+        return builder.ToString();
     }
 
     private static List<CupTeamHistoryResponse.RosterEntry> BuildRoster(Input input)

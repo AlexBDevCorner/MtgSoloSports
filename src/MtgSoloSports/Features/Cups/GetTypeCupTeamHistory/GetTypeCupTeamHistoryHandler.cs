@@ -52,6 +52,17 @@ public sealed class GetTypeCupTeamHistoryHandler
         List<int> roundSeasons = await context.TypeCupTeamRounds
             .AsNoTracking().Where(e => seasons.Contains(e.SourceSeasonNumber))
             .Select(e => e.SourceSeasonNumber).Distinct().ToListAsync(cancellationToken).ConfigureAwait(false);
+        // Seasons with any persisted Final (or legacy) result: a qualification
+        // table in such a season means the team was eliminated; without a Final
+        // the tournament is still in progress and qualification fate is pending.
+        HashSet<int> seasonsWithFinal = (await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => seasons.Contains(e.SourceSeasonNumber)
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
+            .Select(e => e.SourceSeasonNumber)
+            .Distinct()
+            .ToListAsync(cancellationToken).ConfigureAwait(false)).ToHashSet();
         Dictionary<int, CupTeamHistoryBuilder.SeasonFacts> facts = seasons.ToDictionary(
             season => season,
             season => new CupTeamHistoryBuilder.SeasonFacts(
@@ -73,7 +84,7 @@ public sealed class GetTypeCupTeamHistoryHandler
             teamKey,
             rules.TypeCupMinTeamSize,
             MapSelections(selections, reasons),
-            MapStandings(standings),
+            MapStandings(standings, seasonsWithFinal),
             MapLegs(legs),
             [],
             facts,
@@ -154,7 +165,9 @@ public sealed class GetTypeCupTeamHistoryHandler
             reasons.GetValueOrDefault((s.SourceSeasonNumber, s.SaveAthleteId)))).ToList();
     }
 
-    private static List<CupTeamHistoryBuilder.StandingRow> MapStandings(List<TypeCupTeamStandingEntity> standings)
+    private static List<CupTeamHistoryBuilder.StandingRow> MapStandings(
+        List<TypeCupTeamStandingEntity> standings,
+        HashSet<int> seasonsWithFinal)
     {
         return standings.Select(s => new CupTeamHistoryBuilder.StandingRow(
             s.SourceSeasonNumber,
@@ -163,7 +176,13 @@ public sealed class GetTypeCupTeamHistoryHandler
             s.TeamBaseThousandths,
             s.GroupWins,
             s.RoundWins,
-            ((TypeCupMedal)s.Medal).ToString())).ToList();
+            ((TypeCupMedal)s.Medal).ToString(),
+            s.TournamentPhase,
+            s.QualificationGroup,
+            IsHonourEligible: s.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification,
+            QualifiedForFinal: s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final,
+            EliminatedInQualification: s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
+                && seasonsWithFinal.Contains(s.SourceSeasonNumber))).ToList();
     }
 
     private static List<CupTeamHistoryBuilder.LegRow> MapLegs(List<TypeCupTeamGroupStandingEntity> legs)
