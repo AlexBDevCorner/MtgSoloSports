@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Simulation.CompleteSeason;
+using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
@@ -57,6 +60,33 @@ internal static class SharedSaveTemplates
     internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkQualifierResolvedAsync(string prefix)
     {
         return ForkAsync("QualifierResolved", BuildQualifierResolvedAsync, prefix);
+    }
+
+    /// <summary>
+    /// Season 1 plus its postseason (inaugural, rebalance, Cups, next season
+    /// started) via bulk simulation: the read-model state ordinarily produced
+    /// by <c>SimulateSeasons(1)</c> from a fresh save.
+    /// </summary>
+    internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkSeason1PlusCupsAsync(string prefix)
+    {
+        return ForkAsync("Season1PlusCups", BuildSeason1PlusCupsAsync, prefix);
+    }
+
+    /// <summary>
+    /// MSS-067: seeds an API test's saves root with a copy of a shared
+    /// template, so endpoint tests can skip the catalog-import, save-creation
+    /// and full-season simulation performed over HTTP and focus on the
+    /// endpoints under test. Returns the seeded save id.
+    /// </summary>
+    internal static Task<Guid> SeedSeason1CompleteAsync(string savesRoot)
+    {
+        return SeedSavesRootAsync(savesRoot, "Season1Complete", BuildSeason1CompleteAsync);
+    }
+
+    /// <summary>Seeds a Season 1 plus postseason save (see <c>ForkSeason1PlusCupsAsync</c>).</summary>
+    internal static Task<Guid> SeedSeason1PlusCupsAsync(string savesRoot)
+    {
+        return SeedSavesRootAsync(savesRoot, "Season1PlusCups", BuildSeason1PlusCupsAsync);
     }
 
     private static async Task<(SaveStore Store, string Root, Guid SaveId)> ForkAsync(
@@ -128,5 +158,30 @@ internal static class SharedSaveTemplates
             "QualifierPreResolve", BuildQualifierPreResolveAsync, "mtgsolosports-shared-qual-").ConfigureAwait(false);
         await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         return new Template(root, saveId);
+    }
+
+    private static async Task<Template> BuildSeason1PlusCupsAsync()
+    {
+        var (store, root, saveId) = await ForkAsync(
+            "Season1Complete", BuildSeason1CompleteAsync, "mtgsolosports-shared-pluscups-").ConfigureAwait(false);
+        await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1)).ConfigureAwait(false);
+        return new Template(root, saveId);
+    }
+
+    private static async Task<Guid> SeedSavesRootAsync(string savesRoot, string key, Func<Task<Template>> build)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(savesRoot);
+        Template template = await GetOrBuildAsync(key, build).ConfigureAwait(false);
+        Directory.CreateDirectory(savesRoot);
+        SaveStore templateStore = TestSaveStores.CreateStoreForRoot(template.Root);
+        using (SaveDbContext context = templateStore.OpenDbContext(template.SaveId))
+        {
+            await context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);").ConfigureAwait(false);
+        }
+
+        SqliteConnection.ClearAllPools();
+        string source = SaveFileNaming.GetSaveFilePath(template.Root, template.SaveId);
+        File.Copy(source, SaveFileNaming.GetSaveFilePath(savesRoot, template.SaveId));
+        return template.SaveId;
     }
 }

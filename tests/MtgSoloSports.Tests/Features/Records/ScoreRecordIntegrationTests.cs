@@ -69,11 +69,10 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task ScoringRecords_AfterSimulateSeasons_CoverColourCupAndTeams()
     {
-        // MSS-067: shared Season 1 template; SimulateSeasons(1) then covers only the postseason.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
+        // MSS-067: shared Season 1 plus postseason template.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-score-");
         try
         {
-            await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1));
 
             GetRecordsHandler handler = new(store);
             GetRecordsResponse response = await handler.HandleAsync(saveId);
@@ -286,11 +285,10 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task TeamTotals_TiesPreserved()
     {
-        // MSS-067: shared Season 1 template; SimulateSeasons(1) then covers only the postseason.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
+        // MSS-067: shared Season 1 plus postseason template.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-score-");
         try
         {
-            await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1));
 
             using (SaveDbContext context = store.OpenDbContext(saveId))
             {
