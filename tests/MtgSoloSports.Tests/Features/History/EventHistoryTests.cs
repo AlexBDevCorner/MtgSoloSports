@@ -89,7 +89,7 @@ public sealed class EventHistoryTests
     {
         // MSS-067: shared templates forked into isolated saves.
         var (cupStore, cupRoot, cupId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
-                var (qualStore, qualRoot, qualId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-eventhist-");
+        var (qualStore, qualRoot, qualId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(cupStore, cupId, 1);

@@ -34,28 +34,27 @@ public sealed class FastSimulationTests
             var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, sequential.Detail.SaveId, "mtgsolosports-season-fast-");
             try
             {
+                CompleteStageForAllLeaguesHandler bulk = new(firstStore);
+                for (int stage = 1; stage <= 32; stage++)
+                {
+                    CompleteStageForAllLeaguesResponse completed = await bulk.HandleAsync(sequential.Detail.SaveId);
+                    completed.CompletedStage.ShouldBe(stage);
+                }
 
-            CompleteStageForAllLeaguesHandler bulk = new(firstStore);
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                CompleteStageForAllLeaguesResponse completed = await bulk.HandleAsync(sequential.Detail.SaveId);
-                completed.CompletedStage.ShouldBe(stage);
-            }
+                CompleteSeasonHandler fastHandler = new(secondStore);
+                CompleteSeasonResponse response = await fastHandler.HandleAsync(fastId);
 
-            CompleteSeasonHandler fastHandler = new(secondStore);
-            CompleteSeasonResponse response = await fastHandler.HandleAsync(fastId);
+                response.SeasonNumber.ShouldBe(1);
+                response.StagesCompleted.ShouldBe(32);
+                response.GlobalStageBefore.ShouldBe(1);
+                response.GlobalStageAfter.ShouldBe(33);
+                response.IsSeasonComplete.ShouldBeTrue();
+                response.Progress.StagesCompleted.ShouldBe(32);
+                response.Progress.TotalStagesInSeason.ShouldBe(32);
+                response.Progress.GlobalStageBefore.ShouldBe(1);
+                response.Progress.GlobalStageAfter.ShouldBe(33);
 
-            response.SeasonNumber.ShouldBe(1);
-            response.StagesCompleted.ShouldBe(32);
-            response.GlobalStageBefore.ShouldBe(1);
-            response.GlobalStageAfter.ShouldBe(33);
-            response.IsSeasonComplete.ShouldBeTrue();
-            response.Progress.StagesCompleted.ShouldBe(32);
-            response.Progress.TotalStagesInSeason.ShouldBe(32);
-            response.Progress.GlobalStageBefore.ShouldBe(1);
-            response.Progress.GlobalStageAfter.ShouldBe(33);
-
-            await AssertSportingEquivalentAsync(firstStore, sequential.Detail.SaveId, secondStore, fastId);
+                await AssertSportingEquivalentAsync(firstStore, sequential.Detail.SaveId, secondStore, fastId);
             }
             finally
             {
@@ -134,28 +133,27 @@ public sealed class FastSimulationTests
             var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, manual.Detail.SaveId, "mtgsolosports-sim-fast-");
             try
             {
+                await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
 
-            await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
+                SimulateSeasonsHandler fastHandler = new(secondStore);
+                SimulateSeasonsResponse response = await fastHandler.HandleAsync(
+                    fastId, new SimulateSeasonsRequest(1));
 
-            SimulateSeasonsHandler fastHandler = new(secondStore);
-            SimulateSeasonsResponse response = await fastHandler.HandleAsync(
-                fastId, new SimulateSeasonsRequest(1));
+                response.SeasonsRequested.ShouldBe(1);
+                response.SeasonsCompleted.ShouldBe(1);
+                response.StagesCompleted.ShouldBe(32);
+                response.StartSeasonNumber.ShouldBe(1);
+                response.EndSeasonNumber.ShouldBe(2);
+                response.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonInProgress));
+                response.GlobalStage.ShouldBe(1);
+                response.IsCurrentSeasonComplete.ShouldBeFalse();
+                response.Progress.SeasonsRequested.ShouldBe(1);
+                response.Progress.SeasonsCompleted.ShouldBe(1);
+                response.Progress.StartSeasonNumber.ShouldBe(1);
+                response.Progress.EndSeasonNumber.ShouldBe(2);
 
-            response.SeasonsRequested.ShouldBe(1);
-            response.SeasonsCompleted.ShouldBe(1);
-            response.StagesCompleted.ShouldBe(32);
-            response.StartSeasonNumber.ShouldBe(1);
-            response.EndSeasonNumber.ShouldBe(2);
-            response.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonInProgress));
-            response.GlobalStage.ShouldBe(1);
-            response.IsCurrentSeasonComplete.ShouldBeFalse();
-            response.Progress.SeasonsRequested.ShouldBe(1);
-            response.Progress.SeasonsCompleted.ShouldBe(1);
-            response.Progress.StartSeasonNumber.ShouldBe(1);
-            response.Progress.EndSeasonNumber.ShouldBe(2);
-
-            await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId);
-            await AssertPostseasonEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId, fromSeason: 1, toSeason: 2);
+                await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId);
+                await AssertPostseasonEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId, fromSeason: 1, toSeason: 2);
             }
             finally
             {
