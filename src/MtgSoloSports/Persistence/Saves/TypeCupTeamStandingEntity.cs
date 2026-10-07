@@ -14,6 +14,11 @@ namespace MtgSoloSports.Persistence.Saves;
 /// <see cref="GroupPlaceCountsJson"/> and <see cref="RoundPlaceCountsJson"/>
 /// are compact JSON arrays of N counts retained for deterministic auditing
 /// without scanning round payloads.
+/// Tournament identity (MSS-061) uses separate fields: <see cref="TournamentPhase"/>
+/// (0 legacy single-field, 1 qualification group table, 2 Final) and
+/// <see cref="QualificationGroup"/> (0 for legacy/Final, 1..G for qualification).
+/// Legacy rows store 0/0; qualification tables store 1/G per group and the Final
+/// stores 2/0 so qualification and Final standings never collide.
 /// </summary>
 public sealed class TypeCupTeamStandingEntity
 {
@@ -22,6 +27,10 @@ public sealed class TypeCupTeamStandingEntity
     public int SourceSeasonId { get; set; }
 
     public int SourceSeasonNumber { get; set; }
+
+    public int TournamentPhase { get; set; }
+
+    public int QualificationGroup { get; set; }
 
     public string CreatureType { get; set; } = string.Empty;
 

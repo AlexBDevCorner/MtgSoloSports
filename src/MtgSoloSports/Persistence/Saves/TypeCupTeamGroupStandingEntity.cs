@@ -12,6 +12,11 @@ namespace MtgSoloSports.Persistence.Saves;
 /// round-placement counts retained for deterministic auditing without scanning
 /// round payloads. <see cref="GroupNumber"/> always equals
 /// <see cref="SelectionRank"/> (1..4) so a wrong-rank placement is detectable.
+/// Tournament identity (MSS-061) uses separate fields: <see cref="TournamentPhase"/>
+/// (0 legacy single-field, 1 qualification, 2 Final) and
+/// <see cref="QualificationGroup"/> (0 for legacy/Final, 1..G for qualification).
+/// Legacy rows store 0/0; qualification legs store 1/G and Final legs store 2/0
+/// so an athlete who qualifies holds two leg rows that never collide.
 /// </summary>
 public sealed class TypeCupTeamGroupStandingEntity
 {
@@ -20,6 +25,10 @@ public sealed class TypeCupTeamGroupStandingEntity
     public int SourceSeasonId { get; set; }
 
     public int SourceSeasonNumber { get; set; }
+
+    public int TournamentPhase { get; set; }
+
+    public int QualificationGroup { get; set; }
 
     public int GroupNumber { get; set; }
 

@@ -50,6 +50,19 @@ public class RulesV1
     public const int DefaultPrestigeStageThirdPoints = 2;
     public const int DefaultPrestigeOtherMajorHonourPoints = 150;
 
+    // Type Cup scalable tournament format (MSS-061): qualification groups plus a
+    // fixed 32-team Final. Format version 1 is the scalable format; version 0
+    // is the legacy single-field format that allowed unbounded N in one event
+    // with positions beyond 32 scoring the table minimum. New snapshots use 1;
+    // historical snapshots without the field decode to 0 and stay readable.
+    public const int LegacyTypeCupTournamentFormatVersion = 0;
+
+    public const int DefaultTypeCupTournamentFormatVersion = 1;
+
+    public const int DefaultTypeCupMaxDirectFinalTeams = 32;
+
+    public const int DefaultTypeCupFinalTeamCount = 32;
+
     protected RulesV1(
         int sportingColorCount,
         int athletesPerSportingColor,
@@ -75,6 +88,9 @@ public class RulesV1
         int colorCupTeamGroupRounds,
         int typeCupMinTeamSize,
         int typeCupGroupRounds,
+        int typeCupTournamentFormatVersion,
+        int typeCupMaxDirectFinalTeams,
+        int typeCupFinalTeamCount,
         int recentFormStageCount,
         int cupBonusWeightPermille,
         int cupPerformanceWeightPermille,
@@ -111,6 +127,9 @@ public class RulesV1
         ColorCupTeamGroupRounds = colorCupTeamGroupRounds;
         TypeCupMinTeamSize = typeCupMinTeamSize;
         TypeCupGroupRounds = typeCupGroupRounds;
+        TypeCupTournamentFormatVersion = typeCupTournamentFormatVersion;
+        TypeCupMaxDirectFinalTeams = typeCupMaxDirectFinalTeams;
+        TypeCupFinalTeamCount = typeCupFinalTeamCount;
         RecentFormStageCount = recentFormStageCount;
         CupBonusWeightPermille = cupBonusWeightPermille;
         CupPerformanceWeightPermille = cupPerformanceWeightPermille;
@@ -297,6 +316,25 @@ public class RulesV1
 
     public int TypeCupGroupRounds { get; }
 
+    /// <summary>
+    /// Versioned Type Cup tournament-format rule (MSS-061). 0 is the legacy
+    /// unbounded single-field format; 1 is the scalable qualification plus
+    /// fixed 32-team Final. Stored in every save snapshot so existing universes
+    /// never silently change format when defaults evolve.
+    /// </summary>
+    public int TypeCupTournamentFormatVersion { get; }
+
+    /// <summary>
+    /// Maximum selected teams for a direct Final with no qualification stage.
+    /// Initial value 32, equal to <see cref="LeagueSize"/>.
+    /// </summary>
+    public int TypeCupMaxDirectFinalTeams { get; }
+
+    /// <summary>
+    /// Exact Final field size for over-32 tournaments. Initial value 32.
+    /// </summary>
+    public int TypeCupFinalTeamCount { get; }
+
     public int RecentFormStageCount { get; }
 
     public int CupBonusWeightPermille { get; }
@@ -397,6 +435,9 @@ public class RulesV1
             active.ColorCupTeamGroupRounds ?? 8,
             active.TypeCupMinTeamSize ?? 4,
             active.TypeCupGroupRounds ?? 8,
+            active.TypeCupTournamentFormatVersion ?? DefaultTypeCupTournamentFormatVersion,
+            active.TypeCupMaxDirectFinalTeams ?? DefaultTypeCupMaxDirectFinalTeams,
+            active.TypeCupFinalTeamCount ?? DefaultTypeCupFinalTeamCount,
             active.RecentFormStageCount ?? 10,
             active.CupBonusWeightPermille ?? 350,
             active.CupPerformanceWeightPermille ?? 300,
@@ -726,6 +767,36 @@ public class RulesV1
         if (TypeCupGroupRounds != 8)
         {
             throw new InvalidOperationException($"TypeCupGroupRounds must be 8, was {TypeCupGroupRounds}.");
+        }
+
+        ValidateTypeCupTournamentFormat();
+    }
+
+    private void ValidateTypeCupTournamentFormat()
+    {
+        if (TypeCupTournamentFormatVersion != LegacyTypeCupTournamentFormatVersion
+            && TypeCupTournamentFormatVersion != DefaultTypeCupTournamentFormatVersion)
+        {
+            throw new InvalidOperationException(
+                $"TypeCupTournamentFormatVersion must be {LegacyTypeCupTournamentFormatVersion} (legacy) or {DefaultTypeCupTournamentFormatVersion} (scalable), was {TypeCupTournamentFormatVersion}.");
+        }
+
+        if (TypeCupMaxDirectFinalTeams != DefaultTypeCupMaxDirectFinalTeams)
+        {
+            throw new InvalidOperationException(
+                $"TypeCupMaxDirectFinalTeams must be {DefaultTypeCupMaxDirectFinalTeams}, was {TypeCupMaxDirectFinalTeams}.");
+        }
+
+        if (TypeCupFinalTeamCount != DefaultTypeCupFinalTeamCount)
+        {
+            throw new InvalidOperationException(
+                $"TypeCupFinalTeamCount must be {DefaultTypeCupFinalTeamCount}, was {TypeCupFinalTeamCount}.");
+        }
+
+        if (TypeCupMaxDirectFinalTeams != LeagueSize || TypeCupFinalTeamCount != LeagueSize)
+        {
+            throw new InvalidOperationException(
+                "Type Cup direct-final limit and Final size must equal LeagueSize (32).");
         }
     }
 

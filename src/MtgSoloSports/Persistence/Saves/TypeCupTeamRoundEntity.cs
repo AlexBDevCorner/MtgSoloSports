@@ -12,6 +12,12 @@ namespace MtgSoloSports.Persistence.Saves;
 /// matching normal league round history), never in one row per athlete
 /// placement. RNG before/after states are stored alongside the result so the
 /// RNG commit and the sporting result share one transaction.
+/// Tournament identity (MSS-061) uses three separate fields, never one overloaded
+/// integer: <see cref="TournamentPhase"/> (0 legacy single-field, 1 qualification,
+/// 2 Final), <see cref="QualificationGroup"/> (0 for legacy/Final, 1..G for
+/// qualification), and <see cref="GroupNumber"/> (athlete rank group 1..4).
+/// Legacy rows predate the scalable format and store 0/0; new-format qualification
+/// and Final rounds use 1/G and 2/0 respectively so the two stages never collide.
 /// </summary>
 public sealed class TypeCupTeamRoundEntity
 {
@@ -20,6 +26,10 @@ public sealed class TypeCupTeamRoundEntity
     public int SourceSeasonId { get; set; }
 
     public int SourceSeasonNumber { get; set; }
+
+    public int TournamentPhase { get; set; }
+
+    public int QualificationGroup { get; set; }
 
     public int GroupNumber { get; set; }
 

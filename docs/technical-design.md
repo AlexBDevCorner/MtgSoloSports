@@ -188,7 +188,11 @@ The core identity is always `16 safe + 8 champions + 8 qualifier = 32`.
 The qualifier (`qualifier`, 32 × 16 rounds), Color Cup individual
 (`color-cup-individual`, 32 × 16), Color Cup team (`color-cup-team`, 4 groups ×
 8 rounds) and Type Cup team (`type-cup-team`, 4 groups × 8 rounds) can be
-played one round at a time, exactly like league rounds. Tiered saves resolve
+played one round at a time, exactly like league rounds. The Type Cup team event
+uses explicit tournament identity (`TournamentPhase` 0/1/2 plus
+`QualificationGroup` alongside rank `GroupNumber`) so future qualification and
+Final stages cannot collide; current single-field rows store legacy 0/0.
+Tiered saves resolve
 16 additional feeder qualifiers (8 F1↔F2 plus 8 F2↔F3, each 16 athletes × 16
 rounds) as one-shot events in canonical order via `POST
 …/qualifiers/{boundary}/{color}` or together via `POST …/qualifiers/run-all`;
@@ -269,6 +273,36 @@ viable types it could represent; plus viable types that fielded no team.
 `GET /api/saves/{saveId}/cups/type/selection-report?sourceSeason=` adds a
 reason per member: `Capped`, `OnlyType`, `BestRank` or `Balanced` (placed away
 from its best-ranked type so the most teams take part).
+
+### Scalable tournament format (MSS-061)
+
+The Type Cup rules snapshot carries a versioned tournament-format rule
+(`TypeCupTournamentFormatVersion`: 0 legacy unbounded single-field, 1 scalable
+qualification plus fixed 32-team Final; `TypeCupMaxDirectFinalTeams = 32`,
+`TypeCupFinalTeamCount = 32`). New saves use format 1; historical snapshots
+without the fields decode as 0 and their single-field Cups stay readable
+without rewriting results.
+
+Tournament-format math lives in pure `SimulationKernel/Cups/TypeCupTournamentFormat`:
+group count `ceil(N / 32)` (0 for direct Finals), balanced sizes differing by at
+most one, deterministic random draw via only `Pcg32V1` (ordinal-canonicalized
+input, Fisher-Yates shuffle, contiguous balanced chunks numbered after the draw),
+Final-place quotas totalling exactly 32 (larger groups first, ties by group
+number), draw checksum fingerprint, and a 32-team ceiling guard so new-format
+rounds never touch the legacy greater-than-32 minimum-point extension (kept only
+for historical reads via `ScoringCalculator.TypeCupBasePointsForPosition`; new
+fields use the strict `TypeCupBasePointsForNewFormatPosition`).
+
+Persistence keeps selection and draw as separate concepts. `TypeCupTournamentDraws`
+(one row per team) stores source season, creature type, qualification group,
+group size and field metadata, Final-place quota, rules/format versions, RNG
+before/after and draw checksum; the RNG commit and the draw share one
+transaction and squad membership is verified unchanged. Round, leg and team
+tables carry explicit `TournamentPhase` (0 legacy, 1 qualification, 2 Final) plus
+`QualificationGroup` (0 outside qualification) alongside the athlete rank
+`GroupNumber`, so qualification and Final rounds never collide; legacy rows store
+0/0. The draw slice exposes `POST/GET /api/saves/{saveId}/cups/type/draw`.
+Running the qualification and Final round lifecycle itself is MSS-062.
 
 ## 17a. Cup history read model
 

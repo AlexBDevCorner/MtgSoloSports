@@ -288,9 +288,16 @@ An athlete with multiple types is initially uncapped. During selection it prefer
 
 Once an athlete actually appears in a Type Cup for a type, that becomes its permanent Type Cup nationality; it can never represent another type later.
 
-Competition uses the same #1/#2/#3/#4 team-group model as the Color Cup team event, with 8 rounds per group. Active bonus applies; no bonus is generated.
+### Tournament format (scalable, Rules v1 format 1)
 
-Type Cup scoring uses the §6 32-position table exactly for positions 1–32. Positions beyond 32 (possible because there is no artificial team limit) score the table minimum of 1 point before the active-bonus multiplier, applied with the same fixed-point arithmetic. Fields of 2–32 teams are unaffected.
+Every competition field holds at most 32 teams and uses the §6 32-position table exactly:
+
+- **Direct Final (1-32 selected teams):** the current Type Cup team competition runs unchanged — four athlete-rank groups (#1, #2, #3, #4), eight rounds per group, normal scoring, no qualification stage.
+- **Qualification + Final (more than 32 selected teams):** the field is randomly drawn into `ceil(teamCount / 32)` balanced qualification groups (sizes differ by at most one, assignment random via the versioned save RNG, never strength-seeded, persisted before competition). Each qualification group runs the normal four-group × eight-round team format internally with the standard scoring table, and the team qualification score is the sum of its four leg scores. Exactly 32 teams advance: `basePlaces = floor(32 / groupCount)` per group plus one extra place to the first `remainder = 32 % groupCount` groups in deterministic (larger-group-first, then group-number) order — for example 16/16 from two groups (33-64 teams) or 11/11/10 from three groups (65-96 teams). Finalists start the Final from zero; qualification scores never carry over. The Final is a fresh four-group × eight-round 32-team event whose standings alone determine Gold/Silver/Bronze and the official title.
+
+Type Cup scoring uses the §6 32-position table exactly for positions 1–32. Positions beyond 32 (possible only in historical single-field Cups persisted before the scalable format) score the table minimum of 1 point before the active-bonus multiplier, applied with the same fixed-point arithmetic. New-format qualification and Final rounds never generate a placement beyond 32. Fields of 2–32 teams are unaffected.
+
+Competition uses the same #1/#2/#3/#4 team-group model as the Color Cup team event, with 8 rounds per group. Active bonus applies; no bonus is generated.
 
 ## 16. Season lifecycle
 
