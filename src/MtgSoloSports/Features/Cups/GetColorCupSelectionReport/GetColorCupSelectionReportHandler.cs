@@ -190,6 +190,11 @@ public sealed class GetColorCupSelectionReportHandler
             candidate.BonusRawThousandths,
             candidate.PerformanceRawThousandths,
             candidate.FormRaw,
-            candidate.PrestigeRaw);
+            candidate.PrestigeRaw,
+            candidate.SourceLeagueName,
+            candidate.SourceLeagueLevel,
+            candidate.StrengthFactorPermille,
+            candidate.UnadjustedPerformanceThousandths,
+            candidate.UnadjustedFormAggregate);
     }
 }

@@ -10,6 +10,11 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// and the weights that combined them. Written once with the selection rows
 /// and replayed by the selection event; never recomputed. Stored
 /// Brotli-compressed via <see cref="RoundPayloadCodec"/>.
+/// v2 (MSS-064) adds source-league strength explanation: source league name/level
+/// or Pool, competition-strength factor, unadjusted source-season championship
+/// points, adjusted performance raw, unadjusted final-ten-stage form aggregate
+/// and adjusted form raw. v1 payloads remain readable (missing fields decode to
+/// Pool/zero defaults) and are never rewritten.
 /// </summary>
 public sealed record ColorCupSelectionReportDocument(
     int Version,
@@ -19,7 +24,9 @@ public sealed record ColorCupSelectionReportDocument(
     int PrestigeWeightPermille,
     IReadOnlyList<ColorCupSelectionReportDocument.Team> Teams)
 {
-    public const int PayloadVersion = 1;
+    public const int PayloadVersion = 2;
+
+    public const int LegacyPayloadVersion = 1;
 
     /// <summary>Ranked athletes kept per color: the team of four plus eight who missed out.</summary>
     public const int ShortlistSize = 12;
@@ -46,7 +53,12 @@ public sealed record ColorCupSelectionReportDocument(
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
-        int PrestigeRaw);
+        int PrestigeRaw,
+        string? SourceLeagueName = null,
+        int? SourceLeagueLevel = null,
+        int StrengthFactorPermille = 0,
+        int UnadjustedPerformanceThousandths = 0,
+        int UnadjustedFormAggregate = 0);
 
     public string ToStored() => RoundPayloadCodec.Encode(JsonSerializer.Serialize(this, JsonOptions));
 

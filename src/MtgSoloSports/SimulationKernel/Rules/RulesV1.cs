@@ -63,6 +63,23 @@ public class RulesV1
 
     public const int DefaultTypeCupFinalTeamCount = 32;
 
+    // Cup selection competition-strength factors (MSS-064): softer selection-rating
+    // adjustment so an identical sporting result is worth more against stronger
+    // league competition. Permille values (1000 == 1.00): Superleague 1000,
+    // Feeder 1 800, Feeder 2 600, Feeder 3 400. Selection-rating factors only;
+    // they never alter league scoring, championship points, bonus generation or
+    // persisted standings. v1 knows only Superleague/Feeder1 (historical
+    // single-feeder competition maps conceptually to Feeder 1); tiered saves use v2.
+    public const int CupStrengthDivisor = 1000;
+
+    public const int DefaultCupSuperleagueStrengthPermille = 1000;
+
+    public const int DefaultCupFeeder1StrengthPermille = 800;
+
+    public const int DefaultCupFeeder2StrengthPermille = 600;
+
+    public const int DefaultCupFeeder3StrengthPermille = 400;
+
     protected RulesV1(
         int sportingColorCount,
         int athletesPerSportingColor,
@@ -301,6 +318,22 @@ public class RulesV1
         LeagueLevel.Feeder1 => new TierBonusScale(1, 1),
         LeagueLevel.Feeder2 or LeagueLevel.Feeder3 => throw new InvalidOperationException(
             $"Rules v1 has no tier scale for {LeagueHierarchy.DisplayName(level)}; tiered saves require rules v2."),
+        _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
+    };
+
+    /// <summary>
+    /// Versioned Cup selection competition-strength factor (MSS-064) in permille.
+    /// v1: Superleague 1000, Feeder 1 800; F2/F3 throw instead of silently
+    /// reinterpreting historical seasons (historical single-feeder competition
+    /// maps conceptually to Feeder 1 via <see cref="LeagueHierarchy.LevelForDivision"/>).
+    /// Tiered saves use v2 stored factors. Selection-rating only.
+    /// </summary>
+    public virtual int GetCupStrengthFactor(LeagueLevel level) => level switch
+    {
+        LeagueLevel.Superleague => DefaultCupSuperleagueStrengthPermille,
+        LeagueLevel.Feeder1 => DefaultCupFeeder1StrengthPermille,
+        LeagueLevel.Feeder2 or LeagueLevel.Feeder3 => throw new InvalidOperationException(
+            $"Rules v1 has no competition-strength factor for {LeagueHierarchy.DisplayName(level)}; tiered saves require rules v2."),
         _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
     };
 

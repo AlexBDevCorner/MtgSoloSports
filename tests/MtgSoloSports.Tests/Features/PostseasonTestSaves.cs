@@ -195,6 +195,53 @@ internal static class PostseasonTestSaves
         }
 
         await context.SaveChangesAsync().ConfigureAwait(false);
+        AddZeroSelectionInputs(context, season, league, activeIds);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static void AddZeroSelectionInputs(
+        SaveDbContext context, SeasonEntity season, LeagueEntity league, List<int> activeIds)
+    {
+        for (int i = 0; i < activeIds.Count; i++)
+        {
+            context.SeasonStandings.Add(new SeasonStandingEntity
+            {
+                SeasonId = season.Id,
+                LeagueId = league.Id,
+                SaveAthleteId = activeIds[i],
+                SeasonRank = i + 1,
+                TotalChampionshipPointsThousandths = 0,
+                TotalStageScoreThousandths = 0,
+                TotalBaseScoreThousandths = 0,
+                StageWins = 0,
+                RoundWins = 0,
+                StagePlaceCountsJson = "[]",
+                RoundPlaceCountsJson = "[]",
+                IsChampion = i == 0,
+            });
+        }
+
+        foreach (int id in activeIds)
+        {
+            for (int stage = 23; stage <= 32; stage++)
+            {
+                context.StageStandings.Add(new StageStandingEntity
+                {
+                    SeasonId = season.Id,
+                    LeagueId = league.Id,
+                    StageId = stage,
+                    StageNumber = stage,
+                    SaveAthleteId = id,
+                    StageRank = 10,
+                    StageScoreThousandths = 0,
+                    BaseScoreThousandths = 0,
+                    ChampionshipPointsThousandths = 0,
+                    RoundWins = 0,
+                    RoundPlaceCountsJson = "[]",
+                    EarnedBonusThousandths = 0,
+                });
+            }
+        }
     }
 
     internal static async Task CompleteSeasonOneAsync(SaveStore store, Guid saveId)

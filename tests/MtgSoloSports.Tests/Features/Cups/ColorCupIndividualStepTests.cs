@@ -13,6 +13,7 @@ public sealed class ColorCupIndividualStepTests
     /// <summary>
     /// Golden values for the one-shot runner and this seed. The RNG state dates from the
     /// pre-stepping runner (commit ff73e98); the checksum was re-captured when bonus became a percentage.
+    /// MSS-064 re-captured for league-strength-aware selection.
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -21,7 +22,7 @@ public sealed class ColorCupIndividualStepTests
         try
         {
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("73f03d689c86de3506bcc46c0c573b8d2239d53b95dd8816868ec367b3ba7a87");
+            response.Checksum.ShouldBe("a4732eb16ac167642d69092c8caa382bd32a894ee5aa59700131fca31d1fe8d6");
             (await LoadRngAsync(store, saveId)).ShouldBe((5256838557070595265L, 8181L));
         }
         finally

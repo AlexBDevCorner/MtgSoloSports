@@ -264,13 +264,17 @@ All eight sporting colors participate with four selected athletes each.
 Automatic selection rating:
 
 - 35% current effective bonus;
-- 30% completed-season performance;
-- 25% recent form over the most recent 10 league stages, weighted toward recent stages;
+- 30% completed-season performance, adjusted by competition strength;
+- 25% recent form over the completed source season's final 10 league stages, adjusted by competition strength;
 - 10% career prestige.
 
 Each component is normalized within the color. The four highest scores make the team and are ordered #1-#4 by selection rating.
 
-Career prestige (Rules v1 initial constants) is raw points: feeder-league title 100, Superleague title 300, Superleague season appearance 20, stage win 10, stage second 5, stage third 2, other major honour (future Cup titles) 150. Recent form weights the latest ten league stages 1..10 oldest-to-newest (newest-aligned; missing stages score zero).
+Career prestige (Rules v1 initial constants) is raw points: feeder-league title 100, Superleague title 300, Superleague season appearance 20, stage win 10, stage second 5, stage third 2, other major honour (future Cup titles) 150.
+
+Competition strength (Rules v2, selection-rating only): Superleague 1000 permille (1.00), Feeder 1 800 (0.80), Feeder 2 600 (0.60), Feeder 3 400 (0.40). Performance raw is source-season championship points × source-league factor / 1000 (checked integer truncation). Recent form is exactly the completed source season's final ten league stages (stages 23-32 under 32-stage rules, generalized from the snapshot) weighted 1..10 oldest-to-newest, then × source-league factor / 1000. Pool athletes have no source-season standing and score zero performance and form, even with excellent older history; historical stages never leak. Active athletes must present a complete final-ten window or selection aborts.
+
+Effective bonus reflects accumulated career advantage (already tier-aware through bonus generation); performance/form reflect current results adjusted by current competition strength. The softer 100/80/60/40% factor deliberately avoids counting tier strength three times at the same severity as the bonus 2×/1×/1/2×/1/4× scale. Type Cup uses the same performance/form calculation, normalized globally across active candidates.
 
 ### Individual event
 

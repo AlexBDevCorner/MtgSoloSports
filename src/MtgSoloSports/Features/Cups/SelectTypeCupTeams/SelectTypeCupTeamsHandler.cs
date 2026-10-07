@@ -118,7 +118,9 @@ public sealed partial class SelectTypeCupTeamsHandler
         List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules);
         TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
         TypeCupAllocation.AllocationResult allocation = insight.Allocation;
-        AddReport(context, source, BuildReport(insight, rules), rules);
+        Dictionary<int, List<MtgSoloSports.SimulationKernel.Cups.ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
+        Dictionary<int, MtgSoloSports.SimulationKernel.Cups.CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
+        AddReport(context, source, BuildReport(insight, metrics, inputs, rules), rules);
         await PersistSelectionsAsync(context, source, allocation, rules, cancellationToken).ConfigureAwait(false);
 
         List<TypeCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -200,7 +202,11 @@ public sealed partial class SelectTypeCupTeamsHandler
         List<HonourEntity> honours = await LoadHonoursAsync(context, source, cancellationToken).ConfigureAwait(false);
         (List<SeasonMembershipEntity> memberships, Dictionary<int, int> leagueKinds) =
             await LoadMembershipInputsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
-        return new SelectionInputs(active, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds);
+        (Dictionary<int, int> leagueIdByAthlete, Dictionary<int, int> levels, Dictionary<int, string> names) =
+            await LoadSourceLeagueInputsAsync(context, source, active, cancellationToken).ConfigureAwait(false);
+        return new SelectionInputs(
+            active, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds,
+            source.Id, source.SeasonNumber, leagueIdByAthlete, levels, names);
     }
 
     internal static async Task<List<SaveAthleteEntity>> LoadActiveAthletesAsync(
@@ -322,6 +328,51 @@ public sealed partial class SelectTypeCupTeamsHandler
             .ToDictionaryAsync(e => e.Id, e => e.Kind, cancellationToken)
             .ConfigureAwait(false);
         return (memberships, kinds);
+    }
+
+    internal static async Task<(Dictionary<int, int> LeagueIdByAthlete, Dictionary<int, int> Levels, Dictionary<int, string> Names)> LoadSourceLeagueInputsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<SaveAthleteEntity> athletes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(athletes);
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> levels = new(leagues.Count);
+        Dictionary<int, string> names = new(leagues.Count);
+        foreach (LeagueEntity league in leagues)
+        {
+            levels[league.Id] = (int)LeagueEntityLevels.GetLevel(league);
+            names[league.Id] = league.Name;
+        }
+
+        Dictionary<int, int?> membershipLeague = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id)
+            .ToDictionaryAsync(e => e.SaveAthleteId, e => e.LeagueId, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, int> leagueIdByAthlete = new(athletes.Count);
+        foreach (SaveAthleteEntity athlete in athletes)
+        {
+            if (membershipLeague.TryGetValue(athlete.Id, out int? leagueId) && leagueId.HasValue)
+            {
+                if (!levels.ContainsKey(leagueId.Value))
+                {
+                    throw new InvalidOperationException(
+                        $"Source season {source.SeasonNumber} membership for athlete {athlete.Id} references unknown league {leagueId.Value}.");
+                }
+
+                leagueIdByAthlete[athlete.Id] = leagueId.Value;
+            }
+        }
+
+        return (leagueIdByAthlete, levels, names);
     }
 
     internal static async Task ValidateNationalityUntouchedAsync(
