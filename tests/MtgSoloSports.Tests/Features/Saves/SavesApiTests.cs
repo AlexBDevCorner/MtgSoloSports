@@ -33,7 +33,7 @@ public sealed class SavesApiTests
             createdPayload.SchemaVersion.ShouldBe(SaveSchemaVersion.Current);
             createdPayload.CurrentSeason.ShouldBe(1);
             createdPayload.Phase.ShouldBe("SeasonInProgress");
-            createdPayload.RulesVersion.ShouldBe(MtgSoloSports.SimulationKernel.Rules.RulesV2.RulesVersion);
+            createdPayload.RulesVersion.ShouldBe(MtgSoloSports.SimulationKernel.Rules.RulesV3.RulesVersion);
             createdPayload.TotalAthletes.ShouldBe(2048);
             createdPayload.AthletesPerColor.Count.ShouldBe(8);
             foreach (int count in createdPayload.AthletesPerColor.Values)

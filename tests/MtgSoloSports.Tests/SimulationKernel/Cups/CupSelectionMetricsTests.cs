@@ -215,7 +215,7 @@ public sealed class CupSelectionMetricsTests
             ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 250, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [candidate])]);
         ColorCupSelectionReportDocument restored = ColorCupSelectionReportDocument.FromStored(report.ToStored());
-        restored.Version.ShouldBe(2);
+        restored.Version.ShouldBe(ColorCupSelectionReportDocument.PayloadVersion);
         ColorCupSelectionReportDocument.Candidate back = restored.Teams[0].Ranking[0];
         back.SourceLeagueName.ShouldBe("White League");
         back.SourceLeagueLevel.ShouldBe((int)LeagueLevel.Feeder1);
@@ -247,7 +247,7 @@ public sealed class CupSelectionMetricsTests
             TypeCupSelectionReportDocument.PayloadVersion, 1, 350, 300, 250, 100,
             [new TypeCupSelectionReportDocument.Team("Wizard", 1, [candidate])], []);
         TypeCupSelectionReportDocument restored = TypeCupSelectionReportDocument.FromStored(report.ToStored());
-        restored.Version.ShouldBe(2);
+        restored.Version.ShouldBe(TypeCupSelectionReportDocument.PayloadVersion);
         TypeCupSelectionReportDocument.Candidate back = restored.Teams[0].Ranking[0];
         back.SourceLeagueName.ShouldBe("White League F2");
         back.SourceLeagueLevel.ShouldBe((int)LeagueLevel.Feeder2);

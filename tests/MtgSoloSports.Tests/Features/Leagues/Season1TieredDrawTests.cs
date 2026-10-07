@@ -32,7 +32,7 @@ public sealed class Season1TieredDrawTests
         try
         {
             SaveStore.CreationRecord created = await store.CreateAsync("Tiered Counts", 4242UL, 5656UL, UniverseTestCatalog.Build());
-            created.Detail.RulesVersion.ShouldBe(RulesV2.RulesVersion);
+            created.Detail.RulesVersion.ShouldBe(RulesV3.RulesVersion);
 
             GetSeason1LeaguesHandler handler = new(store);
             GetSeason1LeaguesResponse response = await handler.HandleAsync(created.Detail.SaveId);

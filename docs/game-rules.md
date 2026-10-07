@@ -270,7 +270,15 @@ Automatic selection rating:
 
 Each component is normalized within the color. The four highest scores make the team and are ordered #1-#4 by selection rating.
 
-Career prestige (Rules v1 initial constants) is raw points: feeder-league title 100, Superleague title 300, Superleague season appearance 20, stage win 10, stage second 5, stage third 2, other major honour (future Cup titles) 150.
+Career prestige (Rules v3 tiered model, quarter-prestige-points with scale 4, exact integer-only) distinguishes the level at which achievements were earned. Honours, titles and prestige are different concepts: an honour is any top-three finish shown in career history; a title is a first-place honour; prestige is a weighted career-selection input where competition level matters.
+
+- League championship: Superleague title 300 (1200 scaled), Feeder 1 title 100 (400), Feeder 2 title 50 (200), Feeder 3 title 25 (100).
+- Superleague participation: completed Superleague season appearance 20 (80 scaled). No feeder or pool appearance prestige.
+- League stage podium (Feeder 1 baseline 10/5/2, exact): Superleague 20/10/4 (80/40/16 scaled), Feeder 1 10/5/2 (40/20/8), Feeder 2 5/2.5/1 (20/10/4), Feeder 3 2.5/1.25/0.5 (10/5/2).
+- Major Cup championship: Color Cup individual title 150 (600), Color Cup team title 150 (600), Type Cup team title 150 (600, Final champion only).
+- Cup runner-up/third-place honours remain honours but add no prestige (win-only prestige). Type Cup qualification-group wins persist no honour and add no prestige; only the Final champion is the official Type Cup title.
+- Feeder titles resolve via the persisted league level of the honour's own competition (historical v1 single-feeder titles count as Feeder 1). Stage podiums resolve via each stage row's own league, never current membership, so relegated athletes keep earlier higher-tier prestige. Prestige is cumulative with no time decay. The outer prestige weight stays 10% (35/30/25/10 unchanged); normalization removes uniform internal-unit scaling.
+- Rules v1 snapshots keep their original integer prestige constants (feeder 100, Superleague title 300, appearance 20, stage 10/5/2, other major 150) and remain readable; tiered v3 saves use the model above. Selection reports carry the prestige breakdown (titles by level, appearances, stage podiums by level, major Cups, total raw) summing exactly to prestige raw.
 
 Competition strength (Rules v2, selection-rating only): Superleague 1000 permille (1.00), Feeder 1 800 (0.80), Feeder 2 600 (0.60), Feeder 3 400 (0.40). Performance raw is source-season championship points × source-league factor / 1000 (checked integer truncation). Recent form is exactly the completed source season's final ten league stages (stages 23-32 under 32-stage rules, generalized from the snapshot) weighted 1..10 oldest-to-newest, then × source-league factor / 1000. Pool athletes have no source-season standing and score zero performance and form, even with excellent older history; historical stages never leak. Active athletes must present a complete final-ten window or selection aborts.
 
