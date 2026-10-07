@@ -9,6 +9,7 @@ using MtgSoloSports.Features.Cups.GetTypeCupTeamResult;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
@@ -163,6 +164,11 @@ public sealed class TypeCupTournamentDrawTests
     [Fact]
     public async Task HistoricalSingleFieldCup_RemainsReadable()
     {
+        // MSS-062: new 35-team fields run qualification plus a 32-team Final
+        // (no manufactured single-field history). Old single-field saves
+        // (phase 0, even 33-35 teams) remain readable via the legacy path;
+        // here a new tournament stays readable through both the Final result
+        // and the tournament summary.
         var (store, root) = CreateStore();
         try
         {
@@ -171,23 +177,22 @@ public sealed class TypeCupTournamentDrawTests
             await select.HandleAsync(saveId, sourceSeasonNumber: 2);
             RunTypeCupTeamHandler run = new(store);
             RunTypeCupTeamResponse response = await run.HandleAsync(saveId, sourceSeasonNumber: 2);
-            response.TeamCount.ShouldBe(35);
+            response.TeamCount.ShouldBe(32);
 
             GetTypeCupTeamResultHandler query = new(store);
             GetTypeCupTeamResultResponse summary = await query.HandleAsync(saveId, sourceSeasonNumber: 2);
-            summary.TeamCount.ShouldBe(35);
+            summary.TeamCount.ShouldBe(32);
             summary.Checksum.ShouldBe(response.Checksum);
 
             using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2);
             List<TypeCupTeamRoundEntity> rounds = await context.TypeCupTeamRounds.AsNoTracking()
                 .Where(e => e.SourceSeasonId == source.Id).ToListAsync();
-            rounds.Count.ShouldBe(32);
-            foreach (TypeCupTeamRoundEntity round in rounds)
-            {
-                round.TournamentPhase.ShouldBe(0);
-                round.QualificationGroup.ShouldBe(0);
-            }
+            // Two qualification groups (32 rounds each) plus the Final (32).
+            rounds.Count.ShouldBe(96);
+            rounds.Any(r => r.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.LegacySingleField).ShouldBeFalse();
+            rounds.Count(r => r.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Qualification).ShouldBe(64);
+            rounds.Count(r => r.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Final).ShouldBe(32);
         }
         finally
         {

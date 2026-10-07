@@ -84,8 +84,14 @@ public static class CupExtensionPoint
             bool selection = await context.TypeCupSelections
                 .AnyAsync(e => e.SourceSeasonId == source.Id, cancellationToken)
                 .ConfigureAwait(false);
+            // The Cup is complete only when Final (or legacy single-field)
+            // standings are persisted. Qualification standings alone never
+            // complete the tournament.
             bool team = await context.TypeCupTeamStandings
-                .AnyAsync(e => e.SourceSeasonId == source.Id, cancellationToken)
+                .AnyAsync(e => e.SourceSeasonId == source.Id
+                    && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                        || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final),
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (team && !selection)
             {

@@ -1133,4 +1133,379 @@ public static class TypeCupTeamInvariants
             }
         }
     }
+
+    /// <summary>
+    /// Validates a completed tournament (MSS-062): legacy single-field uses
+    /// the legacy single-event checks; direct Finals use the Final phase with
+    /// the same single-event shape; qualification plus Final validates every
+    /// qualification stage independently (balanced sizes, quotas, medals None)
+    /// plus the 32-team Final (medals on 1..3) and Final-only honours.
+    /// Old single-field saves (phase 0, even 33-35 teams) remain readable via
+    /// the legacy path without manufacturing qualification history.
+    /// </summary>
+    public static void ValidateTournamentPersisted(
+        SeasonEntity source,
+        IReadOnlyList<TypeCupTeamRoundEntity> rounds,
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> legs,
+        IReadOnlyList<TypeCupTeamStandingEntity> teams,
+        IReadOnlyList<HonourEntity> honours,
+        RulesV1 rules,
+        TypeCupTournamentPlan.Plan plan)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rounds);
+        ArgumentNullException.ThrowIfNull(legs);
+        ArgumentNullException.ThrowIfNull(teams);
+        ArgumentNullException.ThrowIfNull(honours);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(plan);
+        CheckPersistedSeasons(source);
+
+        bool hasLegacy = rounds.Any(r => r.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField)
+            || teams.Any(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
+        if (plan.IsLegacy || hasLegacy)
+        {
+            ValidatePersisted(source, rounds, legs, teams, honours, rules);
+            return;
+        }
+
+        if (plan.IsDirectFinal)
+        {
+            ValidateDirectFinalPersisted(source, rounds, legs, teams, honours, rules, plan);
+            return;
+        }
+
+        ValidateQualificationTournamentPersisted(source, rounds, legs, teams, honours, rules, plan);
+    }
+
+    private static void ValidateDirectFinalPersisted(
+        SeasonEntity source,
+        IReadOnlyList<TypeCupTeamRoundEntity> rounds,
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> legs,
+        IReadOnlyList<TypeCupTeamStandingEntity> teams,
+        IReadOnlyList<HonourEntity> honours,
+        RulesV1 rules,
+        TypeCupTournamentPlan.Plan plan)
+    {
+        int teamCount = plan.TeamCount;
+        int expectedRounds = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
+        var finalRounds = rounds.Where(r => r.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final).ToList();
+        var finalLegs = legs.Where(l => l.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final).ToList();
+        var finalTeams = teams.Where(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final).ToList();
+        if (finalRounds.Count != expectedRounds || finalLegs.Count != teamCount * rules.TypeCupMinTeamSize || finalTeams.Count != teamCount)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup direct Final must persist exactly {expectedRounds} rounds, {teamCount * rules.TypeCupMinTeamSize} legs and {teamCount} teams.");
+        }
+
+        if (rounds.Any(r => r.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            || legs.Any(l => l.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            || teams.Any(t => t.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
+        {
+            throw new InvalidOperationException("Type Cup direct Final must not persist qualification rows.");
+        }
+
+        CheckPersistedRoundsForStage(finalRounds, source, rules, teamCount, (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final, 0);
+        CheckPersistedLegsForStage(finalLegs, source, rules, teamCount, (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final, 0);
+        CheckPersistedTeamsForStage(finalTeams, source, rules, teamCount, (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final, 0, withMedals: true);
+        CheckPersistedHonourForStage(source, finalLegs, finalTeams, honours);
+    }
+
+    private static void ValidateQualificationTournamentPersisted(
+        SeasonEntity source,
+        IReadOnlyList<TypeCupTeamRoundEntity> rounds,
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> legs,
+        IReadOnlyList<TypeCupTeamStandingEntity> teams,
+        IReadOnlyList<HonourEntity> honours,
+        RulesV1 rules,
+        TypeCupTournamentPlan.Plan plan)
+    {
+        int perStage = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
+        int expectedRounds = plan.TotalRounds;
+        if (rounds.Count != expectedRounds)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup tournament must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
+        }
+
+        // Every qualification stage independently.
+        int totalQualTeams = 0;
+        foreach (TypeCupTournamentPlan.QualificationStage stage in plan.QualificationStages)
+        {
+            int phase = (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification;
+            var stageRounds = rounds.Where(r => r.TournamentPhase == phase && r.QualificationGroup == stage.QualificationGroup).ToList();
+            var stageLegs = legs.Where(l => l.TournamentPhase == phase && l.QualificationGroup == stage.QualificationGroup).ToList();
+            var stageTeams = teams.Where(t => t.TournamentPhase == phase && t.QualificationGroup == stage.QualificationGroup).ToList();
+            if (stageRounds.Count != perStage
+                || stageLegs.Count != stage.GroupSize * rules.TypeCupMinTeamSize
+                || stageTeams.Count != stage.GroupSize)
+            {
+                throw new InvalidOperationException(
+                    $"Type Cup qualification group {stage.QualificationGroup} must persist exactly {perStage} rounds, {stage.GroupSize * rules.TypeCupMinTeamSize} legs and {stage.GroupSize} teams.");
+            }
+
+            CheckPersistedRoundsForStage(stageRounds, source, rules, stage.GroupSize, phase, stage.QualificationGroup);
+            CheckPersistedLegsForStage(stageLegs, source, rules, stage.GroupSize, phase, stage.QualificationGroup);
+            CheckPersistedTeamsForStage(stageTeams, source, rules, stage.GroupSize, phase, stage.QualificationGroup, withMedals: false);
+            totalQualTeams += stage.GroupSize;
+        }
+
+        if (totalQualTeams != plan.TeamCount)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup qualification teams must total exactly {plan.TeamCount}, was {totalQualTeams}.");
+        }
+
+        // The Final always holds exactly 32 teams with medals on 1..3.
+        int finalPhase = (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final;
+        var finalRounds = rounds.Where(r => r.TournamentPhase == finalPhase).ToList();
+        var finalLegs = legs.Where(l => l.TournamentPhase == finalPhase).ToList();
+        var finalTeams = teams.Where(t => t.TournamentPhase == finalPhase).ToList();
+        if (finalRounds.Count != perStage || finalLegs.Count != rules.TypeCupFinalTeamCount * rules.TypeCupMinTeamSize || finalTeams.Count != rules.TypeCupFinalTeamCount)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup Final must persist exactly {perStage} rounds, {rules.TypeCupFinalTeamCount * rules.TypeCupMinTeamSize} legs and {rules.TypeCupFinalTeamCount} teams.");
+        }
+
+        CheckPersistedRoundsForStage(finalRounds, source, rules, rules.TypeCupFinalTeamCount, finalPhase, 0);
+        CheckPersistedLegsForStage(finalLegs, source, rules, rules.TypeCupFinalTeamCount, finalPhase, 0);
+        CheckPersistedTeamsForStage(finalTeams, source, rules, rules.TypeCupFinalTeamCount, finalPhase, 0, withMedals: true);
+        CheckPersistedHonourForStage(source, finalLegs, finalTeams, honours);
+
+        // No legacy rows inside a new-format tournament.
+        if (rounds.Any(r => r.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField)
+            || legs.Any(l => l.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField)
+            || teams.Any(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField))
+        {
+            throw new InvalidOperationException("Type Cup tournament must not persist legacy rows.");
+        }
+    }
+
+    private static void CheckPersistedRoundsForStage(
+        IReadOnlyList<TypeCupTeamRoundEntity> rounds,
+        SeasonEntity source,
+        RulesV1 rules,
+        int teamCount,
+        int phase,
+        int qual)
+    {
+        HashSet<(int Group, int Round)> seen = new();
+        foreach (TypeCupTeamRoundEntity round in rounds)
+        {
+            if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
+            {
+                throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt source linkage.");
+            }
+
+            if (round.TournamentPhase != phase || round.QualificationGroup != qual)
+            {
+                throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt stage identity.");
+            }
+
+            ValidateTournamentIdentity(round.TournamentPhase, round.QualificationGroup, "round");
+            if (round.GroupNumber < 1 || round.GroupNumber > rules.TypeCupMinTeamSize
+                || round.RoundNumber < 1 || round.RoundNumber > rules.TypeCupGroupRounds)
+            {
+                throw new InvalidOperationException($"Type Cup team round group {round.GroupNumber} round {round.RoundNumber} is out of range.");
+            }
+
+            if (!seen.Add((round.GroupNumber, round.RoundNumber)))
+            {
+                throw new InvalidOperationException($"Type Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber} in phase {phase} qual {qual}.");
+            }
+
+            if (round.RulesVersion != rules.Version)
+            {
+                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
+            }
+
+            if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
+            {
+                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
+            }
+
+            TypeCupTeamRoundPayloadDocument document = TypeCupTeamRoundPayloadDocument.FromStored(round.PayloadJson);
+            if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
+            }
+
+            if (document.RoundNumber != round.RoundNumber || document.GroupNumber != round.GroupNumber || document.SourceSeasonNumber != source.SeasonNumber)
+            {
+                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
+            }
+        }
+
+        for (int group = 1; group <= rules.TypeCupMinTeamSize; group++)
+        {
+            for (int number = 1; number <= rules.TypeCupGroupRounds; number++)
+            {
+                if (!seen.Contains((group, number)))
+                {
+                    throw new InvalidOperationException($"Type Cup team phase {phase} qual {qual} is missing group {group} round {number}.");
+                }
+            }
+        }
+    }
+
+    private static void CheckPersistedLegsForStage(
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> legs,
+        SeasonEntity source,
+        RulesV1 rules,
+        int teamCount,
+        int phase,
+        int qual)
+    {
+        HashSet<int> athletes = new();
+        Dictionary<int, HashSet<int>> ranksByGroup = new();
+        foreach (TypeCupTeamGroupStandingEntity leg in legs)
+        {
+            if (leg.SourceSeasonId != source.Id || leg.SourceSeasonNumber != source.SeasonNumber)
+            {
+                throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
+            }
+
+            if (leg.TournamentPhase != phase || leg.QualificationGroup != qual)
+            {
+                throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt stage identity.");
+            }
+
+            ValidateTournamentIdentity(leg.TournamentPhase, leg.QualificationGroup, "leg");
+            if (leg.GroupNumber < 1 || leg.GroupNumber > rules.TypeCupMinTeamSize
+                || leg.SelectionRank != leg.GroupNumber
+                || string.IsNullOrWhiteSpace(leg.CreatureType)
+                || leg.GroupRank < 1 || leg.GroupRank > teamCount)
+            {
+                throw new InvalidOperationException($"Type Cup team leg {leg.Id} is out of range.");
+            }
+
+            if (!athletes.Add(leg.SaveAthleteId))
+            {
+                throw new InvalidOperationException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId} in phase {phase} qual {qual}.");
+            }
+
+            if (!ranksByGroup.TryGetValue(leg.GroupNumber, out HashSet<int>? ranks))
+            {
+                ranks = new HashSet<int>();
+                ranksByGroup[leg.GroupNumber] = ranks;
+            }
+
+            if (!ranks.Add(leg.GroupRank))
+            {
+                throw new InvalidOperationException($"Type Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank} in phase {phase} qual {qual}.");
+            }
+
+            CheckLegPlaceCounts(leg, rules, teamCount);
+        }
+
+        foreach (int group in Enumerable.Range(1, rules.TypeCupMinTeamSize))
+        {
+            if (!ranksByGroup.TryGetValue(group, out HashSet<int>? ranks) || !ranks.SetEquals(Enumerable.Range(1, teamCount)))
+            {
+                throw new InvalidOperationException($"Type Cup team phase {phase} qual {qual} group {group} must cover ranks 1..{teamCount} exactly once.");
+            }
+        }
+    }
+
+    private static void CheckPersistedTeamsForStage(
+        IReadOnlyList<TypeCupTeamStandingEntity> teams,
+        SeasonEntity source,
+        RulesV1 rules,
+        int teamCount,
+        int phase,
+        int qual,
+        bool withMedals)
+    {
+        HashSet<int> ranks = new();
+        HashSet<string> types = new(StringComparer.Ordinal);
+        foreach (TypeCupTeamStandingEntity team in teams)
+        {
+            if (team.SourceSeasonId != source.Id || team.SourceSeasonNumber != source.SeasonNumber)
+            {
+                throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt source linkage.");
+            }
+
+            if (team.TournamentPhase != phase || team.QualificationGroup != qual)
+            {
+                throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt stage identity.");
+            }
+
+            ValidateTournamentIdentity(team.TournamentPhase, team.QualificationGroup, "team");
+            if (string.IsNullOrWhiteSpace(team.CreatureType) || team.TeamRank < 1 || team.TeamRank > teamCount)
+            {
+                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} is out of range in phase {phase} qual {qual}.");
+            }
+
+            if (!ranks.Add(team.TeamRank))
+            {
+                throw new InvalidOperationException($"Type Cup team championship contains duplicate rank {team.TeamRank} in phase {phase} qual {qual}.");
+            }
+
+            if (!types.Add(team.CreatureType))
+            {
+                throw new InvalidOperationException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}' in phase {phase} qual {qual}.");
+            }
+
+            int expectedMedal = withMedals
+                ? team.TeamRank switch
+                {
+                    1 => (int)TypeCupMedal.Gold,
+                    2 => (int)TypeCupMedal.Silver,
+                    3 => (int)TypeCupMedal.Bronze,
+                    _ => (int)TypeCupMedal.None,
+                }
+                : (int)TypeCupMedal.None;
+            if (team.Medal != expectedMedal)
+            {
+                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} has corrupt medal {team.Medal} in phase {phase} qual {qual}.");
+            }
+
+            CheckTeamCountJson(team, rules, teamCount);
+        }
+
+        if (!ranks.SetEquals(Enumerable.Range(1, teamCount)))
+        {
+            throw new InvalidOperationException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once in phase {phase} qual {qual}.");
+        }
+    }
+
+    private static void CheckPersistedHonourForStage(
+        SeasonEntity source,
+        IReadOnlyList<TypeCupTeamGroupStandingEntity> legs,
+        IReadOnlyList<TypeCupTeamStandingEntity> teams,
+        IReadOnlyList<HonourEntity> honours)
+    {
+        List<HonourEntity> teamHonours = honours
+            .Where(h => h.SeasonId == source.Id && (h.Kind == (int)Features.Records.HonourKind.TypeCupTeamChampion
+                || h.Kind == (int)Features.Records.HonourKind.TypeCupTeamRunnerUp
+                || h.Kind == (int)Features.Records.HonourKind.TypeCupTeamThirdPlace))
+            .ToList();
+        int podiumRanks = Math.Min(3, teams.Count);
+        int expectedHonours = checked(podiumRanks * 4);
+        if (teamHonours.Count != expectedHonours)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup team for Season {source.SeasonNumber} must persist exactly {expectedHonours} team podium honours, was {teamHonours.Count}.");
+        }
+
+        foreach (int rank in Enumerable.Range(1, podiumRanks))
+        {
+            Features.Records.HonourKind expectedKind = Features.Records.HonourKindMapper.FromTypeCupTeamRank(rank);
+            TypeCupTeamStandingEntity team = teams.Single(s => s.TeamRank == rank);
+            HashSet<int> teamAthletes = legs
+                .Where(l => string.Equals(l.CreatureType, team.CreatureType, StringComparison.Ordinal))
+                .Select(l => l.SaveAthleteId)
+                .ToHashSet();
+            if (teamAthletes.Count != 4)
+            {
+                throw new InvalidOperationException($"Type Cup team rank {rank} must field exactly four legs.");
+            }
+
+            List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
+            if (rankHonours.Count != 4)
+            {
+                throw new InvalidOperationException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
+            }
+        }
+    }
 }

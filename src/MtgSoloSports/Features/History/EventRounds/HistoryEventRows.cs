@@ -85,7 +85,7 @@ internal static class HistoryEventRows
             default:
                 return (await context.TypeCupTeamRounds.AsNoTracking()
                         .Where(e => e.SourceSeasonId == season.Id)
-                        .OrderBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber)
+                        .OrderBy(e => e.TournamentPhase).ThenBy(e => e.QualificationGroup).ThenBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
                     .Select(e => Stored(e.GroupNumber, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
                     .ToList();
@@ -107,7 +107,11 @@ internal static class HistoryEventRows
             cancellationToken).ConfigureAwait(false),
         PostseasonEvents.ColorCupIndividual => await context.ColorCupIndividualStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
         PostseasonEvents.ColorCupTeam => await context.ColorCupTeamStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
-        _ => await context.TypeCupTeamStandings.AnyAsync(e => e.SourceSeasonId == season.Id, cancellationToken).ConfigureAwait(false),
+        _ => await context.TypeCupTeamStandings.AnyAsync(
+            e => e.SourceSeasonId == season.Id
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final),
+            cancellationToken).ConfigureAwait(false),
     };
 
     private static StoredRound Stored(

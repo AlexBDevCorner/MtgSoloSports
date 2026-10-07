@@ -77,10 +77,14 @@ public sealed class GetHistoryEventTeamStandingsHandler
                 .ToList();
         }
 
-        return (await context.TypeCupTeamStandings.AsNoTracking()
+        List<TypeCupTeamStandingEntity> rows = await context.TypeCupTeamStandings.AsNoTracking()
                 .Where(e => e.SourceSeasonId == season.Id)
-                .OrderBy(e => e.TeamRank)
-                .ToListAsync(cancellationToken).ConfigureAwait(false))
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+        bool hasLegacy = rows.Any(e => e.TournamentPhase == (int)MtgSoloSports.SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
+        IEnumerable<TypeCupTeamStandingEntity> official = hasLegacy
+            ? rows.OrderBy(e => e.TeamRank)
+            : rows.Where(e => e.TournamentPhase == (int)MtgSoloSports.SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final).OrderBy(e => e.TeamRank);
+        return official
             .Select(e => new HistoryEventTeamRow(e.CreatureType, e.TeamRank, e.TeamScoreThousandths))
             .ToList();
     }

@@ -45,18 +45,8 @@ public sealed class GetTypeCupTeamHistoryHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         using SaveDbContext context = _store.OpenDbContext(saveId);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-
-        // Type Cup tables are small (teams x 4 per edition); the exact, case-sensitive
-        // team match is done in memory so it never depends on database collation.
-        List<TypeCupSelectionEntity> fields = await context.TypeCupSelections
-            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
-        List<TypeCupSelectionEntity> selections = fields.Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
-        List<TypeCupTeamStandingEntity> standings = (await context.TypeCupTeamStandings
-            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
-            .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
-        List<TypeCupTeamGroupStandingEntity> legs = (await context.TypeCupTeamGroupStandings
-            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
-            .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
+        (List<TypeCupSelectionEntity> fields, List<TypeCupSelectionEntity> selections, List<TypeCupTeamStandingEntity> standings, List<TypeCupTeamGroupStandingEntity> legs) =
+            await LoadTeamRowsAsync(context, teamKey, cancellationToken).ConfigureAwait(false);
 
         List<int> seasons = selections.Select(s => s.SourceSeasonNumber).Distinct().ToList();
         List<int> roundSeasons = await context.TypeCupTeamRounds
@@ -103,6 +93,23 @@ public sealed class GetTypeCupTeamHistoryHandler
         List<CupSelectionReportEntity> reports = await context.CupSelectionReports
             .AsNoTracking().Where(e => seasonIds.Contains(e.SourceSeasonId)).ToListAsync(cancellationToken).ConfigureAwait(false);
         return ReadReasons(reports, teamKey);
+    }
+
+    private static async Task<(List<TypeCupSelectionEntity> Fields, List<TypeCupSelectionEntity> Selections, List<TypeCupTeamStandingEntity> Standings, List<TypeCupTeamGroupStandingEntity> Legs)> LoadTeamRowsAsync(
+        SaveDbContext context,
+        string teamKey,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupSelectionEntity> fields = await context.TypeCupSelections
+            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+        List<TypeCupSelectionEntity> selections = fields.Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
+        List<TypeCupTeamStandingEntity> allStandings = (await context.TypeCupTeamStandings
+            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
+        List<TypeCupTeamGroupStandingEntity> allLegs = (await context.TypeCupTeamGroupStandings
+            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(e => IsTeam(e.CreatureType, teamKey)).ToList();
+        return (fields, selections, SelectOfficialStandings(allStandings), SelectOfficialLegs(allStandings, allLegs));
     }
 
     /// <summary>The stored reason of each member of this team, per edition that has a report.</summary>
@@ -169,5 +176,57 @@ public sealed class GetTypeCupTeamHistoryHandler
             l.GroupScoreThousandths,
             l.BaseScoreThousandths,
             l.RoundWins)).ToList();
+    }
+
+    private static List<TypeCupTeamStandingEntity> SelectOfficialStandings(
+        List<TypeCupTeamStandingEntity> all)
+    {
+        List<TypeCupTeamStandingEntity> official = new(all.Count);
+        foreach (IGrouping<int, TypeCupTeamStandingEntity> season in all.GroupBy(e => e.SourceSeasonNumber))
+        {
+            TypeCupTeamStandingEntity? legacy = season.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
+            if (legacy is not null)
+            {
+                official.Add(legacy);
+                continue;
+            }
+
+            TypeCupTeamStandingEntity? final = season.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final);
+            if (final is not null)
+            {
+                official.Add(final);
+                continue;
+            }
+
+            official.AddRange(season);
+        }
+
+        return official;
+    }
+
+    private static List<TypeCupTeamGroupStandingEntity> SelectOfficialLegs(
+        List<TypeCupTeamStandingEntity> allStandings,
+        List<TypeCupTeamGroupStandingEntity> allLegs)
+    {
+        HashSet<(int Season, int Phase, int Qual)> officialStages = allStandings
+            .GroupBy(e => e.SourceSeasonNumber)
+            .SelectMany(g =>
+            {
+                TypeCupTeamStandingEntity? legacy = g.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
+                if (legacy is not null)
+                {
+                    return [(g.Key, legacy.TournamentPhase, legacy.QualificationGroup)];
+                }
+
+                TypeCupTeamStandingEntity? final = g.FirstOrDefault(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final);
+                if (final is not null)
+                {
+                    return [(g.Key, final.TournamentPhase, final.QualificationGroup)];
+                }
+
+                return g.Select(e => (e.SourceSeasonNumber, e.TournamentPhase, e.QualificationGroup)).Distinct().ToList();
+            })
+            .ToHashSet();
+        return allLegs.Where(l => officialStages.Contains((l.SourceSeasonNumber, l.TournamentPhase, l.QualificationGroup))).ToList();
     }
 }

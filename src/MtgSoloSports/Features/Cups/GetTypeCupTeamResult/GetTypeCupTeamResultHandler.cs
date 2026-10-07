@@ -71,6 +71,8 @@ public sealed class GetTypeCupTeamResultHandler
 
         List<TypeCupTeamStandingEntity> any = await context.TypeCupTeamStandings
             .AsNoTracking()
+            .Where(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         if (any.Count == 0)
@@ -98,7 +100,10 @@ public sealed class GetTypeCupTeamResultHandler
     {
         bool exists = await context.TypeCupTeamStandings
             .AsNoTracking()
-            .AnyAsync(e => e.SourceSeasonId == source.Id, cancellationToken)
+            .AnyAsync(e => e.SourceSeasonId == source.Id
+                && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                    || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final),
+                cancellationToken)
             .ConfigureAwait(false);
         if (!exists)
         {
@@ -114,20 +119,20 @@ public sealed class GetTypeCupTeamResultHandler
         CancellationToken cancellationToken)
     {
         RulesV1Snapshot rules = await LoadRulesVersionAsync(context, cancellationToken).ConfigureAwait(false);
-        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+        List<TypeCupTeamStandingEntity> allTeams = await context.TypeCupTeamStandings
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.TeamRank)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+        List<TypeCupTeamGroupStandingEntity> allLegs = await context.TypeCupTeamGroupStandings
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.GroupNumber)
             .ThenBy(e => e.GroupRank)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        List<TypeCupTeamRoundEntity> rounds = await context.TypeCupTeamRounds
+        List<TypeCupTeamRoundEntity> allRounds = await context.TypeCupTeamRounds
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.GroupNumber)
@@ -139,12 +144,61 @@ public sealed class GetTypeCupTeamResultHandler
             .Where(e => e.SeasonId == source.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        TypeCupTeamInvariants.ValidatePersisted(source, rounds, legs, teams, honours, rules.Rules);
+        (List<TypeCupTeamStandingEntity> teams, List<TypeCupTeamGroupStandingEntity> legs, List<TypeCupTeamRoundEntity> rounds) =
+            await SelectFinalResultAsync(context, source, allTeams, allLegs, allRounds, honours, rules.Rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SaveAthleteEntity> athletes = await context.SaveAthletes
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
         return MapResponse(saveId, source, teams, legs, rounds, athletes);
+    }
+
+    /// <summary>
+    /// Selects the official result: legacy single-field rows when present
+    /// (old saves stay readable without manufacturing qualification history),
+    /// otherwise the Final stage of a tournament. Qualification rows are
+    /// available via the tournament summary, never here.
+    /// </summary>
+    internal static async Task<(List<TypeCupTeamStandingEntity> Teams, List<TypeCupTeamGroupStandingEntity> Legs, List<TypeCupTeamRoundEntity> Rounds)> SelectFinalResultAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<TypeCupTeamStandingEntity> allTeams,
+        List<TypeCupTeamGroupStandingEntity> allLegs,
+        List<TypeCupTeamRoundEntity> allRounds,
+        List<HonourEntity> honours,
+        SimulationKernel.Rules.RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        bool hasLegacy = allTeams.Any(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField)
+            || allRounds.Any(r => r.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField);
+        if (hasLegacy)
+        {
+            TypeCupTeamInvariants.ValidatePersisted(source, allRounds, allLegs, allTeams, honours, rules);
+            return (allTeams, allLegs, allRounds);
+        }
+
+        List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        int teamCount = selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).Count();
+        var plan = Cups.RunTypeCupTeam.TypeCupTournamentPlan.BuildFromSelection(
+            teamCount,
+            selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+            draws,
+            rules);
+        TypeCupTeamInvariants.ValidateTournamentPersisted(source, allRounds, allLegs, allTeams, honours, rules, plan);
+        int finalPhase = (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final;
+        List<TypeCupTeamStandingEntity> teams = allTeams.Where(e => e.TournamentPhase == finalPhase).OrderBy(e => e.TeamRank).ToList();
+        List<TypeCupTeamGroupStandingEntity> legs = allLegs.Where(e => e.TournamentPhase == finalPhase).OrderBy(e => e.GroupNumber).ThenBy(e => e.GroupRank).ToList();
+        List<TypeCupTeamRoundEntity> rounds = allRounds.Where(e => e.TournamentPhase == finalPhase).OrderBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber).ToList();
+        return (teams, legs, rounds);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);

@@ -31,8 +31,12 @@ public static class PostseasonEvents
 
     /// <summary>
     /// Progress of the round-based event that is the next legal lifecycle
-    /// action. <see cref="Group"/>/<see cref="RoundInGroup"/> are the position of
-    /// the next round to play (null for single-stage events).
+    /// action. <see cref="Group"/>/<see cref="RoundInGroup"/> are the rank
+    /// group/round of the next round to play (null for single-stage events).
+    /// Type Cup tournament stages add <see cref="TournamentPhase"/>,
+    /// <see cref="QualificationGroup"/>, <see cref="QualificationGroupCount"/>
+    /// and <see cref="TournamentStage"/> (for example "Qualification Group 2
+    /// of 3" or "Final"); older callers ignore the additive fields.
     /// </summary>
     public sealed record SeasonEventProgress(
         string Event,
@@ -42,7 +46,11 @@ public static class PostseasonEvents
         int GroupCount,
         int RoundsPerGroup,
         int? Group,
-        int? RoundInGroup);
+        int? RoundInGroup,
+        int? TournamentPhase = null,
+        int? QualificationGroup = null,
+        int? QualificationGroupCount = null,
+        string? TournamentStage = null);
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key, StringComparer.Ordinal);
 
@@ -191,12 +199,16 @@ public static class PostseasonEvents
 
         SeasonEntity source = await context.Seasons.AsNoTracking()
             .SingleAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
+        if (string.Equals(key, TypeCupTeam, StringComparison.Ordinal))
+        {
+            return await WithTypeCupProgressAsync(context, snapshot, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+
         int played = key switch
         {
             Qualifier => await CountQualifierRoundsAsync(context, source, cancellationToken).ConfigureAwait(false),
             ColorCupIndividual => await context.ColorCupIndividualRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
-            ColorCupTeam => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
-            _ => await context.TypeCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+            _ => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
         };
         EventShape shape = Shape(key, rules);
         (int group, int round) = Cursor(Math.Min(played, shape.TotalRounds - 1), shape);
@@ -214,6 +226,115 @@ public static class PostseasonEvents
             EventProgress = progress,
             ComputedPhase = played > 0 ? InProgressPhase(key) : snapshot.ComputedPhase,
         };
+    }
+
+    private static async Task<SeasonLifecycleSnapshot> WithTypeCupProgressAsync(
+        SaveDbContext context,
+        SeasonLifecycleSnapshot snapshot,
+        SeasonEntity source,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        int played = await context.TypeCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
+        (int total, int group, int round, int? phase, int? qual, int? qualCount, string? stage) =
+            await TypeCupProgressAsync(context, source, played, rules, cancellationToken).ConfigureAwait(false);
+        EventShape shape = Shape(TypeCupTeam, rules);
+        SeasonEventProgress progress = new(
+            TypeCupTeam,
+            snapshot.SourceSeasonNumber!.Value,
+            played,
+            total,
+            shape.GroupCount,
+            shape.RoundsPerGroup,
+            group,
+            round,
+            phase,
+            qual,
+            qualCount,
+            stage);
+        return snapshot with
+        {
+            EventProgress = progress,
+            ComputedPhase = played > 0 ? InProgressPhase(TypeCupTeam) : snapshot.ComputedPhase,
+        };
+    }
+
+    private static async Task<(int Total, int Group, int Round, int? Phase, int? Qual, int? QualCount, string? Stage)> TypeCupProgressAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        int played,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        EventShape shape = Shape(TypeCupTeam, rules);
+        try
+        {
+            List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonId == source.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (selection.Count == 0)
+            {
+                return FallbackTypeCupProgress(played, shape);
+            }
+
+            int teamCount = selection.Count / rules.TypeCupMinTeamSize;
+            List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonId == source.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var plan = Cups.RunTypeCupTeam.TypeCupTournamentPlan.BuildFromSelection(
+                teamCount,
+                selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                draws,
+                rules);
+            int total = plan.TotalRounds;
+            if (played >= total)
+            {
+                (int g, int r) = Cursor(total - 1, shape);
+                return (total, g, r, null, null, PlanQualCount(plan), "Complete");
+            }
+
+            var cursor = Cups.RunTypeCupTeam.TypeCupTournamentPlan.Cursor(played, plan, rules);
+            return (total, cursor.RankGroup, cursor.Round, cursor.Stage.Phase, cursor.Stage.QualificationGroup, PlanQualCount(plan), StageLabel(plan, cursor.Stage));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is ArgumentException || ex is ArgumentOutOfRangeException)
+        {
+            return FallbackTypeCupProgress(played, shape);
+        }
+    }
+
+    private static (int Total, int Group, int Round, int? Phase, int? Qual, int? QualCount, string? Stage) FallbackTypeCupProgress(
+        int played,
+        EventShape shape)
+    {
+        (int group, int round) = Cursor(Math.Min(played, shape.TotalRounds - 1), shape);
+        return (shape.TotalRounds, group, round, null, null, null, null);
+    }
+
+    private static int? PlanQualCount(Cups.RunTypeCupTeam.TypeCupTournamentPlan.Plan plan) =>
+        plan.IsTournament ? plan.QualificationGroupCount : null;
+
+    private static string StageLabel(Cups.RunTypeCupTeam.TypeCupTournamentPlan.Plan plan, Cups.RunTypeCupTeam.TypeCupTournamentPlan.StageKey stage)
+    {
+        if (plan.IsLegacy)
+        {
+            return "Single field";
+        }
+
+        if (plan.IsDirectFinal)
+        {
+            return "Final";
+        }
+
+        if (stage.Phase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+        {
+            return "Final";
+        }
+
+        return $"Qualification Group {stage.QualificationGroup} of {plan.QualificationGroupCount}";
     }
 
     /// <summary>
@@ -253,11 +374,42 @@ public static class PostseasonEvents
             return Title(ColorCupTeam);
         }
 
-        return await context.TypeCupTeamRounds.AnyAsync(
-                r => r.SourceSeasonId != typeTeam && !context.TypeCupTeamStandings.Any(s => s.SourceSeasonId == r.SourceSeasonId),
-                cancellationToken).ConfigureAwait(false)
+        return await HasTypeCupPartialAsync(context, typeTeam, cancellationToken).ConfigureAwait(false)
             ? Title(TypeCupTeam)
             : null;
+    }
+
+    /// <summary>
+    /// A Type Cup tournament owns the RNG while any of its rounds are persisted
+    /// without Final (or legacy) standings. Qualification standings alone do
+    /// not complete the Cup: the Final must still run.
+    /// </summary>
+    internal static async Task<bool> HasTypeCupPartialAsync(
+        SaveDbContext context,
+        int? excludedSourceSeasonId,
+        CancellationToken cancellationToken)
+    {
+        List<int> seasons = await context.TypeCupTeamRounds
+            .AsNoTracking()
+            .Where(r => r.SourceSeasonId != excludedSourceSeasonId)
+            .Select(r => r.SourceSeasonId)
+            .Distinct()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (int seasonId in seasons)
+        {
+            bool complete = await context.TypeCupTeamStandings.AnyAsync(
+                s => s.SourceSeasonId == seasonId
+                    && (s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                        || s.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final),
+                cancellationToken).ConfigureAwait(false);
+            if (!complete)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int? Except(string key, string candidate, int sourceSeasonId) =>
