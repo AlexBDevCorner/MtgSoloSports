@@ -17,6 +17,7 @@ import {
   explainMember,
   formatRating,
   formulaLabel,
+  leagueCell,
   nextRevealTeam,
   outcomeLabel,
   revealOrder,
@@ -246,6 +247,11 @@ export function CupSelectionView({
                   ? 'Each part is measured against the other athletes of the same sporting color. Ties fall to bonus, then season, form, prestige and name.'
                   : 'Each part is measured against every active athlete. A capped athlete can only play for its type; the others go where they rank best, as long as the most full teams take part.'}
               </p>
+              <p className="muted small">
+                Season performance and recent form are adjusted by competition strength (Superleague ×1.00, Feeder
+                1 ×0.80, Feeder 2 ×0.60, Feeder 3 ×0.40); pool athletes score zero for both. Hover a league for
+                the factor behind the rating.
+              </p>
               {!report.hasFullRanking ? (
                 <p className="muted small">
                   This selection was saved before rankings were kept, so only the selected athletes are shown.
@@ -414,6 +420,7 @@ function RankingTable({ saveId, report, team }: { saveId: string; report: Select
           <tr>
             <th scope="col" className="numeric">Rank</th>
             <th scope="col">Card</th>
+            <th scope="col">League</th>
             <th scope="col" className="numeric">Rating</th>
             <th scope="col" className="numeric">Bonus</th>
             <th scope="col" className="numeric">Season</th>
@@ -430,6 +437,7 @@ function RankingTable({ saveId, report, team }: { saveId: string; report: Select
                 <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                 {row.capped ? <span className="card-sub"> · capped</span> : null}
               </td>
+              <td title={leagueCell(row).title}>{leagueCell(row).text}</td>
               <td className="numeric">{formatRating(row.finalRatingThousandths)}</td>
               {componentShares(report, row).map((share) => (
                 <td key={share.key} className="numeric" title={share.raw}>

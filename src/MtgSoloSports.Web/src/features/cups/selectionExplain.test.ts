@@ -9,11 +9,14 @@ import {
   explainMember,
   firstOut,
   formulaLabel,
+  leagueCell,
   nextRevealTeam,
   outcomeLabel,
   revealOrder,
   revealTotals,
   tieBreaker,
+  tierLabel,
+  tierLines,
 } from './selectionExplain.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -297,5 +300,101 @@ describe('selection is an event on Live', () => {
     assert.ok(flow.includes('Announce on Live'));
     assert.ok(flow.includes('livePath(saveId, { event: next.liveSelection, season: flow.seasonNumber })'));
     assert.ok(flow.includes('Select now'), 'the one-click path stays available');
+  });
+});
+
+describe('tier-aware selection explanation (MSS-066)', () => {
+  it('labels every source tier including the pool', () => {
+    assert.equal(tierLabel(0), 'Superleague');
+    assert.equal(tierLabel(1), 'Feeder 1');
+    assert.equal(tierLabel(2), 'Feeder 2');
+    assert.equal(tierLabel(3), 'Feeder 3');
+    assert.equal(tierLabel(null), 'Pool');
+    assert.equal(tierLabel(undefined), 'Pool');
+  });
+
+  it('stays silent for legacy candidates without tier data', () => {
+    assert.deepEqual(tierLines(candidate({})), []);
+  });
+
+  it('explains the source league, factor and adjusted inputs', () => {
+    const lines = tierLines(
+      candidate({
+        sourceLeagueName: 'Red League F2',
+        sourceLeagueLevel: 2,
+        strengthFactorPermille: 600,
+        unadjustedPerformanceThousandths: 10000,
+        unadjustedFormAggregate: 55000,
+        performanceRawThousandths: 6000,
+        formRaw: 33000,
+        prestigeRaw: 200,
+        prestigeFeeder2TitleRaw: 200,
+        prestigeSuperTitleRaw: 0,
+        prestigeFeeder1TitleRaw: 0,
+        prestigeFeeder3TitleRaw: 0,
+        prestigeAppearanceRaw: 0,
+        prestigeSuperStageRaw: 0,
+        prestigeFeeder1StageRaw: 0,
+        prestigeFeeder2StageRaw: 0,
+        prestigeFeeder3StageRaw: 0,
+        prestigeMajorCupRaw: 0,
+      }),
+    );
+    assert.equal(lines.length, 2);
+    assert.ok(lines[0]!.includes('Red League F2'));
+    assert.ok(lines[0]!.includes('Feeder 2'));
+    assert.ok(lines[0]!.includes('×0.60'));
+    assert.ok(lines[0]!.includes('10.000 pts → 6.000 adjusted'));
+    assert.ok(lines[1]!.includes('Career prestige 200 pts'));
+    assert.ok(lines[1]!.includes('F2 titles 200'));
+  });
+
+  it('gives pool athletes no stale-form advantage', () => {
+    const lines = tierLines(
+      candidate({ sourceLeagueName: 'Pool', sourceLeagueLevel: null, strengthFactorPermille: 0 }),
+    );
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.includes('common pool'));
+    assert.ok(lines[0]!.includes('score 0.000'));
+  });
+
+  it('shows the league in ranking cells with the factor as hover text', () => {
+    const cell = leagueCell(candidate({ sourceLeagueName: 'Blue Superleague', sourceLeagueLevel: 0, strengthFactorPermille: 1000 }));
+    assert.equal(cell.text, 'Blue Superleague · Superleague');
+    assert.ok(cell.title.includes('×1.00'));
+    assert.equal(leagueCell(candidate({})).text, 'Pool');
+  });
+
+  it('appends tier context after the existing why-selected lines', () => {
+    const team: SelectionTeam = {
+      teamKey: 'Red',
+      teamName: 'Red',
+      candidateCount: 256,
+      ranking: [
+        candidate({
+          athleteId: 1,
+          name: 'Ace',
+          rank: 1,
+          selectionRank: 1,
+          finalRatingThousandths: 900,
+          sourceLeagueName: 'Red League F2',
+          sourceLeagueLevel: 2,
+          strengthFactorPermille: 600,
+          unadjustedPerformanceThousandths: 10000,
+          unadjustedFormAggregate: 55000,
+          performanceRawThousandths: 6000,
+          formRaw: 33000,
+        }),
+      ],
+    };
+    const lines = explainMember(report([team]), team, team.ranking[0]!);
+    assert.ok(lines[0]!.startsWith('Ranked #1'));
+    assert.ok(lines.some((line) => line.includes('Red League F2')));
+  });
+
+  it('renders the league column and the strength help', () => {
+    assert.ok(view.includes('<th scope="col">League</th>'));
+    assert.ok(view.includes('leagueCell(row)'));
+    assert.ok(view.includes('Superleague ×1.00'));
   });
 });
