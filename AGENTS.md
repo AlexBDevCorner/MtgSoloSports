@@ -88,9 +88,12 @@ Before lock files exist, use ordinary restore/install only for the repository-bo
 
 - Implement exactly one dispatched task from the read-only `control/` checkout.
 - Never edit `control/`, task requirements, priorities or future tasks.
-- Work on `autonomous/<TASK-ID>` from `main`; reuse the same branch/PR on retries.
-- Push checkpoints during long work. A successful run must leave its PR ready for review.
-- PR title starts with `[<TASK-ID>]` and labels include `autonomous`, `autonomous:opencode`, `task:<TASK-ID>`.
+- Work on the workflow-prepared `autonomous/<TASK-ID>` branch from `main`; reuse its existing local/remote work on retries.
+- During the OpenCode model session, GitHub publication is intentionally separated from implementation. Make meaningful **local commits**, but never run `git push`, create/reopen/ready/merge a PR, or mutate remote refs.
+- The post-worker recovery step is the only normal publisher. It pushes the committed HEAD to `autonomous/<TASK-ID>`, creates/reuses the PR, and controls PR readiness.
+- Use `gh` read-only during normal implementation. The only model-session GitHub mutation allowed is the protocol-defined machine-readable disagreement comment in correction mode when a trusted blocking review is genuinely wrong.
+- Before finishing, leave all intended changes committed locally and the working tree clean (excluding the read-only `control/` checkout). Do not create a second branch for publication.
+- Load and follow the `autonomous-worker-git-boundary` repo skill before git/GitHub operations.
 - Never merge, force-push or inspect/reconstruct workflow credentials.
 - Changes outside the dispatched vertical slice should be rare and explicitly justified.
 
