@@ -13,7 +13,10 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// v2 (MSS-064) adds source-league strength explanation: source league name/level
 /// or Pool, competition-strength factor, unadjusted source-season championship
 /// points, adjusted performance raw, unadjusted final-ten-stage form aggregate
-/// and adjusted form raw. v1 payloads remain readable (missing fields decode to
+/// and adjusted form raw. v3 (MSS-065) adds the league-aware prestige breakdown:
+/// scaled contributions for Super/F1/F2/F3 titles, Superleague appearances,
+/// Super/F1/F2/F3 stage podiums and major Cup titles, summing exactly to
+/// prestige raw. v1/v2 payloads remain readable (missing fields decode to
 /// Pool/zero defaults) and are never rewritten.
 /// </summary>
 public sealed record ColorCupSelectionReportDocument(
@@ -24,7 +27,7 @@ public sealed record ColorCupSelectionReportDocument(
     int PrestigeWeightPermille,
     IReadOnlyList<ColorCupSelectionReportDocument.Team> Teams)
 {
-    public const int PayloadVersion = 2;
+    public const int PayloadVersion = 3;
 
     public const int LegacyPayloadVersion = 1;
 
@@ -58,7 +61,17 @@ public sealed record ColorCupSelectionReportDocument(
         int? SourceLeagueLevel = null,
         int StrengthFactorPermille = 0,
         int UnadjustedPerformanceThousandths = 0,
-        int UnadjustedFormAggregate = 0);
+        int UnadjustedFormAggregate = 0,
+        int PrestigeSuperTitleRaw = 0,
+        int PrestigeFeeder1TitleRaw = 0,
+        int PrestigeFeeder2TitleRaw = 0,
+        int PrestigeFeeder3TitleRaw = 0,
+        int PrestigeAppearanceRaw = 0,
+        int PrestigeSuperStageRaw = 0,
+        int PrestigeFeeder1StageRaw = 0,
+        int PrestigeFeeder2StageRaw = 0,
+        int PrestigeFeeder3StageRaw = 0,
+        int PrestigeMajorCupRaw = 0);
 
     public string ToStored() => RoundPayloadCodec.Encode(JsonSerializer.Serialize(this, JsonOptions));
 

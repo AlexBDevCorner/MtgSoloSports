@@ -195,6 +195,16 @@ public sealed class GetColorCupSelectionReportHandler
             candidate.SourceLeagueLevel,
             candidate.StrengthFactorPermille,
             candidate.UnadjustedPerformanceThousandths,
-            candidate.UnadjustedFormAggregate);
+            candidate.UnadjustedFormAggregate,
+            candidate.PrestigeSuperTitleRaw,
+            candidate.PrestigeFeeder1TitleRaw,
+            candidate.PrestigeFeeder2TitleRaw,
+            candidate.PrestigeFeeder3TitleRaw,
+            candidate.PrestigeAppearanceRaw,
+            candidate.PrestigeSuperStageRaw,
+            candidate.PrestigeFeeder1StageRaw,
+            candidate.PrestigeFeeder2StageRaw,
+            candidate.PrestigeFeeder3StageRaw,
+            candidate.PrestigeMajorCupRaw);
     }
 }
