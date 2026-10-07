@@ -140,6 +140,9 @@ function colorLines(report: SelectionReport, team: SelectionTeam, candidate: Sel
         : `Level on rating with ${out.name} (#${out.rank}); stayed ahead on ${tieBreaker(candidate, out)}.`,
     );
   }
+  for (const extra of tierLines(candidate)) {
+    lines.push(extra);
+  }
   return lines;
 }
 
@@ -182,6 +185,121 @@ function typeLines(report: SelectionReport, team: SelectionTeam, candidate: Sele
     lines.push(`Called up ahead of higher-ranked ${names}.`);
   }
   lines.push(strengthLine(report, candidate, 'all active athletes'));
+  for (const extra of tierLines(candidate)) {
+    lines.push(extra);
+  }
+  return lines;
+}
+
+/** Short tier name for the source-season league level (0 Superleague .. 3 Feeder 3, null Pool). */
+export function tierLabel(level: number | null | undefined): string {
+  switch (level) {
+    case 0:
+      return 'Superleague';
+    case 1:
+      return 'Feeder 1';
+    case 2:
+      return 'Feeder 2';
+    case 3:
+      return 'Feeder 3';
+    default:
+      return 'Pool';
+  }
+}
+
+/** Compact league cell for ranking tables: league name plus tier (factor as title text). */
+export function leagueCell(candidate: SelectionCandidate): { text: string; title: string } {
+  const tier = tierLabel(candidate.sourceLeagueLevel ?? null);
+  const league = candidate.sourceLeagueName ?? 'Pool';
+  const factor = candidate.strengthFactorPermille;
+  const title =
+    factor === undefined
+      ? `${league} · ${tier}`
+      : `${league} · ${tier} · strength ×${(factor / 1000).toFixed(2)}`;
+  return { text: tier === 'Pool' ? 'Pool' : `${league} · ${tier}`, title };
+}
+
+function hasTierContext(candidate: SelectionCandidate): boolean {
+  return (
+    candidate.sourceLeagueName !== undefined ||
+    candidate.sourceLeagueLevel !== undefined ||
+    candidate.strengthFactorPermille !== undefined ||
+    candidate.unadjustedPerformanceThousandths !== undefined ||
+    candidate.unadjustedFormAggregate !== undefined
+  );
+}
+
+function hasPrestigeBreakdown(candidate: SelectionCandidate): boolean {
+  return (
+    candidate.prestigeSuperTitleRaw !== undefined ||
+    candidate.prestigeFeeder1TitleRaw !== undefined ||
+    candidate.prestigeFeeder2TitleRaw !== undefined ||
+    candidate.prestigeFeeder3TitleRaw !== undefined ||
+    candidate.prestigeAppearanceRaw !== undefined ||
+    candidate.prestigeSuperStageRaw !== undefined ||
+    candidate.prestigeFeeder1StageRaw !== undefined ||
+    candidate.prestigeFeeder2StageRaw !== undefined ||
+    candidate.prestigeFeeder3StageRaw !== undefined ||
+    candidate.prestigeMajorCupRaw !== undefined
+  );
+}
+
+function prestigeSummary(candidate: SelectionCandidate): string {
+  const parts: string[] = [];
+  const push = (label: string, value: number | undefined): void => {
+    if (value !== undefined && value > 0) {
+      parts.push(`${label} ${value}`);
+    }
+  };
+  push('Super titles', candidate.prestigeSuperTitleRaw);
+  push('F1 titles', candidate.prestigeFeeder1TitleRaw);
+  push('F2 titles', candidate.prestigeFeeder2TitleRaw);
+  push('F3 titles', candidate.prestigeFeeder3TitleRaw);
+  push('Super appearances', candidate.prestigeAppearanceRaw);
+  push('Super podiums', candidate.prestigeSuperStageRaw);
+  push('F1 podiums', candidate.prestigeFeeder1StageRaw);
+  push('F2 podiums', candidate.prestigeFeeder2StageRaw);
+  push('F3 podiums', candidate.prestigeFeeder3StageRaw);
+  push('major Cups', candidate.prestigeMajorCupRaw);
+  if (parts.length === 0) {
+    return `Career prestige ${candidate.prestigeRaw} pts — no titles, appearances or podiums yet.`;
+  }
+  return `Career prestige ${candidate.prestigeRaw} pts (${parts.join(', ')}).`;
+}
+
+/**
+ * Tier context lines appended after the existing rank/strength/margin lines,
+ * so reports without tier data read exactly as before. For shortlisted
+ * candidates the report shows the source league/tier, the strength factor and
+ * the unadjusted source-season inputs behind the adjusted rating parts, plus
+ * a prestige summary. Pool athletes score zero season performance and form.
+ */
+export function tierLines(candidate: SelectionCandidate): string[] {
+  if (!hasTierContext(candidate) && !hasPrestigeBreakdown(candidate)) {
+    return [];
+  }
+  const lines: string[] = [];
+  if (hasTierContext(candidate)) {
+    const tier = tierLabel(candidate.sourceLeagueLevel ?? null);
+    const league = candidate.sourceLeagueName ?? 'Pool';
+    if (tier === 'Pool') {
+      lines.push(
+        `Source: common pool — no league season, so season performance and recent form score 0.000 regardless of older history.`,
+      );
+    } else {
+      const factor = candidate.strengthFactorPermille ?? 0;
+      const unadjustedPerf = candidate.unadjustedPerformanceThousandths ?? candidate.performanceRawThousandths;
+      const unadjustedForm = candidate.unadjustedFormAggregate ?? candidate.formRaw;
+      lines.push(
+        `Source: ${league} (${tier}, strength ×${(factor / 1000).toFixed(2)}) — ` +
+          `season ${formatRating(unadjustedPerf)} pts → ${formatRating(candidate.performanceRawThousandths)} adjusted, ` +
+          `form ${formatRating(unadjustedForm)} → ${formatRating(candidate.formRaw)} adjusted.`,
+      );
+    }
+  }
+  if (hasPrestigeBreakdown(candidate)) {
+    lines.push(prestigeSummary(candidate));
+  }
   return lines;
 }
 

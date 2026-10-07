@@ -37,6 +37,27 @@ export interface SelectionCandidate {
   performanceRawThousandths: number;
   formRaw: number;
   prestigeRaw: number;
+  /** Source-season league name, or "Pool" for pool athletes (MSS-064). Absent on legacy reports. */
+  sourceLeagueName?: string | null;
+  /** Source-season tier: 0 Superleague, 1 Feeder 1, 2 Feeder 2, 3 Feeder 3, null Pool. */
+  sourceLeagueLevel?: number | null;
+  /** Competition-strength factor in permille (1000/800/600/400, 0 for Pool). */
+  strengthFactorPermille?: number;
+  /** Unadjusted source-season championship points behind the adjusted performance raw. */
+  unadjustedPerformanceThousandths?: number;
+  /** Unadjusted final-ten-stage form aggregate behind the adjusted form raw. */
+  unadjustedFormAggregate?: number;
+  /** League-aware prestige breakdown (MSS-065), scaled quarter-points summing to prestigeRaw. */
+  prestigeSuperTitleRaw?: number;
+  prestigeFeeder1TitleRaw?: number;
+  prestigeFeeder2TitleRaw?: number;
+  prestigeFeeder3TitleRaw?: number;
+  prestigeAppearanceRaw?: number;
+  prestigeSuperStageRaw?: number;
+  prestigeFeeder1StageRaw?: number;
+  prestigeFeeder2StageRaw?: number;
+  prestigeFeeder3StageRaw?: number;
+  prestigeMajorCupRaw?: number;
 }
 
 export interface SelectionTeam {
