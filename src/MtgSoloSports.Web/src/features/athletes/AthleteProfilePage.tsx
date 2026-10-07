@@ -447,7 +447,9 @@ export function AthleteProfilePage({
             <p>
               Every completed Cup is its own row: season, event, team, place and result. Team rows
               show the team&apos;s final place; the leg detail is the athlete&apos;s own group
-              contribution. Newest seasons first.
+              contribution. Type Cup rows name their persisted stage: Final participation is the
+              official result, qualification-only rows keep the appearance without honours. Newest
+              seasons first.
             </p>
           }
         >
@@ -477,6 +479,12 @@ export function AthleteProfilePage({
                       <td>
                         {entry.eventName}{' '}
                         <span className="badge badge-wait">{entry.event}</span>
+                        {entry.tournamentStage ? (
+                          <span className="badge badge-wait" title="Persisted tournament stage">
+                            {' '}
+                            {entry.tournamentStage}
+                          </span>
+                        ) : null}
                       </td>
                       <td>{entry.teamName}</td>
                       <td className="numeric">
@@ -488,6 +496,11 @@ export function AthleteProfilePage({
                             {entry.groupRank !== null && entry.groupRank !== undefined
                               ? ` · leg P${entry.groupRank}`
                               : ''}
+                            {entry.tournamentStage === 'Final'
+                              ? ' · Final'
+                              : entry.tournamentStage
+                                ? ' · qualification only'
+                                : ''}
                           </span>
                         ) : (
                           <span className="card-sub"> · individual</span>

@@ -26,6 +26,7 @@ import {
   type ColorCupTeamResult,
 } from '../cups/colorCupApi';
 import { fetchTypeCupTeam, type TypeCupTeamResult } from '../cups/typeCupApi';
+import { optionalTournament, type TypeCupTournament } from '../cups/typeCupTournamentApi';
 import { fetchSeasonEvents, type SeasonEventSummary } from '../events/eventsApi';
 import { isEventKey, type EventKey } from '../events/eventModel';
 import { groupLeaguesByTier } from '../../shared/leagueTiers';
@@ -308,6 +309,15 @@ export function HistoryPage({
     saveId && seasonNumber !== null ? `${saveId}/cup-type-team/s${seasonNumber}` : null;
   const typeTeamState = useAsync<TypeCupTeamResult>(typeTeamKey, (signal) =>
     fetchTypeCupTeam(saveId as string, seasonNumber as number, signal),
+  );
+
+  const typeTournamentKey =
+    saveId && seasonNumber !== null && seasonNumber % 2 === 0
+      ? `${saveId}/cup-type-tournament/s${seasonNumber}`
+      : null;
+  const typeTournamentState = useAsync<TypeCupTournament | null>(
+    typeTournamentKey,
+    (signal) => optionalTournament(saveId as string, seasonNumber as number, signal),
   );
 
   if (seasonsState.loading && seasons.length === 0) {
@@ -720,11 +730,23 @@ export function HistoryPage({
               {typeTeamState.loading && !typeTeamState.data ? (
                 <Loading label="Loading Type Cup…" />
               ) : typeTeamState.data ? (
-                <p>
-                  Team champion {typeTeamState.data!.championTeamName} ·{' '}
-                  {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
-                  groups × {typeTeamState.data!.groupRounds} rounds.
-                </p>
+                <>
+                  <p>
+                    Team champion {typeTeamState.data!.championTeamName} ·{' '}
+                    {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
+                    groups × {typeTeamState.data!.groupRounds} rounds.
+                  </p>
+                  {typeTournamentState.data && !typeTournamentState.data.isDirectFinal ? (
+                    <p className="muted small">
+                      {typeTournamentState.data.teamCount} selected teams ·{' '}
+                      {typeTournamentState.data.qualificationGroupCount} qualification groups
+                      ({typeTournamentState.data.groupSizes.join(' / ')}) with{' '}
+                      {typeTournamentState.data.finalPlacesPerGroup.join(' / ')} advancing · fresh
+                      32-team Final. Qualification draw, per-group cutoffs and Final legs live on
+                      the Cup edition page.
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <p className="muted">No Type Cup team result for this season yet.</p>
               )}

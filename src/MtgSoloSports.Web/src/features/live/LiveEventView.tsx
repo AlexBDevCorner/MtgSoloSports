@@ -17,6 +17,9 @@ import {
 } from '../events/eventsApi';
 import { EVENT_TITLES, isTeamEvent, progressLabel, resultsTarget, roundLabel, type EventKey } from '../events/eventModel';
 import { projectRevealedTeamStandings } from '../events/teamStandingsProjection';
+import { optionalDraw, optionalTournament } from '../cups/typeCupTournamentApi';
+import type { TypeCupDraw, TypeCupTournament } from '../cups/typeCupTournamentApi';
+import { TypeCupLiveStages } from './typeCupLiveStages';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
@@ -58,6 +61,9 @@ export function LiveEventView({
   const [rounds, setRounds] = useState<PlayedRound[]>([]);
   const [roundView, setRoundView] = useState<EventRoundView | null>(null);
   const [teams, setTeams] = useState<EventTeamStandings | null>(null);
+  const [tournament, setTournament] = useState<TypeCupTournament | null>(null);
+  const [draw, setDraw] = useState<TypeCupDraw | null>(null);
+  const [lastStage, setLastStage] = useState<string | null>(null);
   // Team totals before the shown round, tagged with the round they belong to.
   const [baseline, setBaseline] = useState<{ group: number; round: number; standings: EventTeamStandings } | null>(null);
   const [revealed, setRevealed] = useState<readonly RevealPlacement[]>([]);
@@ -70,15 +76,20 @@ export function LiveEventView({
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    const isTypeCup = event === 'type-cup-team';
     Promise.all([
       fetchSeasonEvents(saveId, season, controller.signal).catch(() => [] as SeasonEventSummary[]),
       fetchEventRounds(saveId, season, event, controller.signal).catch(() => [] as PlayedRound[]),
       team ? fetchEventTeamStandings(saveId, season, event, controller.signal).catch(() => null) : Promise.resolve(null),
+      isTypeCup ? optionalTournament(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      isTypeCup ? optionalDraw(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([events, played, standings]) => {
+      .then(([events, played, standings, tournamentResult, drawResult]) => {
         setSummary(events.find((entry) => entry.event === event) ?? null);
         setRounds(played);
         setTeams(standings);
+        setTournament(tournamentResult);
+        setDraw(drawResult);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -132,11 +143,19 @@ export function LiveEventView({
   const roundsPerGroup = shape?.roundsPerGroup ?? (team ? 8 : 16);
   const groupCount = shape?.groupCount ?? (team ? 4 : 1);
   const complete = summary?.isComplete ?? false;
+  // Type Cup tournaments span several 32-round stages in canonical order;
+  // the backend progress cursor names the current stage explicitly.
+  const isTypeTournamentLive =
+    event === 'type-cup-team' &&
+    ((tournament ? !tournament.isDirectFinal : false) ||
+      (draw ? !draw.isDirectFinal : false) ||
+      (progress?.qualificationGroupCount ?? 0) > 0);
   // Rounds may only be played for the save's next lifecycle event; playing any
   // other event would move the RNG under a partly played one (the backend
   // refuses it too).
   const playable = progress !== null && progress.sourceSeasonNumber === season;
-  const progressText = progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
+  const stageProgressText = progress?.tournamentStage ?? lastStage;
+  const progressText = stageProgressText ?? progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
 
   const refreshAfter = useCallback(() => {
     setRevision((value) => value + 1);
@@ -152,6 +171,9 @@ export function LiveEventView({
     try {
       const result = await playEventRound(saveId, event);
       setRoundView(result.round);
+      if (result.tournamentStage) {
+        setLastStage(result.tournamentStage);
+      }
       onSelectRound(result.round.group, result.round.roundNumber);
       refreshAfter();
     } catch (failure) {
@@ -168,8 +190,11 @@ export function LiveEventView({
     setBusy(true);
     setError(null);
     try {
+      // Backend persisted progression in canonical order: every remaining
+      // qualification group then the Final. Never simulated here.
       await runEventRemaining(saveId, event);
       setRoundView(null);
+      setLastStage(null);
       onSelectRound(null, null);
       refreshAfter();
     } catch (failure) {
@@ -262,9 +287,43 @@ export function LiveEventView({
               </p>
             </Notice>
           ) : null}
+          {isTypeTournamentLive && playable && !complete ? (
+            <p className="muted small">
+              Qualification groups complete in canonical draw order before the Final. Run remaining
+              finishes every leftover group and the Final on the backend — no Dashboard round trip
+              needed between groups.
+            </p>
+          ) : null}
         </Card>
 
-        <Card eyebrow="Rounds" title={team ? `Group ${visibleGroup ?? 1}` : 'Played rounds'}>
+        {isTypeTournamentLive ? (
+          <TypeCupLiveStages
+            saveId={saveId}
+            season={season}
+            progress={progress}
+            tournament={tournament}
+            draw={draw}
+            lastStage={lastStage}
+          />
+        ) : null}
+
+        <Card
+          eyebrow="Rounds"
+          title={
+            team
+              ? isTypeTournamentLive
+                ? `Squad rank group ${visibleGroup ?? 1} · ${stageProgressText ?? progressText}`
+                : `Group ${visibleGroup ?? 1}`
+              : 'Played rounds'
+          }
+        >
+          {isTypeTournamentLive ? (
+            <p className="muted small">
+              Rank groups are squad positions (#1 vs #1, #2 vs #2, …) inside the current
+              qualification group or Final — not the qualification groups themselves. Stage
+              progress above names the active group.
+            </p>
+          ) : null}
           {team && groupsPlayed.length > 0 ? (
             <div className="segmented" role="group" aria-label="Groups">
               {groupsPlayed.map((group) => (

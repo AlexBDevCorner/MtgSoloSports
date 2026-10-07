@@ -281,3 +281,22 @@ a.edition-card:hover {
   gap: var(--space-2);
   min-width: 0;
 }
+
+/* Qualification cutoff: an obvious text + line break after the last
+ * qualifying place. Never relies on color alone: the label names the cut. */
+.cut-line-cell {
+  padding: 0 !important;
+  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+
+.cut-line-label {
+  display: block;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+}

@@ -45,3 +45,30 @@ describe('live event mode', () => {
     assert.ok(app.includes('route.event ?? dashboard.data?.status?.eventProgress?.event'));
   });
 });
+
+describe('type cup tournament live progression', () => {
+  it('tracks the backend tournament stage instead of simulating', () => {
+    assert.ok(view.includes('optionalTournament(saveId, season'), 'persisted tournament tables');
+    assert.ok(view.includes('optionalDraw(saveId, season'), 'persisted draw for pending groups');
+    assert.ok(view.includes('tournamentStage'), 'stage from the backend cursor');
+    assert.ok(view.includes('runEventRemaining(saveId, event)'), 'fast path uses backend progression');
+    assert.ok(!/new Random|Random\.Shared|Math\.random/.test(view), 'never simulates here');
+  });
+
+  it('shows qualification groups as active, completed or pending with text badges', () => {
+    assert.ok(view.includes('<TypeCupLiveStages'), 'tournament progression card');
+    const stages = readFileSync(join(here, 'typeCupLiveStages.tsx'), 'utf8');
+    assert.ok(stages.includes('Qualification Group'), 'generic group identity for 3+ groups');
+    assert.ok(stages.includes('Semifinal A'), 'friendly alias only for two groups');
+    assert.ok(stages.includes('Completed'), 'completed text');
+    assert.ok(stages.includes('Active'), 'active text');
+    assert.ok(stages.includes('Pending'), 'pending text');
+    assert.ok(stages.includes('badge'), 'status not carried by color alone');
+  });
+
+  it('keeps rank groups distinct from qualification groups and continues without dashboard trips', () => {
+    assert.ok(view.includes('Squad rank group'), 'rank-group versus qual-group wording');
+    assert.ok(view.includes('no Dashboard round trip'), 'continuation copy');
+    assert.ok(view.includes('canonical draw order'), 'backend canonical order');
+  });
+});

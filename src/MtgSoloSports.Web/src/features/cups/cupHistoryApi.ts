@@ -89,6 +89,12 @@ export interface CupTeamSeason {
   groupWins: number | null;
   roundWins: number | null;
   squad: CupTeamSquadMember[];
+  /** Type Cup tournament stage (MSS-063 additive): "Final", "Qualification Group A", ... */
+  tournamentStage?: string | null;
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
+  qualifiedForFinal?: boolean;
+  eliminatedInQualification?: boolean;
 }
 
 export interface CupTeamRosterEntry {

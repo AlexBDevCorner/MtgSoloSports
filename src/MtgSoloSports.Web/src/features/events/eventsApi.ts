@@ -12,6 +12,11 @@ export interface EventProgress {
   roundsPerGroup: number;
   group: number | null;
   roundInGroup: number | null;
+  /** Type Cup tournament stage (MSS-062 additive): phase, qual group, group count and label. */
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
+  qualificationGroupCount?: number | null;
+  tournamentStage?: string | null;
 }
 
 export interface EventRoundView {
@@ -30,6 +35,12 @@ export interface PlayRoundResult {
   roundsPlayed: number;
   totalRounds: number;
   isComplete: boolean;
+  /** Type Cup tournament stage (MSS-062 additive, present for type-cup-team). */
+  tournamentStage?: string | null;
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
+  rankGroup?: number | null;
+  roundInGroup?: number | null;
 }
 
 export interface SeasonEventSummary {

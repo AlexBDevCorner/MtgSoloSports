@@ -6,6 +6,13 @@ import { AthleteLink, Link } from '../routing/router';
 import { cupEditionPath, cupsPath, historyPath, livePath, type CupKind } from '../routing/routes';
 import { fetchColorCupIndividual, fetchColorCupTeam, type ColorCupIndividualResult } from './colorCupApi';
 import { fetchCupEditions, optional, type CupEdition } from './cupHistoryApi';
+import { TypeCupTournamentSection } from './TypeCupTournamentSection';
+import {
+  optionalDraw,
+  optionalTournament,
+  type TypeCupDraw,
+  type TypeCupTournament,
+} from './typeCupTournamentApi';
 import {
   cupKindOf,
   cupTitle,
@@ -16,6 +23,7 @@ import {
   teamEventKey,
   teamKeyFromName,
 } from './cupFormat';
+import { qualificationGroupLetter } from './typeCupTournamentModel';
 import { CupPodium } from './CupPodium';
 import { fromColorTeamResult, fromTypeTeamResult, legsByGroup, type EditionTeamResult } from './editionModel';
 import { fetchSelectionReport, type SelectionReport } from './selectionApi';
@@ -30,6 +38,8 @@ interface EditionData {
   report: SelectionReport | null;
   team: EditionTeamResult | null;
   individual: ColorCupIndividualResult | null;
+  tournament: TypeCupTournament | null;
+  draw: TypeCupDraw | null;
 }
 
 async function loadEdition(saveId: string, cup: CupKind, season: number, signal: AbortSignal): Promise<EditionData> {
@@ -38,17 +48,27 @@ async function loadEdition(saveId: string, cup: CupKind, season: number, signal:
       ? optional(fetchColorCupTeam(saveId, season, signal)).then((result) => (result ? fromColorTeamResult(result) : null))
       : optional(fetchTypeCupTeam(saveId, season, signal)).then((result) => (result ? fromTypeTeamResult(result) : null));
   const individual = cup === 'color' ? optional(fetchColorCupIndividual(saveId, season, signal)) : Promise.resolve(null);
-  const [listing, report, teamResult, individualResult] = await Promise.all([
+  const tournament =
+    cup === 'type'
+      ? optionalTournament(saveId, season, signal)
+      : Promise.resolve(null);
+  const draw =
+    cup === 'type' ? optionalDraw(saveId, season, signal) : Promise.resolve(null);
+  const [listing, report, teamResult, individualResult, tournamentResult, drawResult] = await Promise.all([
     fetchCupEditions(saveId, signal),
     optional(fetchSelectionReport(saveId, selectionKeyFor(cup), season, signal)),
     team,
     individual,
+    tournament,
+    draw,
   ]);
   return {
     editions: listing.editions.filter((edition) => cupKindOf(edition.cup) === cup),
     report,
     team: teamResult,
     individual: individualResult,
+    tournament: tournamentResult,
+    draw: drawResult,
   };
 }
 
@@ -103,10 +123,14 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
     );
   }
 
-  const { report, team, individual } = data;
+  const { report, team, individual, tournament, draw } = data;
   const seasons = data.editions.map((entry) => entry.sourceSeasonNumber).sort((a, b) => a - b);
   const previous = seasons.filter((value) => value < season).at(-1) ?? null;
   const next = seasons.find((value) => value > season) ?? null;
+  const isTypeTournament =
+    cup === 'type' && tournament !== null && !tournament.isDirectFinal;
+  const isTypeDrawOnly =
+    cup === 'type' && tournament === null && draw !== null && !draw.isDirectFinal;
   const rankByTeam = new Map((team?.teams ?? []).map((entry) => [entry.teamKey, entry.teamRank]));
   const squads = report.teams
     .map((entry) => ({ teamKey: teamKeyFromName(cup, entry.teamName), teamName: entry.teamName, members: squadOf(entry) }))
@@ -144,7 +168,11 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
         </div>
         <p className="muted">
           {stateLabel(edition.state)} · {edition.teamCount} teams
-          {team ? ` · 4 rank groups × ${team.groupRounds} rounds` : ''}
+          {isTypeTournament && tournament
+            ? ` · Qualification + Final · ${tournament.qualificationGroupCount} groups → 32-team Final`
+            : team
+              ? ` · 4 rank groups × ${team.groupRounds} rounds`
+              : ''}
         </p>
         {champion ? (
           <>
@@ -159,7 +187,47 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
         )}
       </header>
 
-      {team ? (
+      {isTypeTournament && tournament ? (
+        <TypeCupTournamentSection saveId={saveId} cup={cup} season={season} tournament={tournament} draw={draw} />
+      ) : null}
+
+      {isTypeDrawOnly && draw ? (
+        <Card
+          eyebrow="Type Cup tournament"
+          title={`${draw.teamCount} teams · draw resolved, Cup in progress`}
+          info={
+            <p>
+              The random qualification draw is persisted and never redrawn. Qualification groups play
+              in canonical order on Live, then the fresh 32-team Final starts at zero.
+            </p>
+          }
+        >
+          <p>
+            <Link to={livePath(saveId, { event: 'type-cup-team', season })} className="primary-button">
+              Continue on Live
+            </Link>
+          </p>
+          {draw.groups.map((group) => (
+            <section key={group.qualificationGroup} className="team-season" aria-label={`Qualification Group ${qualificationGroupLetter(group.qualificationGroup)}`}>
+              <div className="team-season-head">
+                <strong>Qualification Group {qualificationGroupLetter(group.qualificationGroup)}</strong>
+                <span className="team-season-result">
+                  {group.groupSize} teams · {group.finalPlaces} advance
+                </span>
+              </div>
+              <ul className="edition-card-podium">
+                {[...group.creatureTypes].sort((a, b) => a.localeCompare(b)).map((creatureType) => (
+                  <li key={creatureType}>
+                    <TeamBadge saveId={saveId} cup={cup} teamKey={creatureType} teamName={creatureType} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </Card>
+      ) : null}
+
+      {!isTypeTournament && team ? (
         <div className="page-grid">
           <Card eyebrow="Team event" title="Podium">
             <CupPodium
@@ -227,25 +295,31 @@ export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: C
             Why these athletes?
           </Link>
         </p>
-        <div className="page-grid">
-          {squads.map((squad) => (
-            <Card
-              key={squad.teamKey}
-              eyebrow={rankByTeam.has(squad.teamKey) ? `Finished ${rankByTeam.get(squad.teamKey)}` : 'Squad'}
-              title={squad.teamName}
-              action={<TeamBadge saveId={saveId} cup={cup} teamKey={squad.teamKey} teamName="Team history" />}
-            >
-              <SquadTiles
-                saveId={saveId}
-                members={squad.members}
-                renderDetail={(member) => <span>Rating {formatRating(member.finalRatingThousandths)}</span>}
-              />
-            </Card>
-          ))}
-        </div>
+        {isTypeTournament && tournament ? (
+          <TournamentSquads saveId={saveId} cup={cup} squads={squads} tournament={tournament} rankByTeam={rankByTeam} />
+        ) : isTypeDrawOnly && draw ? (
+          <TournamentDrawSquads saveId={saveId} cup={cup} squads={squads} draw={draw} />
+        ) : (
+          <div className="page-grid">
+            {squads.map((squad) => (
+              <Card
+                key={squad.teamKey}
+                eyebrow={rankByTeam.has(squad.teamKey) ? `Finished ${rankByTeam.get(squad.teamKey)}` : 'Squad'}
+                title={squad.teamName}
+                action={<TeamBadge saveId={saveId} cup={cup} teamKey={squad.teamKey} teamName="Team history" />}
+              >
+                <SquadTiles
+                  saveId={saveId}
+                  members={squad.members}
+                  renderDetail={(member) => <span>Rating {formatRating(member.finalRatingThousandths)}</span>}
+                />
+              </Card>
+            ))}
+          </div>
+        )}
       </section>
 
-      {team ? (
+      {!isTypeTournament && team ? (
         <section className="page-section" aria-labelledby="edition-legs">
           <h2 id="edition-legs" className="section-title">
             Group legs
@@ -385,4 +459,159 @@ function squadOf(team: SelectionReport['teams'][number]) {
     selectionRank: member.selectionRank ?? member.rank,
     finalRatingThousandths: member.finalRatingThousandths,
   }));
+}
+
+type Squad = { teamKey: string; teamName: string; members: ReturnType<typeof squadOf> };
+
+/**
+ * Squads grouped by the persisted qualification draw for large tournaments.
+ * Each group renders on demand so a 65+ team field never builds one giant
+ * DOM of every squad at once.
+ */
+function TournamentSquads({
+  saveId,
+  cup,
+  squads,
+  tournament,
+  rankByTeam,
+}: {
+  saveId: string;
+  cup: CupKind;
+  squads: Squad[];
+  tournament: TypeCupTournament;
+  rankByTeam: Map<string, number>;
+}) {
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  const byTeam = new Map(squads.map((squad) => [squad.teamKey, squad]));
+  return (
+    <div className="page-grid">
+      {tournament.qualificationGroups.map((group) => {
+        const letter = qualificationGroupLetter(group.qualificationGroup);
+        const expanded = open.has(group.qualificationGroup);
+        const members = group.teams
+          .map((team) => byTeam.get(team.creatureType))
+          .filter((squad): squad is Squad => squad !== undefined);
+        return (
+          <Card
+            key={group.qualificationGroup}
+            eyebrow={`Qualification Group ${letter}`}
+            title={`${members.length} squads`}
+          >
+            <p className="muted small">
+              {group.finalPlaces} of {group.groupSize} advance from this group.
+            </p>
+            <p>
+              <button
+                type="button"
+                className="ghost-button"
+                aria-expanded={expanded}
+                onClick={() =>
+                  setOpen((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.qualificationGroup)) {
+                      next.delete(group.qualificationGroup);
+                    } else {
+                      next.add(group.qualificationGroup);
+                    }
+                    return next;
+                  })
+                }
+              >
+                {expanded ? 'Hide squads' : `Show squads (${members.length})`}
+              </button>
+            </p>
+            {expanded ? (
+              <div className="page-grid">
+                {members.map((squad) => (
+                  <Card
+                    key={squad.teamKey}
+                    eyebrow={rankByTeam.has(squad.teamKey) ? `Final rank ${rankByTeam.get(squad.teamKey)}` : 'Squad'}
+                    title={squad.teamName}
+                    action={<TeamBadge saveId={saveId} cup={cup} teamKey={squad.teamKey} teamName="Team history" />}
+                  >
+                    <SquadTiles
+                      saveId={saveId}
+                      members={squad.members}
+                      renderDetail={(member) => <span>Rating {formatRating(member.finalRatingThousandths)}</span>}
+                    />
+                  </Card>
+                ))}
+              </div>
+            ) : null}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function TournamentDrawSquads({
+  saveId,
+  cup,
+  squads,
+  draw,
+}: {
+  saveId: string;
+  cup: CupKind;
+  squads: Squad[];
+  draw: TypeCupDraw;
+}) {
+  const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
+  const byTeam = new Map(squads.map((squad) => [squad.teamKey, squad]));
+  return (
+    <div className="page-grid">
+      {draw.groups.map((group) => {
+        const expanded = open.has(group.qualificationGroup);
+        const members = group.creatureTypes
+          .map((creatureType) => byTeam.get(creatureType))
+          .filter((squad): squad is Squad => squad !== undefined);
+        return (
+          <Card
+            key={group.qualificationGroup}
+            eyebrow={`Qualification Group ${qualificationGroupLetter(group.qualificationGroup)}`}
+            title={`${members.length} squads`}
+          >
+            <p>
+              <button
+                type="button"
+                className="ghost-button"
+                aria-expanded={expanded}
+                onClick={() =>
+                  setOpen((current) => {
+                    const next = new Set(current);
+                    if (next.has(group.qualificationGroup)) {
+                      next.delete(group.qualificationGroup);
+                    } else {
+                      next.add(group.qualificationGroup);
+                    }
+                    return next;
+                  })
+                }
+              >
+                {expanded ? 'Hide squads' : `Show squads (${members.length})`}
+              </button>
+            </p>
+            {expanded ? (
+              <div className="page-grid">
+                {members.map((squad) => (
+                  <Card
+                    key={squad.teamKey}
+                    eyebrow="Squad"
+                    title={squad.teamName}
+                    action={<TeamBadge saveId={saveId} cup={cup} teamKey={squad.teamKey} teamName="Team history" />}
+                  >
+                    <SquadTiles
+                      saveId={saveId}
+                      members={squad.members}
+                      renderDetail={(member) => <span>Rating {formatRating(member.finalRatingThousandths)}</span>}
+                    />
+                  </Card>
+                ))}
+              </div>
+            ) : null}
+          </Card>
+        );
+      })}
+    </div>
+  );
 }

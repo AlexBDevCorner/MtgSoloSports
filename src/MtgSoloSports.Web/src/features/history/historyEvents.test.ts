@@ -19,12 +19,19 @@ describe('history postseason events', () => {
   it('replays event rounds with the shared reveal and group selection', () => {
     assert.ok(view.includes('fetchEventRound('));
     assert.ok(view.includes('<RoundReveal'));
-    assert.ok(view.includes('<span>Group</span>'));
+    assert.ok(view.includes('Squad rank group') || view.includes('<span>Group</span>'));
     assert.ok(view.includes('fetchEventTeamStandings('));
   });
 
   it('keeps event selections in the shareable URL', () => {
     assert.ok(app.includes('urlEvent={route.event}'));
     assert.ok(app.includes('event: selection.event'));
+  });
+
+  it('keeps type cup rank groups distinct from qualification groups and links to the edition', () => {
+    assert.ok(view.includes('Squad rank group'), 'rank-group versus qual-group wording');
+    assert.ok(view.includes('cupEditionPath(saveId, \'type\', season)'), 'tournament tables live on the edition');
+    assert.ok(view.includes('Type Cup Final'), 'Final standings labelled');
+    assert.ok(page.includes('optionalTournament('), 'history season summary knows the tournament');
   });
 });
