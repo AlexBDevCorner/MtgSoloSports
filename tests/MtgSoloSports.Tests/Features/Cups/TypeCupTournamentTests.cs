@@ -117,8 +117,9 @@ public sealed class TypeCupTournamentTests
     [InlineData(65)]
     public async Task OneShot_EqualsStepByStep(int teamCount)
     {
+        // MSS-067: second save forked instead of preparing the same field twice.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareTournamentAsync(teamCount, 52000UL + (ulong)teamCount, 52100UL + (ulong)teamCount);
-        var (stepStore, stepRoot, stepId) = await PrepareTournamentAsync(teamCount, 52000UL + (ulong)teamCount, 52100UL + (ulong)teamCount);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-typetourn-");
         try
         {
             await new RunTypeCupTeamHandler(oneShotStore).HandleAsync(oneShotId, sourceSeasonNumber: 2);
@@ -146,22 +147,33 @@ public sealed class TypeCupTournamentTests
     {
         // Stop/reopen after qual group 1 round 3; after one full qual group;
         // after all quals but before Final; Final group #3 round 4.
+        // MSS-067: one prepared tournament forked per resume case instead of
+        // preparing the same field five times.
         const int teamCount = 35;
         int perStage = 32;
-        var (fullStore, fullRoot, fullId) = await PrepareTournamentAsync(teamCount, 53000UL, 53100UL);
+        var (templateStore, templateRoot, templateId) = await PrepareTournamentAsync(teamCount, 53000UL, 53100UL);
         try
         {
-            await new RunTypeCupTeamHandler(fullStore).HandleAsync(fullId, sourceSeasonNumber: 2);
-            List<string> full = await SnapshotAsync(fullStore, fullId);
+            var (fullStore, fullRoot, fullId) = await TestSaveStores.ForkAsync(templateStore, templateId, "mtgsolosports-typeresume-full-");
+            List<string> full;
+            try
+            {
+                await new RunTypeCupTeamHandler(fullStore).HandleAsync(fullId, sourceSeasonNumber: 2);
+                full = await SnapshotAsync(fullStore, fullId);
+            }
+            finally
+            {
+                DeleteRoot(fullRoot);
+            }
 
-            await AssertResumeAsync(teamCount, 3, full, 53000UL, 53100UL);
-            await AssertResumeAsync(teamCount, perStage, full, 53000UL, 53100UL);
-            await AssertResumeAsync(teamCount, perStage * 2, full, 53000UL, 53100UL);
-            await AssertResumeAsync(teamCount, (perStage * 2) + (2 * 8) + 4, full, 53000UL, 53100UL);
+            await AssertResumeAsync(templateStore, templateId, teamCount, 3, full);
+            await AssertResumeAsync(templateStore, templateId, teamCount, perStage, full);
+            await AssertResumeAsync(templateStore, templateId, teamCount, perStage * 2, full);
+            await AssertResumeAsync(templateStore, templateId, teamCount, (perStage * 2) + (2 * 8) + 4, full);
         }
         finally
         {
-            DeleteRoot(fullRoot);
+            DeleteRoot(templateRoot);
         }
     }
 
@@ -336,9 +348,10 @@ public sealed class TypeCupTournamentTests
         return groups == 0 ? 32 : (groups * 32) + 32;
     }
 
-    private static async Task AssertResumeAsync(int teamCount, int prefixRounds, List<string> full, ulong seed, ulong stream)
+    private static async Task AssertResumeAsync(SaveStore templateStore, Guid templateId, int teamCount, int prefixRounds, List<string> full)
     {
-        var (store, root, saveId) = await PrepareTournamentAsync(teamCount, seed, stream).ConfigureAwait(false);
+        // MSS-067: resume case forked from the shared prepared tournament.
+        var (store, root, saveId) = await TestSaveStores.ForkAsync(templateStore, templateId, "mtgsolosports-typeresume-").ConfigureAwait(false);
         try
         {
             PlayTypeCupTeamRoundHandler step = new(store);

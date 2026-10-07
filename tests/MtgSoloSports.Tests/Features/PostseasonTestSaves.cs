@@ -61,6 +61,18 @@ internal static class PostseasonTestSaves
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Lifecycle Step", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         Guid saveId = created.Detail.SaveId;
+        await DrainToActionAsync(store, saveId, action).ConfigureAwait(false);
+        return (store, root, saveId);
+    }
+
+    /// <summary>
+    /// MSS-067: advances an already-prepared save (for example a shared Season 1
+    /// template fork) through <c>AdvanceToNextEvent</c> until
+    /// <paramref name="action"/> is the next legal action. Lets lifecycle tests
+    /// skip re-simulating Season 1 while keeping the exact lifecycle path.
+    /// </summary>
+    internal static async Task DrainToActionAsync(SaveStore store, Guid saveId, string action)
+    {
         GetSeasonStatusHandler status = new(store);
         AdvanceToNextEventHandler advance = new(store);
         for (int guard = 0; guard < 200; guard++)
@@ -68,7 +80,7 @@ internal static class PostseasonTestSaves
             GetSeasonStatusResponse current = await status.HandleAsync(saveId).ConfigureAwait(false);
             if (current.LegalNextActions.Count > 0 && string.Equals(current.LegalNextActions[0], action, StringComparison.Ordinal))
             {
-                return (store, root, saveId);
+                return;
             }
 
             await advance.HandleAsync(saveId).ConfigureAwait(false);

@@ -43,15 +43,11 @@ public sealed class InauguralSuperleagueApiTests
         var (factory, root) = CreateFactory();
         try
         {
+            // MSS-067: seed a shared completed Season 1 instead of importing
+            // the catalog and simulating 32 stages over HTTP; the inaugural
+            // endpoints under test still execute over HTTP.
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(Path.Combine(root, "saves"));
             using HttpClient client = factory.CreateClient();
-            await SeedCatalogAsync(client);
-            Guid saveId = await CreateSaveAsync(client, "Inaugural Api", 707UL, 808UL);
-
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
-                bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
-            }
 
             using HttpResponseMessage post = await client.PostAsync($"/api/saves/{saveId:D}/superleague/inaugural", null);
             post.StatusCode.ShouldBe(HttpStatusCode.OK);

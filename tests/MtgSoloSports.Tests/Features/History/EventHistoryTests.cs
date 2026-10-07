@@ -21,7 +21,8 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task ListEvents_MidColorCupTeam_ListsIndividualCompleteAndTeamInProgress()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(4545UL, 5656UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
         try
         {
             await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
@@ -43,7 +44,8 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task ListEventRounds_ReturnsGroupAndRoundInOrder()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(4646UL, 5757UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(store, saveId, 10);
@@ -60,7 +62,8 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task GetEventRound_MatchesStoredPayload()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(4747UL, 5858UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(store, saveId, 10);
@@ -84,8 +87,9 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task GetEventRound_ValidatesGroupAndRound()
     {
-        var (cupStore, cupRoot, cupId) = await PrepareColorCupAsync(4848UL, 5959UL);
-        var (qualStore, qualRoot, qualId) = await PrepareQualifierAsync(4949UL, 6060UL);
+        // MSS-067: shared templates forked into isolated saves.
+        var (cupStore, cupRoot, cupId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
+        var (qualStore, qualRoot, qualId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(cupStore, cupId, 1);
@@ -114,7 +118,8 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task TeamStandings_ProvisionalThenFinal()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(5050UL, 6161UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(store, saveId, 8);
@@ -148,7 +153,8 @@ public sealed class EventHistoryTests
     [Fact]
     public async Task TeamStandings_BeforeRound_SumOnlyEarlierRounds()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(5252UL, 6363UL);
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-eventhist-");
         try
         {
             await PlayTeamRoundsAsync(store, saveId, 9);

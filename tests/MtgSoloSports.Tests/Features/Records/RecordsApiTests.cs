@@ -20,10 +20,11 @@ public sealed class RecordsApiTests
         var (factory, root) = CreateFactory();
         try
         {
+            // MSS-067: seed a shared Season 1 plus postseason save instead of
+            // importing the catalog and simulating a season over HTTP; the
+            // records/honours/fame endpoints under test read it directly.
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
             using HttpClient client = factory.CreateClient();
-            await SeedCatalogAsync(client);
-            Guid saveId = await CreateSaveAsync(client, "Records API", 424201UL, 848402UL);
-            await SimulateSeasonsAsync(client, saveId, 1);
 
             HonoursPayload honours = await FetchHonoursAsync(client, saveId);
             // Season 1 is odd, so SimulateSeasons now includes the post-season Color Cup:

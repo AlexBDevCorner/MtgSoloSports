@@ -30,8 +30,9 @@ public sealed class TypeCupTeamStepTests
     [Fact]
     public async Task Step_AllRounds_EqualsOneShot()
     {
+        // MSS-067: forked copy instead of building the same seeded save twice.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareTypeCupAsync(2323UL, 3434UL);
-        var (stepStore, stepRoot, stepId) = await PrepareTypeCupAsync(2323UL, 3434UL);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-type-step-");
         try
         {
             await new RunTypeCupTeamHandler(oneShotStore).HandleAsync(oneShotId, sourceSeasonNumber: 2);
@@ -58,8 +59,9 @@ public sealed class TypeCupTeamStepTests
     [Fact]
     public async Task Step_Then_OneShot_EqualsOneShot()
     {
+        // MSS-067: forked copy instead of building the same seeded save twice.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareTypeCupAsync(9393UL, 9494UL);
-        var (mixedStore, mixedRoot, mixedId) = await PrepareTypeCupAsync(9393UL, 9494UL);
+        var (mixedStore, mixedRoot, mixedId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-type-mixed-");
         try
         {
             await new RunTypeCupTeamHandler(oneShotStore).HandleAsync(oneShotId, sourceSeasonNumber: 2);
@@ -82,8 +84,9 @@ public sealed class TypeCupTeamStepTests
     [Fact]
     public async Task Step_GroupBoundary_MatchesOneShotRngChain()
     {
+        // MSS-067: forked copy instead of building the same seeded save twice.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareTypeCupAsync(9595UL, 9696UL);
-        var (stepStore, stepRoot, stepId) = await PrepareTypeCupAsync(9595UL, 9696UL);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-type-bound-");
         try
         {
             await new RunTypeCupTeamHandler(oneShotStore).HandleAsync(oneShotId, sourceSeasonNumber: 2);

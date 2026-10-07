@@ -24,7 +24,8 @@ public sealed class TieredMovementReadModelTests
     [Fact]
     public async Task FeederMovements_TieredTransition_Returns512WithBoundaryIdentity()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS060 Feeder", 6001UL, 7002UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-tiered-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -60,7 +61,8 @@ public sealed class TieredMovementReadModelTests
     [Fact]
     public async Task AutomaticMovement_TieredTransition_CarriesTierLevels()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS060 Levels", 8003UL, 9004UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-tiered-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -110,7 +112,8 @@ public sealed class TieredMovementReadModelTests
     [Fact]
     public async Task AthleteProfile_TieredSave_SeasonsAndMovementsCarryLevels()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS060 Profile", 1213UL, 1415UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-tiered-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -136,7 +139,8 @@ public sealed class TieredMovementReadModelTests
     [Fact]
     public async Task AthleteSearch_TieredSave_OptionsAndResultsCarryLevels()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS060 Search", 1617UL, 1819UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-tiered-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -224,17 +228,6 @@ public sealed class TieredMovementReadModelTests
         }
 
         throw new InvalidOperationException($"Unknown league level '{level}'.");
-    }
-
-    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareTieredSaveAsync(string name, ulong seed, ulong stream)
-    {
-        var (store, root) = PostseasonTestSaves.CreateStore();
-        SaveStore.CreationRecord created = await store.CreateAsync(name, seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
-        await PostseasonTestSaves.CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        await new CreateInauguralSuperleagueHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task<int> FindRankAthleteAsync(

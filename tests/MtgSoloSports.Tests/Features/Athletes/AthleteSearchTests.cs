@@ -224,17 +224,10 @@ public sealed class AthleteSearchTests
     [Fact]
     public async Task Search_AfterFullSeason_HonoursAndTitlesDistinguished()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-search-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Search Season", 777UL, 888UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            global::MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesHandler bulk = new(store);
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                await bulk.HandleAsync(saveId);
-            }
-
             await AssertSeasonHonoursAsync(store, saveId);
         }
         finally

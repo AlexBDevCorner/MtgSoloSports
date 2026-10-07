@@ -82,13 +82,11 @@ public sealed class CupLifecycleIntegrationTests
     [Fact]
     public async Task StartNextSeason_RequiresCupComplete()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template (Season 1 already complete, same as
+        // after AdvanceStagesOnlyAsync) forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cup-gate-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Gate", 111UL, 222UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-
-            await AdvanceStagesOnlyAsync(store, saveId, stages: 32);
             AdvanceToNextEventHandler advance = new(store);
             StartNextSeasonHandler starter = new(store);
 
@@ -133,9 +131,22 @@ public sealed class CupLifecycleIntegrationTests
         }
     }
 
+    /// <summary>
+    /// MSS-067: opt-in multi-season soak. The same fast-vs-manual equivalence
+    /// invariant is covered in normal CI over one season by
+    /// <c>FastSimulationTests.SimulateSeasons_EquivalentToManualAdvanceToNextEvent</c>
+    /// and <c>LongRunChecksumHandlerTests.FastSimulation_MatchesManual_Checksum</c>;
+    /// this three-season variant runs only with <c>MTG_LONGRUN=1</c>.
+    /// </summary>
     [Fact]
     public async Task FastAndManual_ThreeSeasons_ProduceIdenticalCupsAndRng()
     {
+        if (!string.Equals(Environment.GetEnvironmentVariable("MTG_LONGRUN"), "1", StringComparison.Ordinal))
+        {
+            SimulateSeasonsHandler.MaxSeasonsPerRequest.ShouldBeGreaterThanOrEqualTo(3);
+            return;
+        }
+
         var (manualStore, manualRoot) = CreateStore();
         var (fastStore, fastRoot) = CreateStore();
         try

@@ -423,10 +423,15 @@ public sealed class TypeCupTeamTests
     [Fact]
     public async Task Run_SameSeed_IsDeterministic()
     {
-        (RunTypeCupTeamResponse first, string rootFirst) = await RunTeamForSeedAsync(42421UL, 7771UL);
-        (RunTypeCupTeamResponse second, string rootSecond) = await RunTeamForSeedAsync(42421UL, 7771UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // building the same seeded save twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareTeamForSeedAsync(42421UL, 7771UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-type-team-det-");
         try
         {
+            RunTypeCupTeamResponse first = await new RunTypeCupTeamHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
+            RunTypeCupTeamResponse second = await new RunTypeCupTeamHandler(secondStore).HandleAsync(secondId, sourceSeasonNumber: 2);
             first.Checksum.ShouldBe(second.Checksum);
             first.Teams.Select(t => t.CreatureType).ShouldBe(second.Teams.Select(t => t.CreatureType).ToList());
             first.Teams.Select(t => t.TeamScoreThousandths).ShouldBe(second.Teams.Select(t => t.TeamScoreThousandths).ToList());
@@ -436,8 +441,8 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -763,7 +768,7 @@ public sealed class TypeCupTeamTests
         }
     }
 
-    private static async Task<(RunTypeCupTeamResponse Response, string Root)> RunTeamForSeedAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareTeamForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Type Team Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
@@ -774,9 +779,7 @@ public sealed class TypeCupTeamTests
         await CreateEvenSeasonAsync(store, saveId, 2, activeIds, []).ConfigureAwait(false);
         SelectTypeCupTeamsHandler select = new(store);
         await select.HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
-        RunTypeCupTeamHandler handler = new(store);
-        RunTypeCupTeamResponse response = await handler.HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
-        return (response, root);
+        return (store, root, saveId);
     }
 
     private static async Task<(int StageCount, int SeasonCount, int RoundCount, long Lifetime, long Effective, long Championship, ulong Rng)> CapturePreservationAsync(

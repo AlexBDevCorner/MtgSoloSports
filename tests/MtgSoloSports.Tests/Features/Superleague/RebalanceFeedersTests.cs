@@ -60,21 +60,20 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_Inaugural_Fills28To32_PreservesHistory()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Inaugural", 707UL, 808UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
 
-            await AssertProvisionalAsync(store, created.Detail.SaveId, 2, 28);
+            await AssertProvisionalAsync(store, saveId, 2, 28);
 
             (int stages, int seasons, int rounds, int qualifierRounds, int qualifierStandings, ulong rngBefore) =
-                await CapturePreservationAsync(store, created.Detail.SaveId);
+                await CapturePreservationAsync(store, saveId);
 
             RebalanceFeedersHandler handler = new(store);
-            RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RebalanceFeedersResponse response = await handler.HandleAsync(saveId);
 
             response.FromSeasonNumber.ShouldBe(1);
             response.ToSeasonNumber.ShouldBe(2);
@@ -91,13 +90,13 @@ public sealed class RebalanceFeedersTests
             response.RebalancedDown.Count.ShouldBe(0);
             response.RngAfterState.ShouldNotBe(response.RngBeforeState);
 
-            await AssertFinalAsync(store, created.Detail.SaveId, response);
-            await AssertNoPoolBypassAsync(store, created.Detail.SaveId, response);
-            await AssertPreservationAsync(store, created.Detail.SaveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: true);
-            await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
+            await AssertFinalAsync(store, saveId, response);
+            await AssertNoPoolBypassAsync(store, saveId, response);
+            await AssertPreservationAsync(store, saveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: true);
+            await AssertQueryMatchesAsync(store, saveId, response);
 
             await Should.ThrowAsync<RebalanceFeedersConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -108,39 +107,37 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_Normal_WithWhiteCluster_Restores32()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Normal", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
 
             RebalanceFeedersHandler rebalance = new(store);
-            RebalanceFeedersResponse inauguralRebalance = await rebalance.HandleAsync(created.Detail.SaveId);
+            RebalanceFeedersResponse inauguralRebalance = await rebalance.HandleAsync(saveId);
             inauguralRebalance.TotalDrawn.ShouldBe(32);
 
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId, placeWhiteLast: true);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, saveId, placeWhiteLast: true);
 
             ResolveAutomaticMovementHandler movement = new(store);
-            await movement.HandleAsync(created.Detail.SaveId);
+            await movement.HandleAsync(saveId);
 
             await Should.ThrowAsync<RebalanceFeedersConflictException>(
-                () => rebalance.HandleAsync(created.Detail.SaveId));
+                () => rebalance.HandleAsync(saveId));
 
             RunAllQualifiersHandler qualifier = new(store);
-            RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
+            RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(saveId);
             qualifierResponse.TotalStandings.ShouldBe(288);
             qualifierResponse.ExecutedNow.Count.ShouldBe(17);
 
-            Dictionary<int, int> provisional = await LoadFeederCountsAsync(store, created.Detail.SaveId, 3);
+            Dictionary<int, int> provisional = await LoadFeederCountsAsync(store, saveId, 3);
             provisional.Values.Sum().ShouldBe(768);
 
             (int stages, int seasons, int rounds, int qualifierRounds, int qualifierStandings, ulong rngBefore) =
-                await CapturePreservationAsync(store, created.Detail.SaveId);
+                await CapturePreservationAsync(store, saveId);
 
-            RebalanceFeedersResponse response = await rebalance.HandleAsync(created.Detail.SaveId);
+            RebalanceFeedersResponse response = await rebalance.HandleAsync(saveId);
 
             response.FromSeasonNumber.ShouldBe(2);
             response.ToSeasonNumber.ShouldBe(3);
@@ -150,14 +147,14 @@ public sealed class RebalanceFeedersTests
                 + response.TotalRebalancedUp + response.TotalRebalancedDown;
             response.MovementCount.ShouldBe(expectedMovements);
 
-            await AssertFinalAsync(store, created.Detail.SaveId, response);
-            await AssertDisplacedAreLowestAsync(store, created.Detail.SaveId, response);
-            await AssertNoPoolBypassAsync(store, created.Detail.SaveId, response);
-            await AssertPreservationAsync(store, created.Detail.SaveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: response.TotalDrawn > 0);
-            await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
+            await AssertFinalAsync(store, saveId, response);
+            await AssertDisplacedAreLowestAsync(store, saveId, response);
+            await AssertNoPoolBypassAsync(store, saveId, response);
+            await AssertPreservationAsync(store, saveId, stages, seasons, rounds, qualifierRounds, qualifierStandings, rngBefore, drew: response.TotalDrawn > 0);
+            await AssertQueryMatchesAsync(store, saveId, response);
 
             await Should.ThrowAsync<RebalanceFeedersConflictException>(
-                () => rebalance.HandleAsync(created.Detail.SaveId));
+                () => rebalance.HandleAsync(saveId));
         }
         finally
         {
@@ -168,10 +165,15 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_SameSeed_Inaugural_IsDeterministic()
     {
-        (RebalanceFeedersResponse first, string rootFirst) = await RunInauguralRebalanceAsync(4242UL, 777UL);
-        (RebalanceFeedersResponse second, string rootSecond) = await RunInauguralRebalanceAsync(4242UL, 777UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareInauguralForSeedAsync(4242UL, 777UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-rebalance-det-");
         try
         {
+            RebalanceFeedersResponse first = await new RebalanceFeedersHandler(store).HandleAsync(saveId);
+            RebalanceFeedersResponse second = await new RebalanceFeedersHandler(secondStore).HandleAsync(secondId);
             first.TotalDrawn.ShouldBe(second.TotalDrawn);
             first.Draws.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(second.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
             first.RngBeforeState.ShouldBe(second.RngBeforeState);
@@ -180,8 +182,8 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -813,15 +815,14 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_Inaugural_ExposesDeparturesForReveal()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Reveal", 5151UL, 6161UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
             RebalanceFeedersHandler handler = new(store);
-            RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RebalanceFeedersResponse response = await handler.HandleAsync(saveId);
 
             AssertTieredInauguralColors(response);
             AssertDepartedForReveal(response);
@@ -936,16 +937,14 @@ public sealed class RebalanceFeedersTests
         }
     }
 
-    private static async Task<(RebalanceFeedersResponse Response, string Root)> RunInauguralRebalanceAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareInauguralForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         await CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         CreateInauguralSuperleagueHandler inaugural = new(store);
         await inaugural.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RebalanceFeedersHandler handler = new(store);
-        RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        return (response, root);
+        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task<Dictionary<int, int>> LoadFeederCountsAsync(SaveStore store, Guid saveId, int seasonNumber)

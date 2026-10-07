@@ -172,19 +172,17 @@ public sealed class StoryEventsTests
     [Fact]
     public async Task CompleteSeason_EmitsFirstLeagueTitlePerChampion()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stories-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Season Story", 7171UL, 8181UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             List<SeasonStandingEntity> champions = await context.SeasonStandings
                 .AsNoTracking().Where(e => e.IsChampion).ToListAsync();
             champions.Count.ShouldBe(24);
 
-            List<StoryEventEntity> stories = await LoadStoriesAsync(store, created.Detail.SaveId);
+            List<StoryEventEntity> stories = await LoadStoriesAsync(store, saveId);
             List<StoryEventEntity> titles = stories
                 .Where(e => string.Equals(e.EventType, StoryEventType.FirstLeagueTitle, StringComparison.Ordinal)).ToList();
             titles.Count.ShouldBe(24);
@@ -197,7 +195,7 @@ public sealed class StoryEventsTests
             stories.Count(e => string.Equals(e.EventType, StoryEventType.FirstStageWin, StringComparison.Ordinal)).ShouldBeGreaterThan(0);
 
             ListRecentStoriesHandler query = new(store);
-            ListRecentStoriesResponse feed = await query.HandleAsync(created.Detail.SaveId, 100);
+            ListRecentStoriesResponse feed = await query.HandleAsync(saveId, 100);
             feed.Stories.Count.ShouldBeGreaterThanOrEqualTo(8);
             for (int i = 1; i < feed.Stories.Count; i++)
             {
@@ -213,20 +211,18 @@ public sealed class StoryEventsTests
     [Fact]
     public async Task PostseasonChain_EmitsPromotionSuperleagueAndPoolStories()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stories-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Postseason Story", 707UL, 808UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
-            RngStateEntity rngBefore = await ReadRngAsync(store, created.Detail.SaveId);
+            RngStateEntity rngBefore = await ReadRngAsync(store, saveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
-            RngStateEntity rngAfter = await ReadRngAsync(store, created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
+            RngStateEntity rngAfter = await ReadRngAsync(store, saveId);
             ((ulong)rngAfter.State).ShouldBe((ulong)rngBefore.State);
 
-            List<StoryEventEntity> afterInaugural = await LoadStoriesAsync(store, created.Detail.SaveId);
+            List<StoryEventEntity> afterInaugural = await LoadStoriesAsync(store, saveId);
             afterInaugural.Count(e => string.Equals(e.EventType, StoryEventType.Promotion, StringComparison.Ordinal)).ShouldBe(32);
             afterInaugural.Count(e => string.Equals(e.EventType, StoryEventType.FirstSuperleagueAppearance, StringComparison.Ordinal)).ShouldBe(32);
             foreach (StoryEventEntity promotion in afterInaugural
@@ -237,9 +233,9 @@ public sealed class StoryEventsTests
             }
 
             RebalanceFeedersHandler rebalance = new(store);
-            await rebalance.HandleAsync(created.Detail.SaveId);
+            await rebalance.HandleAsync(saveId);
 
-            List<StoryEventEntity> afterRebalance = await LoadStoriesAsync(store, created.Detail.SaveId);
+            List<StoryEventEntity> afterRebalance = await LoadStoriesAsync(store, saveId);
             List<StoryEventEntity> comebacks = afterRebalance
                 .Where(e => string.Equals(e.EventType, StoryEventType.ReturnFromPool, StringComparison.Ordinal)).ToList();
             comebacks.Count.ShouldBe(32);
@@ -251,19 +247,19 @@ public sealed class StoryEventsTests
             }
 
             ListRecentStoriesHandler recent = new(store);
-            ListRecentStoriesResponse feed = await recent.HandleAsync(created.Detail.SaveId, 5);
+            ListRecentStoriesResponse feed = await recent.HandleAsync(saveId, 5);
             feed.Stories.Count.ShouldBe(5);
 
             int anyAthlete = afterInaugural
                 .First(e => string.Equals(e.EventType, StoryEventType.Promotion, StringComparison.Ordinal)).SaveAthleteId;
             ListAthleteStoriesHandler athleteQuery = new(store);
-            ListRecentStoriesResponse athleteFeed = await athleteQuery.HandleAsync(created.Detail.SaveId, anyAthlete);
+            ListRecentStoriesResponse athleteFeed = await athleteQuery.HandleAsync(saveId, anyAthlete);
             athleteFeed.Stories.Count.ShouldBeGreaterThanOrEqualTo(2);
             athleteFeed.Stories.All(s => s.AthleteId == anyAthlete).ShouldBeTrue();
             athleteFeed.Stories.Any(s => string.Equals(s.EventType, StoryEventType.Promotion, StringComparison.Ordinal)).ShouldBeTrue();
 
             await Should.ThrowAsync<AthleteStoriesNotFoundException>(
-                () => athleteQuery.HandleAsync(created.Detail.SaveId, 999999));
+                () => athleteQuery.HandleAsync(saveId, 999999));
         }
         finally
         {
@@ -274,36 +270,34 @@ public sealed class StoryEventsTests
     [Fact]
     public async Task Qualifier_EmitsQualifierPromotionAndRelegationStories()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stories-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Qualifier Story", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
             RebalanceFeedersHandler rebalance = new(store);
-            await rebalance.HandleAsync(created.Detail.SaveId);
+            await rebalance.HandleAsync(saveId);
 
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, saveId);
 
             ResolveAutomaticMovementHandler movement = new(store);
-            await movement.HandleAsync(created.Detail.SaveId);
+            await movement.HandleAsync(saveId);
             MtgSoloSports.Features.Qualifiers.RunAllQualifiersHandler qualifier = new(store);
-            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(created.Detail.SaveId);
+            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse qualifierResponse = await qualifier.HandleAsync(saveId);
             qualifierResponse.TotalStandings.ShouldBe(288);
 
-            await AssertQualifierMovementStoriesAsync(store, created.Detail.SaveId);
+            await AssertQualifierMovementStoriesAsync(store, saveId);
 
-            await rebalance.HandleAsync(created.Detail.SaveId);
-            await AssertStoryKeysUniqueAsync(store, created.Detail.SaveId);
+            await rebalance.HandleAsync(saveId);
+            await AssertStoryKeysUniqueAsync(store, saveId);
 
-            int rerunPromotions = await CountByTypeAsync(store, created.Detail.SaveId, StoryEventType.Promotion);
-            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse rerun = await qualifier.HandleAsync(created.Detail.SaveId);
+            int rerunPromotions = await CountByTypeAsync(store, saveId, StoryEventType.Promotion);
+            MtgSoloSports.Features.Qualifiers.RunAllQualifiersResponse rerun = await qualifier.HandleAsync(saveId);
             rerun.AlreadyCompleted.Count.ShouldBe(17);
             rerun.ExecutedNow.Count.ShouldBe(0);
-            int afterRerun = await CountByTypeAsync(store, created.Detail.SaveId, StoryEventType.Promotion);
+            int afterRerun = await CountByTypeAsync(store, saveId, StoryEventType.Promotion);
             afterRerun.ShouldBe(rerunPromotions);
         }
         finally

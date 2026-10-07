@@ -23,40 +23,47 @@ public sealed class FastSimulationTests
     [Fact]
     public async Task CompleteSeason_EquivalentToSequentialBulkStages()
     {
+        // MSS-067: second save forked from the first instead of creating the
+        // same seeded universe twice; both season completions still execute
+        // independently from bit-identical starting state.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord sequential = await firstStore.CreateAsync("Season Sequential", 5150UL, 6160UL, catalog);
-            SaveStore.CreationRecord fast = await secondStore.CreateAsync("Season Fast", 5150UL, 6160UL, catalog);
-
-            CompleteStageForAllLeaguesHandler bulk = new(firstStore);
-            for (int stage = 1; stage <= 32; stage++)
+            var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, sequential.Detail.SaveId, "mtgsolosports-season-fast-");
+            try
             {
-                CompleteStageForAllLeaguesResponse completed = await bulk.HandleAsync(sequential.Detail.SaveId);
-                completed.CompletedStage.ShouldBe(stage);
+                CompleteStageForAllLeaguesHandler bulk = new(firstStore);
+                for (int stage = 1; stage <= 32; stage++)
+                {
+                    CompleteStageForAllLeaguesResponse completed = await bulk.HandleAsync(sequential.Detail.SaveId);
+                    completed.CompletedStage.ShouldBe(stage);
+                }
+
+                CompleteSeasonHandler fastHandler = new(secondStore);
+                CompleteSeasonResponse response = await fastHandler.HandleAsync(fastId);
+
+                response.SeasonNumber.ShouldBe(1);
+                response.StagesCompleted.ShouldBe(32);
+                response.GlobalStageBefore.ShouldBe(1);
+                response.GlobalStageAfter.ShouldBe(33);
+                response.IsSeasonComplete.ShouldBeTrue();
+                response.Progress.StagesCompleted.ShouldBe(32);
+                response.Progress.TotalStagesInSeason.ShouldBe(32);
+                response.Progress.GlobalStageBefore.ShouldBe(1);
+                response.Progress.GlobalStageAfter.ShouldBe(33);
+
+                await AssertSportingEquivalentAsync(firstStore, sequential.Detail.SaveId, secondStore, fastId);
             }
-
-            CompleteSeasonHandler fastHandler = new(secondStore);
-            CompleteSeasonResponse response = await fastHandler.HandleAsync(fast.Detail.SaveId);
-
-            response.SeasonNumber.ShouldBe(1);
-            response.StagesCompleted.ShouldBe(32);
-            response.GlobalStageBefore.ShouldBe(1);
-            response.GlobalStageAfter.ShouldBe(33);
-            response.IsSeasonComplete.ShouldBeTrue();
-            response.Progress.StagesCompleted.ShouldBe(32);
-            response.Progress.TotalStagesInSeason.ShouldBe(32);
-            response.Progress.GlobalStageBefore.ShouldBe(1);
-            response.Progress.GlobalStageAfter.ShouldBe(33);
-
-            await AssertSportingEquivalentAsync(firstStore, sequential.Detail.SaveId, secondStore, fast.Detail.SaveId);
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
         }
     }
 
@@ -117,80 +124,90 @@ public sealed class FastSimulationTests
     [Fact]
     public async Task SimulateSeasons_EquivalentToManualAdvanceToNextEvent()
     {
+        // MSS-067: second save forked instead of creating the same universe twice.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord manual = await firstStore.CreateAsync("Sim Manual", 4243UL, 778UL, catalog);
-            SaveStore.CreationRecord fast = await secondStore.CreateAsync("Sim Fast", 4243UL, 778UL, catalog);
+            var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, manual.Detail.SaveId, "mtgsolosports-sim-fast-");
+            try
+            {
+                await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
 
-            await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
+                SimulateSeasonsHandler fastHandler = new(secondStore);
+                SimulateSeasonsResponse response = await fastHandler.HandleAsync(
+                    fastId, new SimulateSeasonsRequest(1));
 
-            SimulateSeasonsHandler fastHandler = new(secondStore);
-            SimulateSeasonsResponse response = await fastHandler.HandleAsync(
-                fast.Detail.SaveId, new SimulateSeasonsRequest(1));
+                response.SeasonsRequested.ShouldBe(1);
+                response.SeasonsCompleted.ShouldBe(1);
+                response.StagesCompleted.ShouldBe(32);
+                response.StartSeasonNumber.ShouldBe(1);
+                response.EndSeasonNumber.ShouldBe(2);
+                response.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonInProgress));
+                response.GlobalStage.ShouldBe(1);
+                response.IsCurrentSeasonComplete.ShouldBeFalse();
+                response.Progress.SeasonsRequested.ShouldBe(1);
+                response.Progress.SeasonsCompleted.ShouldBe(1);
+                response.Progress.StartSeasonNumber.ShouldBe(1);
+                response.Progress.EndSeasonNumber.ShouldBe(2);
 
-            response.SeasonsRequested.ShouldBe(1);
-            response.SeasonsCompleted.ShouldBe(1);
-            response.StagesCompleted.ShouldBe(32);
-            response.StartSeasonNumber.ShouldBe(1);
-            response.EndSeasonNumber.ShouldBe(2);
-            response.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonInProgress));
-            response.GlobalStage.ShouldBe(1);
-            response.IsCurrentSeasonComplete.ShouldBeFalse();
-            response.Progress.SeasonsRequested.ShouldBe(1);
-            response.Progress.SeasonsCompleted.ShouldBe(1);
-            response.Progress.StartSeasonNumber.ShouldBe(1);
-            response.Progress.EndSeasonNumber.ShouldBe(2);
-
-            await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fast.Detail.SaveId);
-            await AssertPostseasonEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fast.Detail.SaveId, fromSeason: 1, toSeason: 2);
+                await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId);
+                await AssertPostseasonEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId, fromSeason: 1, toSeason: 2);
+            }
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
         }
     }
 
     [Fact]
     public async Task SimulateSeasons_FromMidSeason_EquivalentToManual()
     {
+        // MSS-067: prime once, then fork, instead of creating the same universe
+        // twice and priming both through 5 identical stages.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord manual = await firstStore.CreateAsync("Sim Mid Manual", 3331UL, 4442UL, catalog);
-            SaveStore.CreationRecord fast = await secondStore.CreateAsync("Sim Mid Fast", 3331UL, 4442UL, catalog);
 
-            // Advance both saves identically through 5 global stages first.
+            // Advance through 5 global stages first.
             CompleteStageForAllLeaguesHandler primer = new(firstStore);
-            CompleteStageForAllLeaguesHandler primer2 = new(secondStore);
             for (int stage = 1; stage <= 5; stage++)
             {
                 await primer.HandleAsync(manual.Detail.SaveId);
-                await primer2.HandleAsync(fast.Detail.SaveId);
             }
 
-            await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
+            var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, manual.Detail.SaveId, "mtgsolosports-sim-mid-");
+            try
+            {
+                await AdvanceManuallyToSeasonTwoAsync(firstStore, manual.Detail.SaveId);
 
-            SimulateSeasonsHandler fastHandler = new(secondStore);
-            SimulateSeasonsResponse response = await fastHandler.HandleAsync(
-                fast.Detail.SaveId, new SimulateSeasonsRequest(1));
+                SimulateSeasonsHandler fastHandler = new(secondStore);
+                SimulateSeasonsResponse response = await fastHandler.HandleAsync(
+                    fastId, new SimulateSeasonsRequest(1));
 
-            response.StartSeasonNumber.ShouldBe(1);
-            response.EndSeasonNumber.ShouldBe(2);
-            response.StagesCompleted.ShouldBe(27);
-            response.SeasonsCompleted.ShouldBe(1);
+                response.StartSeasonNumber.ShouldBe(1);
+                response.EndSeasonNumber.ShouldBe(2);
+                response.StagesCompleted.ShouldBe(27);
+                response.SeasonsCompleted.ShouldBe(1);
 
-            await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fast.Detail.SaveId);
+                await AssertSportingEquivalentAsync(firstStore, manual.Detail.SaveId, secondStore, fastId);
+            }
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
         }
     }
 

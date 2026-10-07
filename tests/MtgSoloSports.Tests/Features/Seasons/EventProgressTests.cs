@@ -15,7 +15,9 @@ public sealed class EventProgressTests
     [Fact]
     public async Task Status_BeforeQualifierRoundOne_ReportsZeroProgress()
     {
-        var (store, root, saveId) = await PrepareLifecycleAsync(3131UL, 4141UL, "RunQualifier");
+        // MSS-067: shared Season 1 template, then the same lifecycle drain.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
+        await DrainToActionAsync(store, saveId, "RunQualifier");
         try
         {
             GetSeasonStatusResponse status = await new GetSeasonStatusHandler(store).HandleAsync(saveId);
@@ -40,7 +42,9 @@ public sealed class EventProgressTests
     [Fact]
     public async Task Status_MidQualifier_ReportsInProgressPhaseAndRounds()
     {
-        var (store, root, saveId) = await PrepareLifecycleAsync(3232UL, 4242UL, "RunQualifier");
+        // MSS-067: shared Season 1 template, then the same lifecycle drain.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
+        await DrainToActionAsync(store, saveId, "RunQualifier");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -61,7 +65,9 @@ public sealed class EventProgressTests
     [Fact]
     public async Task AdvanceNextEvent_FinishesPartlyPlayedQualifier()
     {
-        var (store, root, saveId) = await PrepareLifecycleAsync(3333UL, 4343UL, "RunQualifier");
+        // MSS-067: shared Season 1 template, then the same lifecycle drain.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
+        await DrainToActionAsync(store, saveId, "RunQualifier");
         try
         {
             await new PlayQualifierRoundHandler(store).HandleAsync(saveId);

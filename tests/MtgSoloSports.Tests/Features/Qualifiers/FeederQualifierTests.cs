@@ -21,7 +21,8 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task AutomaticMovement_PreservesSuperleagueSemantics()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 SL", 1001UL, 2002UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             ResolveAutomaticMovementResponse movement = await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -44,7 +45,8 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task AutomaticMovement_FeederBands_WhiteColor()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 Bands", 3003UL, 4004UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -60,7 +62,8 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task FullTransition_NoAthleteInTwoQualifiers_AndOneTierMax()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 Full", 5005UL, 6006UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -82,7 +85,8 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task QualifierReplay_UsesPersistedFacts_NeverResimulates()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 Replay", 7007UL, 8008UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -109,25 +113,31 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task DeterministicOrder_SameSeed_SameRng()
     {
-        (RunAllQualifiersResponse first, string rootFirst) = await RunAllForSeedAsync(9009UL, 1010UL);
-        (RunAllQualifiersResponse second, string rootSecond) = await RunAllForSeedAsync(9009UL, 1010UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareForSeedAsync(9009UL, 1010UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-feeder-det-");
         try
         {
+            RunAllQualifiersResponse first = await new RunAllQualifiersHandler(store).HandleAsync(saveId);
+            RunAllQualifiersResponse second = await new RunAllQualifiersHandler(secondStore).HandleAsync(secondId);
             first.TotalStandings.ShouldBe(second.TotalStandings);
             first.TotalRounds.ShouldBe(second.TotalRounds);
             first.ExecutedNow.ShouldBe(second.ExecutedNow.ToList());
         }
         finally
         {
-            PostseasonTestSaves.DeleteRoot(rootFirst);
-            PostseasonTestSaves.DeleteRoot(rootSecond);
+            PostseasonTestSaves.DeleteRoot(root);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
     [Fact]
     public async Task Retry_AfterSomeQualifiers_DoesNotRerun()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 Retry", 1111UL, 2222UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -156,7 +166,8 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task F3Bottom_RemainInF3_BeforeRebalance()
     {
-        var (store, root, saveId) = await PrepareTieredSaveAsync("MSS058 F3", 3333UL, 4444UL);
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-feeder-");
         try
         {
             await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId);
@@ -169,17 +180,6 @@ public sealed class FeederQualifierTests
         {
             PostseasonTestSaves.DeleteRoot(root);
         }
-    }
-
-    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareTieredSaveAsync(string name, ulong seed, ulong stream)
-    {
-        var (store, root) = PostseasonTestSaves.CreateStore();
-        SaveStore.CreationRecord created = await store.CreateAsync(name, seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
-        await PostseasonTestSaves.CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        await new CreateInauguralSuperleagueHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task AssertFeederBandsAsync(SaveStore store, Guid saveId)
@@ -434,7 +434,7 @@ public sealed class FeederQualifierTests
         qualifierWinners.ShouldBe(8);
     }
 
-    private static async Task<(RunAllQualifiersResponse Response, string Root)> RunAllForSeedAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = PostseasonTestSaves.CreateStore();
         var created = await store.CreateAsync("MSS058 Seed", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
@@ -443,8 +443,6 @@ public sealed class FeederQualifierTests
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await new ResolveAutomaticMovementHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RunAllQualifiersResponse response = await new RunAllQualifiersHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        // Keep store alive via root; caller deletes root. Store is not returned to avoid disposal issues.
-        return (response, root);
+        return (store, root, created.Detail.SaveId);
     }
 }

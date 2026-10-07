@@ -29,11 +29,10 @@ public sealed class TransitionRevealLifecycleTests
     [Fact]
     public async Task AutomaticMovement_ExecuteOnce_ReloadIdentical_ContinueIsQualifier()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template, then the same lifecycle drain.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-transition-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Movement Once", 4242UL, 777UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
             await RunLifecycleToActionAsync(store, saveId, SeasonLifecycleActions.ResolveAutomaticMovement);
 
             GetAutomaticMovementHandler movementQuery = new(store);
@@ -77,11 +76,10 @@ public sealed class TransitionRevealLifecycleTests
     [Fact]
     public async Task Rebalance_ExecuteOnce_ReloadIdentical_ContinueIsCupSelection()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template, then the same lifecycle drains.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-transition-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Once", 4242UL, 777UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
             // Season 1 rebalances without a qualifier first; drive through the
             // Season 2 movement and qualifier so this covers the Season 2
             // rebalance (fromSeason 2) followed by Type Cup selection.
@@ -131,11 +129,10 @@ public sealed class TransitionRevealLifecycleTests
     [Fact]
     public async Task Inaugural_ExecuteOnce_ReloadIdentical_ContinueIsRebalance()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template, then the same lifecycle drain.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-transition-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Inaugural Once", 111UL, 222UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
             await RunLifecycleToActionAsync(store, saveId, SeasonLifecycleActions.ResolveInauguralMovement);
 
             GetInauguralRosterHandler inauguralQuery = new(store);

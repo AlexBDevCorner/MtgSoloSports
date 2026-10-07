@@ -63,19 +63,12 @@ public sealed class AthleteCareerProjectionTests
     [Fact]
     public async Task AfterFullSeason_PersistsFinalRanks()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-projection-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Career Full", 777UL, 888UL, UniverseTestCatalog.Build());
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            CompleteStageForAllLeaguesResponse last = null!;
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                last = await bulk.HandleAsync(created.Detail.SaveId);
-            }
-
-            last.IsSeasonComplete.ShouldBeTrue();
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
+            (await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1)).IsComplete.ShouldBeTrue();
             await AssertChampionFinalizedAsync(context);
         }
         finally
@@ -87,17 +80,11 @@ public sealed class AthleteCareerProjectionTests
     [Fact]
     public async Task AfterFullSeason_PoolStaysInactiveWithNextSeasonEffectiveZero()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-projection-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Career Pool Full", 777UL, 888UL, UniverseTestCatalog.Build());
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                await bulk.HandleAsync(created.Detail.SaveId);
-            }
-
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             int poolId = await FirstPoolAthleteAsync(context);
             AthleteCareerEntity pool = await context.AthleteCareers.AsNoTracking().SingleAsync(e => e.SaveAthleteId == poolId);
             pool.SeasonsActive.ShouldBe(0);

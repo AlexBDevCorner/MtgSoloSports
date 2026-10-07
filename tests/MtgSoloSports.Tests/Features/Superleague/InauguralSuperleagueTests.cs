@@ -52,16 +52,14 @@ public sealed class InauguralSuperleagueTests
     [Fact]
     public async Task Create_AfterSeasonOne_SelectsTopFourPerLeague()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Inaugural Full", 707UL, 808UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-
-            (int stageCount, int seasonCount, long lifetimeBonus, ulong rngState) = await CapturePreTransitionAsync(store, created.Detail.SaveId);
+            (int stageCount, int seasonCount, long lifetimeBonus, ulong rngState) = await CapturePreTransitionAsync(store, saveId);
 
             CreateInauguralSuperleagueHandler handler = new(store);
-            CreateInauguralSuperleagueResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            CreateInauguralSuperleagueResponse response = await handler.HandleAsync(saveId);
 
             response.SeasonOneNumber.ShouldBe(1);
             response.SeasonTwoNumber.ShouldBe(2);
@@ -72,11 +70,11 @@ public sealed class InauguralSuperleagueTests
             response.FeederRetention.Count(r => r.RetainedCount == 28).ShouldBe(8);
             response.FeederRetention.Count(r => r.RetainedCount == 32).ShouldBe(16);
 
-            await AssertTransitionAsync(store, created.Detail.SaveId, response);
+            await AssertTransitionAsync(store, saveId, response);
 
             // Bonus history preserved: no standing rows added or changed.
             (int stageAfter, int seasonAfter, long lifetimeAfter, ulong rngAfter) =
-                await CapturePreTransitionAsync(store, created.Detail.SaveId);
+                await CapturePreTransitionAsync(store, saveId);
             stageAfter.ShouldBe(stageCount);
             seasonAfter.ShouldBe(seasonCount);
             lifetimeAfter.ShouldBe(lifetimeBonus);
@@ -84,17 +82,17 @@ public sealed class InauguralSuperleagueTests
 
             // Roster read matches the creation response and is stable.
             GetInauguralRosterHandler query = new(store);
-            GetInauguralRosterResponse roster = await query.HandleAsync(created.Detail.SaveId);
+            GetInauguralRosterResponse roster = await query.HandleAsync(saveId);
             roster.Members.Count.ShouldBe(32);
             roster.MovementCount.ShouldBe(32);
             roster.Members.Select(m => m.AthleteId).ShouldBe(response.Members.Select(m => m.AthleteId).ToList());
 
-            GetInauguralRosterResponse again = await query.HandleAsync(created.Detail.SaveId);
+            GetInauguralRosterResponse again = await query.HandleAsync(saveId);
             again.Members.Select(m => m.AthleteId).ShouldBe(roster.Members.Select(m => m.AthleteId).ToList());
 
             // Second creation attempt conflicts.
             await Should.ThrowAsync<CreateInauguralSuperleagueConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -105,24 +103,33 @@ public sealed class InauguralSuperleagueTests
     [Fact]
     public async Task Create_SameSeed_ProducesSameRoster()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: one Season 1 simulation forked into two isolated saves instead
+        // of simulating the same season twice; both transitions still execute
+        // independently from bit-identical starting state.
+        var (firstStore, firstRoot) = CreateStore();
         try
         {
-            SaveStore.CreationRecord first = await store.CreateAsync("Inaugural A", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            SaveStore.CreationRecord second = await store.CreateAsync("Inaugural B", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, first.Detail.SaveId);
-            await CompleteSeasonOneAsync(store, second.Detail.SaveId);
+            SaveStore.CreationRecord first = await firstStore.CreateAsync("Inaugural A", 9001UL, 7002UL, UniverseTestCatalog.Build());
+            await CompleteSeasonOneAsync(firstStore, first.Detail.SaveId);
+            var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(firstStore, first.Detail.SaveId, "mtgsolosports-inaugural-");
+            try
+            {
+                CreateInauguralSuperleagueHandler firstHandler = new(firstStore);
+                CreateInauguralSuperleagueHandler secondHandler = new(secondStore);
+                CreateInauguralSuperleagueResponse responseA = await firstHandler.HandleAsync(first.Detail.SaveId);
+                CreateInauguralSuperleagueResponse responseB = await secondHandler.HandleAsync(secondId);
 
-            CreateInauguralSuperleagueHandler handler = new(store);
-            CreateInauguralSuperleagueResponse responseA = await handler.HandleAsync(first.Detail.SaveId);
-            CreateInauguralSuperleagueResponse responseB = await handler.HandleAsync(second.Detail.SaveId);
-
-            responseA.Members.Select(m => m.Name).ShouldBe(responseB.Members.Select(m => m.Name).ToList());
-            responseA.Members.Select(m => m.FromSeasonRank).ShouldBe(responseB.Members.Select(m => m.FromSeasonRank).ToList());
+                responseA.Members.Select(m => m.Name).ShouldBe(responseB.Members.Select(m => m.Name).ToList());
+                responseA.Members.Select(m => m.FromSeasonRank).ShouldBe(responseB.Members.Select(m => m.FromSeasonRank).ToList());
+            }
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            Directory.Delete(firstRoot, recursive: true);
         }
     }
 

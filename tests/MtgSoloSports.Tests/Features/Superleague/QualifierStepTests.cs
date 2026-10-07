@@ -13,8 +13,10 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AllRounds_EqualsOneShot()
     {
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice for the identical starting state.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareQualifierAsync(5151UL, 6161UL);
-        var (stepStore, stepRoot, stepId) = await PrepareQualifierAsync(5151UL, 6161UL);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-qual-step-");
         try
         {
             await new RunQualifierHandler(oneShotStore).HandleAsync(oneShotId);
@@ -63,8 +65,9 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_Then_OneShot_EqualsOneShot()
     {
+        // MSS-067: forked copy instead of a second identical Season 1 simulation.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareQualifierAsync(5252UL, 6262UL);
-        var (mixedStore, mixedRoot, mixedId) = await PrepareQualifierAsync(5252UL, 6262UL);
+        var (mixedStore, mixedRoot, mixedId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-qual-mixed-");
         try
         {
             await new RunQualifierHandler(oneShotStore).HandleAsync(oneShotId);
@@ -87,7 +90,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_Concurrent_PlaysTwoDistinctRounds()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5353UL, 6363UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -106,7 +110,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AfterRngMoved_Aborts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5454UL, 6464UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -128,7 +133,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_WithRoundGap_Aborts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5555UL, 6565UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -152,7 +158,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AfterCompletion_Conflicts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5656UL, 6666UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             await new RunQualifierHandler(store).HandleAsync(saveId);

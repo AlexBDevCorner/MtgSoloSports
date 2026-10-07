@@ -73,42 +73,49 @@ public sealed class SeasonCompletionTests
     [Fact]
     public async Task CompleteStageForAllLeagues_EquivalentToSequentialInCanonicalOrder()
     {
+        // MSS-067: second save forked instead of creating the same universe twice.
         var (store, root) = CreateStore();
         try
         {
             IReadOnlyList<MtgSoloSports.Features.Catalog.ImportCatalog.CatalogAthlete> catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord viaSequential = await store.CreateAsync("Bulk Sequential", 9001UL, 7002UL, catalog);
-            SaveStore.CreationRecord viaBulk = await store.CreateAsync("Bulk ForAll", 9001UL, 7002UL, catalog);
-
-            List<int> sequentialLeagues = await AllLeagueIdsAsync(store, viaSequential.Detail.SaveId);
-            List<int> bulkLeagues = await AllLeagueIdsAsync(store, viaBulk.Detail.SaveId);
-            sequentialLeagues.Count.ShouldBe(24);
-            bulkLeagues.Count.ShouldBe(24);
-
-            // Path A: 24 sequential single-league completions in canonical id order.
-            CompleteStageHandler single = new(store);
-            List<string> sequentialChecksums = new(24);
-            foreach (int leagueId in sequentialLeagues)
+            var (bulkStore, bulkRoot, viaBulkId) = await TestSaveStores.ForkAsync(store, viaSequential.Detail.SaveId, "mtgsolosports-bulk-");
+            try
             {
-                CompleteStageResponse completed = await single.HandleAsync(viaSequential.Detail.SaveId, leagueId);
-                completed.StageNumber.ShouldBe(1);
-                sequentialChecksums.Add(completed.StageChecksum);
+                List<int> sequentialLeagues = await AllLeagueIdsAsync(store, viaSequential.Detail.SaveId);
+                List<int> bulkLeagues = await AllLeagueIdsAsync(bulkStore, viaBulkId);
+                sequentialLeagues.Count.ShouldBe(24);
+                bulkLeagues.Count.ShouldBe(24);
+
+                // Path A: 24 sequential single-league completions in canonical id order.
+                CompleteStageHandler single = new(store);
+                List<string> sequentialChecksums = new(24);
+                foreach (int leagueId in sequentialLeagues)
+                {
+                    CompleteStageResponse completed = await single.HandleAsync(viaSequential.Detail.SaveId, leagueId);
+                    completed.StageNumber.ShouldBe(1);
+                    sequentialChecksums.Add(completed.StageChecksum);
+                }
+
+                // Path B: one bulk global-stage completion from the same start state.
+                CompleteStageForAllLeaguesHandler bulk = new(bulkStore);
+                CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(viaBulkId);
+
+                bulkResponse.CompletedStage.ShouldBe(1);
+                bulkResponse.GlobalStageAfter.ShouldBe(2);
+                bulkResponse.IsSeasonComplete.ShouldBeFalse();
+                bulkResponse.Leagues.Count.ShouldBe(24);
+                bulkResponse.Leagues.Select(l => l.StageChecksum).ShouldBe(sequentialChecksums);
+
+                // RNG-after commits identically for equivalent operation order.
+                ulong sequentialRng = await LoadRngStateAsync(store, viaSequential.Detail.SaveId);
+                ulong bulkRng = await LoadRngStateAsync(bulkStore, viaBulkId);
+                sequentialRng.ShouldBe(bulkRng);
             }
-
-            // Path B: one bulk global-stage completion from the same start state.
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(viaBulk.Detail.SaveId);
-
-            bulkResponse.CompletedStage.ShouldBe(1);
-            bulkResponse.GlobalStageAfter.ShouldBe(2);
-            bulkResponse.IsSeasonComplete.ShouldBeFalse();
-            bulkResponse.Leagues.Count.ShouldBe(24);
-            bulkResponse.Leagues.Select(l => l.StageChecksum).ShouldBe(sequentialChecksums);
-
-            // RNG-after commits identically for equivalent operation order.
-            ulong sequentialRng = await LoadRngStateAsync(store, viaSequential.Detail.SaveId);
-            ulong bulkRng = await LoadRngStateAsync(store, viaBulk.Detail.SaveId);
-            sequentialRng.ShouldBe(bulkRng);
+            finally
+            {
+                TestSaveStores.DeleteRoot(bulkRoot);
+            }
         }
         finally
         {
@@ -207,36 +214,25 @@ public sealed class SeasonCompletionTests
     [Fact]
     public async Task SeasonFinalization_AfterStage32_PersistsStandingsAndChampion()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-seasonfinal-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Season Final", 707UL, 808UL, UniverseTestCatalog.Build());
-            List<int> allLeagues = await AllLeagueIdsAsync(store, created.Detail.SaveId);
+            List<int> allLeagues = await AllLeagueIdsAsync(store, saveId);
             int first = allLeagues[0];
 
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            CompleteStageForAllLeaguesResponse last = null!;
-            for (int stage = 1; stage <= 32; stage++)
-            {
-                last = await bulk.HandleAsync(created.Detail.SaveId);
-                last.CompletedStage.ShouldBe(stage);
-            }
-
-            last.GlobalStageAfter.ShouldBe(33);
-            last.IsSeasonComplete.ShouldBeTrue();
-
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity season = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1);
             season.IsComplete.ShouldBeTrue();
 
             foreach (int leagueId in allLeagues)
             {
-                await AssertFinalLeagueAsync(context, created.Detail.SaveId, season.Id, leagueId);
+                await AssertFinalLeagueAsync(context, saveId, season.Id, leagueId);
             }
 
             // Current standings now read the persisted final table.
             GetCurrentStandingsHandler standings = new(store);
-            GetCurrentStandingsResponse current = await standings.HandleAsync(created.Detail.SaveId, first);
+            GetCurrentStandingsResponse current = await standings.HandleAsync(saveId, first);
             current.IsFinal.ShouldBeTrue();
             current.IsSeasonComplete.ShouldBeTrue();
             current.CompletedStages.ShouldBe(32);
@@ -245,7 +241,7 @@ public sealed class SeasonCompletionTests
 
             // Completed season table matches current final view.
             GetSeasonTableHandler table = new(store);
-            GetSeasonTableResponse seasonTable = await table.HandleAsync(created.Detail.SaveId, first, 1);
+            GetSeasonTableResponse seasonTable = await table.HandleAsync(saveId, first, 1);
             seasonTable.IsSeasonComplete.ShouldBeTrue();
             seasonTable.SeasonChecksum.ShouldBe(current.SeasonChecksum);
             seasonTable.Standings.Select(s => s.AthleteId).ShouldBe(current.Standings.Select(s => s.AthleteId).ToList());

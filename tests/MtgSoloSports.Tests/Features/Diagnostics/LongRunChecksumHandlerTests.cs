@@ -21,72 +21,83 @@ public sealed class LongRunChecksumHandlerTests
     [Fact]
     public async Task SameSeed_SameChecksum_DifferentSeed_Differs()
     {
+        // MSS-067: same-seed copy forked instead of creating the same universe twice.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
-        var (thirdStore, thirdRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord first = await firstStore.CreateAsync("Checksum A", 9001UL, 9002UL, catalog);
-            SaveStore.CreationRecord second = await secondStore.CreateAsync("Checksum B", 9001UL, 9002UL, catalog);
-            SaveStore.CreationRecord third = await thirdStore.CreateAsync("Checksum C", 7001UL, 7002UL, catalog);
-
-            CompleteStageForAllLeaguesHandler bulkFirst = new(firstStore);
-            CompleteStageForAllLeaguesHandler bulkSecond = new(secondStore);
-            CompleteStageForAllLeaguesHandler bulkThird = new(thirdStore);
-            for (int stage = 0; stage < 3; stage++)
+            var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(firstStore, first.Detail.SaveId, "mtgsolosports-ck-");
+            var (thirdStore, thirdRoot) = CreateStore();
+            try
             {
-                await bulkFirst.HandleAsync(first.Detail.SaveId);
-                await bulkSecond.HandleAsync(second.Detail.SaveId);
-                await bulkThird.HandleAsync(third.Detail.SaveId);
+                SaveStore.CreationRecord third = await thirdStore.CreateAsync("Checksum C", 7001UL, 7002UL, catalog);
+
+                CompleteStageForAllLeaguesHandler bulkFirst = new(firstStore);
+                CompleteStageForAllLeaguesHandler bulkSecond = new(secondStore);
+                CompleteStageForAllLeaguesHandler bulkThird = new(thirdStore);
+                for (int stage = 0; stage < 3; stage++)
+                {
+                    await bulkFirst.HandleAsync(first.Detail.SaveId);
+                    await bulkSecond.HandleAsync(secondId);
+                    await bulkThird.HandleAsync(third.Detail.SaveId);
+                }
+
+                GetLongRunChecksumResponse a = await new GetLongRunChecksumHandler(firstStore).HandleAsync(first.Detail.SaveId);
+                GetLongRunChecksumResponse b = await new GetLongRunChecksumHandler(secondStore).HandleAsync(secondId);
+                GetLongRunChecksumResponse c = await new GetLongRunChecksumHandler(thirdStore).HandleAsync(third.Detail.SaveId);
+
+                string.Equals(a.Checksum, b.Checksum, StringComparison.Ordinal).ShouldBeTrue();
+                a.SeasonChecksums.Select(e => e.Checksum).ToList().ShouldBe(b.SeasonChecksums.Select(e => e.Checksum).ToList());
+                string.Equals(c.Checksum, a.Checksum, StringComparison.Ordinal).ShouldBeFalse();
+                a.TotalRounds.ShouldBeGreaterThan(0);
+                a.TotalStageStandings.ShouldBeGreaterThan(0);
             }
-
-            GetLongRunChecksumResponse a = await new GetLongRunChecksumHandler(firstStore).HandleAsync(first.Detail.SaveId);
-            GetLongRunChecksumResponse b = await new GetLongRunChecksumHandler(secondStore).HandleAsync(second.Detail.SaveId);
-            GetLongRunChecksumResponse c = await new GetLongRunChecksumHandler(thirdStore).HandleAsync(third.Detail.SaveId);
-
-            string.Equals(a.Checksum, b.Checksum, StringComparison.Ordinal).ShouldBeTrue();
-            a.SeasonChecksums.Select(e => e.Checksum).ToList().ShouldBe(b.SeasonChecksums.Select(e => e.Checksum).ToList());
-            string.Equals(c.Checksum, a.Checksum, StringComparison.Ordinal).ShouldBeFalse();
-            a.TotalRounds.ShouldBeGreaterThan(0);
-            a.TotalStageStandings.ShouldBeGreaterThan(0);
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+                Directory.Delete(thirdRoot, recursive: true);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
-            Directory.Delete(thirdRoot, recursive: true);
         }
     }
 
     [Fact]
     public async Task FastSimulation_MatchesManual_Checksum()
     {
+        // MSS-067: second save forked instead of creating the same universe twice.
         var (firstStore, firstRoot) = CreateStore();
-        var (secondStore, secondRoot) = CreateStore();
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord manual = await firstStore.CreateAsync("Checksum Manual", 5150UL, 6160UL, catalog);
-            SaveStore.CreationRecord fast = await secondStore.CreateAsync("Checksum Fast", 5150UL, 6160UL, catalog);
-
-            CompleteStageForAllLeaguesHandler bulk = new(firstStore);
-            for (int stage = 1; stage <= 32; stage++)
+            var (secondStore, secondRoot, fastId) = await TestSaveStores.ForkAsync(firstStore, manual.Detail.SaveId, "mtgsolosports-ck-fast-");
+            try
             {
-                await bulk.HandleAsync(manual.Detail.SaveId);
+                CompleteStageForAllLeaguesHandler bulk = new(firstStore);
+                for (int stage = 1; stage <= 32; stage++)
+                {
+                    await bulk.HandleAsync(manual.Detail.SaveId);
+                }
+
+                MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler fastHandler = new(secondStore);
+                await fastHandler.HandleAsync(fastId);
+
+                GetLongRunChecksumResponse m = await new GetLongRunChecksumHandler(firstStore).HandleAsync(manual.Detail.SaveId);
+                GetLongRunChecksumResponse f = await new GetLongRunChecksumHandler(secondStore).HandleAsync(fastId);
+                string.Equals(f.Checksum, m.Checksum, StringComparison.Ordinal).ShouldBeTrue();
             }
-
-            MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler fastHandler = new(secondStore);
-            await fastHandler.HandleAsync(fast.Detail.SaveId);
-
-            GetLongRunChecksumResponse m = await new GetLongRunChecksumHandler(firstStore).HandleAsync(manual.Detail.SaveId);
-            GetLongRunChecksumResponse f = await new GetLongRunChecksumHandler(secondStore).HandleAsync(fast.Detail.SaveId);
-            string.Equals(f.Checksum, m.Checksum, StringComparison.Ordinal).ShouldBeTrue();
+            finally
+            {
+                TestSaveStores.DeleteRoot(secondRoot);
+            }
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
-            Directory.Delete(secondRoot, recursive: true);
         }
     }
 

@@ -1,15 +1,9 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Athletes.GetProfile;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.GetRecords;
 using MtgSoloSports.Features.Records.ListHonours;
-using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -77,13 +71,11 @@ public sealed class HonourPodiumTests
     [Fact]
     public async Task AfterFullSeason_PodiumsEachContributeExactlyOneHonour()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-podium-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Podium Season", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(saveId);
+
 
             await AssertPodiumMappingAsync(store, saveId);
             await AssertFourthGetsNoneAsync(store, saveId);
@@ -144,13 +136,11 @@ public sealed class HonourPodiumTests
     [Fact]
     public async Task HistoricalPodiums_InterpretedWithoutRecreatingCompetitions()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-podium-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Podium Historical", 777001UL, 888002UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(saveId);
+
             await DeletePodiumRowsAsync(store, saveId);
             await AssertFallbackListsPodiumsAsync(store, saveId);
             await AssertProfileInterpretsRunnerUpAsync(store, saveId);
@@ -239,13 +229,11 @@ public sealed class HonourPodiumTests
     [Fact]
     public async Task MultiplePodiums_AccumulateWithoutDuplication()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-podium-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Podium Accumulate", 111003UL, 222004UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(saveId);
+
 
             ListHonoursHandler listHandler = new(store);
             ListHonoursResponse response = await listHandler.HandleAsync(saveId);
@@ -273,31 +261,4 @@ public sealed class HonourPodiumTests
         }
     }
 
-    private static (SaveStore Store, string Root) CreateStore()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-podium-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        IOptions<SaveStorageOptions> options = Options.Create(new SaveStorageOptions { SavesRoot = root });
-        TestHostEnvironment environment = new(root);
-        SaveSqliteConnectionInterceptor interceptor = new();
-        SaveDbContextFactory factory = new(interceptor);
-        SaveStore store = new(options, environment, factory, TimeProvider.System, NullLogger<SaveStore>.Instance);
-        return (store, root);
-    }
-
-    private sealed class TestHostEnvironment : IHostEnvironment
-    {
-        public TestHostEnvironment(string contentRoot)
-        {
-            ContentRootPath = contentRoot;
-        }
-
-        public string EnvironmentName { get; set; } = "Test";
-
-        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
-
-        public string ContentRootPath { get; set; }
-
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
 }
