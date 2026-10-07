@@ -4,12 +4,346 @@ using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Cups.RunTypeCupTeam;
 
 public sealed partial class RunTypeCupTeamHandler
 {
+    /// <summary>
+    /// Persists the completed tournament (MSS-062): new round rows with stage
+    /// identity, per-stage leg/team standings (qualificationMedal None, Final
+    /// medals Gold/Silver/Bronze), Final-only podium honours, permanent
+    /// nationality for every actual participant, and the RNG-after state.
+    /// Stages already persisted by step-by-step qual completions are validated
+    /// but not re-persisted.
+    /// </summary>
+    internal static async Task PersistTournamentAsync(
+        SaveDbContext context,
+        TournamentState state,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        int alreadyPersisted = state.PlayedOrdered.Count;
+        PersistTournamentRoundRows(context, state.Source, simulation.Ordered, alreadyPersisted);
+        await PersistTournamentLegsAndTeamsAsync(context, state, simulation, cancellationToken).ConfigureAwait(false);
+        PersistFinalHonours(context, state.Source, simulation);
+        await ApplyTournamentNationalityAsync(context, state, simulation, cancellationToken).ConfigureAwait(false);
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static void PersistTournamentRoundRows(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        int alreadyPersisted)
+    {
+        foreach ((TypeCupTournamentPlan.StageKey key, TypeCupTeamRoundPayloadDocument payload) in ordered.Skip(alreadyPersisted))
+        {
+            context.TypeCupTeamRounds.Add(new TypeCupTeamRoundEntity
+            {
+                SourceSeasonId = source.Id,
+                SourceSeasonNumber = source.SeasonNumber,
+                TournamentPhase = key.Phase,
+                QualificationGroup = key.QualificationGroup,
+                GroupNumber = payload.GroupNumber,
+                RoundNumber = payload.RoundNumber,
+                RulesVersion = payload.RulesVersion,
+                RngBeforeState = unchecked((long)payload.RngBeforeState),
+                RngBeforeStream = unchecked((long)payload.RngBeforeStream),
+                RngAfterState = unchecked((long)payload.RngAfterState),
+                RngAfterStream = unchecked((long)payload.RngAfterStream),
+                PayloadJson = payload.ToStored(),
+                PayloadChecksum = payload.Checksum,
+            });
+        }
+    }
+
+    internal static async Task PersistTournamentLegsAndTeamsAsync(
+        SaveDbContext context,
+        TournamentState state,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<int, TypeCupSelectionEntity> selectionByAthlete = (await context.TypeCupSelections
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == state.Source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false)).ToDictionary(e => e.SaveAthleteId);
+        if (selectionByAthlete.Count != state.Selection.Count)
+        {
+            throw new InvalidOperationException("Type Cup team selection changed during the team event; aborting.");
+        }
+
+        foreach (StageSimulation stage in simulation.Stages)
+        {
+            if (await StageStandingsExistAsync(context, state, stage, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            PersistSingleStageStandings(context, state, stage, selectionByAthlete);
+        }
+    }
+
+    private static async Task<bool> StageStandingsExistAsync(
+        SaveDbContext context,
+        TournamentState state,
+        StageSimulation stage,
+        CancellationToken cancellationToken)
+    {
+        bool legsExist = await context.TypeCupTeamGroupStandings.AnyAsync(
+            e => e.SourceSeasonId == state.Source.Id
+                && e.TournamentPhase == stage.Key.Phase
+                && e.QualificationGroup == stage.Key.QualificationGroup,
+            cancellationToken).ConfigureAwait(false);
+        bool teamsExist = await context.TypeCupTeamStandings.AnyAsync(
+            e => e.SourceSeasonId == state.Source.Id
+                && e.TournamentPhase == stage.Key.Phase
+                && e.QualificationGroup == stage.Key.QualificationGroup,
+            cancellationToken).ConfigureAwait(false);
+        if (legsExist || teamsExist)
+        {
+            if (legsExist != teamsExist)
+            {
+                throw new InvalidOperationException(
+                    $"Type Cup tournament stage phase {stage.Key.Phase} qual {stage.Key.QualificationGroup} has corrupt partial standings.");
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void PersistSingleStageStandings(
+        SaveDbContext context,
+        TournamentState state,
+        StageSimulation stage,
+        Dictionary<int, TypeCupSelectionEntity> selectionByAthlete)
+    {
+        bool isFinal = stage.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final
+            || stage.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.LegacySingleField;
+        foreach (TeamEvent.TeamLegRanked leg in stage.Legs)
+        {
+            PersistStageLeg(context, state.Source, stage.Key, leg, selectionByAthlete);
+        }
+
+        foreach (TeamEvent.TeamRanked team in stage.Teams)
+        {
+            context.TypeCupTeamStandings.Add(new TypeCupTeamStandingEntity
+            {
+                SourceSeasonId = state.Source.Id,
+                SourceSeasonNumber = state.Source.SeasonNumber,
+                TournamentPhase = stage.Key.Phase,
+                QualificationGroup = stage.Key.QualificationGroup,
+                CreatureType = team.TeamName,
+                TeamRank = team.TeamRank,
+                TeamScoreThousandths = team.TeamScoreThousandths,
+                TeamBaseThousandths = team.TeamBaseThousandths,
+                GroupWins = team.GroupWins,
+                RoundWins = team.RoundWins,
+                GroupPlaceCountsJson = JsonSerializer.Serialize(team.GroupPlaceCounts),
+                RoundPlaceCountsJson = JsonSerializer.Serialize(team.RoundPlaceCounts),
+                Medal = MedalForStageTeam(isFinal, team.TeamRank),
+            });
+        }
+    }
+
+    private static int MedalForStageTeam(bool isFinal, int rank) =>
+        !isFinal
+            ? (int)TypeCupMedal.None
+            : rank switch
+            {
+                1 => (int)TypeCupMedal.Gold,
+                2 => (int)TypeCupMedal.Silver,
+                3 => (int)TypeCupMedal.Bronze,
+                _ => (int)TypeCupMedal.None,
+            };
+
+    internal static void PersistStageLeg(
+        SaveDbContext context,
+        SeasonEntity source,
+        TypeCupTournamentPlan.StageKey key,
+        TeamEvent.TeamLegRanked leg,
+        Dictionary<int, TypeCupSelectionEntity> selectionByAthlete)
+    {
+        if (!selectionByAthlete.TryGetValue(leg.AthleteId, out TypeCupSelectionEntity? row))
+        {
+            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' has no selection provenance.");
+        }
+
+        if (!string.Equals(leg.TeamName, row.CreatureType, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' changes creature type within the event.");
+        }
+
+        int groupNumber = GroupNumberForLeg(row);
+        context.TypeCupTeamGroupStandings.Add(new TypeCupTeamGroupStandingEntity
+        {
+            SourceSeasonId = source.Id,
+            SourceSeasonNumber = source.SeasonNumber,
+            TournamentPhase = key.Phase,
+            QualificationGroup = key.QualificationGroup,
+            GroupNumber = groupNumber,
+            SaveAthleteId = leg.AthleteId,
+            GroupRank = leg.LegRank,
+            GroupScoreThousandths = leg.LegScoreThousandths,
+            BaseScoreThousandths = leg.LegBaseThousandths,
+            RoundWins = leg.RoundWins,
+            RoundPlaceCountsJson = JsonSerializer.Serialize(leg.RoundPlaceCounts),
+            CreatureType = row.CreatureType,
+            SelectionRank = row.SelectionRank,
+        });
+    }
+
+    internal static void PersistFinalHonours(
+        SaveDbContext context,
+        SeasonEntity source,
+        TournamentSimulation simulation)
+    {
+        // Honours and medals are Final-only: qualification group winners
+        // receive no title/medal honour. Existing MSS-047 podium semantics
+        // (four members each for ranks 1..3) apply to the Final only.
+        StageSimulation final = simulation.Final;
+        int podiumRanks = Math.Min(3, final.Teams.Count);
+        foreach (TeamEvent.TeamRanked podiumTeam in final.Teams.Where(t => t.TeamRank >= 1 && t.TeamRank <= podiumRanks).OrderBy(t => t.TeamRank))
+        {
+            Features.Records.HonourKind kind = Features.Records.HonourKindMapper.FromTypeCupTeamRank(podiumTeam.TeamRank);
+            List<TeamEvent.TeamLegRanked> legs = final.Legs
+                .Where(l => l.TeamId == podiumTeam.TeamId)
+                .OrderBy(l => l.AthleteId)
+                .ToList();
+            if (legs.Count != 4)
+            {
+                throw new InvalidOperationException($"Type Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
+            }
+
+            foreach (TeamEvent.TeamLegRanked leg in legs)
+            {
+                context.Honours.Add(new HonourEntity
+                {
+                    SeasonId = source.Id,
+                    SeasonNumber = source.SeasonNumber,
+                    LeagueId = TeamLeagueId,
+                    LeagueName = TeamLeagueName,
+                    LeagueKind = TeamLeagueKind,
+                    SaveAthleteId = leg.AthleteId,
+                    Kind = (int)kind,
+                });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Persists permanent Type Cup nationality for every actual tournament
+    /// participant (MSS-062): qualification-group athletes are capped even when
+    /// eliminated before the Final; Finalists are already capped via
+    /// qualification; direct-Final participants are capped at completion.
+    /// Idempotent and never changes an existing cap. Athletes from selected
+    /// teams that never entered a persisted stage are never capped here.
+    /// </summary>
+    internal static async Task ApplyTournamentNationalityAsync(
+        SaveDbContext context,
+        TournamentState state,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> participantIds = new();
+        foreach (StageSimulation stage in simulation.Stages)
+        {
+            foreach (TeamEvent.TeamLegRanked leg in stage.Legs)
+            {
+                participantIds.Add(leg.AthleteId);
+            }
+        }
+
+        Dictionary<int, string> typeByAthlete = state.Selection
+            .Where(e => participantIds.Contains(e.SaveAthleteId))
+            .ToDictionary(e => e.SaveAthleteId, e => e.CreatureType);
+        if (typeByAthlete.Count != participantIds.Count)
+        {
+            throw new InvalidOperationException("Type Cup tournament participants have no selection provenance.");
+        }
+
+        List<int> ids = typeByAthlete.Keys.ToList();
+        List<SaveAthleteEntity> athletes = await context.SaveAthletes
+            .Where(e => ids.Contains(e.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (athletes.Count != ids.Count)
+        {
+            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+        }
+
+        foreach (SaveAthleteEntity athlete in athletes)
+        {
+            string allocated = typeByAthlete[athlete.Id];
+            if (string.IsNullOrWhiteSpace(athlete.TypeCupNationality))
+            {
+                athlete.TypeCupNationality = allocated;
+                continue;
+            }
+
+            if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Caps one qualification stage's participants immediately when the stage
+    /// completes step-by-step, so eliminated teams retain nationality even if
+    /// the tournament never reaches the Final. Idempotent.
+    /// </summary>
+    internal static async Task ApplyStageNationalityAsync(
+        SaveDbContext context,
+        TournamentState state,
+        TypeCupTournamentPlan.StageKey stage,
+        IReadOnlyList<TeamEvent.TeamLegRanked> legs,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        Dictionary<int, string> typeByAthlete = state.Selection
+            .Where(e => legs.Any(l => l.AthleteId == e.SaveAthleteId))
+            .ToDictionary(e => e.SaveAthleteId, e => e.CreatureType);
+        List<int> ids = typeByAthlete.Keys.ToList();
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        List<SaveAthleteEntity> athletes = await context.SaveAthletes
+            .Where(e => ids.Contains(e.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (athletes.Count != ids.Count)
+        {
+            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+        }
+
+        foreach (SaveAthleteEntity athlete in athletes)
+        {
+            string allocated = typeByAthlete[athlete.Id];
+            if (string.IsNullOrWhiteSpace(athlete.TypeCupNationality))
+            {
+                athlete.TypeCupNationality = allocated;
+                continue;
+            }
+
+            if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
+            }
+        }
+    }
+
+    // Legacy single-event persistence kept for callers compiled against the old
+    // shape. New code prefers PersistTournamentAsync.
     internal static async Task PersistTeamAsync(
         SaveDbContext context,
         SeasonEntity source,
@@ -294,6 +628,40 @@ public sealed partial class RunTypeCupTeamHandler
 
     internal static async Task ValidatePersistedAsync(
         SaveDbContext context,
+        TournamentState state,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupTeamRoundEntity> rounds = await context.TypeCupTeamRounds
+            .Where(e => e.SourceSeasonId == state.Source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .Where(e => e.SourceSeasonId == state.Source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .Where(e => e.SourceSeasonId == state.Source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<HonourEntity> honours = await context.Honours
+            .Where(e => e.SeasonId == state.Source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        TypeCupTeamInvariants.ValidateTournamentPersisted(state.Source, rounds, legs, teams, honours, state.Rules, state.Plan);
+        if (!string.Equals(ComputeChecksum(simulation.Final.Teams), simulation.Checksum, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Type Cup team checksum does not match simulated standings.");
+        }
+
+        await VerifyPreservationAsync(
+            context, state.StageCountBefore, state.SeasonCountBefore, state.RoundCountBefore,
+            state.LifetimeBefore, state.EffectiveBefore, state.ChampionshipBefore, cancellationToken).ConfigureAwait(false);
+        await ValidateNationalityPersistedAsync(context, state.Source, legs, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task ValidatePersistedAsync(
+        SaveDbContext context,
         SeasonEntity source,
         TeamSimulation simulation,
         RulesV1 rules,
@@ -348,7 +716,9 @@ public sealed partial class RunTypeCupTeamHandler
         }
 
         HashSet<int> participantIds = legs.Select(l => l.SaveAthleteId).ToHashSet();
-        Dictionary<int, string> typeByAthlete = legs.ToDictionary(l => l.SaveAthleteId, l => l.CreatureType);
+        Dictionary<int, string> typeByAthlete = legs
+            .GroupBy(l => l.SaveAthleteId)
+            .ToDictionary(g => g.Key, g => g.First().CreatureType);
         List<SaveAthleteEntity> athletes = await context.SaveAthletes
             .Where(e => participantIds.Contains(e.Id))
             .ToListAsync(cancellationToken)
@@ -377,6 +747,29 @@ public sealed partial class RunTypeCupTeamHandler
     internal static async Task EmitTeamStoriesAsync(
         SaveDbContext context,
         SeasonEntity source,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(simulation);
+        StageSimulation final = simulation.Final;
+        bool emitted = false;
+        foreach (TeamEvent.TeamRanked team in final.Teams.Where(t => t.TeamRank <= 3).OrderBy(t => t.TeamRank))
+        {
+            emitted |= await EmitMedalForTeamAsync(context, source, final, team, cancellationToken).ConfigureAwait(false);
+        }
+
+        emitted |= await EmitTitleForChampionAsync(context, source, final, cancellationToken).ConfigureAwait(false);
+        if (emitted)
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task EmitTeamStoriesAsync(
+        SaveDbContext context,
+        SeasonEntity source,
         TeamSimulation simulation,
         CancellationToken cancellationToken)
     {
@@ -386,10 +779,10 @@ public sealed partial class RunTypeCupTeamHandler
         bool emitted = false;
         foreach (TeamEvent.TeamRanked team in simulation.Teams.Where(t => t.TeamRank <= 3).OrderBy(t => t.TeamRank))
         {
-            emitted |= await EmitMedalForTeamAsync(context, source, simulation, team, cancellationToken).ConfigureAwait(false);
+            emitted |= await EmitMedalForLegacyTeamAsync(context, source, simulation, team, cancellationToken).ConfigureAwait(false);
         }
 
-        emitted |= await EmitTitleForChampionAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
+        emitted |= await EmitTitleForLegacyChampionAsync(context, source, simulation, cancellationToken).ConfigureAwait(false);
         if (emitted)
         {
             await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -399,7 +792,7 @@ public sealed partial class RunTypeCupTeamHandler
     internal static async Task<bool> EmitMedalForTeamAsync(
         SaveDbContext context,
         SeasonEntity source,
-        TeamSimulation simulation,
+        StageSimulation final,
         TeamEvent.TeamRanked team,
         CancellationToken cancellationToken)
     {
@@ -411,7 +804,7 @@ public sealed partial class RunTypeCupTeamHandler
             _ => nameof(TypeCupMedal.None),
         };
         bool emitted = false;
-        List<TeamEvent.TeamLegRanked> members = simulation.Legs
+        List<TeamEvent.TeamLegRanked> members = final.Legs
             .Where(l => l.TeamId == team.TeamId)
             .OrderBy(l => l.AthleteId)
             .ToList();
@@ -440,12 +833,12 @@ public sealed partial class RunTypeCupTeamHandler
     internal static async Task<bool> EmitTitleForChampionAsync(
         SaveDbContext context,
         SeasonEntity source,
-        TeamSimulation simulation,
+        StageSimulation final,
         CancellationToken cancellationToken)
     {
-        TeamEvent.TeamRanked champion = simulation.Teams.Single(r => r.TeamRank == 1);
+        TeamEvent.TeamRanked champion = final.Teams.Single(r => r.TeamRank == 1);
         bool emitted = false;
-        List<TeamEvent.TeamLegRanked> members = simulation.Legs
+        List<TeamEvent.TeamLegRanked> members = final.Legs
             .Where(l => l.TeamId == champion.TeamId)
             .OrderBy(l => l.AthleteId)
             .ToList();
@@ -469,6 +862,93 @@ public sealed partial class RunTypeCupTeamHandler
         }
 
         return emitted;
+    }
+
+    internal static async Task<bool> EmitMedalForLegacyTeamAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        TeamSimulation simulation,
+        TeamEvent.TeamRanked team,
+        CancellationToken cancellationToken) =>
+        await EmitMedalForTeamAsync(context, source, new StageSimulation(
+            TypeCupTournamentPlan.LegacyKey(), simulation.Teams.Count, simulation.Legs, simulation.Teams, simulation.RngAfter, simulation.Checksum),
+            team, cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<bool> EmitTitleForLegacyChampionAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        TeamSimulation simulation,
+        CancellationToken cancellationToken) =>
+        await EmitTitleForChampionAsync(context, source, new StageSimulation(
+            TypeCupTournamentPlan.LegacyKey(), simulation.Teams.Count, simulation.Legs, simulation.Teams, simulation.RngAfter, simulation.Checksum),
+            cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<RunTypeCupTeamResponse> BuildResponseAsync(
+        SaveStore store,
+        Guid saveId,
+        SeasonEntity source,
+        TournamentSimulation simulation,
+        CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        StageSimulation final = simulation.Final;
+        int finalPhase = final.Key.Phase;
+        int finalQual = final.Key.QualificationGroup;
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id && e.TournamentPhase == finalPhase && e.QualificationGroup == finalQual)
+            .OrderBy(e => e.TeamRank)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id && e.TournamentPhase == finalPhase && e.QualificationGroup == finalQual)
+            .OrderBy(e => e.GroupNumber)
+            .ThenBy(e => e.GroupRank)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamRoundEntity> rounds = await context.TypeCupTeamRounds
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (teams.Count != final.Teams.Count || legs.Count != final.Legs.Count)
+        {
+            throw new InvalidOperationException("Type Cup team persisted result does not match the simulation.");
+        }
+
+        Dictionary<int, string> names = await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamMember> teamMembers = MapTeamMembers(teams);
+        List<TypeCupTeamLegMember> legMembers = MapLegMembers(legs, names);
+        TypeCupTeamStandingEntity champion = teams.Single(s => s.TeamRank == 1);
+        // RNG boundaries for the tournament: first round of the first stage to
+        // the Final team ranking (save RNG). Checksum is the Final checksum.
+        var orderedRounds = rounds
+            .OrderBy(r => r.TournamentPhase).ThenBy(r => r.QualificationGroup).ThenBy(r => r.GroupNumber).ThenBy(r => r.RoundNumber)
+            .ToList();
+        TypeCupTeamRoundPayloadDocument first = TypeCupTeamRoundPayloadDocument.FromStored(orderedRounds.First().PayloadJson);
+        // Last persisted round's payload holds round-only RNG; the tournament
+        // RNG-after (after Final team ranking) is the save RNG.
+        Pcg32State rngAfter = simulation.RngAfter;
+        return new RunTypeCupTeamResponse(
+            saveId,
+            source.SeasonNumber,
+            source.Id,
+            teams.Count,
+            4,
+            8,
+            simulation.Checksum,
+            first.RngBeforeState,
+            first.RngBeforeStream,
+            rngAfter.State,
+            rngAfter.Stream,
+            champion.CreatureType,
+            champion.CreatureType,
+            teamMembers,
+            legMembers);
     }
 
     internal static async Task<RunTypeCupTeamResponse> BuildResponseAsync(

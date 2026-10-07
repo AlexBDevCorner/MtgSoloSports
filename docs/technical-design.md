@@ -302,7 +302,18 @@ tables carry explicit `TournamentPhase` (0 legacy, 1 qualification, 2 Final) plu
 `QualificationGroup` (0 outside qualification) alongside the athlete rank
 `GroupNumber`, so qualification and Final rounds never collide; legacy rows store
 0/0. The draw slice exposes `POST/GET /api/saves/{saveId}/cups/type/draw`.
-Running the qualification and Final round lifecycle itself is MSS-062.
+MSS-062 runs the tournament around the existing team-event kernel: direct
+Finals (1-32 teams) persist one 4x8 competition as phase 2; larger fields play
+every qualification group in draw order (each 4x8, standard table, medals
+None) then a fresh 32-team Final from zero (medals/honours Final-only).
+Step-by-step and one-shot share one RNG chain with rank-group and stage
+tie-break boundaries; qualification standings plus nationality persist per
+completed group so eliminated teams retain history. Completion, lifecycle
+progress and history treat the Cup as one competition complete only with Final
+standings. `GET /api/saves/{saveId}/cups/type/tournament` exposes the draw,
+each qualification result, the 32 finalists, the Final and the champion;
+`cups/type/team` stays the convenient Final result and old phase-0 saves read
+unchanged.
 
 ## 17a. Cup history read model
 

@@ -132,8 +132,13 @@ public sealed class ListCupEditionsHandler
     {
         List<TypeCupSelectionEntity> selections = await context.TypeCupSelections
             .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
-        List<TypeCupTeamStandingEntity> standings = await context.TypeCupTeamStandings
-            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+        // Official results only: legacy single-field rows plus Final rows.
+        // Qualification standings never produce podiums or all-time honours.
+        List<TypeCupTeamStandingEntity> standings = (await context.TypeCupTeamStandings
+            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(e => e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
+                || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
+            .ToList();
         List<int> roundSeasons = await context.TypeCupTeamRounds
             .AsNoTracking().Select(e => e.SourceSeasonNumber).Distinct().ToListAsync(cancellationToken).ConfigureAwait(false);
         List<Appearance> appearances = selections

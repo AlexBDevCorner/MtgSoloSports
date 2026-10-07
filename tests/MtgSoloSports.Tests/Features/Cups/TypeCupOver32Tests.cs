@@ -31,11 +31,12 @@ public sealed class TypeCupOver32Tests
 {
     public static TheoryData<int> FieldSizes()
     {
+        // MSS-062: 32-team fields run direct Finals; larger fields run
+        // qualification plus Final tournaments (covered by TypeCupTournamentTests).
+        // This legacy over-32 single-field path is preserved only for scoring
+        // math and historical reads, not new execution.
         var data = new TheoryData<int>();
         data.Add(32);
-        data.Add(33);
-        data.Add(35);
-        data.Add(40);
         return data;
     }
 
@@ -123,12 +124,15 @@ public sealed class TypeCupOver32Tests
     [Fact]
     public async Task Run_ThirtyFiveTeams_DeterministicAcrossSaves()
     {
+        // MSS-062: 35-team fields run qualification plus a 32-team Final.
+        // The response is the Final (32 teams); determinism covers the full
+        // tournament (draw plus quals plus Final) from identical RNG state.
         (RunTypeCupTeamResponse first, string rootFirst) = await RunTeamForFieldAsync(35, 42421UL, 7771UL);
         (RunTypeCupTeamResponse second, string rootSecond) = await RunTeamForFieldAsync(35, 42421UL, 7771UL);
         try
         {
-            first.TeamCount.ShouldBe(35);
-            second.TeamCount.ShouldBe(35);
+            first.TeamCount.ShouldBe(32);
+            second.TeamCount.ShouldBe(32);
             first.Checksum.ShouldBe(second.Checksum);
             first.Teams.Select(t => t.CreatureType).ShouldBe(second.Teams.Select(t => t.CreatureType).ToList());
             first.Teams.Select(t => t.TeamScoreThousandths).ShouldBe(second.Teams.Select(t => t.TeamScoreThousandths).ToList());
