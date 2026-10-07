@@ -168,10 +168,15 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_SameSeed_Inaugural_IsDeterministic()
     {
-        (RebalanceFeedersResponse first, string rootFirst) = await RunInauguralRebalanceAsync(4242UL, 777UL);
-        (RebalanceFeedersResponse second, string rootSecond) = await RunInauguralRebalanceAsync(4242UL, 777UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareInauguralForSeedAsync(4242UL, 777UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-rebalance-det-");
         try
         {
+            RebalanceFeedersResponse first = await new RebalanceFeedersHandler(store).HandleAsync(saveId);
+            RebalanceFeedersResponse second = await new RebalanceFeedersHandler(secondStore).HandleAsync(secondId);
             first.TotalDrawn.ShouldBe(second.TotalDrawn);
             first.Draws.Select(m => m.AthleteId).OrderBy(id => id).ShouldBe(second.Draws.Select(m => m.AthleteId).OrderBy(id => id).ToList());
             first.RngBeforeState.ShouldBe(second.RngBeforeState);
@@ -180,8 +185,8 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -936,16 +941,14 @@ public sealed class RebalanceFeedersTests
         }
     }
 
-    private static async Task<(RebalanceFeedersResponse Response, string Root)> RunInauguralRebalanceAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareInauguralForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Rebalance Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         await CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         CreateInauguralSuperleagueHandler inaugural = new(store);
         await inaugural.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RebalanceFeedersHandler handler = new(store);
-        RebalanceFeedersResponse response = await handler.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        return (response, root);
+        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task<Dictionary<int, int>> LoadFeederCountsAsync(SaveStore store, Guid saveId, int seasonNumber)

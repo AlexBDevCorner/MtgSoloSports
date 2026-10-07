@@ -73,42 +73,49 @@ public sealed class SeasonCompletionTests
     [Fact]
     public async Task CompleteStageForAllLeagues_EquivalentToSequentialInCanonicalOrder()
     {
+        // MSS-067: second save forked instead of creating the same universe twice.
         var (store, root) = CreateStore();
         try
         {
             IReadOnlyList<MtgSoloSports.Features.Catalog.ImportCatalog.CatalogAthlete> catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord viaSequential = await store.CreateAsync("Bulk Sequential", 9001UL, 7002UL, catalog);
-            SaveStore.CreationRecord viaBulk = await store.CreateAsync("Bulk ForAll", 9001UL, 7002UL, catalog);
-
-            List<int> sequentialLeagues = await AllLeagueIdsAsync(store, viaSequential.Detail.SaveId);
-            List<int> bulkLeagues = await AllLeagueIdsAsync(store, viaBulk.Detail.SaveId);
-            sequentialLeagues.Count.ShouldBe(24);
-            bulkLeagues.Count.ShouldBe(24);
-
-            // Path A: 24 sequential single-league completions in canonical id order.
-            CompleteStageHandler single = new(store);
-            List<string> sequentialChecksums = new(24);
-            foreach (int leagueId in sequentialLeagues)
+            var (bulkStore, bulkRoot, viaBulkId) = await TestSaveStores.ForkAsync(store, viaSequential.Detail.SaveId, "mtgsolosports-bulk-");
+            try
             {
-                CompleteStageResponse completed = await single.HandleAsync(viaSequential.Detail.SaveId, leagueId);
-                completed.StageNumber.ShouldBe(1);
-                sequentialChecksums.Add(completed.StageChecksum);
+                List<int> sequentialLeagues = await AllLeagueIdsAsync(store, viaSequential.Detail.SaveId);
+                List<int> bulkLeagues = await AllLeagueIdsAsync(bulkStore, viaBulkId);
+                sequentialLeagues.Count.ShouldBe(24);
+                bulkLeagues.Count.ShouldBe(24);
+
+                // Path A: 24 sequential single-league completions in canonical id order.
+                CompleteStageHandler single = new(store);
+                List<string> sequentialChecksums = new(24);
+                foreach (int leagueId in sequentialLeagues)
+                {
+                    CompleteStageResponse completed = await single.HandleAsync(viaSequential.Detail.SaveId, leagueId);
+                    completed.StageNumber.ShouldBe(1);
+                    sequentialChecksums.Add(completed.StageChecksum);
+                }
+
+                // Path B: one bulk global-stage completion from the same start state.
+                CompleteStageForAllLeaguesHandler bulk = new(bulkStore);
+                CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(viaBulkId);
+
+                bulkResponse.CompletedStage.ShouldBe(1);
+                bulkResponse.GlobalStageAfter.ShouldBe(2);
+                bulkResponse.IsSeasonComplete.ShouldBeFalse();
+                bulkResponse.Leagues.Count.ShouldBe(24);
+                bulkResponse.Leagues.Select(l => l.StageChecksum).ShouldBe(sequentialChecksums);
+
+                // RNG-after commits identically for equivalent operation order.
+                ulong sequentialRng = await LoadRngStateAsync(store, viaSequential.Detail.SaveId);
+                ulong bulkRng = await LoadRngStateAsync(bulkStore, viaBulkId);
+                sequentialRng.ShouldBe(bulkRng);
             }
-
-            // Path B: one bulk global-stage completion from the same start state.
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            CompleteStageForAllLeaguesResponse bulkResponse = await bulk.HandleAsync(viaBulk.Detail.SaveId);
-
-            bulkResponse.CompletedStage.ShouldBe(1);
-            bulkResponse.GlobalStageAfter.ShouldBe(2);
-            bulkResponse.IsSeasonComplete.ShouldBeFalse();
-            bulkResponse.Leagues.Count.ShouldBe(24);
-            bulkResponse.Leagues.Select(l => l.StageChecksum).ShouldBe(sequentialChecksums);
-
-            // RNG-after commits identically for equivalent operation order.
-            ulong sequentialRng = await LoadRngStateAsync(store, viaSequential.Detail.SaveId);
-            ulong bulkRng = await LoadRngStateAsync(store, viaBulk.Detail.SaveId);
-            sequentialRng.ShouldBe(bulkRng);
+            finally
+            {
+                TestSaveStores.DeleteRoot(bulkRoot);
+            }
         }
         finally
         {

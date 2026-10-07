@@ -94,10 +94,15 @@ public sealed class QualifierTests
     [Fact]
     public async Task Run_SameSeed_IsDeterministic()
     {
-        (RunQualifierResponse first, string rootFirst, SaveStore storeFirst) = await RunQualifierForSeedAsync(4242UL, 777UL);
-        (RunQualifierResponse second, string rootSecond, SaveStore storeSecond) = await RunQualifierForSeedAsync(4242UL, 777UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareQualifierForSeedAsync(4242UL, 777UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-qual-det-");
         try
         {
+            RunQualifierResponse first = await new RunQualifierHandler(store).HandleAsync(saveId);
+            RunQualifierResponse second = await new RunQualifierHandler(secondStore).HandleAsync(secondId);
             first.Checksum.ShouldBe(second.Checksum);
             first.Standings.Select(m => m.AthleteId).ShouldBe(second.Standings.Select(m => m.AthleteId).ToList());
             first.Standings.Select(m => m.QualifierScoreThousandths).ShouldBe(second.Standings.Select(m => m.QualifierScoreThousandths).ToList());
@@ -106,8 +111,8 @@ public sealed class QualifierTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -258,7 +263,7 @@ public sealed class QualifierTests
         again.RoundCount.ShouldBe(16);
     }
 
-    private static async Task<(RunQualifierResponse Response, string Root, SaveStore Store)> RunQualifierForSeedAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareQualifierForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Qual Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
@@ -269,9 +274,7 @@ public sealed class QualifierTests
         await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         ResolveAutomaticMovementHandler movement = new(store);
         await movement.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RunQualifierHandler handler = new(store);
-        RunQualifierResponse response = await handler.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        return (response, root, store);
+        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task<(int StageCount, int SeasonCount, int RoundCount, int QualifierRounds, int QualifierStandings, long Lifetime, ulong Rng, long Championship)> CapturePreservationAsync(

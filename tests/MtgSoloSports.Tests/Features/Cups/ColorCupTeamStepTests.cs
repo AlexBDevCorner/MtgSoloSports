@@ -35,8 +35,9 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_AllRounds_EqualsOneShot()
     {
+        // MSS-067: forked copy instead of a second identical Season 1 simulation.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9191UL, 9292UL);
-        var (stepStore, stepRoot, stepId) = await PrepareColorCupAsync(9191UL, 9292UL);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-step-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);
@@ -63,8 +64,9 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_Then_OneShot_EqualsOneShot()
     {
+        // MSS-067: forked copy instead of a second identical Season 1 simulation.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9393UL, 9494UL);
-        var (mixedStore, mixedRoot, mixedId) = await PrepareColorCupAsync(9393UL, 9494UL);
+        var (mixedStore, mixedRoot, mixedId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-mixed-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);
@@ -87,8 +89,9 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_GroupBoundary_MatchesOneShotRngChain()
     {
+        // MSS-067: forked copy instead of a second identical Season 1 simulation.
         var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9595UL, 9696UL);
-        var (stepStore, stepRoot, stepId) = await PrepareColorCupAsync(9595UL, 9696UL);
+        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-bound-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);

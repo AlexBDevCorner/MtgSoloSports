@@ -174,10 +174,15 @@ public sealed class ColorCupIndividualTests
     [Fact]
     public async Task Run_SameSeed_IsDeterministic()
     {
-        (RunColorCupIndividualResponse first, string rootFirst) = await RunCupForSeedAsync(4242UL, 777UL);
-        (RunColorCupIndividualResponse second, string rootSecond) = await RunCupForSeedAsync(4242UL, 777UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareCupForSeedAsync(4242UL, 777UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-cup-det-");
         try
         {
+            RunColorCupIndividualResponse first = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
+            RunColorCupIndividualResponse second = await new RunColorCupIndividualHandler(secondStore).HandleAsync(secondId);
             first.Checksum.ShouldBe(second.Checksum);
             first.Standings.Select(m => m.AthleteId).ShouldBe(second.Standings.Select(m => m.AthleteId).ToList());
             first.Standings.Select(m => m.CupScoreThousandths).ShouldBe(second.Standings.Select(m => m.CupScoreThousandths).ToList());
@@ -187,8 +192,8 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -377,16 +382,14 @@ public sealed class ColorCupIndividualTests
         }
     }
 
-    private static async Task<(RunColorCupIndividualResponse Response, string Root)> RunCupForSeedAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareCupForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = CreateStore();
         SaveStore.CreationRecord created = await store.CreateAsync("Cup Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         await CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         SelectColorCupTeamsHandler select = new(store);
         await select.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RunColorCupIndividualHandler handler = new(store);
-        RunColorCupIndividualResponse response = await handler.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        return (response, root);
+        return (store, root, created.Detail.SaveId);
     }
 
     private static async Task<(int StageCount, int SeasonCount, int RoundCount, long Lifetime, long Effective, long Championship, ulong Rng)> CapturePreservationAsync(

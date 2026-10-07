@@ -109,18 +109,23 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task DeterministicOrder_SameSeed_SameRng()
     {
-        (RunAllQualifiersResponse first, string rootFirst) = await RunAllForSeedAsync(9009UL, 1010UL);
-        (RunAllQualifiersResponse second, string rootSecond) = await RunAllForSeedAsync(9009UL, 1010UL);
+        // MSS-067: one prepared save forked into two isolated copies instead of
+        // simulating the same Season 1 twice; both runs still execute
+        // independently from bit-identical starting state.
+        var (store, root, saveId) = await PrepareForSeedAsync(9009UL, 1010UL);
+        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-feeder-det-");
         try
         {
+            RunAllQualifiersResponse first = await new RunAllQualifiersHandler(store).HandleAsync(saveId);
+            RunAllQualifiersResponse second = await new RunAllQualifiersHandler(secondStore).HandleAsync(secondId);
             first.TotalStandings.ShouldBe(second.TotalStandings);
             first.TotalRounds.ShouldBe(second.TotalRounds);
             first.ExecutedNow.ShouldBe(second.ExecutedNow.ToList());
         }
         finally
         {
-            PostseasonTestSaves.DeleteRoot(rootFirst);
-            PostseasonTestSaves.DeleteRoot(rootSecond);
+            PostseasonTestSaves.DeleteRoot(root);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
@@ -434,7 +439,7 @@ public sealed class FeederQualifierTests
         qualifierWinners.ShouldBe(8);
     }
 
-    private static async Task<(RunAllQualifiersResponse Response, string Root)> RunAllForSeedAsync(ulong seed, ulong stream)
+    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareForSeedAsync(ulong seed, ulong stream)
     {
         var (store, root) = PostseasonTestSaves.CreateStore();
         var created = await store.CreateAsync("MSS058 Seed", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
@@ -443,8 +448,6 @@ public sealed class FeederQualifierTests
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await new ResolveAutomaticMovementHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        RunAllQualifiersResponse response = await new RunAllQualifiersHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        // Keep store alive via root; caller deletes root. Store is not returned to avoid disposal issues.
-        return (response, root);
+        return (store, root, created.Detail.SaveId);
     }
 }
