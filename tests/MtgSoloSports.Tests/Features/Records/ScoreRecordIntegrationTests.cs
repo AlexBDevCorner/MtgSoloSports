@@ -1,14 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.GetRecords;
-using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -19,14 +13,12 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task LeagueRecords_AfterSeason_HavePerLeagueHoldersAndContext()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score League", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId);
-
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
 
             // Career records unchanged.
             response.Records.Count.ShouldBe(RecordKey.All.Count);
@@ -77,14 +69,14 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task ScoringRecords_AfterSimulateSeasons_CoverColourCupAndTeams()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template; SimulateSeasons(1) then covers only the postseason.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score Cups", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new SimulateSeasonsHandler(store).HandleAsync(created.Detail.SaveId, new SimulateSeasonsRequest(1));
+            await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1));
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
 
             ScoringRecordEntry colourRound = response.ScoringRecords.Single(r =>
                 string.Equals(r.RecordKey, ScoreRecordKey.ColourCupIndividualRoundBest, StringComparison.Ordinal));
@@ -131,16 +123,14 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task Historical_OlderSeasonHoldsRecordAfterAdvancing()
     {
-        // MSS-067: previously SimulateSeasons(2); now one completed Season 1
-        // plus a synthetic Season 2 shell (same pattern as
+        // MSS-067: shared Season 1 template plus a synthetic Season 2 shell
+        // (previously SimulateSeasons(2); same pattern as
         // MembershipChanges_DoNotRewriteHistoricalOwnership). The invariant is
         // record ownership across seasons, not Season 2 simulation itself.
-        var (store, root) = CreateStore();
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score Historical", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId);
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity seasonTwo = new() { SeasonNumber = 2, HasSuperleague = false, IsComplete = false };
                 context.Seasons.Add(seasonTwo);
@@ -148,7 +138,7 @@ public sealed class ScoreRecordIntegrationTests
             }
 
             int boostedAthlete;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity seasonOne = await context.Seasons.SingleAsync(e => e.SeasonNumber == 1);
                 StageStandingEntity standing = await context.StageStandings
@@ -161,11 +151,11 @@ public sealed class ScoreRecordIntegrationTests
             }
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
 
             // Find the league scope for the boosted athlete's original league.
             string? scope = null;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity seasonOne = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1);
                 StageStandingEntity standing = await context.StageStandings.AsNoTracking()
@@ -191,16 +181,14 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task Ties_TwoEqualBestValuesBothPreserved()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score Ties", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId);
-
             int firstAthlete;
             int secondAthlete;
             string scope;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity seasonOne = await context.Seasons.SingleAsync(e => e.SeasonNumber == 1);
                 List<StageStandingEntity> standings = await context.StageStandings
@@ -221,7 +209,7 @@ public sealed class ScoreRecordIntegrationTests
             }
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
             ScoringRecordEntry stageRecord = response.ScoringRecords.Single(r =>
                 string.Equals(r.RecordKey, ScoreRecordKey.LeagueStageBest(scope), StringComparison.Ordinal));
             stageRecord.Value.ShouldBe(8_888_888);
@@ -230,7 +218,7 @@ public sealed class ScoreRecordIntegrationTests
             // Deterministic ordering: name ascending then id.
             List<string> orderedNames = stageRecord.Holders.Select(h =>
             {
-                using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+                using SaveDbContext context = store.OpenDbContext(saveId);
                 return context.SaveAthletes.AsNoTracking().Single(e => e.Id == h.AthleteId!.Value).Name;
             }).ToList();
             orderedNames.ShouldBe(orderedNames.OrderBy(n => n, StringComparer.Ordinal).ToList());
@@ -244,15 +232,13 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task MembershipChanges_DoNotRewriteHistoricalOwnership()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score Membership", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId);
-
             int holderId;
             string originalLeague;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity seasonOne = await context.Seasons.SingleAsync(e => e.SeasonNumber == 1);
                 StageStandingEntity standing = await context.StageStandings
@@ -282,7 +268,7 @@ public sealed class ScoreRecordIntegrationTests
             }
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
             List<ScoringRecordEntry> leagueStages = response.ScoringRecords
                 .Where(r => string.Equals(r.Category, "League", StringComparison.Ordinal) && r.RecordKey.Contains("stage_best", StringComparison.Ordinal))
                 .ToList();
@@ -300,13 +286,13 @@ public sealed class ScoreRecordIntegrationTests
     [Fact]
     public async Task TeamTotals_TiesPreserved()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template; SimulateSeasons(1) then covers only the postseason.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-score-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Score Team Ties", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            await new SimulateSeasonsHandler(store).HandleAsync(created.Detail.SaveId, new SimulateSeasonsRequest(1));
+            await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1));
 
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 List<ColorCupTeamStandingEntity> standings = await context.ColorCupTeamStandings
                     .OrderBy(e => e.Id)
@@ -319,7 +305,7 @@ public sealed class ScoreRecordIntegrationTests
             }
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse response = await handler.HandleAsync(saveId);
             ScoringRecordEntry total = response.ScoringRecords.Single(r =>
                 string.Equals(r.RecordKey, ScoreRecordKey.ColourCupTeamTotalBest, StringComparison.Ordinal));
             total.Value.ShouldBe(7_777_777);
@@ -329,33 +315,5 @@ public sealed class ScoreRecordIntegrationTests
         {
             Directory.Delete(root, recursive: true);
         }
-    }
-
-    private static (SaveStore Store, string Root) CreateStore()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-score-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        IOptions<SaveStorageOptions> options = Options.Create(new SaveStorageOptions { SavesRoot = root });
-        TestHostEnvironment environment = new(root);
-        SaveSqliteConnectionInterceptor interceptor = new();
-        SaveDbContextFactory factory = new(interceptor);
-        SaveStore store = new(options, environment, factory, TimeProvider.System, NullLogger<SaveStore>.Instance);
-        return (store, root);
-    }
-
-    private sealed class TestHostEnvironment : IHostEnvironment
-    {
-        public TestHostEnvironment(string contentRoot)
-        {
-            ContentRootPath = contentRoot;
-        }
-
-        public string EnvironmentName { get; set; } = "Test";
-
-        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
-
-        public string ContentRootPath { get; set; }
-
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }
