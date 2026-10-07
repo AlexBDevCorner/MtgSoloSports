@@ -50,7 +50,7 @@ public sealed class CompleteStageTests
         response.SeasonNumber.ShouldBe(1);
         response.StageNumber.ShouldBe(1);
         response.CompletedRounds.ShouldBe(16);
-        response.RulesVersion.ShouldBe(RulesV2.RulesVersion);
+        response.RulesVersion.ShouldBe(RulesV3.RulesVersion);
         response.StageChecksum.Length.ShouldBe(64);
         response.NextStageNumber.ShouldBe(2);
         response.Standings.Count.ShouldBe(32);

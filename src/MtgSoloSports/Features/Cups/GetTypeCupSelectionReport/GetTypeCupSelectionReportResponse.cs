@@ -65,7 +65,17 @@ public sealed record GetTypeCupSelectionReportResponse(
         int? SourceLeagueLevel,
         int StrengthFactorPermille,
         int UnadjustedPerformanceThousandths,
-        int UnadjustedFormAggregate);
+        int UnadjustedFormAggregate,
+        int PrestigeSuperTitleRaw,
+        int PrestigeFeeder1TitleRaw,
+        int PrestigeFeeder2TitleRaw,
+        int PrestigeFeeder3TitleRaw,
+        int PrestigeAppearanceRaw,
+        int PrestigeSuperStageRaw,
+        int PrestigeFeeder1StageRaw,
+        int PrestigeFeeder2StageRaw,
+        int PrestigeFeeder3StageRaw,
+        int PrestigeMajorCupRaw);
 
     public sealed record Alternative(string TeamName, int Rank, bool FieldsTeam);
 

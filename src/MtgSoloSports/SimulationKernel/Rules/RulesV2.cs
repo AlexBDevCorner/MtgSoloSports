@@ -12,7 +12,7 @@ namespace MtgSoloSports.SimulationKernel.Rules;
 /// All bonus arithmetic stays fixed-point integer-only with truncation
 /// (multiply first, then integer-divide).
 /// </summary>
-public sealed class RulesV2 : RulesV1
+public class RulesV2 : RulesV1
 {
     public new const int RulesVersion = 2;
 
@@ -33,7 +33,7 @@ public sealed class RulesV2 : RulesV1
 
     public const int CupFeeder3StrengthPermilleDefault = 400;
 
-    private RulesV2(
+    protected RulesV2(
         int sportingColorCount,
         int athletesPerSportingColor,
         int totalAthletesInSave,

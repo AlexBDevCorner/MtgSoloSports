@@ -20,7 +20,7 @@ namespace MtgSoloSports.Tests.Features.Leagues;
 public sealed class FeederDivisionPersistenceTests
 {
     [Fact]
-    public async Task NewSave_UsesV2Rules_AndFeeder1Leagues()
+    public async Task NewSave_UsesV3Rules_AndFeeder1Leagues()
     {
         var (store, root) = CreateStore();
         try
@@ -28,9 +28,9 @@ public sealed class FeederDivisionPersistenceTests
             SaveStore.CreationRecord created = await store.CreateAsync(
                 "Tiered Save", 4242UL, 5656UL, UniverseTestCatalog.Build());
 
-            created.Detail.RulesVersion.ShouldBe(RulesV2.RulesVersion);
+            created.Detail.RulesVersion.ShouldBe(RulesV3.RulesVersion);
             RulesV1 rules = RulesSnapshotCodec.Decode(created.Detail.RulesJson);
-            rules.ShouldBeOfType<RulesV2>();
+            rules.ShouldBeOfType<RulesV3>();
 
             using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
             List<LeagueEntity> leagues = await context.Leagues.AsNoTracking().ToListAsync();

@@ -11,9 +11,10 @@ public sealed partial class SelectColorCupTeamsHandler
     /// <summary>
     /// Ranks every candidate of every sporting color. The first four of each
     /// ranking are the selected team; the rest feed the selection report.
-    /// Returns rankings plus the strength-aware metrics behind the adjusted raws.
+    /// Returns rankings plus the strength-aware metrics and league-aware
+    /// prestige breakdowns behind the adjusted raws.
     /// </summary>
-    internal static (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> Rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> Metrics) RankAllColors(
+    internal static (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> Rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> Metrics, Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> Prestige) RankAllColors(
         SelectionInputs inputs,
         RulesV1 rules)
     {
@@ -22,6 +23,7 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
+        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestige = BuildPrestigeMap(inputs, rules);
         ValidateEightColors(byColor, rules);
         Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings = new(byColor.Count);
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
@@ -29,7 +31,7 @@ public sealed partial class SelectColorCupTeamsHandler
             rankings[(int)color] = ColorCupSelection.RankAll(byColor[(int)color], rules);
         }
 
-        return (rankings, metrics);
+        return (rankings, metrics, prestige);
     }
 
     internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> TakeTeams(
@@ -50,11 +52,13 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static ColorCupSelectionReportDocument BuildReport(
         Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
+        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
         SelectionInputs inputs,
         RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(rankings);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
+        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
         List<ColorCupSelectionReportDocument.Team> teams = new(rankings.Count);
@@ -63,7 +67,7 @@ public sealed partial class SelectColorCupTeamsHandler
             IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = rankings[(int)color];
             List<ColorCupSelectionReportDocument.Candidate> shortlist = ranking
                 .Take(ColorCupSelectionReportDocument.ShortlistSize)
-                .Select(c => MapReportCandidate(c, metricsByAthlete, inputs))
+                .Select(c => MapReportCandidate(c, metricsByAthlete, prestigeByAthlete, inputs))
                 .ToList();
             teams.Add(new ColorCupSelectionReportDocument.Team((int)color, ranking.Count, shortlist));
         }
@@ -80,10 +84,12 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static ColorCupSelectionReportDocument.Candidate MapReportCandidate(
         ColorCupSelection.ScoredCandidate scored,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
+        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
         SelectionInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(scored);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
+        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         metricsByAthlete.TryGetValue(scored.AthleteId, out CupSelectionMetrics.CupMetrics? metrics);
         string? leagueName = null;
@@ -113,23 +119,19 @@ public sealed partial class SelectColorCupTeamsHandler
             leagueName = "Pool";
         }
 
+        prestigeByAthlete.TryGetValue(scored.AthleteId, out CupPrestigeCalculator.PrestigeBreakdown? prestige);
+
         return new ColorCupSelectionReportDocument.Candidate(
-            scored.AthleteId,
-            scored.SelectionRank,
-            scored.FinalRatingThousandths,
-            scored.BonusNormThousandths,
-            scored.PerformanceNormThousandths,
-            scored.FormNormThousandths,
-            scored.PrestigeNormThousandths,
-            scored.BonusRawThousandths,
-            scored.PerformanceRawThousandths,
-            scored.FormRaw,
-            scored.PrestigeRaw,
-            leagueName,
-            leagueLevel,
-            factor,
-            unadjustedPerformance,
-            unadjustedForm);
+            scored.AthleteId, scored.SelectionRank, scored.FinalRatingThousandths,
+            scored.BonusNormThousandths, scored.PerformanceNormThousandths, scored.FormNormThousandths,
+            scored.PrestigeNormThousandths, scored.BonusRawThousandths, scored.PerformanceRawThousandths,
+            scored.FormRaw, scored.PrestigeRaw, leagueName, leagueLevel, factor,
+            unadjustedPerformance, unadjustedForm,
+            prestige?.SuperTitleRaw ?? 0, prestige?.Feeder1TitleRaw ?? 0,
+            prestige?.Feeder2TitleRaw ?? 0, prestige?.Feeder3TitleRaw ?? 0,
+            prestige?.AppearanceRaw ?? 0, prestige?.SuperStageRaw ?? 0,
+            prestige?.Feeder1StageRaw ?? 0, prestige?.Feeder2StageRaw ?? 0,
+            prestige?.Feeder3StageRaw ?? 0, prestige?.MajorCupRaw ?? 0);
     }
 
     internal static void AddReport(

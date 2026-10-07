@@ -13,10 +13,10 @@ namespace MtgSoloSports.Features.Leagues.UpgradeToTiered;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Explicit sporting-rule
-/// upgrade from v1 (single feeder tier) to v2 (F1/F2/F3) at a safe season
-/// boundary. Never hidden inside EF schema migration; persists the new rules
-/// snapshot, new F2/F3 league rows, membership updates, RNG-after state and
-/// 512 upgrade-seed movement rows atomically. Historical Season/Stage/Round/
+/// upgrade from v1 (single feeder tier) to v3 (F1/F2/F3 with tiered prestige)
+/// at a safe season boundary. Never hidden inside EF schema migration; persists
+/// the new rules snapshot, new F2/F3 league rows, membership updates, RNG-after
+/// state and 512 upgrade-seed movement rows atomically. Historical Season/Stage/Round/
 /// Standing/Bonus/Cup/Movement rows are never rewritten and historical v1
 /// feeders are never reinterpreted. Existing Superleague and F1 rosters stay
 /// authoritative; F2/F3 are seeded from the target season's pool with the
@@ -24,6 +24,8 @@ namespace MtgSoloSports.Features.Leagues.UpgradeToTiered;
 /// Retry/reload is idempotent and RNG-safe: an already-upgraded target
 /// returns the persisted result without consuming RNG twice. Saves not at a
 /// safe boundary stay on v1 via conflict, never partially upgraded.
+/// Already-tiered v2 saves stay on v2 with their original prestige model and
+/// never silently adopt v3 prestige.
 /// </summary>
 public sealed class UpgradeToTieredHandler
 {
@@ -72,7 +74,7 @@ public sealed class UpgradeToTieredHandler
                 $"Save is not at a safe tier-upgrade boundary: season {source.SeasonNumber} has no pending next season. Complete the season and resolve movement/rebalance/Cup to the CupComplete boundary first; the save stays on rules v{rules.Version}.");
         }
 
-        if (rules.Version == RulesV2.RulesVersion)
+        if (rules.Version == RulesV2.RulesVersion || rules.Version == RulesV3.RulesVersion)
         {
             return await HandleAlreadyTieredAsync(context, saveId, source, next, rules, rngBefore, cancellationToken).ConfigureAwait(false);
         }
@@ -515,7 +517,7 @@ public sealed class UpgradeToTieredHandler
             context.Movements.Add(movement);
         }
 
-        RulesV2 upgraded = RulesV2.FromV1(oldRules);
+        RulesV3 upgraded = RulesV3.FromV1(oldRules);
         string json = RulesSnapshotCodec.Encode(upgraded);
         RulesSnapshotEntity snapshot = await context.RulesSnapshots.SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         snapshot.RulesVersion = upgraded.Version;
@@ -611,7 +613,7 @@ public sealed class UpgradeToTieredHandler
         int movementsBefore,
         CancellationToken cancellationToken)
     {
-        RulesV2 upgraded = RulesV2.FromV1(oldRules);
+        RulesV3 upgraded = RulesV3.FromV1(oldRules);
         List<LeagueEntity> allFeeders = [.. existingFeeders, .. created];
         List<SeasonMembershipEntity> persistedNext = await context.SeasonMemberships
             .Where(e => e.SeasonId == next.Id)
@@ -792,13 +794,13 @@ public sealed class UpgradeToTieredHandler
             .CountAsync(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.TierUpgradeSeed, cancellationToken)
             .ConfigureAwait(false);
         string checksum = ComputeChecksum(plan);
-        int targetVersion = alreadyApplied ? oldRules.Version : RulesV2.RulesVersion;
+        int targetVersion = alreadyApplied ? oldRules.Version : RulesV3.RulesVersion;
 
         return new UpgradeToTieredResponse(
             saveId,
             source.SeasonNumber,
             next.SeasonNumber,
-            oldRules.Version == RulesV2.RulesVersion ? RulesV1.RulesVersion : oldRules.Version,
+            oldRules.Version == RulesV2.RulesVersion || oldRules.Version == RulesV3.RulesVersion ? RulesV1.RulesVersion : oldRules.Version,
             targetVersion,
             leagues,
             f2,

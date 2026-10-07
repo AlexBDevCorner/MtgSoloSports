@@ -8,14 +8,17 @@ namespace MtgSoloSports.Persistence.Saves;
 /// <c>RulesSnapshots.RulesJson</c>. v1 payloads decode through
 /// <see cref="RulesSnapshotDocument"/> into <see cref="RulesV1"/>; v2 tiered
 /// payloads decode through <see cref="RulesV2SnapshotDocument"/> into
-/// <see cref="RulesV2"/> (which derives from <see cref="RulesV1"/> so existing
-/// kernel signatures keep working). Encoding dispatches on the runtime type.
+/// <see cref="RulesV2"/> and v3 tiered-prestige payloads decode through
+/// <see cref="RulesV3SnapshotDocument"/> into <see cref="RulesV3"/>
+/// (which derives from <see cref="RulesV2"/> which derives from
+/// <see cref="RulesV1"/> so existing kernel signatures keep working).
+/// Encoding dispatches on the runtime type.
 /// Database-schema migration never touches these payloads; game-rule migration
 /// is explicit and never implicit.
 /// </summary>
 public static class RulesSnapshotCodec
 {
-    public static IReadOnlySet<int> SupportedVersions { get; } = new HashSet<int> { RulesV1.RulesVersion, RulesV2.RulesVersion };
+    public static IReadOnlySet<int> SupportedVersions { get; } = new HashSet<int> { RulesV1.RulesVersion, RulesV2.RulesVersion, RulesV3.RulesVersion };
 
     public static int PeekVersion(string json)
     {
@@ -41,6 +44,11 @@ public static class RulesSnapshotCodec
     public static string Encode(RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
+        if (rules is RulesV3 prestige)
+        {
+            return RulesV3SnapshotDocument.FromRules(prestige).ToJson();
+        }
+
         if (rules is RulesV2 tiered)
         {
             return RulesV2SnapshotDocument.FromRules(tiered).ToJson();
@@ -50,8 +58,9 @@ public static class RulesSnapshotCodec
     }
 
     /// <summary>
-    /// Decodes either snapshot version. v1 payloads return <see cref="RulesV1"/>;
-    /// v2 payloads return <see cref="RulesV2"/> as its <see cref="RulesV1"/> base.
+    /// Decodes any supported snapshot version. v1 payloads return <see cref="RulesV1"/>;
+    /// v2 payloads return <see cref="RulesV2"/> and v3 payloads return
+    /// <see cref="RulesV3"/> as their <see cref="RulesV1"/> base.
     /// Unknown versions abort; historical results are never reinterpreted.
     /// </summary>
     public static RulesV1 Decode(string json)
@@ -62,8 +71,9 @@ public static class RulesSnapshotCodec
         {
             1 => RulesSnapshotDocument.FromJson(json).ToRules(),
             2 => RulesV2SnapshotDocument.FromJson(json).ToRules(),
+            3 => RulesV3SnapshotDocument.FromJson(json).ToRules(),
             _ => throw new InvalidOperationException(
-                $"Rules version {version} is not supported by this build (supports v1 and v2). " +
+                $"Rules version {version} is not supported by this build (supports v1, v2 and v3). " +
                 "Game-rule migration is separate from database-schema migration and is not performed automatically."),
         };
     }

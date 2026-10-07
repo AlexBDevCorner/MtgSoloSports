@@ -120,7 +120,8 @@ public sealed partial class SelectTypeCupTeamsHandler
         TypeCupAllocation.AllocationResult allocation = insight.Allocation;
         Dictionary<int, List<MtgSoloSports.SimulationKernel.Cups.ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, MtgSoloSports.SimulationKernel.Cups.CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
-        AddReport(context, source, BuildReport(insight, metrics, inputs, rules), rules);
+        Dictionary<int, MtgSoloSports.SimulationKernel.Cups.CupPrestigeCalculator.PrestigeBreakdown> prestige = BuildPrestigeMap(inputs, rules);
+        AddReport(context, source, BuildReport(insight, metrics, prestige, inputs, rules), rules);
         await PersistSelectionsAsync(context, source, allocation, rules, cancellationToken).ConfigureAwait(false);
 
         List<TypeCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -200,12 +201,12 @@ public sealed partial class SelectTypeCupTeamsHandler
         List<StageStandingEntity> stageRows = await LoadStageRowsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> performance = await LoadPerformanceAsync(context, source, cancellationToken).ConfigureAwait(false);
         List<HonourEntity> honours = await LoadHonoursAsync(context, source, cancellationToken).ConfigureAwait(false);
-        (List<SeasonMembershipEntity> memberships, Dictionary<int, int> leagueKinds) =
+        (List<SeasonMembershipEntity> memberships, Dictionary<int, int> leagueKinds, Dictionary<int, int> leagueLevels) =
             await LoadMembershipInputsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
         (Dictionary<int, int> leagueIdByAthlete, Dictionary<int, int> levels, Dictionary<int, string> names) =
             await LoadSourceLeagueInputsAsync(context, source, active, cancellationToken).ConfigureAwait(false);
         return new SelectionInputs(
-            active, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds,
+            active, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds, leagueLevels,
             source.Id, source.SeasonNumber, leagueIdByAthlete, levels, names);
     }
 
@@ -312,7 +313,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             .ConfigureAwait(false);
     }
 
-    internal static async Task<(List<SeasonMembershipEntity> Memberships, Dictionary<int, int> LeagueKinds)> LoadMembershipInputsAsync(
+    internal static async Task<(List<SeasonMembershipEntity> Memberships, Dictionary<int, int> LeagueKinds, Dictionary<int, int> LeagueLevels)> LoadMembershipInputsAsync(
         SaveDbContext context,
         Dictionary<int, int> seasonNumbers,
         CancellationToken cancellationToken)
@@ -323,11 +324,19 @@ public sealed partial class SelectTypeCupTeamsHandler
             .Where(e => seasonIds.Contains(e.SeasonId))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, int> kinds = await context.Leagues
+        List<LeagueEntity> leagues = await context.Leagues
             .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => e.Kind, cancellationToken)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return (memberships, kinds);
+        Dictionary<int, int> kinds = new(leagues.Count);
+        Dictionary<int, int> levels = new(leagues.Count);
+        foreach (LeagueEntity league in leagues)
+        {
+            kinds[league.Id] = league.Kind;
+            levels[league.Id] = (int)LeagueEntityLevels.GetLevel(league);
+        }
+
+        return (memberships, kinds, levels);
     }
 
     internal static async Task<(Dictionary<int, int> LeagueIdByAthlete, Dictionary<int, int> Levels, Dictionary<int, string> Names)> LoadSourceLeagueInputsAsync(

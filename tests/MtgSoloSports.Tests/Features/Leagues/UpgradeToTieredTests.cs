@@ -98,7 +98,7 @@ public sealed class UpgradeToTieredTests
     private static void AssertFirstResponse(UpgradeToTieredResponse first)
     {
         first.SourceRulesVersion.ShouldBe(RulesV1.RulesVersion);
-        first.TargetRulesVersion.ShouldBe(RulesV2.RulesVersion);
+        first.TargetRulesVersion.ShouldBe(RulesV3.RulesVersion);
         first.AlreadyApplied.ShouldBeFalse();
         first.CreatedLeagues.Count.ShouldBe(16);
         first.F2Seeds.Count.ShouldBe(256);
@@ -271,7 +271,7 @@ public sealed class UpgradeToTieredTests
         (await context.Movements.CountAsync().ConfigureAwait(false)).ShouldBe(before.Movements + 512);
 
         RulesSnapshotEntity rulesAfter = await context.RulesSnapshots.AsNoTracking().SingleAsync(e => e.Id == 1).ConfigureAwait(false);
-        rulesAfter.RulesVersion.ShouldBe(RulesV2.RulesVersion);
+        rulesAfter.RulesVersion.ShouldBe(RulesV3.RulesVersion);
         string.Equals(rulesAfter.RulesJson, before.Rules, StringComparison.Ordinal).ShouldBeFalse();
 
         RngStateEntity rngAfter = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1).ConfigureAwait(false);
