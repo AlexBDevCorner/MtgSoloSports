@@ -330,7 +330,7 @@ public sealed class SaveStore
         ulong seed,
         ulong stream)
     {
-        RulesV1 rules = RulesV2.CreateDefault();
+        RulesV1 rules = RulesV3.CreateDefault();
         Pcg32V1 rng = new(seed, stream);
         UniverseSelection selection = UniverseSelector.Select(catalogAthletes, rng, rules);
         InauguralDrawResult draw = InauguralDrawSelector.Select(selection.Selected, rng, rules);
