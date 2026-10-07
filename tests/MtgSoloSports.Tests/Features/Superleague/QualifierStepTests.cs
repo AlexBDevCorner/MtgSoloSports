@@ -90,7 +90,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_Concurrent_PlaysTwoDistinctRounds()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5353UL, 6363UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -109,7 +110,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AfterRngMoved_Aborts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5454UL, 6464UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -131,7 +133,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_WithRoundGap_Aborts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5555UL, 6565UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -155,7 +158,8 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AfterCompletion_Conflicts()
     {
-        var (store, root, saveId) = await PrepareQualifierAsync(5656UL, 6666UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             await new RunQualifierHandler(store).HandleAsync(saveId);

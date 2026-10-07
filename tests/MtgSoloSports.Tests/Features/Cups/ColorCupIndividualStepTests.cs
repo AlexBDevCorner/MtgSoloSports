@@ -89,7 +89,8 @@ public sealed class ColorCupIndividualStepTests
     [Fact]
     public async Task Step_Concurrent_PlaysTwoDistinctRounds()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(7373UL, 8383UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         try
         {
             PlayColorCupIndividualRoundHandler step = new(store);
@@ -108,7 +109,8 @@ public sealed class ColorCupIndividualStepTests
     [Fact]
     public async Task Step_AfterRngMoved_Aborts()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(7474UL, 8484UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         try
         {
             PlayColorCupIndividualRoundHandler step = new(store);
@@ -130,7 +132,8 @@ public sealed class ColorCupIndividualStepTests
     [Fact]
     public async Task Step_WithRoundGap_Aborts()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(7575UL, 8585UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         try
         {
             PlayColorCupIndividualRoundHandler step = new(store);
@@ -154,7 +157,8 @@ public sealed class ColorCupIndividualStepTests
     [Fact]
     public async Task Step_AfterCompletion_Conflicts()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(7676UL, 8686UL);
+        // MSS-067: shared template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         try
         {
             await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
