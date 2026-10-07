@@ -91,10 +91,19 @@ in isolation on this machine.
 ## After
 
 - Suite: 946 tests, all passing (2 tests opt-in-gated, fast path in normal CI).
-- Wall clock: **15 m 37 s** (first optimized full pass).
+- Wall clock, three consecutive full-suite passes on the same machine:
+  **15 m 37 s**, **14 m 49 s**, **15 m 27 s** (no flakes, no shared-state
+  failures under default parallel execution).
 - Sequential-equivalent: **3260 s (54 min)** — a **57% reduction** in
-  sequential work and **~54% reduction** in wall clock, exceeding the 50%
+  sequential work and **~54-56% reduction** in wall clock, exceeding the 50%
   target.
+- Slowest kept tests also pass individually: `ThreeSeasons_Rotate` plus
+  `AdvanceToNextEvent_FullLifecycle` together in 2 m 14 s in isolation
+  (trx durations are inflated ~2-3x by parallel contention; see caveats).
+- Opt-in diagnostics verified with flags set
+  (`MTG_LONGRUN=1 MTG_CUP_CALIBRATION=1`): `FastAndManual_ThreeSeasons`,
+  `TwoSeasons_QualifierCupsAndRotationHold`, `OptIn_CupCalibration`,
+  `OptIn_LongRun` all pass (9 m 45 s combined).
 - Frontend verification (not a bottleneck): `npm ci`, typecheck ~7 s,
   build ~8 s, 426 node tests ~3 s.
 
