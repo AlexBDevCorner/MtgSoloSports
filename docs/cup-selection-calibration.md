@@ -47,20 +47,24 @@ Fixed inputs under test (unchanged by this task):
 Command (Release, Linux):
 
 ```bash
-MTG_CUP_CALIBRATION=1 MTG_CUP_CALIBRATION_SEASONS=6 \
+MTG_CUP_CALIBRATION=1 MTG_CUP_CALIBRATION_SEASONS=20 \
   dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj \
   --filter "FullyQualifiedName~CupSelectionCalibrationTests.OptIn_CupCalibration_SimulatesAndAggregates" \
   --configuration Release --logger "console;verbosity=detailed"
 ```
 
-Result: passed in 5m37s.
+Result: passed in 48m11s.
 
-- Run seed 4242, stream 777, 6 seasons, rules v3.
+- Run seed 4242, stream 777, 20 seasons, rules v3.
 - Weights recorded: bonus=350 performance=300 form=250 prestige=100.
 - Factors recorded: super=1000 f1=800 f2=600 f3=400.
-- Cup editions observed: 6 (Season 1/3/5 Color Cup, Season 2/4/6 Type Cup).
-- Aggregate checksum: `d49c6843608e7f15f2238b06c58d192ed83d6fc3ae18d98800bfbc596cbc8678`
+- Cup editions observed: 20 (Season 1/3/5/7/9/11/13/15/17/19 Color Cup,
+  Season 2/4/6/8/10/12/14/16/18/20 Type Cup).
+- Aggregate checksum: `81f00b878eab3e6fecb7b1ef91a1396bd10c2ba48dc9f1fc8f28407f03417e13`
   (re-aggregation of the same save reproduces it exactly).
+- The first six editions reproduce the earlier 6-season run exactly
+  (same per-edition selection counts and the same S2 Elf / S3 Green / S5
+  Green examples), confirming deterministic simulation for the shared prefix.
 
 ### Selection distribution by source tier (primary run)
 
@@ -75,11 +79,29 @@ Type Cup editions allocate 20 athletes (5 creature-type teams x four).
 | S4 Type | 11/32 (34.4%) | 9/256 (3.5%) | 0/256 | 0/256 | n/a |
 | S5 Color | 19/32 (59.4%) | 12/256 (4.7%) | 1/256 (0.4%) | 0/256 | 0/1248 |
 | S6 Type | 15/32 (46.9%) | 5/256 (2.0%) | 0/256 | 0/256 | n/a |
-| Aggregate | 79/160 (49.4%) | 76/1536 (4.9%) | 1/1536 (0.1%) | 0/1536 | 0/3776 |
+| S7 Color | 18/32 (56.2%) | 14/256 (5.5%) | 0/256 | 0/256 | 0/1248 |
+| S8 Type | 11/32 (34.4%) | 9/256 (3.5%) | 0/256 | 0/256 | n/a |
+| S9 Color | 21/32 (65.6%) | 11/256 (4.3%) | 0/256 | 0/256 | 0/1248 |
+| S10 Type | 13/32 (40.6%) | 7/256 (2.7%) | 0/256 | 0/256 | n/a |
+| S11 Color | 19/32 (59.4%) | 13/256 (5.1%) | 0/256 | 0/256 | 0/1248 |
+| S12 Type | 14/32 (43.8%) | 6/256 (2.3%) | 0/256 | 0/256 | n/a |
+| S13 Color | 22/32 (68.8%) | 10/256 (3.9%) | 0/256 | 0/256 | 0/1248 |
+| S14 Type | 16/32 (50.0%) | 4/256 (1.6%) | 0/256 | 0/256 | n/a |
+| S15 Color | 20/32 (62.5%) | 12/256 (4.7%) | 0/256 | 0/256 | 0/1248 |
+| S16 Type | 15/32 (46.9%) | 5/256 (2.0%) | 0/256 | 0/256 | n/a |
+| S17 Color | 21/32 (65.6%) | 11/256 (4.3%) | 0/256 | 0/256 | 0/1248 |
+| S18 Type | 14/32 (43.8%) | 6/256 (2.3%) | 0/256 | 0/256 | n/a |
+| S19 Color | 18/32 (56.2%) | 14/256 (5.5%) | 0/256 | 0/256 | 0/1248 |
+| S20 Type | 16/32 (50.0%) | 4/256 (1.6%) | 0/256 | 0/256 | n/a |
+| Aggregate | 317/608 (52.1%) | 202/5120 (3.9%) | 1/5120 (0.0%) | 0/5120 | 0/12512 |
 
-Average final rating of selected athletes stays ordered Super > F1 > F2
-wherever samples exist (e.g. S5 Color: Super 855, F1 798, F2 752),
+Average final rating of selected athletes stays ordered Super > F1 wherever
+both tiers are selected (e.g. S5 Color: Super 855, F1 798, F2 752;
+S11 Color: Super 850, F1 807; S13 Color: Super 830, F1 721;
+S2 Type: Super 754, F1 637; S16 Type: Super 731, F1 642),
 which is the intended hierarchy emerging from ratings, not from a quota.
+The single F2 selection (S5 Color, avg 752) sits below that edition's Super
+and F1 averages, as expected for a rare upset rather than a tier inversion.
 
 ### Notable cross-tier selections (primary run)
 
@@ -89,21 +111,26 @@ higher-tier candidates on rating, with the component explanation recorded:
 - S5 Color Green: `Green Athlete 0190` (F2, final 752, dominant **form**)
   ahead of `Green Athlete 0046` (Super, 650), gap +102, and ahead of
   `Green Athlete 0076` (Super, 691), gap +61. The only F2 selection in the
-  run: an exceptional form season overcoming the 0.6-vs-1.0 factor gap.
+  20-season run: an exceptional form season overcoming the 0.6-vs-1.0 factor gap.
+- S16 Type Human: `Red Athlete 0066` (F1, final 870, **performance**) ahead of
+  `Blue Athlete 0129` (Super, 480), gap +390; the same F1 athlete also beats
+  three other Super athletes by +377 to +380 on performance/form.
+- S11 Color Red: `Red Athlete 0003` (F1, final 913, **performance**) ahead of
+  `Red Athlete 0121` (Super, 539), gap +374.
+- S7 Color Colorless: `Colorless Athlete 0170` (F1, final 880, **performance**)
+  ahead of `Colorless Athlete 0130` (Super, 508), gap +372.
+- S9 Color Red: `Red Athlete 0016` (F1, final 883, **form**) ahead of
+  `Red Athlete 0029` (Super, 527), gap +356.
 - S3 Color Green: `Green Athlete 0102` (F1, final 1000, **form**) ahead of
   `Green Athlete 0086` (Super, 687), gap +313.
-- S4 Type Elf: `Multicolor Athlete 0076` (F1, 795, **form**) ahead of
-  `White Athlete 0202` (Super, 501), gap +294.
-- S6 Type Wizard: `Black Athlete 0108` (F1, 764, **performance**) ahead of
-  `Green Athlete 0093` (Super, 476), gap +288.
-- S5 Color White: `White Athlete 0000` (F1, 939, **performance**) ahead of
-  `White Athlete 0102` (Super, 699), gap +240.
 
-Cross-tier counts per edition: S1 0, S2 2, S3 14, S4 16, S5 25, S6 7.
+Cross-tier counts per edition: S1 0, S2 2, S3 14, S4 16, S5 25, S6 7,
+S7 20, S8 15, S9 13, S10 13, S11 11, S12 11, S13 10, S14 6, S15 10,
+S16 13, S17 9, S18 12, S19 17, S20 3.
 
 ### Nearest-miss behavior (primary run)
 
-39 selected-vs-nearest-miss comparisons were collected (one per Color team
+130 selected-vs-nearest-miss comparisons were collected (one per Color team
 and per fielded Type team). Color cuts are usually tight same-tier contests
 (e.g. S1 Blue: F1 775 vs F1 774, gap +1; S1 Green: F1 868 vs F1 809,
 gap +59). One Type Cup comparison is negative
@@ -139,16 +166,20 @@ Result: passed in 2m50s. Same structural conclusions with a different seed:
 
 ## Component dominance
 
-No component dominates unexpectedly:
+No component dominates unexpectedly across the 20-season run:
 
 - Bonus (35%) and prestige (10%) tilt toward Superleague athletes as
-  designed: selected Super athletes average ~900-940 bonus norm and
-  ~700 prestige norm in Color editions vs ~720/560 for selected F1
-  athletes, reflecting tiered bonus generation and tiered prestige.
+  designed: selected Super athletes average ~820-955 bonus norm across
+  editions (typically 900+ in Color editions) and prestige norms that climb
+  with history (Color editions ~700-830 by S13-S19 vs ~350 in S2; Type
+  editions ~350-600), compared with ~580-720 bonus and ~200-660 prestige
+  for selected F1 athletes, reflecting tiered bonus generation and tiered
+  prestige.
 - Performance (30%) and form (25%) decide the upsets: every recorded
   cross-tier example is form- or performance-dominant, and selected F1
   athletes match or beat Super athletes on those norms
-  (e.g. S5 Color: F1 perf 947 vs Super 849).
+  (e.g. S5 Color: F1 perf 947 vs Super 849; S19 Color: F1 perf 955 vs
+  Super 819).
 - Prestige never single-handedly carries a selection in the observed
   examples: with only 10% weight, even the maximum prestige norm (+100)
   cannot cover a large adjusted performance/form gap, which matches the
@@ -157,20 +188,21 @@ No component dominates unexpectedly:
 
 ## What the run says about F3 and Pool
 
-- F3 recorded zero selections in 10 Cup editions across both seeds. An F3
+- F3 recorded zero selections in 20 Cup editions (5120 candidate-slots) in the
+  primary run, and zero in 24 editions across both seeds. An F3
   athlete needs roughly double the unadjusted output to match an equivalent
   F1 athlete's adjusted rating (0.4 vs 0.8), on top of weaker bonus
   generation (1/4) and slower prestige accrual. The deterministic regression
   suite proves the upset path is structurally open (an exceptional F3 season
   outranks a weak Super/F1 season on final rating with no quota blocking
-  it), so the observed zero reflects rarity in a 6-season window, not
-  impossibility. Longer runs (20-50 seasons, supported by
-  `MTG_CUP_CALIBRATION_SEASONS`) should watch for the first F3 selections as
-  prestige accumulates; if F3 remains at zero through 50 seasons, that is the
-  documented trigger to review the 1000/800/600/400 factors, not to add a
-  quota.
-- Pool recorded zero selections in 3776 Color candidate-slots across both
-  seeds. Pool athletes score zero performance and form by design, so even
+  it), so the observed zero reflects rarity in a 20-season window, not
+  impossibility. The 20-season window strengthens the earlier 6-season
+  rarity read (still only one F2 selection in 5120 F2 slots): prestige has
+  now accumulated through 20 seasons and F3 still has not broken through,
+  but the documented trigger remains F3 at zero through 50 seasons before
+  reviewing the 1000/800/600/400 factors, not adding a quota.
+- Pool recorded zero selections in 12512 Color candidate-slots in the primary
+  20-season run (zero across both seeds). Pool athletes score zero performance and form by design, so even
   maximum bonus plus prestige (450/1000 rating points) cannot beat active
   athletes with ordinary seasons. Long-term pool athletes retain no stale
   recent-form advantage: historical stages never leak into selection inputs
@@ -183,11 +215,13 @@ No component dominates unexpectedly:
   Type Cup fields all five viable types (5 teams x 4 = 20 athletes) every
   even season. Real catalogs with hundreds of types will produce larger,
   more varied fields; cross-tier dynamics there may differ.
-- Six seasons is short for prestige accumulation (few titles, appearances
-  and podiums exist yet) and for observing rare F2/F3 breakthroughs. The
-  harness supports 20-500 season runs via `MTG_CUP_CALIBRATION_SEASONS`;
-  a 6-season run takes ~6 minutes on CI-class hardware and longer windows
-  were outside this task's time budget.
+- Twenty seasons now covers meaningful prestige accumulation (Color Super
+  prestige norms ~700-830 by the mid-teens seasons) and a large enough window
+  to see that F2 breakthroughs are rare (1 in 5120 F2 slots) and F3
+  breakthroughs rarer still (0 in 5120). The harness supports up to 500
+  seasons via `MTG_CUP_CALIBRATION_SEASONS`; a 20-season run takes ~48 minutes
+  on this runner (Release, Linux) and longer windows remain opt-in outside
+  normal CI.
 - Aggregation covers the persisted shortlists (top 12 per color/type) plus
   full-field candidate denominators from memberships; full-field rating
   distributions are not stored and were not reconstructed.
@@ -203,11 +237,14 @@ No component dominates unexpectedly:
 
 1. Normal backend suite plus the 10-test synthetic cross-tier regression
    suite (in normal CI).
-2. Opt-in calibration: 6 seasons (seed 4242) + 4 seasons (seed 987654);
-   both seeds show the same structural pattern (Super ~50%, F1 ~2-5%,
-   F2/F3/Pool ~0%, regular F1-over-Super upsets on form/performance).
+2. Opt-in calibration: 20 seasons (seed 4242, checksum
+   `81f00b878eab3e6fecb7b1ef91a1396bd10c2ba48dc9f1fc8f28407f03417e13`)
+   + 4 seasons (seed 987654); both seeds show the same structural pattern
+   (Super ~50-55%, F1 ~2-5%, F2/F3/Pool ~0%, regular F1-over-Super upsets on
+   form/performance, and the 20-season first-six editions reproduce the
+   earlier 6-season prefix exactly).
 3. Same-save re-aggregation reproduces the checksum exactly (asserted
-   in-test for both runs).
+   in-test for the 20-season run).
 4. Lower-tier-beats-higher-tier examples inspected for Color and Type Cups;
    each carries the dominant-component explanation (form/performance).
 5. No F3 selection was treated as equal to an equivalent F1/Superleague
