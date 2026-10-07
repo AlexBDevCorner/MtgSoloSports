@@ -23,14 +23,13 @@ public sealed class ColorCupSelectionApiTests
     [Fact]
     public async Task Select_Season1_PersistsEightTeamsOfFour_OrderedWithComponents()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cupsel-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Season1", 5150UL, 6161UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
 
             SelectColorCupTeamsHandler handler = new(store);
-            SelectColorCupTeamsResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            SelectColorCupTeamsResponse response = await handler.HandleAsync(saveId);
 
             response.SourceSeasonNumber.ShouldBe(1);
             response.TotalSelected.ShouldBe(32);
@@ -64,11 +63,11 @@ public sealed class ColorCupSelectionApiTests
                 }
             }
 
-            await AssertPersistedMatchesResponseAsync(store, created.Detail.SaveId, response);
-            await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
+            await AssertPersistedMatchesResponseAsync(store, saveId, response);
+            await AssertQueryMatchesAsync(store, saveId, response);
 
             await Should.ThrowAsync<SelectColorCupTeamsConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -79,24 +78,23 @@ public sealed class ColorCupSelectionApiTests
     [Fact]
     public async Task Select_SuperleagueAthletes_RepresentOriginalColor()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cupsel-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Super", 7171UL, 8181UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
             RebalanceFeedersHandler rebalance = new(store);
-            await rebalance.HandleAsync(created.Detail.SaveId);
+            await rebalance.HandleAsync(saveId);
 
             SelectColorCupTeamsHandler handler = new(store);
-            SelectColorCupTeamsResponse response = await handler.HandleAsync(created.Detail.SaveId, sourceSeasonNumber: 1);
+            SelectColorCupTeamsResponse response = await handler.HandleAsync(saveId, sourceSeasonNumber: 1);
 
             response.TotalSelected.ShouldBe(32);
             HashSet<int> selectedIds = response.Teams.SelectMany(t => t.Members).Select(m => m.SaveAthleteId).ToHashSet();
             selectedIds.Count.ShouldBe(32);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity seasonTwo = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2);
             LeagueEntity superleague = await context.Leagues.AsNoTracking()
                 .SingleAsync(e => e.SeasonId == seasonTwo.Id && e.Kind == (int)LeagueKind.Superleague);
@@ -149,16 +147,15 @@ public sealed class ColorCupSelectionApiTests
     [Fact]
     public async Task Select_EvenSeason_Conflicts()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cupsel-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Even", 303UL, 404UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            await MarkSeasonTwoCompleteAsync(store, created.Detail.SaveId);
+            await MarkSeasonTwoCompleteAsync(store, saveId);
 
             SelectColorCupTeamsHandler handler = new(store);
             await Should.ThrowAsync<SelectColorCupTeamsConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId, sourceSeasonNumber: 2));
+                () => handler.HandleAsync(saveId, sourceSeasonNumber: 2));
         }
         finally
         {
@@ -186,12 +183,10 @@ public sealed class ColorCupSelectionApiTests
     [Fact]
     public async Task Report_ExplainsEveryTeam_WithRankingBeyondTheCut()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cupsel-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Report", 4242UL, 4343UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            await CompleteSeasonOneAsync(store, saveId);
             SelectColorCupTeamsResponse selected = await new SelectColorCupTeamsHandler(store).HandleAsync(saveId);
 
             GetColorCupSelectionReportHandler query = new(store);
@@ -245,13 +240,10 @@ public sealed class ColorCupSelectionApiTests
     [Fact]
     public async Task Report_SelectionWithoutStoredReport_ListsOnlySelectedAthletes()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Color Cup template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cupsel-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Cup Legacy", 4444UL, 4545UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-            await CompleteSeasonOneAsync(store, saveId);
-            await new SelectColorCupTeamsHandler(store).HandleAsync(saveId);
             using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 await context.CupSelectionReports.ExecuteDeleteAsync();
