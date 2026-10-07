@@ -150,6 +150,7 @@ builder.Services.AddScoped<GetColorCupTeamResultHandler>();
 builder.Services.AddScoped<SelectTypeCupTeamsHandler>();
 builder.Services.AddScoped<GetTypeCupSelectionHandler>();
 builder.Services.AddScoped<GetTypeCupSelectionReportHandler>();
+builder.Services.AddScoped<DrawTypeCupQualificationGroupsHandler>();
 builder.Services.AddScoped<RunTypeCupTeamHandler>();
 builder.Services.AddScoped<PlayTypeCupTeamRoundHandler>();
 builder.Services.AddScoped<GetTypeCupTeamResultHandler>();
