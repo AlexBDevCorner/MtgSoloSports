@@ -1,16 +1,10 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Features.Records.GetRecords;
 using MtgSoloSports.Features.Records.ListHonours;
-using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Stories;
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -21,15 +15,13 @@ public sealed class RecordsTests
     [Fact]
     public async Task AfterFullSeason_PersistsEightFeederHonoursAndRecordStories()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-records-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Records Season One", 424201UL, 848402UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
-            await AssertPodiumHonoursAsync(store, created.Detail.SaveId);
-            await AssertWinOnlyRecordsAsync(store, created.Detail.SaveId);
+            await AssertPodiumHonoursAsync(store, saveId);
+            await AssertWinOnlyRecordsAsync(store, saveId);
         }
         finally
         {
@@ -98,14 +90,12 @@ public sealed class RecordsTests
     [Fact]
     public async Task HonourRebuild_IsIdempotent()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-records-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Records Rebuild", 777001UL, 888002UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             int before = await context.Honours.CountAsync();
             before.ShouldBe(72);
             await HonourUpdater.RebuildAllAsync(context, CancellationToken.None);
@@ -122,20 +112,18 @@ public sealed class RecordsTests
     [Fact]
     public async Task RecordEmitter_IsIdempotentWithoutNewBreaks()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-records-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Records Idempotent", 111003UL, 222004UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
             int before;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 before = (await context.StoryEvents.AsNoTracking().ToListAsync()).Count(e => string.Equals(e.EventType, StoryEventType.NewRecord, StringComparison.Ordinal));
             }
 
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity season = await context.Seasons.SingleAsync(e => e.SeasonNumber == 1);
                 bool emitted = await RecordStoryEmitter.EmitBreaksAsync(context, season, CancellationToken.None);
@@ -143,7 +131,7 @@ public sealed class RecordsTests
                 await context.SaveChangesAsync();
             }
 
-            using (SaveDbContext verify = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext verify = store.OpenDbContext(saveId))
             {
                 int after = (await verify.StoryEvents.AsNoTracking().ToListAsync()).Count(e => string.Equals(e.EventType, StoryEventType.NewRecord, StringComparison.Ordinal));
                 after.ShouldBe(before);
@@ -158,24 +146,22 @@ public sealed class RecordsTests
     [Fact]
     public async Task RecordEmitter_ReplacementEmitsOnlyForOutrightBreak()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-records-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Records Replacement", 333005UL, 444006UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
             int stageRecordBefore;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 GetRecordsHandler handler = new(store);
-                GetRecordsResponse before = await handler.HandleAsync(created.Detail.SaveId);
+                GetRecordsResponse before = await handler.HandleAsync(saveId);
                 stageRecordBefore = before.Records.Single(r => string.Equals(r.RecordKey, RecordKey.StageWins, StringComparison.Ordinal)).Value;
                 stageRecordBefore.ShouldBeGreaterThan(0);
             }
 
             int boostedAthlete;
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 AthleteCareerEntity career = await context.AthleteCareers.OrderBy(e => e.SaveAthleteId).FirstAsync();
                 boostedAthlete = career.SaveAthleteId;
@@ -184,7 +170,7 @@ public sealed class RecordsTests
                 await context.SaveChangesAsync();
             }
 
-            using (SaveDbContext context = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext context = store.OpenDbContext(saveId))
             {
                 SeasonEntity season = await context.Seasons.SingleAsync(e => e.SeasonNumber == 1);
                 bool emitted = await RecordStoryEmitter.EmitBreaksAsync(context, season, CancellationToken.None);
@@ -192,10 +178,10 @@ public sealed class RecordsTests
                 await context.SaveChangesAsync();
             }
 
-            using (SaveDbContext verify = store.OpenDbContext(created.Detail.SaveId))
+            using (SaveDbContext verify = store.OpenDbContext(saveId))
             {
                 GetRecordsHandler handler = new(store);
-                GetRecordsResponse after = await handler.HandleAsync(created.Detail.SaveId);
+                GetRecordsResponse after = await handler.HandleAsync(saveId);
                 after.Records.Single(r => string.Equals(r.RecordKey, RecordKey.StageWins, StringComparison.Ordinal)).Value.ShouldBe(stageRecordBefore + 5);
                 after.Records.Single(r => string.Equals(r.RecordKey, RecordKey.StageWins, StringComparison.Ordinal)).Holders.Select(h => h.AthleteId).ShouldBe([boostedAthlete]);
             }
@@ -209,14 +195,12 @@ public sealed class RecordsTests
     [Fact]
     public async Task Records_DoNotReadRoundPayloads_ValuesMatchNormalizedStandings()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-records-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Records No Payloads", 555007UL, 666008UL, UniverseTestCatalog.Build());
-            CompleteSeasonHandler fast = new(store);
-            await fast.HandleAsync(created.Detail.SaveId);
 
-            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            using SaveDbContext context = store.OpenDbContext(saveId);
             int payloadRows = await context.Rounds.CountAsync();
             payloadRows.ShouldBeGreaterThan(0);
 
@@ -226,7 +210,7 @@ public sealed class RecordsTests
             int expectedMax = careerStageWins.Values.Max();
 
             GetRecordsHandler handler = new(store);
-            GetRecordsResponse records = await handler.HandleAsync(created.Detail.SaveId);
+            GetRecordsResponse records = await handler.HandleAsync(saveId);
             records.Records.Single(r => string.Equals(r.RecordKey, RecordKey.StageWins, StringComparison.Ordinal)).Value.ShouldBe(expectedMax);
         }
         finally
@@ -235,31 +219,4 @@ public sealed class RecordsTests
         }
     }
 
-    private static (SaveStore Store, string Root) CreateStore()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-records-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        IOptions<SaveStorageOptions> options = Options.Create(new SaveStorageOptions { SavesRoot = root });
-        TestHostEnvironment environment = new(root);
-        SaveSqliteConnectionInterceptor interceptor = new();
-        SaveDbContextFactory factory = new(interceptor);
-        SaveStore store = new(options, environment, factory, TimeProvider.System, NullLogger<SaveStore>.Instance);
-        return (store, root);
-    }
-
-    private sealed class TestHostEnvironment : IHostEnvironment
-    {
-        public TestHostEnvironment(string contentRoot)
-        {
-            ContentRootPath = contentRoot;
-        }
-
-        public string EnvironmentName { get; set; } = "Test";
-
-        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
-
-        public string ContentRootPath { get; set; }
-
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
-    }
 }

@@ -55,30 +55,29 @@ public sealed class AutomaticMovementTests
     [Fact]
     public async Task Resolve_AfterSyntheticSeasonTwo_IdentifiesBandsAndPreservesHistory()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Auto Full", 707UL, 808UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
 
-            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId, placeWhiteLast: false);
+            await FillSeasonTwoFeedersAsync(store, saveId);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, saveId, placeWhiteLast: false);
 
             (int stageCount, int seasonCount, long lifetimeBonus, ulong rngState) =
-                await CapturePreservationAsync(store, created.Detail.SaveId);
+                await CapturePreservationAsync(store, saveId);
 
             ResolveAutomaticMovementHandler handler = new(store);
-            ResolveAutomaticMovementResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            ResolveAutomaticMovementResponse response = await handler.HandleAsync(saveId);
 
             AssertBands(response);
-            await AssertTransitionAsync(store, created.Detail.SaveId, response);
-            await AssertPreservationAsync(store, created.Detail.SaveId, stageCount, seasonCount, lifetimeBonus, rngState);
-            await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
+            await AssertTransitionAsync(store, saveId, response);
+            await AssertPreservationAsync(store, saveId, stageCount, seasonCount, lifetimeBonus, rngState);
+            await AssertQueryMatchesAsync(store, saveId, response);
 
             await Should.ThrowAsync<ResolveAutomaticMovementConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -89,24 +88,23 @@ public sealed class AutomaticMovementTests
     [Fact]
     public async Task Resolve_MultipleRelegatedSameColor_ShareReturningFeeder()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Auto Cluster", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
 
-            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
+            await FillSeasonTwoFeedersAsync(store, saveId);
             // Force all White Superleague athletes into the relegated band so the
             // White feeder receives several returning athletes at once.
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId, placeWhiteLast: true);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, saveId, placeWhiteLast: true);
 
             ResolveAutomaticMovementHandler handler = new(store);
-            ResolveAutomaticMovementResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            ResolveAutomaticMovementResponse response = await handler.HandleAsync(saveId);
 
-            await AssertWhiteClusterAsync(store, created.Detail.SaveId, response);
-            await AssertTransitionAsync(store, created.Detail.SaveId, response);
+            await AssertWhiteClusterAsync(store, saveId, response);
+            await AssertTransitionAsync(store, saveId, response);
         }
         finally
         {
@@ -117,26 +115,25 @@ public sealed class AutomaticMovementTests
     [Fact]
     public async Task Resolve_ResponseCarriesCardArtwork_MatchesPersistedAthletes()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Auto Artwork", 4242UL, 8484UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
             CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
+            await inaugural.HandleAsync(saveId);
 
-            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId, placeWhiteLast: false);
+            await FillSeasonTwoFeedersAsync(store, saveId);
+            await InsertSyntheticSeasonTwoStandingsAsync(store, saveId, placeWhiteLast: false);
 
             ResolveAutomaticMovementHandler handler = new(store);
-            ResolveAutomaticMovementResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            ResolveAutomaticMovementResponse response = await handler.HandleAsync(saveId);
 
             // Presentation-only artwork must ride along with authoritative movement
             // facts; sporting counts stay exactly 8 promotions / 8 relegations.
             response.Promoted.Count.ShouldBe(8);
             response.Relegated.Count.ShouldBe(8);
 
-            Dictionary<int, string?> images = await LoadAthleteImagesAsync(store, created.Detail.SaveId);
+            Dictionary<int, string?> images = await LoadAthleteImagesAsync(store, saveId);
             AssertImagesMatch(response.Safe, images);
             AssertImagesMatch(response.Promoted, images);
             AssertImagesMatch(response.Relegated, images);
@@ -146,7 +143,7 @@ public sealed class AutomaticMovementTests
             // The historical read model carries the same artwork so revisiting a
             // completed event renders the same tiles without rederiving leagues.
             GetAutomaticMovementHandler query = new(store);
-            GetAutomaticMovementResponse historical = await query.HandleAsync(created.Detail.SaveId, fromSeasonNumber: 2);
+            GetAutomaticMovementResponse historical = await query.HandleAsync(saveId, fromSeasonNumber: 2);
             AssertImagesMatch(historical.Promoted, images);
             AssertImagesMatch(historical.Relegated, images);
             historical.Promoted.Select(m => m.AthleteId).ShouldBe(response.Promoted.Select(m => m.AthleteId).ToList());

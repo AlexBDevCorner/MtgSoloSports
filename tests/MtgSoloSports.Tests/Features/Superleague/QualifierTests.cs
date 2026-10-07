@@ -55,35 +55,29 @@ public sealed class QualifierTests
     [Fact]
     public async Task Run_AfterAutomaticMovement_Produces32And8AndPreservesHistory()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-qual-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Qual Full", 707UL, 808UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
-            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId);
-
             ResolveAutomaticMovementHandler movement = new(store);
-            ResolveAutomaticMovementResponse plan = await movement.HandleAsync(created.Detail.SaveId);
+            ResolveAutomaticMovementResponse plan = await movement.HandleAsync(saveId);
 
             (int stages, int seasons, int rounds, int qualifierRounds, int qualifierStandings, long lifetime, ulong rng, long championship) =
-                await CapturePreservationAsync(store, created.Detail.SaveId);
+                await CapturePreservationAsync(store, saveId);
             qualifierRounds.ShouldBe(0);
             qualifierStandings.ShouldBe(0);
 
             RunQualifierHandler handler = new(store);
-            RunQualifierResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RunQualifierResponse response = await handler.HandleAsync(saveId);
 
             AssertField(response, plan);
             AssertQualified(response);
-            await AssertPersistedAsync(store, created.Detail.SaveId, response);
-            await AssertPreservationAsync(store, created.Detail.SaveId, stages, seasons, rounds, lifetime, championship, rng);
-            await AssertQueryMatchesAsync(store, created.Detail.SaveId, response);
+            await AssertPersistedAsync(store, saveId, response);
+            await AssertPreservationAsync(store, saveId, stages, seasons, rounds, lifetime, championship, rng);
+            await AssertQueryMatchesAsync(store, saveId, response);
 
             await Should.ThrowAsync<RunQualifierConflictException>(
-                () => handler.HandleAsync(created.Detail.SaveId));
+                () => handler.HandleAsync(saveId));
         }
         finally
         {
@@ -94,11 +88,11 @@ public sealed class QualifierTests
     [Fact]
     public async Task Run_SameSeed_IsDeterministic()
     {
-        // MSS-067: one prepared save forked into two isolated copies instead of
-        // simulating the same Season 1 twice; both runs still execute
+        // MSS-067: two isolated forks of the shared qualifier template instead
+        // of simulating the same Season 1 twice; both runs still execute
         // independently from bit-identical starting state.
-        var (store, root, saveId) = await PrepareQualifierForSeedAsync(4242UL, 777UL);
-        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-qual-det-");
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-det-");
+        var (secondStore, secondRoot, secondId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-det-");
         try
         {
             RunQualifierResponse first = await new RunQualifierHandler(store).HandleAsync(saveId);
@@ -119,28 +113,22 @@ public sealed class QualifierTests
     [Fact]
     public async Task Run_ActiveBonusAppliesIdenticallyToBothRoles()
     {
-        var (store, root) = CreateStore();
+        // MSS-067: shared pre-resolve qualifier template forked into an isolated save.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierPreResolveAsync("mtgsolosports-qual-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Qual Bonus", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(store, created.Detail.SaveId);
-            CreateInauguralSuperleagueHandler inaugural = new(store);
-            await inaugural.HandleAsync(created.Detail.SaveId);
-            await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId);
-            await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId);
-
             ResolveAutomaticMovementHandler movement = new(store);
-            await movement.HandleAsync(created.Detail.SaveId);
+            await movement.HandleAsync(saveId);
 
-            (int incumbentId, int challengerId) = await InsertEqualBonusAsync(store, created.Detail.SaveId);
+            (int incumbentId, int challengerId) = await InsertEqualBonusAsync(store, saveId);
 
             RunQualifierHandler handler = new(store);
-            RunQualifierResponse response = await handler.HandleAsync(created.Detail.SaveId);
+            RunQualifierResponse response = await handler.HandleAsync(saveId);
 
-            int incumbentBonus = await LoadRoundOneActiveBonusAsync(store, created.Detail.SaveId, incumbentId);
-            int challengerBonus = await LoadRoundOneActiveBonusAsync(store, created.Detail.SaveId, challengerId);
-            int expectedIncumbent = await ComputeExpectedActiveBonusAsync(store, created.Detail.SaveId, incumbentId);
-            int expectedChallenger = await ComputeExpectedActiveBonusAsync(store, created.Detail.SaveId, challengerId);
+            int incumbentBonus = await LoadRoundOneActiveBonusAsync(store, saveId, incumbentId);
+            int challengerBonus = await LoadRoundOneActiveBonusAsync(store, saveId, challengerId);
+            int expectedIncumbent = await ComputeExpectedActiveBonusAsync(store, saveId, incumbentId);
+            int expectedChallenger = await ComputeExpectedActiveBonusAsync(store, saveId, challengerId);
             incumbentBonus.ShouldBe(expectedIncumbent);
             challengerBonus.ShouldBe(expectedChallenger);
             incumbentBonus.ShouldBeGreaterThan(0);
@@ -263,20 +251,6 @@ public sealed class QualifierTests
         again.RoundCount.ShouldBe(16);
     }
 
-    private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareQualifierForSeedAsync(ulong seed, ulong stream)
-    {
-        var (store, root) = CreateStore();
-        SaveStore.CreationRecord created = await store.CreateAsync("Qual Det", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
-        await CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        CreateInauguralSuperleagueHandler inaugural = new(store);
-        await inaugural.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        await FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        await InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);
-        ResolveAutomaticMovementHandler movement = new(store);
-        await movement.HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
-        return (store, root, created.Detail.SaveId);
-    }
-
     private static async Task<(int StageCount, int SeasonCount, int RoundCount, int QualifierRounds, int QualifierStandings, long Lifetime, ulong Rng, long Championship)> CapturePreservationAsync(
         SaveStore store, Guid saveId)
     {
@@ -292,16 +266,6 @@ public sealed class QualifierTests
         unchecked
         {
             return (stages, seasons, rounds, qualifierRounds, qualifierStandings, lifetime, (ulong)rng.State, championship);
-        }
-    }
-
-    private static async Task CompleteSeasonOneAsync(SaveStore store, Guid saveId)
-    {
-        CompleteStageForAllLeaguesHandler bulk = new(store);
-        for (int stage = 1; stage <= 32; stage++)
-        {
-            CompleteStageForAllLeaguesResponse completed = await bulk.HandleAsync(saveId).ConfigureAwait(false);
-            completed.CompletedStage.ShouldBe(stage);
         }
     }
 
