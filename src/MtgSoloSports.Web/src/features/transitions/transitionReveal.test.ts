@@ -65,6 +65,7 @@ describe('MSS-053 transition keys', () => {
       transition: 'movement',
       eventSeason: 2,
       group: null,
+      qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?transition=rebalance&season=3'), {
       name: 'live',
@@ -76,6 +77,7 @@ describe('MSS-053 transition keys', () => {
       transition: 'rebalance',
       eventSeason: 3,
       group: null,
+      qualifier: null,
     });
   });
 

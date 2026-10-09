@@ -71,6 +71,7 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, ''), {
       name: 'live',
@@ -82,6 +83,7 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      qualifier: null,
     });
     assert.equal(livePath(SAVE, { league: 7, round: 3 }), `/saves/${SAVE}/live?league=7&round=3`);
     assert.equal(livePath(SAVE, { league: 7 }), `/saves/${SAVE}/live?league=7`);
@@ -127,6 +129,7 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/history`, '?season=0&competition=x'), {
       name: 'history',
@@ -151,6 +154,7 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: 2,
       group: null,
+      qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=bogus&round=5'), {
       name: 'live',
@@ -162,6 +166,7 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      qualifier: null,
     });
     assert.equal(
       livePath(SAVE, { event: 'color-cup-team', season: 3, group: 2, round: 4 }),

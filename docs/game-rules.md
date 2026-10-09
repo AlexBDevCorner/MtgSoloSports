@@ -180,9 +180,9 @@ The next Superleague therefore contains:
 
 There are no color quotas in Superleague. Every move is one adjacent tier only; there is no division skipping.
 
-## 11. Superleague Qualifier
+## 11. Superleague Qualifier (one qualifier: 32 athletes, 16 rounds)
 
-The qualifier contains 32 athletes: 8 Superleague incumbents plus 24 F1 challengers. It behaves like one standard 16-round stage. Active bonus applies; no new bonus or championship points are generated. The top 8 qualify/remain in Superleague. Results are career history but not normal league championship points.
+One Superleague qualifier per ordinary postseason: 32 athletes (8 Superleague incumbents from places 17–24 plus 24 F1 challengers from places 2–4) over exactly 16 rounds. It behaves like one standard 16-round stage. Active bonus applies; no new bonus or championship points are generated. The top 8 qualify/remain in Superleague. Results are career history but not normal league championship points. Live shows this event as `Round N / 16` (never as the phase-wide 272-round total).
 
 ## 11a. Feeder movement: F1↔F2 and F2↔F3 (per sporting color)
 
@@ -210,15 +210,17 @@ F2 ranks 1-8 are automatic-up only, 9-16 challenge upward only, 17-24 defend dow
 
 This permits 8 guaranteed plus up to 8 qualifier promotions into F1 per color (at most 16/32 new F1 athletes), and likewise into F2.
 
-## 11b. Feeder qualifiers (16 athletes each)
+## 11b. Feeder qualifiers (one qualifier each: 16 athletes, 16 rounds; 17 qualifiers / 272 rounds per phase)
 
-One 16-athlete / 16-round qualifier per color per boundary (8 F1↔F2 + 8 F2↔F3 = 16 feeder events, plus 1 Superleague = 17 total per ordinary postseason):
+One 16-athlete / 16-round qualifier per color per boundary (8 F1↔F2 + 8 F2↔F3 = 16 feeder events, plus 1 Superleague = 17 qualifiers total per ordinary postseason, 272 rounds total across the phase):
 
 - 8 upper-tier incumbents + 8 lower-tier challengers;
 - same 16-round simulation principles, active bonus applies, no new bonus or championship points;
 - top 8 occupy/remain in the higher tier, bottom 8 occupy/remain in the lower tier.
 
-Canonical RNG order is Superleague first, then F1↔F2 by sporting-color enum, then F2↔F3 by color enum, so equivalent state consumes RNG identically. Each event persists immutable replay payload/checksum/RNG before/after with boundary + color identity; retry resumes from completed events and never reruns them. The qualifiers phase is complete only when all required events are resolved. Qualifier participation is retained as history without counting as a major honour/title.
+Each qualifier is an independent event with its own 16-round playthrough (`Round N / 16`), animated reveal, cumulative standings and top-8 cutoff. The phase-wide totals (`X / 17 qualifiers`, `Y / 272 total rounds`) appear only on the qualifier overview / Dashboard lifecycle step, clearly labelled as totals across the entire phase — never under an individual event title.
+
+Canonical RNG order is Superleague first, then F1↔F2 by sporting-color enum, then F2↔F3 by color enum, so equivalent state consumes RNG identically. Each event persists immutable replay payload/checksum/RNG before/after with boundary + color identity; single-round, single-event and run-all mutations resume persisted partial rounds instead of replaying them. Retries never rerun completed events, double-apply outcomes or break the RNG chain; out-of-order mutations are rejected. The qualifiers phase is complete only when all required events are resolved. Qualifier participation is retained as history without counting as a major honour/title.
 
 ## 12. Feeder rebalancing and common pool
 
@@ -316,7 +318,7 @@ Competition uses the same #1/#2/#3/#4 team-group model as the Color Cup team eve
 1. Stages 1-32
 2. Final league standings
 3. Automatic Superleague movement
-4. Superleague Qualifier
+4. Qualifiers (17 events × 16 rounds: 1 Superleague + 8 F1↔F2 + 8 F2↔F3; 272 rounds total)
 5. Next Superleague roster
 6. Feeder rebalancing/common-pool draws
 7. Color Cup or Type Cup

@@ -14,6 +14,7 @@ import { useDashboard } from './features/dashboard/useDashboard';
 import { selectionForAction } from './features/events/eventModel';
 import { HistoryPage } from './features/history/HistoryPage';
 import { LiveEventView } from './features/live/LiveEventView';
+import { LiveQualifierView } from './features/live/LiveQualifierView';
 import { LivePage } from './features/live/LivePage';
 import { QualifierDetailPage, QualifiersPage } from './features/qualifiers/QualifiersPage';
 import { RecordsPage } from './features/records/RecordsPage';
@@ -255,6 +256,37 @@ export default function App() {
           );
         }
         if (liveEvent && eventSeason !== null) {
+          // MSS-069: individual feeder qualifiers keep distinct Live URLs
+          // (`?event=qualifier&qualifier=f1f2-white&season=N&round=M`) with
+          // their own 16-round reveal. The Superleague event keeps the legacy
+          // `?event=qualifier` URL and its 32-athlete reveal (now 16 / 16).
+          if (liveEvent === 'qualifier' && route.qualifier && route.qualifier !== 'superleague') {
+            const canPlay =
+              (status?.legalNextActions ?? []).includes('RunQualifier') &&
+              status?.eventProgress?.sourceSeasonNumber === eventSeason;
+            return (
+              <LiveQualifierView
+                key={`qualifier:${route.qualifier}:${eventSeason}`}
+                saveId={saveId}
+                qualifier={route.qualifier}
+                season={eventSeason}
+                urlRound={route.round}
+                canPlay={canPlay}
+                onSelectRound={(round) => {
+                  navigate(
+                    livePath(saveId, {
+                      event: liveEvent,
+                      qualifier: route.qualifier,
+                      season: eventSeason,
+                      round,
+                    }),
+                    { replace: true },
+                  );
+                }}
+                onMutated={dashboard.refresh}
+              />
+            );
+          }
           return (
             <LiveEventView
               key={`${liveEvent}:${eventSeason}`}

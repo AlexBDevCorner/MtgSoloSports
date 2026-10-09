@@ -78,7 +78,7 @@ public sealed class BoundaryQualifierRunner
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         QualifierState state = await LoadStateAsync(context, saveId, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
-        List<QualifierRoundPayload> payloads = new(state.Rules.FeederQualifierRounds);
+        List<QualifierRoundPayload> payloads = new(state.Played);
         Pcg32State current = state.Rng;
         while (payloads.Count < state.Rules.FeederQualifierRounds)
         {
@@ -104,6 +104,7 @@ public sealed class BoundaryQualifierRunner
         FeederQualifierFieldSelection.FeederField Field,
         List<AdvanceRoundHandler.MemberRow> Roster,
         Dictionary<int, Bonus> ActiveBonuses,
+        List<QualifierRoundPayload> Played,
         Pcg32State Rng);
 
     internal sealed record QualifierSimulation(
@@ -131,6 +132,12 @@ public sealed class BoundaryQualifierRunner
     {
         public const int PayloadVersion = 1;
 
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = false,
+        };
+
         public string ToJson()
         {
             var doc = new
@@ -151,6 +158,47 @@ public sealed class BoundaryQualifierRunner
             };
             return JsonSerializer.Serialize(doc);
         }
+
+        public static QualifierRoundPayload FromJson(string json)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(json);
+            string decoded = Features.History.RoundPayloadCodec.DecodeToJson(json);
+            FeederPayloadDocument? document = JsonSerializer.Deserialize<FeederPayloadDocument>(decoded, JsonOptions);
+            if (document is null)
+            {
+                throw new InvalidOperationException("Feeder qualifier round payload is empty.");
+            }
+
+            return new QualifierRoundPayload(
+                document.Version,
+                document.RulesVersion,
+                document.FromSeasonNumber,
+                document.ToSeasonNumber,
+                (QualifierBoundary)document.Boundary,
+                document.SportingColor,
+                document.RoundNumber,
+                document.RngBeforeState,
+                document.RngBeforeStream,
+                document.RngAfterState,
+                document.RngAfterStream,
+                document.Checksum,
+                document.Placements);
+        }
+
+        private sealed record FeederPayloadDocument(
+            [property: System.Text.Json.Serialization.JsonPropertyName("version")] int Version,
+            [property: System.Text.Json.Serialization.JsonPropertyName("rulesVersion")] int RulesVersion,
+            [property: System.Text.Json.Serialization.JsonPropertyName("fromSeasonNumber")] int FromSeasonNumber,
+            [property: System.Text.Json.Serialization.JsonPropertyName("toSeasonNumber")] int ToSeasonNumber,
+            [property: System.Text.Json.Serialization.JsonPropertyName("boundary")] int Boundary,
+            [property: System.Text.Json.Serialization.JsonPropertyName("sportingColor")] int SportingColor,
+            [property: System.Text.Json.Serialization.JsonPropertyName("roundNumber")] int RoundNumber,
+            [property: System.Text.Json.Serialization.JsonPropertyName("rngBeforeState")] ulong RngBeforeState,
+            [property: System.Text.Json.Serialization.JsonPropertyName("rngBeforeStream")] ulong RngBeforeStream,
+            [property: System.Text.Json.Serialization.JsonPropertyName("rngAfterState")] ulong RngAfterState,
+            [property: System.Text.Json.Serialization.JsonPropertyName("rngAfterStream")] ulong RngAfterStream,
+            [property: System.Text.Json.Serialization.JsonPropertyName("checksum")] string Checksum,
+            [property: System.Text.Json.Serialization.JsonPropertyName("placements")] IReadOnlyList<RoundPayloadEntry> Placements);
     }
 
     internal static async Task<QualifierState> LoadStateAsync(
@@ -167,8 +215,7 @@ public sealed class BoundaryQualifierRunner
         (SeasonEntity source, SeasonEntity next) = await LoadPendingTransitionAsync(context, cancellationToken).ConfigureAwait(false);
         await EnsureAutomaticMovementResolvedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         await EnsureQualifierUnresolvedAsync(context, source, next, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
-        await EnsureNoPartialAsync(context, source, next, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
-        await EnsureCanonicalOrderAsync(context, source, next, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
+        await EnsureCanonicalOrderAsync(context, source, next, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
         await EnsureNoSuperleagueInProgressAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
         (LeagueEntity upper, LeagueEntity lower) = await LoadBoundaryLeaguesAsync(
@@ -191,9 +238,91 @@ public sealed class BoundaryQualifierRunner
         Dictionary<int, Bonus> activeBonuses = await LoadActiveBonusesAsync(
             context, roster, next, rules, cancellationToken).ConfigureAwait(false);
 
+        List<QualifierRoundPayload> played = await LoadPlayedRoundsAsync(context, source, next, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
+        ValidateInProgress(played, rules, rngRow.ToState(), boundary, sportingColor);
+
         return new QualifierState(
             rules, metadata, source, next, boundary, sportingColor,
-            upper, lower, field, roster, activeBonuses, rngRow.ToState());
+            upper, lower, field, roster, activeBonuses, played, rngRow.ToState());
+    }
+
+    internal static async Task<List<QualifierRoundPayload>> LoadPlayedRoundsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        SeasonEntity next,
+        QualifierBoundary boundary,
+        int sportingColor,
+        CancellationToken cancellationToken)
+    {
+        List<QualifierRoundEntity> rows = await context.QualifierRounds
+            .AsNoTracking()
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == sportingColor)
+            .OrderBy(e => e.RoundNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<QualifierRoundPayload> played = new(rows.Count);
+        foreach (QualifierRoundEntity row in rows)
+        {
+            played.Add(QualifierRoundPayload.FromJson(row.PayloadJson));
+        }
+
+        return played;
+    }
+
+    internal static void ValidateInProgress(
+        List<QualifierRoundPayload> played,
+        RulesV1 rules,
+        Pcg32State rngRow,
+        QualifierBoundary boundary,
+        int sportingColor)
+    {
+        ArgumentNullException.ThrowIfNull(played);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (played.Count >= rules.FeederQualifierRounds)
+        {
+            throw new InvalidOperationException(
+                $"Feeder qualifier {boundary} color {sportingColor} has all {rules.FeederQualifierRounds} rounds persisted but no standings; sporting state is corrupt.");
+        }
+
+        for (int index = 0; index < played.Count; index++)
+        {
+            QualifierRoundPayload payload = played[index];
+            if (payload.RoundNumber != index + 1)
+            {
+                throw new InvalidOperationException(
+                    $"Feeder qualifier {boundary} color {sportingColor} round sequence is corrupt: expected round {index + 1}, found {payload.RoundNumber}.");
+            }
+
+            if (payload.Boundary != boundary || payload.SportingColor != sportingColor)
+            {
+                throw new InvalidOperationException(
+                    $"Feeder qualifier {boundary} color {sportingColor} round {payload.RoundNumber} has corrupt event identity.");
+            }
+
+            if (index > 0)
+            {
+                QualifierRoundPayload previous = played[index - 1];
+                if (payload.RngBeforeState != previous.RngAfterState || payload.RngBeforeStream != previous.RngAfterStream)
+                {
+                    throw new InvalidOperationException(
+                        $"Feeder qualifier {boundary} color {sportingColor} RNG chain is broken before round {payload.RoundNumber}.");
+                }
+            }
+        }
+
+        if (played.Count == 0)
+        {
+            return;
+        }
+
+        QualifierRoundPayload last = played[^1];
+        Pcg32State expectedRow = new(last.RngAfterState, last.RngAfterStream);
+        if (rngRow != expectedRow)
+        {
+            throw new InvalidOperationException(
+                $"Feeder qualifier {boundary} color {sportingColor} is in progress but the save RNG moved since its last round; sporting state is corrupt.");
+        }
     }
 
     internal static List<AdvanceRoundHandler.MemberRow> BuildRoster(FeederQualifierFieldSelection.FeederField field)
@@ -403,7 +532,7 @@ public sealed class BoundaryQualifierRunner
         QualifierSimulation simulation,
         CancellationToken cancellationToken)
     {
-        foreach (QualifierRoundPayload payload in simulation.Payloads)
+        foreach (QualifierRoundPayload payload in simulation.Payloads.Skip(state.Played.Count))
         {
             context.QualifierRounds.Add(new QualifierRoundEntity
             {
@@ -740,25 +869,16 @@ public sealed class BoundaryQualifierRunner
         }
     }
 
-    internal static async Task EnsureNoPartialAsync(
-        SaveDbContext context, SeasonEntity source, SeasonEntity next,
-        QualifierBoundary boundary, int sportingColor, CancellationToken cancellationToken)
-    {
-        bool hasRounds = await context.QualifierRounds.AnyAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == sportingColor,
-            cancellationToken).ConfigureAwait(false);
-        if (hasRounds)
-        {
-            throw new InvalidOperationException(
-                $"Feeder qualifier {boundary} color {sportingColor} has partial rounds without standings; sporting state is corrupt.");
-        }
-    }
-
     internal static async Task EnsureCanonicalOrderAsync(
         SaveDbContext context, SeasonEntity source, SeasonEntity next,
-        QualifierBoundary boundary, int sportingColor, CancellationToken cancellationToken)
+        QualifierBoundary boundary, int sportingColor, RulesV1 rules, CancellationToken cancellationToken)
     {
+        if (rules.FeederDivisionsPerColor != 3)
+        {
+            throw new RunFeederQualifierConflictException(
+                "Feeder qualifiers require a tiered save with three feeder divisions.");
+        }
+
         bool superResolved = await context.QualifierStandings.AnyAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
                 && e.QualifierBoundary == (int)QualifierBoundary.Superleague,
@@ -769,12 +889,36 @@ public sealed class BoundaryQualifierRunner
                 "The Superleague qualifier must be resolved before feeder qualifiers can run (canonical order).");
         }
 
-        if (boundary != QualifierBoundary.Feeder2Feeder3)
+        // Enforce exact canonical position: Superleague, then F1↔F2 by color
+        // enum order, then F2↔F3 by color order. The requested event must be the
+        // first unresolved event in that order; out-of-order mutations are
+        // rejected without changing save state and never silently advance a
+        // different qualifier.
+        foreach ((QualifierBoundary orderedBoundary, int? orderedColor) in QualifierIdentity.CanonicalOrder)
         {
-            return;
+            if (orderedBoundary == QualifierBoundary.Superleague)
+            {
+                continue;
+            }
+
+            if (orderedBoundary == boundary && orderedColor == sportingColor)
+            {
+                return;
+            }
+
+            int storageColor = QualifierIdentity.ToStorageColor(orderedColor);
+            bool resolved = await context.QualifierStandings.AnyAsync(
+                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                    && e.QualifierBoundary == (int)orderedBoundary && e.QualifierSportingColor == storageColor,
+                cancellationToken).ConfigureAwait(false);
+            if (!resolved)
+            {
+                throw new RunFeederQualifierConflictException(
+                    $"Qualifier {orderedBoundary} color {orderedColor} must be resolved before {boundary} color {sportingColor} (canonical order).");
+            }
         }
 
-        await EnsureAllF1F2ResolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        throw new InvalidOperationException($"Unknown qualifier identity {boundary} color {sportingColor}.");
     }
 
     internal static async Task EnsureAllF1F2ResolvedAsync(

@@ -31,7 +31,9 @@ public sealed class GetHistoryEventRoundHandler
         HistoryEventRows.ValidateRequest(saveId, seasonNumber, eventKey);
         using SaveDbContext context = _store.OpenDbContext(saveId);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        PostseasonEvents.EventShape shape = PostseasonEvents.Shape(eventKey, rules);
+        PostseasonEvents.EventShape shape = string.Equals(eventKey, PostseasonEvents.Qualifier, StringComparison.Ordinal)
+            ? new PostseasonEvents.EventShape(1, rules.QualifierRounds)
+            : PostseasonEvents.Shape(eventKey, rules);
         if (shape.IsGrouped && (group is null || group < 1 || group > shape.GroupCount))
         {
             throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} rounds need a group between 1 and {shape.GroupCount}.", nameof(group));

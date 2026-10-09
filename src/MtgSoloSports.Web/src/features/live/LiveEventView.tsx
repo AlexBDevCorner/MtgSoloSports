@@ -139,9 +139,12 @@ export function LiveEventView({
   }, [saveId, season, event, shownGroup, shownRound]);
 
   const shape = summary ?? progress;
-  const totalRounds = shape?.totalRounds ?? (team ? 32 : 16);
-  const roundsPerGroup = shape?.roundsPerGroup ?? (team ? 8 : 16);
-  const groupCount = shape?.groupCount ?? (team ? 4 : 1);
+  // MSS-069: the Superleague qualifier is one 16-round event. The phase-wide
+  // 272-round total lives on the qualifier overview only and must never appear
+  // under this individual event title (e.g. "Round 16 / 272").
+  const totalRounds = event === 'qualifier' ? 16 : (shape?.totalRounds ?? (team ? 32 : 16));
+  const roundsPerGroup = event === 'qualifier' ? 16 : (shape?.roundsPerGroup ?? (team ? 8 : 16));
+  const groupCount = event === 'qualifier' ? 1 : (shape?.groupCount ?? (team ? 4 : 1));
   const complete = summary?.isComplete ?? false;
   // Type Cup tournaments span several 32-round stages in canonical order;
   // the backend progress cursor names the current stage explicitly.
