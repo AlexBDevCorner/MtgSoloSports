@@ -344,6 +344,38 @@ export function StandingsPage({
   const totalsLoading = useCurrentTotals ? currentTotalsState.loading : historyTableState.loading;
   const totalsError = useCurrentTotals ? currentTotalsState.error : historyTableState.error;
 
+  // MSS-068: all hooks must run unconditionally on every render, including
+  // loading/error/empty/invalid states. These derivations use safe defaults
+  // (empty competitions) while async queries resolve, so moving them above
+  // the early returns keeps hook order stable without extra fetches.
+  const seasonOptions = [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber);
+  const tierGroups = useMemo(
+    () =>
+      groupLeaguesByTier(
+        competitions.map((row) => ({
+          leagueId: row.leagueId,
+          name: row.name,
+          kind: row.kind,
+          feederDivision: row.feederDivision ?? null,
+          leagueLevel: row.leagueLevel ?? null,
+        })),
+      ),
+    [competitions],
+  );
+  const tierSections = useMemo(
+    () =>
+      (
+        [
+          ['Superleague', tierGroups.superleague],
+          ['Feeder 1', tierGroups.feeder1],
+          ['Feeder 2', tierGroups.feeder2],
+          ['Feeder 3', tierGroups.feeder3],
+          ['Feeder', tierGroups.legacyFeeder],
+        ] as const
+      ).filter(([, rows]) => rows.length > 0),
+    [tierGroups],
+  );
+
   if (seasonsState.loading && seasons.length === 0) {
     return <Loading label="Loading standings…" />;
   }
@@ -395,34 +427,6 @@ export function StandingsPage({
       </Notice>
     );
   }
-
-  const seasonOptions = [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber);
-  const tierGroups = useMemo(
-    () =>
-      groupLeaguesByTier(
-        competitions.map((row) => ({
-          leagueId: row.leagueId,
-          name: row.name,
-          kind: row.kind,
-          feederDivision: row.feederDivision ?? null,
-          leagueLevel: row.leagueLevel ?? null,
-        })),
-      ),
-    [competitions],
-  );
-  const tierSections = useMemo(
-    () =>
-      (
-        [
-          ['Superleague', tierGroups.superleague],
-          ['Feeder 1', tierGroups.feeder1],
-          ['Feeder 2', tierGroups.feeder2],
-          ['Feeder 3', tierGroups.feeder3],
-          ['Feeder', tierGroups.legacyFeeder],
-        ] as const
-      ).filter(([, rows]) => rows.length > 0),
-    [tierGroups],
-  );
 
   return (
     <div className="dashboard standings-page">

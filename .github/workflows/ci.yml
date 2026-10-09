@@ -29,6 +29,11 @@ jobs:
         run: dotnet format MtgSoloSports.slnx --verify-no-changes --no-restore
       - name: Install frontend dependencies
         run: npm ci --prefix src/MtgSoloSports.Web
+      - name: Test frontend
+        # MSS-068: run the mounted Standings/History hook-order regression
+        # tests (and all other frontend tests) in PR CI so React #310
+        # cannot recur without failing the required build-and-test check.
+        run: npm run test --prefix src/MtgSoloSports.Web
       - name: Typecheck frontend
         run: npm run typecheck --prefix src/MtgSoloSports.Web
       - name: Build frontend
