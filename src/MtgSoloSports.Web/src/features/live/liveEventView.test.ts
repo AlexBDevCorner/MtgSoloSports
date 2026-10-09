@@ -40,6 +40,15 @@ describe('live event mode', () => {
     assert.ok(view.includes('View results'));
   });
 
+  it('continues the Superleague qualifier to the next canonical qualifier on Live', () => {
+    assert.ok(view.includes("nextQualifierLiveParam('superleague')"), 'next canonical qualifier after Superleague');
+    assert.ok(view.includes('Play next qualifier on Live'), 'no Dashboard trip between qualifiers');
+    assert.ok(view.includes('All 17 qualifiers'), 'overview link from the Superleague event');
+    assert.ok(view.includes('runRemainingQualifiers(saveId)'), 'Live fast-forward for remaining qualifiers');
+    assert.ok(view.includes('Run all remaining qualifiers'));
+    assert.ok(view.includes('Qualifier 1 of 17 in canonical order'), 'phase position labelled as event count');
+  });
+
   it('stays on the event after it completes because the URL keeps the event', () => {
     assert.ok(app.includes('<LiveEventView'));
     assert.ok(app.includes('route.event ?? dashboard.data?.status?.eventProgress?.event'));

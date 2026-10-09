@@ -23,7 +23,9 @@ import { TypeCupLiveStages } from './typeCupLiveStages';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
-import { cupsPath, dashboardPath, standingsPath } from '../routing/routes';
+import { cupsPath, dashboardPath, qualifierLivePath, qualifiersPath, standingsPath } from '../routing/routes';
+import { runRemainingQualifiers } from '../qualifiers/qualifierApi';
+import { nextQualifierLiveParam } from '../qualifiers/qualifierModel';
 import './LivePage.css';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
@@ -207,6 +209,27 @@ export function LiveEventView({
     }
   }
 
+  async function handleRunAllQualifiers(): Promise<void> {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // MSS-069 fast-forward: persists every remaining qualifier event in
+      // canonical order (resume-safe, skips completed work). Never simulated here.
+      await runRemainingQualifiers(saveId);
+      setRoundView(null);
+      setLastStage(null);
+      onSelectRound(null, null);
+      refreshAfter();
+    } catch (failure) {
+      setError(apiErrorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // The sidebar standings follow the reveal: totals before the shown round plus
   // the round points of the athletes revealed so far. The persisted final
   // ranking only appears once the event's last round is fully revealed.
@@ -226,6 +249,10 @@ export function LiveEventView({
   const pills = rounds.filter((r) => r.group === visibleGroup);
   const title = `${EVENT_TITLES[event]} · Season ${season}`;
   const resultsPath = resultsTarget(event) === 'standings' ? standingsPath(saveId) : cupsPath(saveId);
+  // MSS-069: after the 32-athlete Superleague qualifier the canonical Live
+  // order continues with the eight F1↔F2 feeder qualifiers (White first).
+  const isSuperleagueLive = event === 'qualifier';
+  const nextQualifierParam = isSuperleagueLive ? nextQualifierLiveParam('superleague') : null;
 
   return (
     <div className="live-layout">
@@ -233,16 +260,56 @@ export function LiveEventView({
         <Card eyebrow="Postseason event" title={title}>
           <p className="muted small live-count">{progressText}</p>
           {complete ? (
-            <Notice tone="info" title={`${EVENT_TITLES[event]} complete`}>
-              <p className="live-buttons">
-                <Link to={dashboardPath(saveId)} className="primary-button">
-                  Continue on the Dashboard
-                </Link>
-                <Link to={resultsPath} className="ghost-button">
-                  View results
-                </Link>
-              </p>
-            </Notice>
+            isSuperleagueLive && nextQualifierParam ? (
+              <Notice tone="info" title={`${EVENT_TITLES[event]} complete`}>
+                <p className="live-buttons">
+                  <Link
+                    to={qualifierLivePath(saveId, nextQualifierParam, season, null)}
+                    className="primary-button"
+                  >
+                    Play next qualifier on Live
+                  </Link>
+                  <Link to={qualifiersPath(saveId, { season })} className="ghost-button">
+                    All 17 qualifiers
+                  </Link>
+                  <Link to={resultsPath} className="ghost-button">
+                    View results
+                  </Link>
+                </p>
+                <p className="live-buttons">
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={busy}
+                    title="Persists every remaining qualifier in canonical order (resume-safe)."
+                    onClick={() => {
+                      void handleRunAllQualifiers();
+                    }}
+                  >
+                    {busy ? 'Running…' : 'Run all remaining qualifiers'}
+                  </button>
+                  <Link to={dashboardPath(saveId)} className="ghost-button">
+                    Dashboard
+                  </Link>
+                </p>
+                <p className="muted small">
+                  Qualifier 1 of 17 in canonical order — Superleague first, then
+                  Feeder 1↔Feeder 2 by color, then Feeder 2↔Feeder 3 by color. No
+                  Dashboard trip needed between qualifiers.
+                </p>
+              </Notice>
+            ) : (
+              <Notice tone="info" title={`${EVENT_TITLES[event]} complete`}>
+                <p className="live-buttons">
+                  <Link to={dashboardPath(saveId)} className="primary-button">
+                    Continue on the Dashboard
+                  </Link>
+                  <Link to={resultsPath} className="ghost-button">
+                    View results
+                  </Link>
+                </p>
+              </Notice>
+            )
           ) : playable ? (
             <div className="live-manage-controls">
               <div className="live-buttons">
@@ -267,8 +334,31 @@ export function LiveEventView({
                 >
                   Run remaining rounds
                 </button>
+                {isSuperleagueLive ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={busy}
+                    title="Persists every remaining qualifier in canonical order (resume-safe)."
+                    onClick={() => {
+                      void handleRunAllQualifiers();
+                    }}
+                  >
+                    {busy ? 'Running…' : 'Run all remaining qualifiers'}
+                  </button>
+                ) : null}
               </div>
               <p className="muted small">{"Each round is saved and can't be undone."}</p>
+              {isSuperleagueLive && nextQualifierParam ? (
+                <p className="muted small">
+                  After this event, continue directly to the next qualifier on Live — no
+                  Dashboard trip needed.{' '}
+                  <Link to={qualifierLivePath(saveId, nextQualifierParam, season, null)}>
+                    Next qualifier
+                  </Link>
+                  .
+                </p>
+              ) : null}
             </div>
           ) : (
             <Notice tone="info" title="Not the next event">
