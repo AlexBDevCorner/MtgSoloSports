@@ -5,7 +5,7 @@ import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { runEventRemaining } from '../events/eventsApi';
 import { fetchHistorySeasons, type HistorySeasons } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
-import { dashboardPath, livePath, qualifierPath, qualifiersPath } from '../routing/routes';
+import { dashboardPath, livePath, qualifierLivePath, qualifierPath, qualifiersPath } from '../routing/routes';
 import {
   fetchSaveDetail,
   fetchSeasonProgress,
@@ -17,6 +17,7 @@ import type { SaveDetail } from '../saves/savesApi';
 import {
   buildQualifierOverview,
   qualifierFieldRows,
+  qualifierLiveParam,
   qualifierOutcomeLabel,
   qualifierProgressLine,
   qualifierRoleLabel,
@@ -504,11 +505,21 @@ export function QualifierDetailPage({
           <Link to={dashboardPath(saveId)} className="ghost-button">
             Dashboard
           </Link>
-          {boundary === 'Superleague' && event ? (
-            <Link to={livePath(saveId, { event: 'qualifier', season: event.fromSeasonNumber })} className="ghost-button">
-              Play round-by-round on Live
-            </Link>
-          ) : null}
+          <Link
+            to={
+              boundary === 'Superleague'
+                ? livePath(saveId, { event: 'qualifier', season: event?.fromSeasonNumber ?? effectiveSeason })
+                : qualifierLivePath(
+                    saveId,
+                    qualifierLiveParam(boundary, color),
+                    event?.fromSeasonNumber ?? effectiveSeason,
+                    null,
+                  )
+            }
+            className="ghost-button"
+          >
+            Play on Live
+          </Link>
         </div>
       </div>
 

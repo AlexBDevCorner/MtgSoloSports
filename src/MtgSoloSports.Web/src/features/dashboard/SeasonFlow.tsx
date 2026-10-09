@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Notice } from '../../shared/ui/Notice';
 import { Link, navigate } from '../routing/router';
-import { cupsPath, livePath, standingsPath } from '../routing/routes';
+import { cupsPath, livePath, qualifiersPath, standingsPath } from '../routing/routes';
 import { transitionForAction } from '../events/eventModel';
 import { advanceToNextEvent, type SeasonProgress, type SeasonStatus } from './dashboardApi';
-import { executedSummary, seasonFlow, type SummaryTarget } from './seasonFlowSteps';
+import { executedSummary, isTieredProgress, seasonFlow, type SummaryTarget } from './seasonFlowSteps';
 
 const TARGET_LINKS: Record<SummaryTarget, { label: string; path: (saveId: string) => string }> = {
   standings: { label: 'View standings', path: (saveId) => standingsPath(saveId) },
@@ -128,9 +128,18 @@ export function SeasonFlow({
             </div>
           ) : next.liveEvent ? (
             <div className="live-buttons">
-              <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
-                Play on Live
-              </Link>
+              {next.liveEvent === 'qualifier' && isTieredProgress(progress) ? (
+                <Link
+                  to={qualifiersPath(saveId, { season: flow.seasonNumber })}
+                  className="primary-button"
+                >
+                  Open 17 qualifiers
+                </Link>
+              ) : (
+                <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
+                  Play on Live
+                </Link>
+              )}
               <button
                 type="button"
                 className="ghost-button"

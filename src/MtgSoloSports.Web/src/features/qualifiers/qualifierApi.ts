@@ -89,6 +89,138 @@ export async function runFeederQualifier(
   );
 }
 
+/**
+ * Reads one feeder qualifier event for Live in any persisted state (pending,
+ * in-progress, complete). Never resimulates; GETs never consume RNG.
+ */
+export async function fetchQualifierRounds(
+  saveId: string,
+  boundary: string,
+  color: string,
+  fromSeason?: number | null,
+  signal?: AbortSignal,
+): Promise<QualifierRoundsDetail> {
+  const query = fromSeason === null || fromSeason === undefined ? '' : `?fromSeason=${fromSeason}`;
+  return fetchJson<QualifierRoundsDetail>(
+    `/api/saves/${saveId}/qualifiers/${encodeURIComponent(boundary)}/${encodeURIComponent(color)}/rounds${query}`,
+    { signal },
+  );
+}
+
+/** Reads one persisted feeder qualifier round for immutable replay. */
+export async function fetchQualifierRound(
+  saveId: string,
+  boundary: string,
+  color: string,
+  round: number,
+  fromSeason?: number | null,
+  signal?: AbortSignal,
+): Promise<QualifierRoundView> {
+  const query = fromSeason === null || fromSeason === undefined ? '' : `?fromSeason=${fromSeason}`;
+  return fetchJson<QualifierRoundView>(
+    `/api/saves/${saveId}/qualifiers/${encodeURIComponent(boundary)}/${encodeURIComponent(color)}/rounds/${round}${query}`,
+    { signal },
+  );
+}
+
+/** Persists exactly one next round of the selected feeder qualifier. */
+export async function playFeederQualifierRound(
+  saveId: string,
+  boundary: string,
+  color: string,
+  signal?: AbortSignal,
+): Promise<PlayFeederRoundResult> {
+  return fetchJson<PlayFeederRoundResult>(
+    `/api/saves/${saveId}/qualifiers/${encodeURIComponent(boundary)}/${encodeURIComponent(color)}/rounds/next`,
+    { method: 'POST', signal },
+  );
+}
+
+export interface QualifierFieldMember {
+  athleteId: number;
+  name: string;
+  sportingColor: string;
+  role: string;
+  fromLeagueId: number;
+  fromLeagueName: string;
+  fromSeasonRank: number;
+  imageUrl: string | null;
+  setCode: string | null;
+  typeLine: string;
+}
+
+export interface QualifierRoundSummary {
+  roundNumber: number;
+  rulesVersion: number;
+  payloadChecksum: string;
+}
+
+/**
+ * One feeder qualifier event in any persisted state (pending, in-progress,
+ * complete) for Live. `roundsPlayed` is this event's own 0..16 / 16 progress;
+ * phase-wide 17-event / 272-round totals live on the overview only.
+ */
+export interface QualifierRoundsDetail {
+  saveId: string;
+  fromSeasonNumber: number;
+  toSeasonNumber: number;
+  boundary: string;
+  boundaryId: number;
+  sportingColor: number;
+  sportingColorName: string;
+  roundsPlayed: number;
+  totalRounds: number;
+  isComplete: boolean;
+  checksum: string;
+  rounds: QualifierRoundSummary[];
+  field: QualifierFieldMember[];
+  standings: QualifierEventMember[];
+}
+
+export interface QualifierRoundView {
+  seasonNumber: number;
+  event: string;
+  title: string;
+  group: number | null;
+  roundNumber: number;
+  rulesVersion: number;
+  payloadChecksum: string;
+  rngBeforeState: number;
+  rngBeforeStream: number;
+  rngAfterState: number;
+  rngAfterStream: number;
+  placements: QualifierRoundPlacement[];
+}
+
+export interface QualifierRoundPlacement {
+  athleteId: number;
+  name: string;
+  position: number;
+  baseThousandths: number;
+  activeBonusThousandths: number;
+  finalThousandths: number;
+  cumulativeBeforeThousandths: number;
+  cumulativeAfterThousandths: number;
+  rankBefore: number;
+  rankAfter: number;
+  rankMovement: number;
+  imageUrl: string | null;
+  setCode: string | null;
+  typeLine: string;
+}
+
+export interface PlayFeederRoundResult {
+  round: QualifierRoundView;
+  roundsPlayed: number;
+  totalRounds: number;
+  isComplete: boolean;
+  boundary: string;
+  sportingColor: number;
+  sportingColorName: string;
+  fromSeasonNumber: number;
+  toSeasonNumber: number;
+}
+
 export interface RunAllQualifiersResult {
   saveId: string;
   fromSeasonNumber: number;

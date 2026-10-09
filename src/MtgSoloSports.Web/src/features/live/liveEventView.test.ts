@@ -40,6 +40,30 @@ describe('live event mode', () => {
     assert.ok(view.includes('View results'));
   });
 
+  it('continues the Superleague qualifier to the next canonical qualifier on Live', () => {
+    assert.ok(view.includes("nextQualifierLiveParam('superleague')"), 'next canonical qualifier after Superleague');
+    assert.ok(view.includes('Play next qualifier on Live'), 'no Dashboard trip between qualifiers');
+    assert.ok(view.includes('All 17 qualifiers'), 'overview link from the Superleague event');
+    assert.ok(view.includes('runRemainingQualifiers(saveId)'), 'Live fast-forward for remaining qualifiers');
+    assert.ok(view.includes('Run all remaining qualifiers'));
+    assert.ok(view.includes('Qualifier 1 of 17 in canonical order'), 'phase position labelled as event count');
+    assert.ok(view.includes('canRunAllFromComplete'), 'completed run-all is separately gated');
+    assert.ok(
+      view.includes('progress.sourceSeasonNumber === season'),
+      'unscoped run-all only for the current qualifier phase, never historical replay',
+    );
+  });
+
+  it('shows the 17-event continuation only for tiered saves, never for v1', () => {
+    assert.ok(view.includes('fetchSeasonProgress(saveId, season'), 'tier comes from the event season leagues');
+    assert.ok(view.includes('isTiered'), 'completion CTA is tier-gated');
+    assert.ok(
+      view.includes("leagueLevel === 'Feeder2'") || view.includes('Feeder2'),
+      'tier detection looks for F2/F3 leagues',
+    );
+    assert.ok(view.includes('Continue on the Dashboard'), 'v1 keeps the legacy completion branch');
+  });
+
   it('stays on the event after it completes because the URL keeps the event', () => {
     assert.ok(app.includes('<LiveEventView'));
     assert.ok(app.includes('route.event ?? dashboard.data?.status?.eventProgress?.event'));

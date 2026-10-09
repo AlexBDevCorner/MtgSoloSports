@@ -210,6 +210,92 @@ export interface QualifierOutcomeGroup {
   eliminatedCount: number;
 }
 
+/** Sporting colors in backend enum order (canonical qualifier order). */
+export const QUALIFIER_COLOR_ORDER = [
+  'White',
+  'Blue',
+  'Black',
+  'Red',
+  'Green',
+  'Multicolor',
+  'Hybrid',
+  'Colorless',
+] as const;
+
+/**
+ * Live `?qualifier=` param for one event: `superleague` or
+ * `f1f2-<color>` / `f2f3-<color>` (color lower-case). Stable, copyable and
+ * distinct per season + identity + round (round lives in `?round=`).
+ */
+export function qualifierLiveParam(boundary: string, colorName: string | null): string {
+  if (boundary === 'Feeder1Feeder2') {
+    return `f1f2-${(colorName ?? '').toLowerCase()}`;
+  }
+  if (boundary === 'Feeder2Feeder3') {
+    return `f2f3-${(colorName ?? '').toLowerCase()}`;
+  }
+  return 'superleague';
+}
+
+/** Parses a Live `?qualifier=` param back to boundary + color name. */
+export function parseQualifierLiveParam(value: string | null | undefined): {
+  boundary: 'Superleague' | 'Feeder1Feeder2' | 'Feeder2Feeder3';
+  color: string | null;
+} {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (!normalized || normalized === 'superleague' || normalized === 'sl') {
+    return { boundary: 'Superleague', color: null };
+  }
+  const match = /^f(1f2|2f3)-([a-z]+)$/.exec(normalized);
+  if (match) {
+    const boundary = match[1] === '1f2' ? 'Feeder1Feeder2' : 'Feeder2Feeder3';
+    const found = QUALIFIER_COLOR_ORDER.find((name) => name.toLowerCase() === match[2]);
+    if (found) {
+      return { boundary, color: found };
+    }
+  }
+  return { boundary: 'Superleague', color: null };
+}
+
+/** Canonical 17-event Live order: Superleague, F1↔F2 colors, F2↔F3 colors. */
+export function canonicalQualifierLiveParams(): string[] {
+  const params = ['superleague'];
+  for (const color of QUALIFIER_COLOR_ORDER) {
+    params.push(`f1f2-${color.toLowerCase()}`);
+  }
+  for (const color of QUALIFIER_COLOR_ORDER) {
+    params.push(`f2f3-${color.toLowerCase()}`);
+  }
+  return params;
+}
+
+/** Next canonical qualifier Live param after `current`, or null when done. */
+export function nextQualifierLiveParam(current: string | null | undefined): string | null {
+  const order = canonicalQualifierLiveParams();
+  const normalized = (current ?? '').trim().toLowerCase() || 'superleague';
+  const index = order.indexOf(normalized);
+  if (index < 0 || index + 1 >= order.length) {
+    return null;
+  }
+  return order[index + 1]!;
+}
+
+/** API boundary slug (`F1F2`/`F2F3`) for a feeder Live param. */
+export function qualifierApiBoundary(param: string): string {
+  if (param.startsWith('f2f3-')) {
+    return 'F2F3';
+  }
+  return 'F1F2';
+}
+
+/** Color name (`White`, …) for a feeder Live param. */
+export function qualifierApiColor(param: string): string {
+  const dash = param.indexOf('-');
+  const slug = dash >= 0 ? param.slice(dash + 1) : '';
+  const found = QUALIFIER_COLOR_ORDER.find((name) => name.toLowerCase() === slug.toLowerCase());
+  return found ?? slug;
+}
+
 /** Destination tier for qualifier winners, from data (boundary identity). */
 export function qualifierDestination(boundary: string): string {
   if (boundary === 'Feeder1Feeder2') {

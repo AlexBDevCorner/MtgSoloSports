@@ -233,8 +233,14 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';
     let detail = state === 'current' && eventDetail ? eventDetail : step.detail;
-    if (state === 'current' && step.key === 'qualifier' && tiered && detail) {
-      detail = `17 qualifiers · ${detail}`;
+    if (state === 'current' && step.key === 'qualifier' && tiered && status?.eventProgress) {
+      // MSS-069: the qualifier lifecycle step is phase-wide (17 events,
+      // 272 total rounds). Never present the phase total as one 16-round
+      // event ("Round 16 / 272"); label it explicitly as totals.
+      const played = status.eventProgress.roundsPlayed;
+      const total = status.eventProgress.totalRounds;
+      const completedEvents = Math.min(17, Math.floor(played / 16));
+      detail = `${completedEvents}/17 qualifiers · ${played}/${total} total rounds`;
     }
     return detail ? { key: step.key, label: step.label, detail, state } : { key: step.key, label: step.label, state };
   });

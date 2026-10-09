@@ -91,6 +91,15 @@ export type Route =
       transition: TransitionKey | null;
       eventSeason: number | null;
       group: number | null;
+      /**
+       * Individual qualifier identity on Live (MSS-069):
+       * `superleague` or `f1f2-<color>` / `f2f3-<color>` (color lower-case,
+       * e.g. `f1f2-white`). Absent with `event=qualifier` means the
+       * Superleague event for compatibility. Each of the 17 qualifiers keeps
+       * its own `Round N / 16` progress; the phase-wide `X / 17` and
+       * `Y / 272` totals live on the qualifier overview only.
+       */
+      qualifier: string | null;
     }
   | {
       name: 'history';
@@ -143,6 +152,7 @@ export function livePath(
     transition?: TransitionKey | null;
     season?: number | null;
     group?: number | null;
+    qualifier?: string | null;
   },
 ): string {
   const params = new URLSearchParams();
@@ -164,8 +174,27 @@ export function livePath(
   if (query?.group !== undefined && query.group !== null) {
     params.set('group', String(query.group));
   }
+  if (query?.qualifier !== undefined && query.qualifier !== null && query.qualifier !== '') {
+    params.set('qualifier', query.qualifier);
+  }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/live${suffix}`;
+}
+
+/**
+ * Live URL for one individual qualifier (MSS-069). `qualifier` is
+ * `superleague` or `f1f2-<color>` / `f2f3-<color>` (see
+ * `qualifierLiveParam`); `round` selects a persisted round, null follows the
+ * latest. Refresh, Back/Forward and reopening history preserve the same event
+ * without simulating anything.
+ */
+export function qualifierLivePath(
+  saveId: string,
+  qualifier: string,
+  season: number | null,
+  round?: number | null,
+): string {
+  return livePath(saveId, { event: 'qualifier', qualifier, season, round: round ?? null });
 }
 
 export function historyPath(
@@ -391,6 +420,33 @@ function parseTransition(params: URLSearchParams): TransitionKey | null {
   return isTransitionKey(value) ? value : null;
 }
 
+/**
+ * Individual qualifier identity on Live (`?qualifier=superleague` or
+ * `?qualifier=f1f2-white`). Validated against the canonical 17-event shape;
+ * unknown values are ignored so old `?event=qualifier` links keep meaning the
+ * Superleague event.
+ */
+function parseQualifier(params: URLSearchParams): string | null {
+  const raw = (params.get('qualifier') ?? '').trim().toLowerCase();
+  if (!raw) {
+    return null;
+  }
+  if (raw === 'superleague' || raw === 'sl') {
+    return 'superleague';
+  }
+  const match = /^f(1f2|2f3)-([a-z]+)$/.exec(raw);
+  if (!match) {
+    return null;
+  }
+  const boundary = match[1] === '1f2' ? 'f1f2' : 'f2f3';
+  const color = match[2]!;
+  const known = ['white', 'blue', 'black', 'red', 'green', 'multicolor', 'hybrid', 'colorless'];
+  if (!known.includes(color)) {
+    return null;
+  }
+  return `${boundary}-${color}`;
+}
+
 function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
     return pathname.slice(0, -1);
@@ -446,6 +502,7 @@ export function parseRoute(pathname: string, search: string): Route {
             ? parseOptionalPositiveInt(params, 'season')
             : null,
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
+        qualifier: parseQualifier(params),
       };
     case 'history':
       if (segments.length !== 3) {
