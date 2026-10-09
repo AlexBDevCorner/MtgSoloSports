@@ -320,6 +320,33 @@ export function HistoryPage({
     (signal) => optionalTournament(saveId as string, seasonNumber as number, signal),
   );
 
+  // MSS-068: all hooks must run unconditionally on every render, including
+  // loading/error/empty states. This derivation uses safe defaults (empty
+  // competitions) while async queries resolve, so it lives above the early
+  // returns to keep hook order stable without extra fetches.
+  // Pyramid grouping from data (MSS-060): Superleague, Feeder 1/2/3, legacy
+  // single feeder. v1 seasons keep their original "Feeder" group label.
+  const competitionGroups = useMemo(() => {
+    const groups = groupLeaguesByTier(
+      competitions.map((row) => ({
+        leagueId: row.leagueId,
+        name: row.name,
+        kind: row.kind,
+        feederDivision: row.feederDivision ?? null,
+        leagueLevel: row.leagueLevel ?? null,
+      })),
+    );
+    return (
+      [
+        ['Superleague', groups.superleague],
+        ['Feeder 1', groups.feeder1],
+        ['Feeder 2', groups.feeder2],
+        ['Feeder 3', groups.feeder3],
+        ['Feeder', groups.legacyFeeder],
+      ] as const
+    ).filter(([, rows]) => rows.length > 0);
+  }, [competitions]);
+
   if (seasonsState.loading && seasons.length === 0) {
     return <Loading label="Loading history…" />;
   }
@@ -348,29 +375,6 @@ export function HistoryPage({
   const replay = replayState.data;
   const stageStandings = standingsState.data;
   const seasonTable = tableState.data;
-
-  // Pyramid grouping from data (MSS-060): Superleague, Feeder 1/2/3, legacy
-  // single feeder. v1 seasons keep their original "Feeder" group label.
-  const competitionGroups = useMemo(() => {
-    const groups = groupLeaguesByTier(
-      competitions.map((row) => ({
-        leagueId: row.leagueId,
-        name: row.name,
-        kind: row.kind,
-        feederDivision: row.feederDivision ?? null,
-        leagueLevel: row.leagueLevel ?? null,
-      })),
-    );
-    return (
-      [
-        ['Superleague', groups.superleague],
-        ['Feeder 1', groups.feeder1],
-        ['Feeder 2', groups.feeder2],
-        ['Feeder 3', groups.feeder3],
-        ['Feeder', groups.legacyFeeder],
-      ] as const
-    ).filter(([, rows]) => rows.length > 0);
-  }, [competitions]);
 
   function pushSelection(next: HistorySelection): void {
     onHistoryChange(next);
