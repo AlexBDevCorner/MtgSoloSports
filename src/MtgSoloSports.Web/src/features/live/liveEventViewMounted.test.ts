@@ -78,7 +78,8 @@ function makePlacements(count: number): Array<Record<string, unknown>> {
   return out;
 }
 
-function installSuperleagueFetch(log: { gets: string[]; posts: string[] }): void {
+function installSuperleagueFetch(log: { gets: string[]; posts: string[] }, options?: { tiered?: boolean }): void {
+  const tiered = options?.tiered ?? true;
   const g = globalThis as unknown as Record<string, unknown>;
   g['fetch'] = (input: unknown, init?: { method?: string }) => {
     const url = String(input);
@@ -101,6 +102,27 @@ function installSuperleagueFetch(log: { gets: string[]; posts: string[] }): void
       return Promise.resolve(okJson({}));
     }
     log.gets.push(url);
+    if (url.includes(`/seasons/${SEASON}/progress`)) {
+      const tieredLeagues = [
+        { leagueId: 1, leagueName: 'Superleague', leagueKind: 'Superleague', feederDivision: 0, leagueLevel: 'Superleague', currentStage: null, completedStages: 32, isLeagueComplete: true },
+        { leagueId: 2, leagueName: 'White F1', leagueKind: 'Feeder', feederDivision: 1, leagueLevel: 'Feeder1', currentStage: null, completedStages: 32, isLeagueComplete: true },
+        { leagueId: 3, leagueName: 'White F2', leagueKind: 'Feeder', feederDivision: 2, leagueLevel: 'Feeder2', currentStage: null, completedStages: 32, isLeagueComplete: true },
+        { leagueId: 4, leagueName: 'White F3', leagueKind: 'Feeder', feederDivision: 3, leagueLevel: 'Feeder3', currentStage: null, completedStages: 32, isLeagueComplete: true },
+      ];
+      const v1Leagues = [
+        { leagueId: 1, leagueName: 'Superleague', leagueKind: 'Superleague', feederDivision: 0, leagueLevel: 'Superleague', currentStage: null, completedStages: 32, isLeagueComplete: true },
+        { leagueId: 2, leagueName: 'White League', leagueKind: 'Feeder', feederDivision: 0, leagueLevel: 'Feeder1', currentStage: null, completedStages: 32, isLeagueComplete: true },
+      ];
+      return Promise.resolve(
+        okJson({
+          saveId: SAVE,
+          seasonNumber: SEASON,
+          globalStage: 32,
+          isSeasonComplete: true,
+          leagues: tiered ? tieredLeagues : v1Leagues,
+        }),
+      );
+    }
     if (url.includes(`/history/seasons/${SEASON}/events/qualifier/rounds/`)) {
       const match = /\/rounds\/(\d+)/.exec(url);
       const roundNumber = match ? Number.parseInt(match[1]!, 10) : 16;
@@ -220,6 +242,39 @@ describe('MSS-069 Superleague Live completion navigates to the 17-event flow', (
       log.posts.some((p) => p.includes('/qualifiers/run-all')),
       `fast-forward POSTs run-all, got: ${JSON.stringify(log.posts)}`,
     );
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('keeps the legacy single-qualifier completion for v1 saves (no phantom F1F2 link)', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    installSuperleagueFetch(log, { tiered: false });
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          saveId: SAVE,
+          event: 'qualifier',
+          season: SEASON,
+          progress: null,
+          urlGroup: null,
+          urlRound: null,
+          onSelectRound: () => undefined,
+          onMutated: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Superleague qualifier complete'), 'completion notice renders');
+    assert.ok(text.includes('Continue on the Dashboard'), 'v1 keeps the legacy Dashboard CTA');
+    assert.ok(!text.includes('Play next qualifier on Live'), 'v1 never offers a phantom feeder qualifier');
+    assert.ok(!text.includes('f1f2-white'), 'v1 never links to a nonexistent F1F2 qualifier');
+    assert.ok(!text.includes('All 17 qualifiers'), 'v1 never claims a 17-event phase');
+    assert.ok(!text.includes('Qualifier 1 of 17'), 'v1 never labels the sole qualifier as 1 of 17');
+    assert.ok(!text.includes('Run all remaining qualifiers'), 'v1 hides the 17-event fast-forward');
+    assert.ok(!text.includes('/ 272'), 'phase-wide total never appears under the event title');
     (renderer as unknown as { unmount: () => void }).unmount();
   });
 });

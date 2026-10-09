@@ -49,6 +49,16 @@ describe('live event mode', () => {
     assert.ok(view.includes('Qualifier 1 of 17 in canonical order'), 'phase position labelled as event count');
   });
 
+  it('shows the 17-event continuation only for tiered saves, never for v1', () => {
+    assert.ok(view.includes('fetchSeasonProgress(saveId, season'), 'tier comes from the event season leagues');
+    assert.ok(view.includes('isTiered'), 'completion CTA is tier-gated');
+    assert.ok(
+      view.includes("leagueLevel === 'Feeder2'") || view.includes('Feeder2'),
+      'tier detection looks for F2/F3 leagues',
+    );
+    assert.ok(view.includes('Continue on the Dashboard'), 'v1 keeps the legacy completion branch');
+  });
+
   it('stays on the event after it completes because the URL keeps the event', () => {
     assert.ok(app.includes('<LiveEventView'));
     assert.ok(app.includes('route.event ?? dashboard.data?.status?.eventProgress?.event'));

@@ -24,6 +24,7 @@ import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
 import { cupsPath, dashboardPath, qualifierLivePath, qualifiersPath, standingsPath } from '../routing/routes';
+import { fetchSeasonProgress } from '../dashboard/dashboardApi';
 import { runRemainingQualifiers } from '../qualifiers/qualifierApi';
 import { nextQualifierLiveParam } from '../qualifiers/qualifierModel';
 import './LivePage.css';
@@ -73,25 +74,47 @@ export function LiveEventView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  // MSS-069 correction: the 17-event next-qualifier/fast-forward flow is
+  // tiered-only. v1 saves resolve a single 32-athlete Superleague qualifier
+  // under the same `qualifier` event key, so the CTA must stay hidden there.
+  // Derived from the event season's league data (never league-name parsing),
+  // matching QualifiersPage/SeasonFlow tier detection. Defaults to false
+  // (legacy branch) so a failed/slow fetch never falsely claims "1 of 17".
+  const [isTiered, setIsTiered] = useState(false);
   const team = isTeamEvent(event);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     const isTypeCup = event === 'type-cup-team';
+    const needsTier = event === 'qualifier';
     Promise.all([
       fetchSeasonEvents(saveId, season, controller.signal).catch(() => [] as SeasonEventSummary[]),
       fetchEventRounds(saveId, season, event, controller.signal).catch(() => [] as PlayedRound[]),
       team ? fetchEventTeamStandings(saveId, season, event, controller.signal).catch(() => null) : Promise.resolve(null),
       isTypeCup ? optionalTournament(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
       isTypeCup ? optionalDraw(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      needsTier ? fetchSeasonProgress(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([events, played, standings, tournamentResult, drawResult]) => {
+      .then(([events, played, standings, tournamentResult, drawResult, seasonProgress]) => {
         setSummary(events.find((entry) => entry.event === event) ?? null);
         setRounds(played);
         setTeams(standings);
         setTournament(tournamentResult);
         setDraw(drawResult);
+        if (needsTier && seasonProgress) {
+          setIsTiered(
+            seasonProgress.leagues.some(
+              (league) =>
+                league.leagueLevel === 'Feeder2' ||
+                league.leagueLevel === 'Feeder3' ||
+                league.feederDivision === 2 ||
+                league.feederDivision === 3,
+            ),
+          );
+        } else {
+          setIsTiered(false);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -250,9 +273,12 @@ export function LiveEventView({
   const title = `${EVENT_TITLES[event]} · Season ${season}`;
   const resultsPath = resultsTarget(event) === 'standings' ? standingsPath(saveId) : cupsPath(saveId);
   // MSS-069: after the 32-athlete Superleague qualifier the canonical Live
-  // order continues with the eight F1↔F2 feeder qualifiers (White first).
+  // order continues with the eight F1↔F2 feeder qualifiers (White first) —
+  // but only for tiered saves. v1 saves share the same `qualifier` event key
+  // for their sole Superleague qualifier, so the 17-event CTA stays hidden
+  // there (legacy Dashboard/results branch below).
   const isSuperleagueLive = event === 'qualifier';
-  const nextQualifierParam = isSuperleagueLive ? nextQualifierLiveParam('superleague') : null;
+  const nextQualifierParam = isSuperleagueLive && isTiered ? nextQualifierLiveParam('superleague') : null;
 
   return (
     <div className="live-layout">
@@ -334,7 +360,7 @@ export function LiveEventView({
                 >
                   Run remaining rounds
                 </button>
-                {isSuperleagueLive ? (
+                {isSuperleagueLive && isTiered ? (
                   <button
                     type="button"
                     className="ghost-button"
