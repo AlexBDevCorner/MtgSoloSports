@@ -47,6 +47,11 @@ describe('live event mode', () => {
     assert.ok(view.includes('runRemainingQualifiers(saveId)'), 'Live fast-forward for remaining qualifiers');
     assert.ok(view.includes('Run all remaining qualifiers'));
     assert.ok(view.includes('Qualifier 1 of 17 in canonical order'), 'phase position labelled as event count');
+    assert.ok(view.includes('canRunAllFromComplete'), 'completed run-all is separately gated');
+    assert.ok(
+      view.includes('progress.sourceSeasonNumber === season'),
+      'unscoped run-all only for the current qualifier phase, never historical replay',
+    );
   });
 
   it('shows the 17-event continuation only for tiered saves, never for v1', () => {

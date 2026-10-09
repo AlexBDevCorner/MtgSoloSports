@@ -213,7 +213,16 @@ describe('MSS-069 Superleague Live completion navigates to the 17-event flow', (
           saveId: SAVE,
           event: 'qualifier',
           season: SEASON,
-          progress: null,
+          progress: {
+            event: 'qualifier',
+            sourceSeasonNumber: SEASON,
+            roundsPlayed: 16,
+            totalRounds: 272,
+            groupCount: 1,
+            roundsPerGroup: 272,
+            group: null,
+            roundInGroup: null,
+          },
           urlGroup: null,
           urlRound: null,
           onSelectRound: () => undefined,
@@ -241,6 +250,48 @@ describe('MSS-069 Superleague Live completion navigates to the 17-event flow', (
     assert.ok(
       log.posts.some((p) => p.includes('/qualifiers/run-all')),
       `fast-forward POSTs run-all, got: ${JSON.stringify(log.posts)}`,
+    );
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('hides the unscoped run-all fast-forward on historical Superleague replay', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    installSuperleagueFetch(log);
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          saveId: SAVE,
+          event: 'qualifier',
+          season: SEASON,
+          progress: {
+            event: 'qualifier',
+            sourceSeasonNumber: SEASON + 3,
+            roundsPlayed: 0,
+            totalRounds: 272,
+            groupCount: 1,
+            roundsPerGroup: 272,
+            group: null,
+            roundInGroup: null,
+          },
+          urlGroup: null,
+          urlRound: null,
+          onSelectRound: () => undefined,
+          onMutated: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Superleague qualifier complete'), 'completion notice renders');
+    assert.ok(text.includes('Play next qualifier on Live'), 'historical replay keeps the same-season next link');
+    assert.ok(text.includes('f1f2-white'), 'historical next link stays in the displayed season');
+    assert.ok(!text.includes('Run all remaining qualifiers'), 'historical replay never offers unscoped run-all');
+    assert.ok(
+      !log.posts.some((p) => p.includes('/qualifiers/run-all')),
+      'no run-all POST without an explicit click',
     );
     (renderer as unknown as { unmount: () => void }).unmount();
   });

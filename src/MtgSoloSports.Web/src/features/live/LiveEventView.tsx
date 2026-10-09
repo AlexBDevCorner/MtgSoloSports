@@ -277,8 +277,14 @@ export function LiveEventView({
   // but only for tiered saves. v1 saves share the same `qualifier` event key
   // for their sole Superleague qualifier, so the 17-event CTA stays hidden
   // there (legacy Dashboard/results branch below).
+  // The next-qualifier link replays the same displayed season, so it stays
+  // available on historical pages. The run-all fast-forward is unscoped on
+  // the backend (it resolves the latest pending postseason), so it must only
+  // appear while the displayed season is the save's current qualifier phase.
   const isSuperleagueLive = event === 'qualifier';
   const nextQualifierParam = isSuperleagueLive && isTiered ? nextQualifierLiveParam('superleague') : null;
+  const canRunAllFromComplete =
+    isSuperleagueLive && isTiered && progress !== null && progress.sourceSeasonNumber === season;
 
   return (
     <div className="live-layout">
@@ -303,17 +309,19 @@ export function LiveEventView({
                   </Link>
                 </p>
                 <p className="live-buttons">
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    disabled={busy}
-                    title="Persists every remaining qualifier in canonical order (resume-safe)."
-                    onClick={() => {
-                      void handleRunAllQualifiers();
-                    }}
-                  >
-                    {busy ? 'Running…' : 'Run all remaining qualifiers'}
-                  </button>
+                  {canRunAllFromComplete ? (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy}
+                      title="Persists every remaining qualifier in canonical order (resume-safe)."
+                      onClick={() => {
+                        void handleRunAllQualifiers();
+                      }}
+                    >
+                      {busy ? 'Running…' : 'Run all remaining qualifiers'}
+                    </button>
+                  ) : null}
                   <Link to={dashboardPath(saveId)} className="ghost-button">
                     Dashboard
                   </Link>
