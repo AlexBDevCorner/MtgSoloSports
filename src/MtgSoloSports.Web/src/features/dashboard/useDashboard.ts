@@ -29,6 +29,12 @@ export interface DashboardData {
   progress: SeasonProgress;
   rosters: Season1Leagues | null;
   status: SeasonStatus | null;
+  /**
+   * MSS-070: a failed season-status fetch is NOT the same as unavailable
+   * data. Consumers must surface this as an actionable error with retry and
+   * must never reduce it to a false "nothing left to run" completion.
+   */
+  statusError: string | null;
   stories: StoryEventItem[];
   leaders: DashboardLeaderBoard[];
   superleagueComposition: Array<{ color: string; count: number }>;
@@ -70,13 +76,19 @@ export function useDashboard(saveId: string | null): DashboardState {
       const detail = await fetchSaveDetail(saveId, signal);
       const progress = await fetchSeasonProgress(saveId, detail.currentSeason, signal);
       let status: SeasonStatus | null = null;
+      let statusError: string | null = null;
       try {
         status = await fetchSeasonStatus(saveId, signal);
       } catch (failure) {
         if (failure instanceof DOMException && failure.name === 'AbortError') {
           throw failure;
         }
+        // MSS-070: keep the failure visible. A null status with no error
+        // means "no data"; a null status WITH an error means "could not
+        // load" and the season-flow card must offer retry, never a false
+        // postseason completion.
         status = null;
+        statusError = apiErrorMessage(failure);
       }
       let rosters: Season1Leagues | null = null;
       try {
@@ -97,7 +109,7 @@ export function useDashboard(saveId: string | null): DashboardState {
       const recentHonours = await loadHonours(saveId, signal);
       const records = await loadRecords(saveId, signal);
       const hallOfFame = await loadHallOfFame(saveId, signal);
-      return { detail, progress, rosters, status, stories, leaders, superleagueComposition, recentHonours, records, hallOfFame };
+      return { detail, progress, rosters, status, statusError, stories, leaders, superleagueComposition, recentHonours, records, hallOfFame };
     })()
       .then((loaded) => {
         setData(loaded);

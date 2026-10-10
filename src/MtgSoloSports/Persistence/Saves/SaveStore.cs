@@ -53,6 +53,24 @@ public sealed class SaveStore
 
     private sealed record VerifiedMigration(int SchemaVersion, long Length, DateTime LastWriteUtc);
 
+    /// <summary>
+    /// Per-save migration gates serializing <see cref="EnsureMigratedAsync"/>.
+    /// Mutation handlers already hold the per-save simulation lock, but
+    /// read-only status/Cup/history queries call <see cref="EnsureMigratedAsync"/>
+    /// without that lock so hot reads stay concurrent. The gate keeps exactly
+    /// one checkpoint/migrate/rollback sequence per save at a time: parallel
+    /// first reads of a pre-tournament-schema save, or a read overlapping a
+    /// locked mutation's own upgrade, serialize here instead of racing on
+    /// pending-migration checks, checkpoint files, and SQLite schema writes.
+    /// Static so every <see cref="SaveStore"/> instance (including a fresh
+    /// store after an app restart in tests) shares the same per-save
+    /// serialization, matching <c>AdvanceRoundSaveLock</c> lifetime.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> MigrationGates = new();
+
+    private static SemaphoreSlim AcquireMigrationGate(Guid saveId) =>
+        MigrationGates.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
+
     public SaveStore(
         IOptions<SaveStorageOptions> options,
         IHostEnvironment environment,
@@ -158,6 +176,12 @@ public sealed class SaveStore
     /// are pending, a verified recoverable checkpoint is created first; a
     /// failed migration restores that checkpoint and aborts instead of
     /// leaving a half-migrated file behind.
+    /// Concurrency-safe: a per-save migration gate serializes the
+    /// verified-check, pending-migration check, checkpoint, apply, and
+    /// rollback sequence, so parallel status reads of an old save and reads
+    /// overlapping a mutating upgrade cannot interleave checkpoint/restore or
+    /// SQLite schema writes. Read-only callers must not take the per-save
+    /// simulation lock; this gate is the established synchronization point.
     /// </summary>
     public async Task EnsureMigratedAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -172,35 +196,49 @@ public sealed class SaveStore
             return;
         }
 
-        IReadOnlyList<string> pending = await SaveSchemaMigrator
-            .GetPendingMigrationsAsync(_factory, path, cancellationToken)
-            .ConfigureAwait(false);
-        if (pending.Count == 0)
-        {
-            MarkMigrationVerified(path, saveId);
-            return;
-        }
-
-        string rulesBefore = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
-        CheckpointRecord checkpoint = await CreateCheckpointAsync(
-            saveId, $"pre-schema-migration-to-{SaveSchemaVersion.Current}", cancellationToken).ConfigureAwait(false);
+        SemaphoreSlim gate = AcquireMigrationGate(saveId);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await SaveSchemaMigrator.ApplyPendingAsync(_factory, path, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            await OverwriteLiveFromCheckpointAsync(saveId, checkpoint.CheckpointId, cancellationToken).ConfigureAwait(false);
-            throw new InvalidOperationException(
-                $"Database-schema migration failed and the save was rolled back to verified checkpoint '{checkpoint.CheckpointId:D}'.",
-                ex);
-        }
+            if (IsMigrationVerified(path, saveId))
+            {
+                return;
+            }
 
-        string rulesAfter = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
-        SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
-        _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
-        InvalidateMigrationVerified(saveId);
-        MarkMigrationVerified(path, saveId);
+            IReadOnlyList<string> pending = await SaveSchemaMigrator
+                .GetPendingMigrationsAsync(_factory, path, cancellationToken)
+                .ConfigureAwait(false);
+            if (pending.Count == 0)
+            {
+                MarkMigrationVerified(path, saveId);
+                return;
+            }
+
+            string rulesBefore = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
+            CheckpointRecord checkpoint = await CreateCheckpointAsync(
+                saveId, $"pre-schema-migration-to-{SaveSchemaVersion.Current}", cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await SaveSchemaMigrator.ApplyPendingAsync(_factory, path, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                await OverwriteLiveFromCheckpointAsync(saveId, checkpoint.CheckpointId, cancellationToken).ConfigureAwait(false);
+                throw new InvalidOperationException(
+                    $"Database-schema migration failed and the save was rolled back to verified checkpoint '{checkpoint.CheckpointId:D}'.",
+                    ex);
+            }
+
+            string rulesAfter = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
+            SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
+            _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+            InvalidateMigrationVerified(saveId);
+            MarkMigrationVerified(path, saveId);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public bool IsMigrationVerified(string saveFilePath, Guid saveId)
