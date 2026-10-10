@@ -6,10 +6,11 @@ import type {
 } from './typeCupTournamentApi';
 
 /**
- * Pure display helpers for the scalable Type Cup tournament (MSS-063).
+ * Pure display helpers for the scalable Type Cup tournament (MSS-063, MSS-071).
  * DOM-free: group letters, stage labels and cutoff splits derive from
  * persisted backend facts only. The frontend never computes who qualified;
- * `qualified` flags and quotas come from the backend responses.
+ * `qualified` flags, quotas, guaranteed places and wildcards come from the
+ * backend responses.
  */
 
 /** 1-based letter: 1 -> A, 2 -> B, ... 27 -> AA. Persisted numbers stay authoritative. */
@@ -82,8 +83,46 @@ export function legStageLabel(args: {
 }
 
 /** Tournament format wording for the overview. */
-export function tournamentFormatLabel(tournament: Pick<TypeCupTournament, 'isDirectFinal'>): string {
-  return tournament.isDirectFinal ? 'Direct Final' : 'Qualification + Final';
+export function tournamentFormatLabel(
+  tournament: Pick<TypeCupTournament, 'isDirectFinal' | 'qualificationPolicyVersion'>,
+): string {
+  if (tournament.isDirectFinal) {
+    return 'Direct Final';
+  }
+  return tournament.qualificationPolicyVersion === 2
+    ? 'Qualification + Final · guaranteed + wildcards'
+    : 'Qualification + Final';
+}
+
+/** Honest advancing label: guaranteed per group plus global wildcards (MSS-071). */
+export function advancingLabel(tournament: Pick<TypeCupTournament, 'qualificationPolicyVersion' | 'wildcardCount' | 'guaranteedPlacesPerGroup' | 'finalPlacesPerGroup'>): string {
+  const wildcards = tournament.wildcardCount ?? 0;
+  if ((tournament.qualificationPolicyVersion ?? 1) === 2 && wildcards > 0) {
+    const guaranteed = tournament.guaranteedPlacesPerGroup ?? tournament.finalPlacesPerGroup;
+    return `${guaranteed.join(' / ')} guaranteed + ${wildcards} wildcard${wildcards === 1 ? '' : 's'}`;
+  }
+  return (tournament.finalPlacesPerGroup ?? []).join(' / ');
+}
+
+/** Whether the tournament uses the wildcard policy. */
+export function isWildcardTournament(
+  tournament: Pick<TypeCupTournament, 'qualificationPolicyVersion' | 'wildcardCount'>,
+): boolean {
+  return (tournament.qualificationPolicyVersion ?? 1) === 2 && (tournament.wildcardCount ?? 0) > 0;
+}
+
+/** Status badge text for a qualification team. */
+export function qualificationStatusLabel(status: string | undefined, qualified: boolean): string {
+  if (status === 'Guaranteed') {
+    return 'Qualified · guaranteed';
+  }
+  if (status === 'Wildcard') {
+    return 'Qualified · wildcard';
+  }
+  if (status === 'Qualified') {
+    return 'Qualified';
+  }
+  return qualified ? 'Qualified' : 'Eliminated';
 }
 
 /** Current tournament state from persisted facts (no resimulation). */

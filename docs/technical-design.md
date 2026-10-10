@@ -281,45 +281,62 @@ strength explanation per candidate. `GET /api/saves/{saveId}/cups/type/selection
 reason per member: `Capped`, `OnlyType`, `BestRank` or `Balanced` (placed away
 from its best-ranked type so the most teams take part).
 
-### Scalable tournament format (MSS-061)
+### Scalable tournament format (MSS-061, MSS-071 wildcards)
 
 The Type Cup rules snapshot carries a versioned tournament-format rule
 (`TypeCupTournamentFormatVersion`: 0 legacy unbounded single-field, 1 scalable
-qualification plus fixed 32-team Final; `TypeCupMaxDirectFinalTeams = 32`,
-`TypeCupFinalTeamCount = 32`). New saves use format 1; historical snapshots
-without the fields decode as 0 and their single-field Cups stay readable
-without rewriting results.
+qualification plus fixed 32-team Final, 2 scalable qualification plus guaranteed
+plus performance wildcards; `TypeCupMaxDirectFinalTeams = 32`,
+`TypeCupFinalTeamCount = 32`). New saves use format 2; historical snapshots
+with 0 or 1 stay readable and their persisted editions keep their original
+qualifiers without rewriting results. Existing v1 saves host v2 editions at an
+edition boundary via the per-edition draw version.
 
 Tournament-format math lives in pure `SimulationKernel/Cups/TypeCupTournamentFormat`:
 group count `ceil(N / 32)` (0 for direct Finals), balanced sizes differing by at
 most one, deterministic random draw via only `Pcg32V1` (ordinal-canonicalized
 input, Fisher-Yates shuffle, contiguous balanced chunks numbered after the draw),
-Final-place quotas totalling exactly 32 (larger groups first, ties by group
-number), draw checksum fingerprint, and a 32-team ceiling guard so new-format
-rounds never touch the legacy greater-than-32 minimum-point extension (kept only
-for historical reads via `ScoringCalculator.TypeCupBasePointsForPosition`; new
-fields use the strict `TypeCupBasePointsForNewFormatPosition`).
+v1 fixed quotas totalling exactly 32 (larger groups first, ties by group number,
+retained only for old draws) and v2 guaranteed quotas (`floor(32 / G)` per group)
+plus global `wildcardCount = 32 - G * base` decided by adjusted team points, draw
+checksum fingerprint, and a 32-team ceiling guard so new-format rounds never touch
+the legacy greater-than-32 minimum-point extension (kept only for historical reads
+via `ScoringCalculator.TypeCupBasePointsForPosition`; new fields use the strict
+`TypeCupBasePointsForNewFormatPosition`).
+
+Wildcard comparison is exact integer math: `teamScore * groupSize / sum(base 1..groupSize)`
+(team totals are official final points with active bonus, so bonus advantage is
+preserved; the 4×8 factor cancels; equal sizes reduce to raw totals). Exactly tied
+adjusted scores at the cutoff shuffle once with `Pcg32V1` (name-ordered input, only
+the split tie consumes RNG), never preferring group numbers. The single
+authoritative `TypeCupTournamentPlan.SelectWildcardFinalists` is shared by one-shot
+and step-by-step runners with the same standings plus RNG giving the same finalists
+and RNG-after; reads/replay never consume RNG.
 
 Persistence keeps selection and draw as separate concepts. `TypeCupTournamentDraws`
 (one row per team) stores source season, creature type, qualification group,
-group size and field metadata, Final-place quota, rules/format versions, RNG
-before/after and draw checksum; the RNG commit and the draw share one
-transaction and squad membership is verified unchanged. Round, leg and team
-tables carry explicit `TournamentPhase` (0 legacy, 1 qualification, 2 Final) plus
+group size and field metadata, Final-place quota (fixed quotas for v1, guaranteed
+for v2), rules/per-edition format versions, RNG before/after and draw checksum;
+the RNG commit and the draw share one transaction and squad membership is verified
+unchanged. Round, leg and team tables carry explicit `TournamentPhase` (0 legacy, 1 qualification, 2 Final) plus
 `QualificationGroup` (0 outside qualification) alongside the athlete rank
 `GroupNumber`, so qualification and Final rounds never collide; legacy rows store
-0/0. The draw slice exposes `POST/GET /api/saves/{saveId}/cups/type/draw`.
+0/0. The draw slice exposes `POST/GET /api/saves/{saveId}/cups/type/draw` with
+guaranteed plus wildcard counts for v2 (never misleading 11/11/10 fixed quotas).
 MSS-062 runs the tournament around the existing team-event kernel: direct
 Finals (1-32 teams) persist one 4x8 competition as phase 2; larger fields play
 every qualification group in draw order (each 4x8, standard table, medals
-None) then a fresh 32-team Final from zero (medals/honours Final-only).
-Step-by-step and one-shot share one RNG chain with rank-group and stage
-tie-break boundaries; qualification standings plus nationality persist per
+None) then a fresh 32-team Final from zero (medals/honours Final-only, qualification
+points never carry). The Final cannot start before every qualifier plus wildcard
+resolution is complete.
+Step-by-step and one-shot share one RNG chain with rank-group, stage tie-break
+and wildcard-tie boundaries; qualification standings plus nationality persist per
 completed group so eliminated teams retain history. Completion, lifecycle
 progress and history treat the Cup as one competition complete only with Final
 standings. `GET /api/saves/{saveId}/cups/type/tournament` exposes the draw,
-each qualification result, the 32 finalists, the Final and the champion;
-`cups/type/team` stays the convenient Final result and old phase-0 saves read
+each qualification result with guaranteed/wildcard/eliminated status, wildcard
+provenance (team scores and normalized comparison, tie-draw flag), the 32 finalists,
+the Final and the champion; `cups/type/team` stays the convenient Final result and old phase-0 saves read
 unchanged.
 
 ## 17a. Cup history read model
