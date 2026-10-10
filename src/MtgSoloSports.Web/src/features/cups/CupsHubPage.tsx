@@ -22,6 +22,10 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
   const [data, setData] = useState<CupEditions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SeasonStatus | null>(null);
+  // MSS-070: a failed season-status fetch must stay visible with a retry.
+  // Swallowing it hides the pending-Cup entry point behind an empty page.
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -35,10 +39,20 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
         setError(apiErrorMessage(failure));
       });
     fetchSeasonStatus(saveId, controller.signal)
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      .then((loaded) => {
+        setStatus(loaded);
+        setStatusError(null);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        // Keep any previously loaded success from hiding this newer error.
+        setStatus(null);
+        setStatusError(apiErrorMessage(failure));
+      });
     return () => controller.abort();
-  }, [saveId]);
+  }, [saveId, revision]);
 
   if (error) {
     return (
@@ -57,6 +71,22 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
 
   return (
     <div className="dashboard">
+      {statusError ? (
+        <Notice tone="error" title="Season status unavailable">
+          <p>{statusError}</p>
+          <p>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => {
+                setRevision((value) => value + 1);
+              }}
+            >
+              Retry
+            </button>
+          </p>
+        </Notice>
+      ) : null}
       {pendingSelection || cupEvent ? (
         <Card eyebrow="Next step" title={pendingSelection ? SELECTION_TITLES[pendingSelection] : 'Cup event'}>
           {pendingSelection && pendingSeason !== null ? (

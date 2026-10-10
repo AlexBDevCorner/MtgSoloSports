@@ -149,7 +149,7 @@ export function DashboardPage({
           </p>
         }
       >
-        <SeasonFlow saveId={saveId} progress={progress} status={status} onAdvanced={onRefresh} />
+        <SeasonFlow saveId={saveId} progress={progress} status={status} statusError={data.statusError} onAdvanced={onRefresh} />
         {progress.isSeasonComplete ? null : (
           <FastForwardSeason
             saveId={saveId}
@@ -460,6 +460,16 @@ export function DashboardPage({
           ) : (
             <p className="muted">Cup lifecycle status is unavailable for this save.</p>
           )}
+          {!status && data.statusError ? (
+            <Notice tone="error" title="Season status failed to load">
+              <p>{data.statusError}</p>
+              <p>
+                <button type="button" className="ghost-button" onClick={onRefresh}>
+                  Retry
+                </button>
+              </p>
+            </Notice>
+          ) : null}
           {cupHonours.length === 0 ? (
             <p className="muted">No Cup honours yet. Odd seasons run Color Cup, even seasons run Type Cup.</p>
           ) : (

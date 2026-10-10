@@ -22,11 +22,18 @@ export function SeasonFlow({
   saveId,
   progress,
   status,
+  statusError,
   onAdvanced,
 }: {
   saveId: string;
   progress: SeasonProgress;
   status: SeasonStatus | null;
+  /**
+   * MSS-070: the season-status fetch failure from `useDashboard`, if any.
+   * While set, the panel must show a recoverable error with retry and must
+   * never claim no actions remain.
+   */
+  statusError?: string | null;
   onAdvanced: () => void;
 }) {
   const [running, setRunning] = useState(false);
@@ -200,6 +207,60 @@ export function SeasonFlow({
             </button>
           )}
         </div>
+      ) : statusError ? (
+        <Notice tone="error" title="Season status unavailable">
+          <p>{statusError}</p>
+          <p>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={running}
+              onClick={() => {
+                onAdvanced();
+              }}
+            >
+              Retry
+            </button>
+          </p>
+        </Notice>
+      ) : !status ? (
+        <Notice tone="warn" title="Season status unavailable">
+          <p>
+            The next postseason step could not be loaded. A completed league season is not the same as a
+            completed postseason — refresh before assuming nothing remains.
+          </p>
+          <p>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={running}
+              onClick={() => {
+                onAdvanced();
+              }}
+            >
+              Refresh
+            </button>
+          </p>
+        </Notice>
+      ) : status.legalNextActions.length === 0 && !status.cupComplete && !status.readyToStartNextSeason ? (
+        <Notice tone="warn" title="Postseason incomplete">
+          <p>
+            The backend returned no next step, but the {status.expectedCup} is not complete. Refresh to
+            reload the authoritative lifecycle — this panel never invents its own next action.
+          </p>
+          <p>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={running}
+              onClick={() => {
+                onAdvanced();
+              }}
+            >
+              Refresh
+            </button>
+          </p>
+        </Notice>
       ) : (
         <p className="muted">Nothing left to run for this season.</p>
       )}
