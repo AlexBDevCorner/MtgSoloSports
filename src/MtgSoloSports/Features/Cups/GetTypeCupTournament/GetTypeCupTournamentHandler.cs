@@ -163,7 +163,7 @@ public sealed class GetTypeCupTournamentHandler
         TypeCupTeamInvariants.ValidateTournamentPersisted(source, rounds, legs, teams, honours, rules, plan);
         return plan.IsDirectFinal
             ? BuildDirectResponse(saveId, source, plan, teams, legs, rounds, names)
-            : BuildTournamentResponse(saveId, source, plan, draws, teams, legs, rounds, names);
+            : BuildTournamentResponse(saveId, source, plan, draws, teams, legs, rounds, names, rules);
     }
 
     private static async Task<Dictionary<int, string>> LoadNamesAsync(
@@ -247,10 +247,10 @@ public sealed class GetTypeCupTournamentHandler
         List<TypeCupTeamStandingEntity> teams,
         List<TypeCupTeamGroupStandingEntity> legs,
         List<TypeCupTeamRoundEntity> rounds,
-        Dictionary<int, string> names)
+        Dictionary<int, string> names,
+        SimulationKernel.Rules.RulesV1 rules)
     {
         string drawChecksum = draws.Count > 0 ? draws.First().DrawChecksum : string.Empty;
-        List<TypeCupTournamentQualificationGroup> groups = BuildQualGroups(plan, teams, legs, names);
         int finalPhase = (int)TypeCupTournamentFormat.TournamentPhase.Final;
         var finalTeams = teams.Where(t => t.TournamentPhase == finalPhase).OrderBy(t => t.TeamRank).ToList();
         var finalLegs = legs.Where(l => l.TournamentPhase == finalPhase).ToList();
@@ -258,6 +258,10 @@ public sealed class GetTypeCupTournamentHandler
         string finalChecksum = RunTypeCupTeamHandler.ComputeChecksum(ToRanked(finalTeams, finalLegs));
         var final = BuildFinalResult(finalTeams, finalLegs, finalRounds, names, finalChecksum);
         List<string> finalists = finalTeams.Select(t => t.CreatureType).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        HashSet<string> finalistSet = finalists.ToHashSet(StringComparer.Ordinal);
+        List<TypeCupTournamentQualificationGroup> groups = BuildQualGroups(plan, teams, legs, names, finalistSet, rules);
+        (List<TypeCupTournamentWildcard> wildcards, int policy, int wildcardCount, List<int> guaranteed) =
+            BuildWildcardProvenance(plan, teams, finalistSet, rules);
         return new GetTypeCupTournamentResponse(
             saveId,
             source.SeasonNumber,
@@ -272,14 +276,155 @@ public sealed class GetTypeCupTournamentHandler
             finalists,
             final,
             final.ChampionCreatureType,
-            finalChecksum);
+            finalChecksum,
+            policy,
+            wildcardCount,
+            guaranteed,
+            wildcards);
+    }
+
+    private static (List<TypeCupTournamentWildcard> Wildcards, int Policy, int WildcardCount, List<int> Guaranteed)
+        BuildWildcardProvenance(
+            TypeCupTournamentPlan.Plan plan,
+            List<TypeCupTeamStandingEntity> teams,
+            HashSet<string> finalistSet,
+            SimulationKernel.Rules.RulesV1 rules)
+    {
+        int policy = plan.QualificationPolicyVersion;
+        int wildcardCount = plan.WildcardCount;
+        List<int> guaranteed = plan.QualificationStages.Select(s => s.FinalPlaces).ToList();
+        if (!plan.IsWildcardPolicy || wildcardCount == 0)
+        {
+            return ([], policy, wildcardCount, guaranteed);
+        }
+
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates = CollectWildcardCandidates(plan, teams);
+        List<TypeCupTournamentFormat.WildcardCandidate> ordered = OrderWildcardCandidates(candidates, rules);
+        HashSet<string> winnerNames = ordered
+            .Where(c => finalistSet.Contains(c.Team))
+            .Select(c => c.Team)
+            .ToHashSet(StringComparer.Ordinal);
+        bool tieAtCutoff = DetectWildcardTie(ordered, wildcardCount, winnerNames, rules);
+        List<TypeCupTournamentWildcard> wildcards = BuildWildcardRows(ordered, winnerNames, tieAtCutoff, rules);
+        return (wildcards, policy, wildcardCount, guaranteed);
+    }
+
+    private static List<TypeCupTournamentFormat.WildcardCandidate> CollectWildcardCandidates(
+        TypeCupTournamentPlan.Plan plan,
+        List<TypeCupTeamStandingEntity> teams)
+    {
+        int qualPhase = (int)TypeCupTournamentFormat.TournamentPhase.Qualification;
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates = new();
+        foreach (var stage in plan.QualificationStages.OrderBy(s => s.QualificationGroup))
+        {
+            var groupTeams = teams
+                .Where(t => t.TournamentPhase == qualPhase && t.QualificationGroup == stage.QualificationGroup)
+                .OrderBy(t => t.TeamRank)
+                .ToList();
+            if (groupTeams.Count != stage.GroupSize)
+            {
+                continue;
+            }
+
+            int guaranteedForGroup = stage.FinalPlaces;
+            if (groupTeams.Count <= guaranteedForGroup)
+            {
+                continue;
+            }
+
+            var candidate = groupTeams[guaranteedForGroup];
+            candidates.Add(new TypeCupTournamentFormat.WildcardCandidate(
+                stage.QualificationGroup,
+                candidate.CreatureType,
+                candidate.TeamRank,
+                candidate.TeamScoreThousandths,
+                candidate.TeamBaseThousandths,
+                stage.GroupSize));
+        }
+
+        return candidates;
+    }
+
+    private static List<TypeCupTournamentFormat.WildcardCandidate> OrderWildcardCandidates(
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
+        List<TypeCupTournamentFormat.WildcardCandidate> ordered = [.. candidates];
+        ordered.Sort((a, b) =>
+        {
+            int adjusted = TypeCupTournamentFormat.CompareWildcardCandidates(a, b, rules);
+            return adjusted != 0
+                ? adjusted
+                : string.Compare(a.Team, b.Team, StringComparison.Ordinal);
+        });
+        return ordered;
+    }
+
+    private static List<TypeCupTournamentWildcard> BuildWildcardRows(
+        List<TypeCupTournamentFormat.WildcardCandidate> ordered,
+        HashSet<string> winnerNames,
+        bool tieAtCutoff,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
+        List<TypeCupTournamentWildcard> wildcards = new();
+        foreach (TypeCupTournamentFormat.WildcardCandidate candidate in ordered.Where(c => winnerNames.Contains(c.Team)))
+        {
+            long expectedSum = TypeCupTournamentFormat.ExpectedBaseSumThousandths(candidate.GroupSize, rules);
+            wildcards.Add(new TypeCupTournamentWildcard(
+                candidate.Team,
+                candidate.QualificationGroup,
+                candidate.GroupRank,
+                candidate.TeamScoreThousandths,
+                candidate.TeamBaseThousandths,
+                candidate.GroupSize,
+                checked((long)candidate.TeamScoreThousandths * candidate.GroupSize),
+                expectedSum,
+                tieAtCutoff));
+        }
+
+        wildcards.Sort((a, b) => string.Compare(a.CreatureType, b.CreatureType, StringComparison.Ordinal));
+        return wildcards;
+    }
+
+    private static bool DetectWildcardTie(
+        List<TypeCupTournamentFormat.WildcardCandidate> ordered,
+        int wildcardCount,
+        HashSet<string> winnerNames,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
+        if (wildcardCount <= 0 || ordered.Count == 0)
+        {
+            return false;
+        }
+
+        List<TypeCupTournamentFormat.WildcardCandidate> winners = ordered.Where(c => winnerNames.Contains(c.Team)).ToList();
+        List<TypeCupTournamentFormat.WildcardCandidate> eliminated = ordered.Where(c => !winnerNames.Contains(c.Team)).ToList();
+        if (winners.Count == 0 || eliminated.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (TypeCupTournamentFormat.WildcardCandidate winner in winners)
+        {
+            foreach (TypeCupTournamentFormat.WildcardCandidate loser in eliminated)
+            {
+                if (TypeCupTournamentFormat.CompareWildcardCandidates(winner, loser, rules) == 0)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static List<TypeCupTournamentQualificationGroup> BuildQualGroups(
         TypeCupTournamentPlan.Plan plan,
         List<TypeCupTeamStandingEntity> teams,
         List<TypeCupTeamGroupStandingEntity> legs,
-        Dictionary<int, string> names)
+        Dictionary<int, string> names,
+        HashSet<string>? finalistSet = null,
+        SimulationKernel.Rules.RulesV1? rules = null)
     {
         int qualPhase = (int)TypeCupTournamentFormat.TournamentPhase.Qualification;
         List<TypeCupTournamentQualificationGroup> groups = new(plan.QualificationGroupCount);
@@ -288,20 +433,91 @@ public sealed class GetTypeCupTournamentHandler
             var stageTeams = teams.Where(t => t.TournamentPhase == qualPhase && t.QualificationGroup == stage.QualificationGroup).OrderBy(t => t.TeamRank).ToList();
             var stageLegs = legs.Where(l => l.TournamentPhase == qualPhase && l.QualificationGroup == stage.QualificationGroup).ToList();
             string checksum = RunTypeCupTeamHandler.ComputeChecksum(ToRanked(stageTeams, stageLegs));
+            groups.Add(BuildSingleQualGroup(plan, stage, stageTeams, stageLegs, names, checksum, finalistSet));
+        }
+
+        return groups;
+    }
+
+    private static TypeCupTournamentQualificationGroup BuildSingleQualGroup(
+        TypeCupTournamentPlan.Plan plan,
+        TypeCupTournamentPlan.QualificationStage stage,
+        List<TypeCupTeamStandingEntity> stageTeams,
+        List<TypeCupTeamGroupStandingEntity> stageLegs,
+        Dictionary<int, string> names,
+        string checksum,
+        HashSet<string>? finalistSet)
+    {
+        if (!plan.IsWildcardPolicy)
+        {
             var qualified = stageTeams.OrderBy(t => t.TeamRank).Take(stage.FinalPlaces).Select(t => t.CreatureType).OrderBy(t => t, StringComparer.Ordinal).ToList();
             var qualifiedSet = qualified.ToHashSet(StringComparer.Ordinal);
-            groups.Add(new TypeCupTournamentQualificationGroup(
+            return new TypeCupTournamentQualificationGroup(
                 stage.QualificationGroup,
                 stage.GroupSize,
                 stage.FinalPlaces,
                 checksum,
-                stageTeams.Select(t => new TypeCupTournamentTeam(t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths, ((TypeCupMedal)t.Medal).ToString(), qualifiedSet.Contains(t.CreatureType))).ToList(),
+                stageTeams.Select(t => new TypeCupTournamentTeam(t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths, ((TypeCupMedal)t.Medal).ToString(), qualifiedSet.Contains(t.CreatureType), qualifiedSet.Contains(t.CreatureType) ? "Guaranteed" : "Eliminated")).ToList(),
                 stageLegs.Select(l => new TypeCupTournamentLeg(l.SaveAthleteId, names.GetValueOrDefault(l.SaveAthleteId, $"Athlete {l.SaveAthleteId}"), l.CreatureType, l.SelectionRank, l.GroupNumber, l.GroupRank, l.GroupScoreThousandths, l.BaseScoreThousandths, qualifiedSet.Contains(l.CreatureType))).ToList(),
                 qualified,
-                stageTeams.Select(t => t.CreatureType).Where(t => !qualifiedSet.Contains(t)).OrderBy(t => t, StringComparer.Ordinal).ToList()));
+                stageTeams.Select(t => t.CreatureType).Where(t => !qualifiedSet.Contains(t)).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                stage.FinalPlaces,
+                null,
+                null);
         }
 
-        return groups;
+        return BuildWildcardQualGroup(plan, stage, stageTeams, stageLegs, names, checksum, finalistSet);
+    }
+
+    private static TypeCupTournamentQualificationGroup BuildWildcardQualGroup(
+        TypeCupTournamentPlan.Plan plan,
+        TypeCupTournamentPlan.QualificationStage stage,
+        List<TypeCupTeamStandingEntity> stageTeams,
+        List<TypeCupTeamGroupStandingEntity> stageLegs,
+        Dictionary<int, string> names,
+        string checksum,
+        HashSet<string>? finalistSet)
+    {
+        int guaranteed = stage.FinalPlaces;
+        List<TypeCupTeamStandingEntity> ordered = stageTeams.OrderBy(t => t.TeamRank).ToList();
+        HashSet<string> guaranteedNames = ordered.Take(guaranteed).Select(t => t.CreatureType).ToHashSet(StringComparer.Ordinal);
+        string? candidate = ordered.Count > guaranteed ? ordered[guaranteed].CreatureType : null;
+        string? winner = candidate is not null && finalistSet is not null && finalistSet.Contains(candidate)
+            ? candidate
+            : null;
+        HashSet<string> qualifiedNames = new(guaranteedNames, StringComparer.Ordinal);
+        if (winner is not null)
+        {
+            qualifiedNames.Add(winner);
+        }
+
+        List<TypeCupTournamentTeam> teamRows = new(ordered.Count);
+        foreach (TypeCupTeamStandingEntity team in ordered)
+        {
+            bool isGuaranteed = guaranteedNames.Contains(team.CreatureType);
+            bool isWinner = winner is not null && string.Equals(team.CreatureType, winner, StringComparison.Ordinal);
+            bool qualified = isGuaranteed || isWinner;
+            string status = isGuaranteed ? "Guaranteed" : isWinner ? "Wildcard" : "Eliminated";
+            teamRows.Add(new TypeCupTournamentTeam(
+                team.CreatureType, team.TeamRank, team.TeamScoreThousandths, team.TeamBaseThousandths,
+                ((TypeCupMedal)team.Medal).ToString(), qualified, status));
+        }
+
+        List<string> qualifiedList = qualifiedNames.OrderBy(t => t, StringComparer.Ordinal).ToList();
+        List<string> eliminatedList = ordered.Select(t => t.CreatureType).Where(t => !qualifiedNames.Contains(t)).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        _ = plan;
+        return new TypeCupTournamentQualificationGroup(
+            stage.QualificationGroup,
+            stage.GroupSize,
+            stage.FinalPlaces,
+            checksum,
+            teamRows,
+            stageLegs.Select(l => new TypeCupTournamentLeg(l.SaveAthleteId, names.GetValueOrDefault(l.SaveAthleteId, $"Athlete {l.SaveAthleteId}"), l.CreatureType, l.SelectionRank, l.GroupNumber, l.GroupRank, l.GroupScoreThousandths, l.BaseScoreThousandths, qualifiedNames.Contains(l.CreatureType))).ToList(),
+            qualifiedList,
+            eliminatedList,
+            guaranteed,
+            candidate,
+            winner);
     }
 
     private static TypeCupTournamentFinalResult BuildFinalResult(
@@ -326,7 +542,7 @@ public sealed class GetTypeCupTournamentHandler
             lastDoc.RngAfterState,
             lastDoc.RngAfterStream,
             champion.CreatureType,
-            orderedTeams.Select(t => new TypeCupTournamentTeam(t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths, ((TypeCupMedal)t.Medal).ToString(), true)).ToList(),
+            orderedTeams.Select(t => new TypeCupTournamentTeam(t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths, ((TypeCupMedal)t.Medal).ToString(), true, "Qualified")).ToList(),
             legs.Select(l => new TypeCupTournamentLeg(l.SaveAthleteId, names.GetValueOrDefault(l.SaveAthleteId, $"Athlete {l.SaveAthleteId}"), l.CreatureType, l.SelectionRank, l.GroupNumber, l.GroupRank, l.GroupScoreThousandths, l.BaseScoreThousandths, finalists.Contains(l.CreatureType))).ToList());
     }
 
