@@ -156,16 +156,29 @@ public sealed class TypeCupPostSelectionStatusTests
 
         // A fresh store (as after an app restart) must heal the schema through
         // the status read alone, without losing squads or inventing results.
+        // Parallel first reads share one per-save migration gate in SaveStore,
+        // so concurrent upgrades serialize checkpoint/migrate/rollback instead
+        // of racing (MSS-070 P1).
         SaveStore upgraded = OpenStore(root);
-        GetSeasonStatusResponse healed = await new GetSeasonStatusHandler(upgraded).HandleAsync(saveId).ConfigureAwait(false);
-        healed.SourceSeasonNumber.ShouldBe(2);
-        healed.ExpectedCup.ShouldBe(CupExtensionPoint.TypeCup);
-        healed.CupSelectionResolved.ShouldBeTrue();
-        healed.CupTeamResolved.ShouldBeFalse();
-        healed.CupComplete.ShouldBeFalse();
-        healed.LegalNextActions.ShouldBe([SeasonLifecycleActions.RunTypeCupTeam]);
-        healed.EventProgress.ShouldNotBeNull();
-        healed.EventProgress!.Event.ShouldBe(PostseasonEvents.TypeCupTeam);
+        const int concurrentReads = 8;
+        Task<GetSeasonStatusResponse>[] upgrades = Enumerable
+            .Range(0, concurrentReads)
+            .Select(_ => new GetSeasonStatusHandler(upgraded).HandleAsync(saveId))
+            .ToArray();
+        GetSeasonStatusResponse[] healedAll = await Task.WhenAll(upgrades).ConfigureAwait(false);
+        foreach (GetSeasonStatusResponse healedEach in healedAll)
+        {
+            healedEach.SourceSeasonNumber.ShouldBe(2);
+            healedEach.ExpectedCup.ShouldBe(CupExtensionPoint.TypeCup);
+            healedEach.CupSelectionResolved.ShouldBeTrue();
+            healedEach.CupTeamResolved.ShouldBeFalse();
+            healedEach.CupComplete.ShouldBeFalse();
+            healedEach.LegalNextActions.ShouldBe([SeasonLifecycleActions.RunTypeCupTeam]);
+            healedEach.EventProgress.ShouldNotBeNull();
+            healedEach.EventProgress!.Event.ShouldBe(PostseasonEvents.TypeCupTeam);
+        }
+
+        GetSeasonStatusResponse healed = healedAll[0];
 
         int selections = await CountSelectedTeamsAsync(upgraded, saveId).ConfigureAwait(false);
         selections.ShouldBe(teamCount);
