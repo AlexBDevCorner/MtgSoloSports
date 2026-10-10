@@ -140,12 +140,16 @@ function CompletedGroupBlock({
   const [open, setOpen] = useState(false);
   const stage = qualificationStageLabel(group.qualificationGroup, groupCount);
   const teams = [...group.teams].sort((a, b) => a.teamRank - b.teamRank);
+  const guaranteed = group.guaranteedPlaces ?? group.finalPlaces;
+  const advancing = group.wildcardCandidate != null
+    ? `${guaranteed} guaranteed + wildcard candidate at rank ${guaranteed + 1}`
+    : `${group.finalPlaces} advance`;
   return (
     <section className="team-season" aria-label={`${stage} final table`}>
       <div className="team-season-head">
         <strong>{stage} — final</strong>
         <span className="team-season-result">
-          {group.groupSize} teams · {group.finalPlaces} advance
+          {group.groupSize} teams · {advancing}
         </span>
       </div>
       <div className="table-wrap">
@@ -172,7 +176,7 @@ function CompletedGroupBlock({
                 <td className="numeric">{formatPoints(team.teamScoreThousandths)}</td>
                 <td>
                   {team.qualified ? (
-                    <span className="badge badge-ready">Qualified</span>
+                    <span className="badge badge-ready">{team.qualificationStatus && team.qualificationStatus !== 'Eliminated' ? (team.qualificationStatus === 'Guaranteed' ? 'Qualified · guaranteed' : team.qualificationStatus === 'Wildcard' ? 'Qualified · wildcard' : 'Qualified') : 'Qualified'}</span>
                   ) : (
                     <span className="badge badge-wait">Eliminated</span>
                   )}
@@ -183,7 +187,7 @@ function CompletedGroupBlock({
         </table>
       </div>
       <p className="muted small">
-        Cut after place {group.finalPlaces}.{' '}
+        {group.wildcardCandidate != null ? `Top ${guaranteed} guaranteed; rank ${guaranteed + 1} (${group.wildcardCandidate}) competes for a global wildcard${group.wildcardWinner ? ` — ${group.wildcardWinner} earned it` : ''}. ` : `Cut after place ${group.finalPlaces}. `}
         <button type="button" className="ghost-button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
           {open ? 'Hide details' : 'Why this order?'}
         </button>

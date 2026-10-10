@@ -50,14 +50,23 @@ public class RulesV1
     public const int DefaultPrestigeStageThirdPoints = 2;
     public const int DefaultPrestigeOtherMajorHonourPoints = 150;
 
-    // Type Cup scalable tournament format (MSS-061): qualification groups plus a
-    // fixed 32-team Final. Format version 1 is the scalable format; version 0
-    // is the legacy single-field format that allowed unbounded N in one event
-    // with positions beyond 32 scoring the table minimum. New snapshots use 1;
-    // historical snapshots without the field decode to 0 and stay readable.
+    // Type Cup scalable tournament format (MSS-061, MSS-071): qualification groups plus a
+    // fixed 32-team Final. Format version 0 is the legacy single-field format that
+    // allowed unbounded N in one event with positions beyond 32 scoring the table
+    // minimum. Version 1 is the scalable format with fixed per-group quotas
+    // (extra places to larger groups, then lower group numbers, e.g. 11/11/10).
+    // Version 2 keeps the same scalable groups/draw but replaces the arbitrary
+    // extra-place rule with equal guaranteed places plus performance wildcards
+    // (base = floor(32/G) per group, wildcardCount = 32 - G*base decided by team
+    // results). New snapshots use 2; historical snapshots with 0 or 1 stay readable
+    // and their persisted editions keep their original qualifiers.
     public const int LegacyTypeCupTournamentFormatVersion = 0;
 
-    public const int DefaultTypeCupTournamentFormatVersion = 1;
+    public const int FixedQuotaTypeCupTournamentFormatVersion = 1;
+
+    public const int WildcardTypeCupTournamentFormatVersion = 2;
+
+    public const int DefaultTypeCupTournamentFormatVersion = 2;
 
     public const int DefaultTypeCupMaxDirectFinalTeams = 32;
 
@@ -808,10 +817,11 @@ public class RulesV1
     private void ValidateTypeCupTournamentFormat()
     {
         if (TypeCupTournamentFormatVersion != LegacyTypeCupTournamentFormatVersion
-            && TypeCupTournamentFormatVersion != DefaultTypeCupTournamentFormatVersion)
+            && TypeCupTournamentFormatVersion != FixedQuotaTypeCupTournamentFormatVersion
+            && TypeCupTournamentFormatVersion != WildcardTypeCupTournamentFormatVersion)
         {
             throw new InvalidOperationException(
-                $"TypeCupTournamentFormatVersion must be {LegacyTypeCupTournamentFormatVersion} (legacy) or {DefaultTypeCupTournamentFormatVersion} (scalable), was {TypeCupTournamentFormatVersion}.");
+                $"TypeCupTournamentFormatVersion must be {LegacyTypeCupTournamentFormatVersion} (legacy), {FixedQuotaTypeCupTournamentFormatVersion} (fixed quotas) or {WildcardTypeCupTournamentFormatVersion} (guaranteed plus wildcards), was {TypeCupTournamentFormatVersion}.");
         }
 
         if (TypeCupMaxDirectFinalTeams != DefaultTypeCupMaxDirectFinalTeams)

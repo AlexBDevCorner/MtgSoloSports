@@ -36,7 +36,7 @@ public sealed class TypeCupTournamentTests
         data.Add(33, [17, 16], [16, 16]);
         data.Add(35, [18, 17], [16, 16]);
         data.Add(64, [32, 32], [16, 16]);
-        data.Add(65, [22, 22, 21], [11, 11, 10]);
+        data.Add(65, [22, 22, 21], [10, 10, 10]);
         data.Add(97, [25, 24, 24, 24], [8, 8, 8, 8]);
         return data;
     }
