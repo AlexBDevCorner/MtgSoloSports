@@ -267,24 +267,29 @@ public static class PostseasonEvents
         CancellationToken cancellationToken)
     {
         EventShape shape = Shape(TypeCupTeam, rules);
+        List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (selection.Count == 0)
+        {
+            return FallbackTypeCupProgress(played, shape);
+        }
+
+        int teamCount = selection.Count / rules.TypeCupMinTeamSize;
+        List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (PendingTournamentProgress(source, played, teamCount, draws.Count, rules) is var pending && pending.Handled)
+        {
+            return pending.Progress;
+        }
+
         try
         {
-            List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
-                .AsNoTracking()
-                .Where(e => e.SourceSeasonId == source.Id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (selection.Count == 0)
-            {
-                return FallbackTypeCupProgress(played, shape);
-            }
-
-            int teamCount = selection.Count / rules.TypeCupMinTeamSize;
-            List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
-                .AsNoTracking()
-                .Where(e => e.SourceSeasonId == source.Id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
             var plan = Cups.RunTypeCupTeam.TypeCupTournamentPlan.BuildFromSelection(
                 teamCount,
                 selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToList(),
@@ -304,6 +309,41 @@ public static class PostseasonEvents
         {
             return FallbackTypeCupProgress(played, shape);
         }
+    }
+
+    /// <summary>
+    /// Prospective progress for a healthy pending tournament: squads are
+    /// selected but the qualification draw is auto-created on first play, so
+    /// no draw rows exist yet. Balanced group sizes and Final quotas are pure
+    /// math on the team count (only the group assignment needs the draw RNG),
+    /// so the read model can report the tournament without throwing a
+    /// mutation-path conflict. Rounds persisted without a draw are corruption
+    /// and throw; callers must not swallow that as a fallback.
+    /// </summary>
+    private static (bool Handled, (int Total, int Group, int Round, int? Phase, int? Qual, int? QualCount, string? Stage) Progress)
+        PendingTournamentProgress(SeasonEntity source, int played, int teamCount, int drawCount, RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (drawCount != 0
+            || rules.TypeCupTournamentFormatVersion == RulesV1.LegacyTypeCupTournamentFormatVersion
+            || SimulationKernel.Cups.TypeCupTournamentFormat.IsDirectFinal(teamCount, rules))
+        {
+            return (false, default);
+        }
+
+        if (played != 0)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup for Season {source.SeasonNumber} has {played} rounds persisted without a qualification draw; sporting state is corrupt.");
+        }
+
+        int groupCount = SimulationKernel.Cups.TypeCupTournamentFormat.QualificationGroupCount(teamCount, rules);
+        int perStage = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
+        int prospectiveTotal = checked((groupCount + 1) * perStage);
+        return (true, (prospectiveTotal, 1, 1,
+            (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification,
+            1, groupCount, $"Qualification Group 1 of {groupCount}"));
     }
 
     private static (int Total, int Group, int Round, int? Phase, int? Qual, int? QualCount, string? Stage) FallbackTypeCupProgress(

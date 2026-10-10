@@ -9,7 +9,10 @@ namespace MtgSoloSports.Features.Seasons.GetSeasonStatus;
 /// lifecycle state without mutating or resimulating: the computed phase, the
 /// postseason checklist (season complete, movement, qualifier, rebalance, Cup
 /// selection/individual/team) and exactly the legal next actions.
-/// Read-only queries never take the per-save lock.
+/// Read-only queries never take the per-save lock; the schema is still
+/// migrated first so saves created before newer tournament tables read
+/// correctly through the same concurrency-safe <see cref="SaveStore"/>
+/// mechanism as the mutation handlers.
 /// </summary>
 public sealed class GetSeasonStatusHandler
 {
@@ -27,6 +30,7 @@ public sealed class GetSeasonStatusHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
+        await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         using SaveDbContext context = _store.OpenDbContext(saveId);
         var rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         SeasonLifecycleSnapshot snapshot = await SeasonLifecycleEvaluator
