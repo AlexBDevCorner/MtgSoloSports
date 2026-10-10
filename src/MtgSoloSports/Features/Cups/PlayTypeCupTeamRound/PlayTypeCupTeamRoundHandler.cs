@@ -189,6 +189,14 @@ public sealed class PlayTypeCupTeamRoundHandler
             return state.Rng;
         }
 
+        // The wildcard step (if any) is already reflected in the persisted Final
+        // first-round RngBefore once the Final has started; re-applying it on
+        // later Final rounds would corrupt the round-to-round RNG chain.
+        if (state.PlayedOrdered.Any(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final))
+        {
+            return state.Rng;
+        }
+
         // The wildcard tie draw (if the cutoff splits tied adjusted scores) sits
         // between the last qual ranking and the Final first round. Recompute it
         // deterministically from persisted standings plus the persisted RNG.

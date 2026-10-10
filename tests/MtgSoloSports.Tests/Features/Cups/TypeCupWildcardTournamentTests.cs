@@ -11,6 +11,7 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
@@ -166,6 +167,86 @@ public sealed class TypeCupWildcardTournamentTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Stepwise_WildcardTieDraw_AppliesOnlyBeforeFirstFinalRound()
+    {
+        // MSS-071 correction: the seeded wildcard cutoff tie draw sits between
+        // the last qual ranking and the Final first round. Stepwise must apply
+        // it once, then leave later Final rounds on the round-to-round chain.
+        var (store, root) = CreateStore();
+        try
+        {
+            Guid saveId = await SetupFieldAsync(store, 84, 84200UL, 84300UL);
+            await SelectAsync(store, saveId);
+            await DrawAsync(store, saveId);
+            PlayTypeCupTeamRoundHandler step = new(store);
+            for (int index = 0; index < 96; index++)
+            {
+                await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+            }
+
+            await ForceRankElevenTieAsync(store, saveId);
+            Pcg32State firstAdvance = await WildcardRngBeforeFinalAsync(store, saveId);
+            Pcg32State reopenedAdvance = await WildcardRngBeforeFinalAsync(store, saveId);
+            reopenedAdvance.ShouldBe(firstAdvance);
+
+            Pcg32State afterFinalStarted = await WildcardRngAfterFinalStartedAsync(store, saveId);
+            afterFinalStarted.ShouldNotBe(firstAdvance);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task<Pcg32State> WildcardRngBeforeFinalAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        RunTypeCupTeamHandler.TournamentState state = await RunTypeCupTeamHandler
+            .LoadStateAsync(context, saveId, sourceSeasonNumber: 2, CancellationToken.None).ConfigureAwait(false);
+        Pcg32State advanced = await PlayTypeCupTeamRoundHandler
+            .WildcardRngBeforeNextAsync(context, state, CancellationToken.None).ConfigureAwait(false);
+        // A forced three-way tie at rank 11 for two wildcards must consume the
+        // seeded draw, so the Final starts past it.
+        advanced.ShouldNotBe(state.Rng);
+        return advanced;
+    }
+
+    private static async Task<Pcg32State> WildcardRngAfterFinalStartedAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        RunTypeCupTeamHandler.TournamentState state = await RunTypeCupTeamHandler
+            .LoadStateAsync(context, saveId, sourceSeasonNumber: 2, CancellationToken.None).ConfigureAwait(false);
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> withFinal =
+            [.. state.PlayedOrdered, (TypeCupTournamentPlan.FinalKey(), state.PlayedOrdered[0].Payload)];
+        RunTypeCupTeamHandler.TournamentState finalStarted = state with { PlayedOrdered = withFinal };
+        Pcg32State guarded = await PlayTypeCupTeamRoundHandler
+            .WildcardRngBeforeNextAsync(context, finalStarted, CancellationToken.None).ConfigureAwait(false);
+        // Once the Final has started the persisted first-round RngBefore already
+        // reflects the tie draw; later Final rounds must not advance again.
+        guarded.ShouldBe(finalStarted.Rng);
+        return guarded;
+    }
+
+    private static async Task ForceRankElevenTieAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity source = await context.Seasons.SingleAsync(e => e.SeasonNumber == 2).ConfigureAwait(false);
+        List<TypeCupTeamStandingEntity> candidates = await context.TypeCupTeamStandings
+            .Where(e => e.SourceSeasonId == source.Id
+                && e.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Qualification
+                && e.TeamRank == 11)
+            .ToListAsync().ConfigureAwait(false);
+        candidates.Count.ShouldBe(3);
+        foreach (TypeCupTeamStandingEntity candidate in candidates)
+        {
+            candidate.TeamScoreThousandths = 2000000;
+            candidate.TeamBaseThousandths = 1900000;
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
     private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareTournamentAsync(int teamCount, ulong seed, ulong stream)
