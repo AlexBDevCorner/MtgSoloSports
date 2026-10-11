@@ -75,6 +75,11 @@ public sealed class EventProgressTests
             advanced.ExecutedAction.ShouldBe("RunQualifier");
             advanced.QualifierResolved.ShouldBeTrue();
             advanced.EventProgress.ShouldBeNull();
+            advanced.QualifierProgress.ShouldNotBeNull();
+            advanced.QualifierProgress!.CompletedEvents.ShouldBe(17);
+            advanced.QualifierProgress.TotalEvents.ShouldBe(17);
+            advanced.QualifierProgress.RoundsPlayed.ShouldBe(272);
+            advanced.QualifierProgress.TotalRounds.ShouldBe(272);
             using SaveDbContext context = store.OpenDbContext(saveId);
             (await context.QualifierRounds.CountAsync()).ShouldBe(272);
             (await context.QualifierStandings.CountAsync()).ShouldBe(288);

@@ -231,6 +231,12 @@ for the whole phase in both modes. Round-by-round play:
   `QualifierInProgress`, `ColorCupIndividualInProgress`,
   `ColorCupTeamInProgress` or `TypeCupTeamInProgress` (computed only; the
   persisted phase changes at completion). Legal actions are unchanged.
+  For normal pending transitions they also carry authoritative
+  `qualifierProgress` (`completedEvents`/`totalEvents`,
+  `roundsPlayed`/`totalRounds` from persisted qualifier standings and rounds),
+  including after the last qualifier completes when the next legal action is
+  `RebalanceFeeders` and `eventProgress` is null, so the completed Qualifier
+  step keeps its totals (for example 17/17 and 272/272).
 - History reads (no lock): `GET …/history/seasons/{n}/events`,
   `…/events/{event}/rounds`, `…/events/{event}/rounds/{round}?group=` (league
   replay shape) and `…/events/{event}/team-standings` (persisted final ranking,

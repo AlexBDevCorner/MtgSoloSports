@@ -51,7 +51,14 @@ export function SeasonFlow({
     setError(null);
     try {
       const result = await advanceToNextEvent(saveId);
-      setLastDone(executedSummary(result.executedAction, result.nextSeasonNumber ?? result.currentSeasonNumber));
+      setLastDone(
+        executedSummary(
+          result.executedAction,
+          result.nextSeasonNumber ?? result.currentSeasonNumber,
+          isTieredProgress(progress),
+          status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
+        ),
+      );
       onAdvanced();
     } catch (failure) {
       setError(apiErrorMessage(failure));
@@ -75,7 +82,14 @@ export function SeasonFlow({
     setError(null);
     try {
       const result = await advanceToNextEvent(saveId);
-      setLastDone(executedSummary(result.executedAction, result.nextSeasonNumber ?? result.currentSeasonNumber));
+      setLastDone(
+        executedSummary(
+          result.executedAction,
+          result.nextSeasonNumber ?? result.currentSeasonNumber,
+          isTieredProgress(progress),
+          status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
+        ),
+      );
       onAdvanced();
       const transition = transitionForAction(result.executedAction) ?? next.liveTransition;
       const fromSeason = result.sourceSeasonNumber ?? flow.seasonNumber;
@@ -140,7 +154,9 @@ export function SeasonFlow({
                   to={qualifiersPath(saveId, { season: flow.seasonNumber })}
                   className="primary-button"
                 >
-                  Open 17 qualifiers
+                  {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
+                    ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
+                    : 'Open qualifiers'}
                 </Link>
               ) : (
                 <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">

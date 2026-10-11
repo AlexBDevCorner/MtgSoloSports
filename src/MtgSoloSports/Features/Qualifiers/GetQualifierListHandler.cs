@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
@@ -128,6 +129,7 @@ public sealed class GetQualifierListHandler
         List<GetQualifierEventResponse> events = new(groups.Count);
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        var rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         foreach (var group in groups)
         {
             QualifierBoundary boundary = (QualifierBoundary)group.Key.QualifierBoundary;
@@ -139,6 +141,13 @@ public sealed class GetQualifierListHandler
                     && r.QualifierSportingColor == group.Key.QualifierSportingColor)
                 .OrderBy(r => r.RoundNumber)
                 .ToList();
+            if (!QualifierProgressEvaluator.IsEventComplete(eventStandings, eventRounds, boundary, rules, source.SeasonNumber))
+            {
+                QualifierProgressEvaluator.ValidateEventNotCorrupt(eventStandings, eventRounds, boundary, rules, source.SeasonNumber);
+                throw new InvalidOperationException(
+                    $"Qualifier {boundary} for Season {source.SeasonNumber} is incomplete but has standings; sporting state is corrupt.");
+            }
+
             events.Add(MapEvent(saveId, source, next, boundary, color, eventStandings, eventRounds, names, leagueNames));
         }
 
@@ -169,6 +178,14 @@ public sealed class GetQualifierListHandler
                 && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == storageColor)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        if (!QualifierProgressEvaluator.IsEventComplete(standings, rounds, boundary, rules, source.SeasonNumber))
+        {
+            QualifierProgressEvaluator.ValidateEventNotCorrupt(standings, rounds, boundary, rules, source.SeasonNumber);
+            throw new InvalidOperationException(
+                $"Qualifier {boundary} for Season {source.SeasonNumber} is incomplete but has standings; sporting state is corrupt.");
+        }
+
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
         return MapEvent(saveId, source, next, boundary, sportingColor, standings, rounds, names, leagueNames);

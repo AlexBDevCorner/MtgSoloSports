@@ -195,12 +195,15 @@ describe('round-based events', () => {
           roundsPerGroup: 16,
           group: null,
           roundInGroup: null,
+          completedEvents: 0,
+          totalEvents: 1,
         },
       }),
     );
     assert.equal(flow.next?.kind, 'event');
     assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : null, 'qualifier');
-    assert.equal(flow.steps.find((s) => s.state === 'current')?.detail, 'Round 5 / 16');
+    // MSS-075: qualifier progress is phase-wide totals, never a single Round N/16.
+    assert.equal(flow.steps.find((s) => s.state === 'current')?.detail, '0/1 qualifiers · 5/16 total rounds');
   });
 
   it('keeps single-step Cup-adjacent events off round-based Live but sends transitions to their reveal', () => {

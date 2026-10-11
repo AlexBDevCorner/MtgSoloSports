@@ -222,7 +222,14 @@ public sealed class RunQualifierHandler
             state.StageCountBefore, state.SeasonCountBefore, state.RoundCountBefore,
             cancellationToken).ConfigureAwait(false);
         await EmitQualifierStoriesAsync(context, state.Source, state.Next, simulation, state.Rules, cancellationToken).ConfigureAwait(false);
-        state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
+        Qualifiers.QualifierProgress progress = await Qualifiers.QualifierProgressEvaluator
+            .LoadAsync(context, state.Source, state.Next, state.Rules, cancellationToken).ConfigureAwait(false);
+        if (progress.IsComplete
+            && Features.Saves.SavePhaseParser.Parse(state.Metadata.Phase) < Features.Saves.SavePhase.QualifierResolved)
+        {
+            state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
+        }
+
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return simulation;
     }

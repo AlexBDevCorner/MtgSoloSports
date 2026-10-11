@@ -16,12 +16,14 @@ import {
 import type { SaveDetail } from '../saves/savesApi';
 import {
   buildQualifierOverview,
+  isActiveQualifierSeason,
   qualifierFieldRows,
   qualifierLiveParam,
   qualifierOutcomeLabel,
   qualifierProgressLine,
   qualifierRoleLabel,
   qualifierRoleTier,
+  shouldShowQualifierRun,
   type QualifierEntry,
 } from './qualifierModel';
 import {
@@ -99,10 +101,12 @@ export function QualifiersPage({
   saveId,
   urlSeason,
   onQualifiersChange,
+  onMutated,
 }: {
   saveId: string;
   urlSeason: number | null;
   onQualifiersChange: (selection: QualifiersSelection) => void;
+  onMutated?: () => void;
 }) {
   const [season, setSeason] = useState<number | null>(urlSeason);
   const [running, setRunning] = useState(false);
@@ -155,10 +159,21 @@ export function QualifiersPage({
   );
   const completed = overview.filter((entry) => entry.status === 'complete').length;
   const canRun = (status?.legalNextActions ?? []).includes('RunQualifier');
+  // MSS-075 correction: run endpoints execute the latest pending transition
+  // with no season argument. Gate the authorization on viewing that exact
+  // transition so a historical season never shows a control that would mutate
+  // the active season.
+  const canRunActive = canRun && isActiveQualifierSeason(effectiveSeason, status?.sourceSeasonNumber);
+  // MSS-075: never offer a bulk run when the persisted overview already shows
+  // every event complete. A stale status that still says RunQualifier must not
+  // invite a duplicate run; hide the action and surface the next step instead.
+  const allComplete = overview.length > 0 && completed === overview.length;
+  const showRun = shouldShowQualifierRun(canRunActive, completed, overview.length);
 
   async function refreshAll(): Promise<void> {
     listState.refresh();
     statusState.refresh();
+    onMutated?.();
   }
 
   async function handleRunRemaining(): Promise<void> {
@@ -224,7 +239,7 @@ export function QualifiersPage({
             : `Latest qualifiers — ${completed}/${overview.length} complete`
         }
         action={
-          canRun ? (
+          showRun ? (
             <button
               type="button"
               className="primary-button"
@@ -271,10 +286,30 @@ export function QualifiersPage({
                 {actionDone}
               </p>
             ) : null}
+            {allComplete ? (
+              <p className="flow-done" role="status">
+                <span aria-hidden="true">✓ </span>
+                All {overview.length} qualifiers complete — results are persisted and never rerun.{' '}
+                <Link to={dashboardPath(saveId)}>Continue on the Dashboard</Link> for the next postseason step.
+              </p>
+            ) : null}
+            {allComplete && canRunActive ? (
+              <Notice tone="info" title="Status is refreshing">
+                <p>
+                  Persisted results show every qualifier complete; the lifecycle status still lists a qualifier run. Refreshing
+                  will converge to the next step (normally feeder rebalancing) without rerunning any qualifier.
+                </p>
+                <p>
+                  <button type="button" className="ghost-button" onClick={() => void refreshAll()}>
+                    Refresh now
+                  </button>
+                </p>
+              </Notice>
+            ) : null}
             {!listState.data ? (
               <Notice tone="empty" title="No qualifiers resolved yet">
                 <p>
-                  {canRun
+                  {canRunActive
                     ? 'The qualifier phase is next. Run remaining qualifiers above, or open a pending qualifier below to play it individually.'
                     : 'Qualifiers resolve after automatic promotion/relegation. Return once the postseason reaches them.'}
                 </p>
@@ -284,7 +319,7 @@ export function QualifiersPage({
               saveId={saveId}
               overview={overview}
               season={effectiveSeason ?? listState.data?.fromSeasonNumber ?? null}
-              canRun={canRun}
+              canRun={canRunActive}
             />
           </>
         )}
@@ -399,11 +434,13 @@ export function QualifierDetailPage({
   boundary,
   color,
   urlSeason,
+  onMutated,
 }: {
   saveId: string;
   boundary: 'Superleague' | 'Feeder1Feeder2' | 'Feeder2Feeder3';
   color: string | null;
   urlSeason: number | null;
+  onMutated?: () => void;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -437,6 +474,10 @@ export function QualifierDetailPage({
   }, [listState.data, boundary, color]);
 
   const canRun = (status?.legalNextActions ?? []).includes('RunQualifier');
+  // MSS-075 correction: single-event endpoints also execute the latest pending
+  // transition. Hide the controls unless the displayed season is that active
+  // transition so history viewing can never trigger the active season.
+  const canRunActive = canRun && isActiveQualifierSeason(effectiveSeason, status?.sourceSeasonNumber);
   const rows = useMemo(() => (event ? qualifierFieldRows(event) : []), [event]);
   const pending = !listState.loading && listState.error === null && listState.data === null;
 
@@ -458,6 +499,7 @@ export function QualifierDetailPage({
       }
       listState.refresh();
       statusState.refresh();
+      onMutated?.();
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
@@ -477,6 +519,7 @@ export function QualifierDetailPage({
       setDone(`Ran ${result.executedNow.length} qualifier${result.executedNow.length === 1 ? '' : 's'} in canonical order.`);
       listState.refresh();
       statusState.refresh();
+      onMutated?.();
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
@@ -527,7 +570,7 @@ export function QualifierDetailPage({
         eyebrow="Qualifier"
         title={effectiveSeason !== null ? `${eventTitle()} · Season ${effectiveSeason}` : eventTitle()}
         action={
-          canRun ? (
+          canRunActive ? (
             <div className="live-buttons">
               <button
                 type="button"
