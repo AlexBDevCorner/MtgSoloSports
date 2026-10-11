@@ -94,7 +94,7 @@ Reusable skills live in `.opencode/skills/` and are discovered by OpenCode on de
 
 For frontend work, prefer existing CSS, React components and native browser features. Do not introduce Tailwind, shadcn/ui, animation libraries, or a new component library solely because a design skill suggests one. The design skills guide choices; the task scope and repository constraints control implementation.
 
-Upstream references: [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail), [Frontend Design](https://github.com/anthropics/skills/tree/main/skills/frontend-design), [Web Design Guidelines](https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines). Vendored licenses are kept alongside the corresponding skills.
+Upstream references: [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail), [Frontend Design](https://github.com/anthropics/skills/tree/main/skills/frontend-design), [Web Design Guidelines](https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines). The Ponytail MIT and Frontend Design Apache 2.0 license texts are included beside those skills.
 
 ## Autonomous worker rules
 
