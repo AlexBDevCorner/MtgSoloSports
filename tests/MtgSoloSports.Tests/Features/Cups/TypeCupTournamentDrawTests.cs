@@ -60,8 +60,8 @@ public sealed class TypeCupTournamentDrawTests
     [InlineData(33, new[] { 17, 16 }, new[] { 16, 16 })]
     [InlineData(35, new[] { 18, 17 }, new[] { 16, 16 })]
     [InlineData(64, new[] { 32, 32 }, new[] { 16, 16 })]
-    [InlineData(65, new[] { 22, 22, 21 }, new[] { 11, 11, 10 })]
-    [InlineData(96, new[] { 32, 32, 32 }, new[] { 11, 11, 10 })]
+    [InlineData(65, new[] { 22, 22, 21 }, new[] { 10, 10, 10 })]
+    [InlineData(96, new[] { 32, 32, 32 }, new[] { 10, 10, 10 })]
     [InlineData(97, new[] { 25, 24, 24, 24 }, new[] { 8, 8, 8, 8 })]
     public async Task QualificationDraw_PersistsBalancedGroups_AndExactQuotas(
         int teamCount, int[] expectedSizes, int[] expectedQuotas)
@@ -76,45 +76,73 @@ public sealed class TypeCupTournamentDrawTests
 
             DrawTypeCupQualificationGroupsHandler draw = new(store);
             DrawTypeCupQualificationGroupsResponse response = await draw.HandleAsync(saveId, sourceSeasonNumber: 2);
-            response.IsDirectFinal.ShouldBeFalse();
-            response.TeamCount.ShouldBe(teamCount);
-            response.QualificationGroupCount.ShouldBe(expectedSizes.Length);
-            response.GroupSizes.ShouldBe(expectedSizes);
-            response.FinalPlacesPerGroup.ShouldBe(expectedQuotas);
-            response.FinalPlacesPerGroup.Sum().ShouldBe(32);
-            response.Groups.Count.ShouldBe(expectedSizes.Length);
-            response.DrawChecksum.Length.ShouldBe(64);
-
-            List<string> drawn = response.Groups.SelectMany(g => g.CreatureTypes).ToList();
-            drawn.Count.ShouldBe(teamCount);
-            drawn.Distinct(StringComparer.Ordinal).Count().ShouldBe(teamCount);
-
-            for (int i = 0; i < expectedSizes.Length; i++)
-            {
-                response.Groups[i].QualificationGroup.ShouldBe(i + 1);
-                response.Groups[i].GroupSize.ShouldBe(expectedSizes[i]);
-                response.Groups[i].CreatureTypes.Count.ShouldBe(expectedSizes[i]);
-                response.Groups[i].GroupSize.ShouldBeLessThanOrEqualTo(32);
-                response.Groups[i].FinalPlaces.ShouldBe(expectedQuotas[i]);
-            }
+            AssertWildcardDraw(response, teamCount, expectedSizes, expectedQuotas);
 
             DrawTypeCupQualificationGroupsResponse reread = await draw.GetAsync(saveId, sourceSeasonNumber: 2);
+            List<string> drawn = response.Groups.SelectMany(g => g.CreatureTypes).ToList();
             reread.DrawChecksum.ShouldBe(response.DrawChecksum);
             reread.Groups.SelectMany(g => g.CreatureTypes).OrderBy(t => t, StringComparer.Ordinal)
                 .ShouldBe(drawn.OrderBy(t => t, StringComparer.Ordinal).ToList());
 
-            using SaveDbContext context = store.OpenDbContext(saveId);
-            SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2);
-            List<TypeCupSelectionEntity> selection = await context.TypeCupSelections.AsNoTracking()
-                .Where(e => e.SourceSeasonId == source.Id).ToListAsync();
-            selection.Count.ShouldBe(teamCount * 4);
-            HashSet<string> selectedTypes = selection.Select(e => e.CreatureType).ToHashSet(StringComparer.Ordinal);
-            selectedTypes.SetEquals(drawn).ShouldBeTrue();
+            await AssertDrawSelectionAsync(store, saveId, teamCount, drawn);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    private static void AssertWildcardDraw(
+        DrawTypeCupQualificationGroupsResponse response,
+        int teamCount,
+        int[] expectedSizes,
+        int[] expectedQuotas)
+    {
+        response.IsDirectFinal.ShouldBeFalse();
+        response.TeamCount.ShouldBe(teamCount);
+        response.QualificationGroupCount.ShouldBe(expectedSizes.Length);
+        response.GroupSizes.ShouldBe(expectedSizes);
+        response.FinalPlacesPerGroup.ShouldBe(expectedQuotas);
+        response.QualificationPolicyVersion.ShouldBe(RulesV1.WildcardTypeCupTournamentFormatVersion);
+        response.GuaranteedPlacesPerGroup.ShouldBe(expectedQuotas);
+        (response.GuaranteedPlacesPerGroup!.Sum() + response.WildcardCount).ShouldBe(32);
+        if (teamCount is 65 or 96)
+        {
+            response.WildcardCount.ShouldBe(2);
+        }
+        else if (teamCount is 33 or 35 or 64)
+        {
+            response.WildcardCount.ShouldBe(0);
+        }
+
+        response.Groups.Count.ShouldBe(expectedSizes.Length);
+        response.DrawChecksum.Length.ShouldBe(64);
+        List<string> drawn = response.Groups.SelectMany(g => g.CreatureTypes).ToList();
+        drawn.Count.ShouldBe(teamCount);
+        drawn.Distinct(StringComparer.Ordinal).Count().ShouldBe(teamCount);
+        for (int i = 0; i < expectedSizes.Length; i++)
+        {
+            response.Groups[i].QualificationGroup.ShouldBe(i + 1);
+            response.Groups[i].GroupSize.ShouldBe(expectedSizes[i]);
+            response.Groups[i].CreatureTypes.Count.ShouldBe(expectedSizes[i]);
+            response.Groups[i].GroupSize.ShouldBeLessThanOrEqualTo(32);
+            response.Groups[i].FinalPlaces.ShouldBe(expectedQuotas[i]);
+        }
+    }
+
+    private static async Task AssertDrawSelectionAsync(
+        SaveStore store,
+        Guid saveId,
+        int teamCount,
+        List<string> drawn)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2).ConfigureAwait(false);
+        List<TypeCupSelectionEntity> selection = await context.TypeCupSelections.AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id).ToListAsync().ConfigureAwait(false);
+        selection.Count.ShouldBe(teamCount * 4);
+        HashSet<string> selectedTypes = selection.Select(e => e.CreatureType).ToHashSet(StringComparer.Ordinal);
+        selectedTypes.SetEquals(drawn).ShouldBeTrue();
     }
 
     [Fact]

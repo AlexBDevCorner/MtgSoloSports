@@ -273,10 +273,18 @@ public sealed class TypeCupTournamentFormatTests
     public void Rules_DefaultToScalableFormat_With32TeamCeilings()
     {
         RulesV1 rules = RulesV1.CreateDefault();
-        rules.TypeCupTournamentFormatVersion.ShouldBe(1);
+        rules.TypeCupTournamentFormatVersion.ShouldBe(2);
         rules.TypeCupMaxDirectFinalTeams.ShouldBe(32);
         rules.TypeCupFinalTeamCount.ShouldBe(32);
         Should.NotThrow(() => rules.Validate());
+    }
+
+    [Fact]
+    public void Rules_FixedQuotaFormatVersion_DecodesForOldSnapshots()
+    {
+        RulesV1 fixedQuotas = RulesV1.Create(new RulesV1Overrides { TypeCupTournamentFormatVersion = 1 });
+        fixedQuotas.TypeCupTournamentFormatVersion.ShouldBe(1);
+        Should.NotThrow(() => fixedQuotas.Validate());
     }
 
     [Fact]

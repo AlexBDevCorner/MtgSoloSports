@@ -5,18 +5,23 @@ using MtgSoloSports.SimulationKernel.Rules;
 namespace MtgSoloSports.Features.Cups.DrawTypeCupQualificationGroups;
 
 /// <summary>
-/// Structural invariants for the persisted Type Cup qualification draw (MSS-061).
+/// Structural invariants for the persisted Type Cup qualification draw (MSS-061, MSS-071).
 /// Fundamental failures throw and abort the mutation; corrupted sporting state is
 /// never silently repaired. The draw occurs after squad allocation and before
 /// qualification rounds; squad membership must not change with group assignment.
+/// Format v1 draws use fixed quotas totalling exactly 32; format v2 draws use
+/// equal guaranteed quotas plus global wildcards totalling exactly 32. Both
+/// versions remain readable; old v1 editions are never reinterpreted as v2.
 /// </summary>
 public static class TypeCupTournamentDrawInvariants
 {
     /// <summary>
     /// Validates persisted draw rows for one source season: every selected team
     /// appears exactly once, group sizes are balanced and at most 32, quotas
-    /// total exactly 32, checksums/RNG/rules linkage are consistent, and the
-    /// draw teams exactly match the allocation teams.
+    /// follow the persisted per-edition policy version (v1 fixed quotas total
+    /// exactly 32; v2 guaranteed plus wildcards total exactly 32),
+    /// checksums/RNG/rules linkage are consistent, and the draw teams exactly
+    /// match the allocation teams.
     /// </summary>
     public static void ValidatePersisted(
         SeasonEntity source,
@@ -48,7 +53,8 @@ public static class TypeCupTournamentDrawInvariants
 
         IReadOnlyList<int> groupSizes = ReadGroupSizes(draws, first);
         IReadOnlyList<int> finalPlaces = ReadFinalPlaces(draws, first);
-        TypeCupTournamentFormat.ValidateTournamentDraw(selectedTypes, assignments, groupSizes, finalPlaces, rules);
+        TypeCupTournamentFormat.ValidateTournamentDrawVersioned(
+            selectedTypes, assignments, groupSizes, finalPlaces, first.TournamentFormatVersion, rules);
 
         string expectedChecksum = TypeCupTournamentFormat.ComputeDrawChecksum(assignments, selectedTypes.Count, groupSizes);
         foreach (TypeCupTournamentDrawEntity row in draws)
@@ -121,10 +127,11 @@ public static class TypeCupTournamentDrawInvariants
             throw new InvalidOperationException($"Type Cup draw rules version must be {rules.Version}, was {first.RulesVersion}.");
         }
 
-        if (first.TournamentFormatVersion != RulesV1.DefaultTypeCupTournamentFormatVersion)
+        if (first.TournamentFormatVersion != RulesV1.FixedQuotaTypeCupTournamentFormatVersion
+            && first.TournamentFormatVersion != RulesV1.WildcardTypeCupTournamentFormatVersion)
         {
             throw new InvalidOperationException(
-                $"Type Cup draw format version must be {RulesV1.DefaultTypeCupTournamentFormatVersion}, was {first.TournamentFormatVersion}.");
+                $"Type Cup draw format version must be v{RulesV1.FixedQuotaTypeCupTournamentFormatVersion} (fixed quotas) or v{RulesV1.WildcardTypeCupTournamentFormatVersion} (wildcards), was {first.TournamentFormatVersion}.");
         }
 
         if (first.FieldTeamCount != draws.Select(d => d.CreatureType).Distinct(StringComparer.Ordinal).Count())

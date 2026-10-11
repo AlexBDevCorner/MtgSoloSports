@@ -15,11 +15,14 @@ import type {
   TypeCupTournamentQualificationGroup,
 } from './typeCupTournamentApi';
 import {
+  advancingLabel,
+  isWildcardTournament,
   legsByRankGroup,
   orderedDrawMembers,
   orderedQualificationTeams,
   qualificationGroupLetter,
   qualificationStageLabel,
+  qualificationStatusLabel,
   rankGroupLabel,
   tournamentStateLabel,
 } from './typeCupTournamentModel';
@@ -45,6 +48,7 @@ export function TypeCupTournamentSection({
   draw: TypeCupDraw | null;
 }) {
   const groupCount = tournament.qualificationGroupCount;
+  const wildcard = isWildcardTournament(tournament);
   return (
     <>
       <Card
@@ -54,7 +58,7 @@ export function TypeCupTournamentSection({
           <p>
             Qualification points reset: the Final starts every team at zero and only Final ranks
             1–3 hold official medals and honours. Qualification group victories are not major
-            honours.
+            honours. {wildcard ? 'Each group has equal guaranteed places; remaining Final places are performance wildcards across groups.' : null}
           </p>
         }
       >
@@ -65,7 +69,7 @@ export function TypeCupTournamentSection({
           </div>
           <div className="cup-fact">
             <dt>Format</dt>
-            <dd>Qualification + Final</dd>
+            <dd>{wildcard ? 'Qualification + Final · guaranteed + wildcards' : 'Qualification + Final'}</dd>
           </div>
           <div className="cup-fact">
             <dt>Qualification groups</dt>
@@ -77,7 +81,7 @@ export function TypeCupTournamentSection({
           </div>
           <div className="cup-fact">
             <dt>Advancing per group</dt>
-            <dd>{tournament.finalPlacesPerGroup.join(' / ')}</dd>
+            <dd>{advancingLabel(tournament)}</dd>
           </div>
           <div className="cup-fact">
             <dt>State</dt>
@@ -92,6 +96,12 @@ export function TypeCupTournamentSection({
           <p className="muted small">
             Draw checksum <code>{tournament.drawChecksum.slice(0, 12)}</code> · Tournament checksum{' '}
             <code>{tournament.tournamentChecksum.slice(0, 12)}</code>
+          </p>
+        ) : null}
+        {wildcard && tournament.wildcards && tournament.wildcards.length > 0 ? (
+          <p className="muted small">
+            Wildcards: {tournament.wildcards.map((entry) => `${entry.creatureType} (Group ${qualificationGroupLetter(entry.qualificationGroup)}, rank ${entry.groupRank}, ${formatPoints(entry.teamScoreThousandths)} pts)`).join(' · ')}
+            {tournament.wildcards.some((entry) => entry.tieDraw) ? ' · decided by seeded draw after exactly tied adjusted scores' : ''}
           </p>
         ) : null}
       </Card>
@@ -173,6 +183,10 @@ function QualificationDrawBlock({
   // Prefer the persisted draw order for the draw block; fall back to the
   // result teams when the draw endpoint has no row for this group.
   const members = orderedDrawMembers(drawMembers ?? group.teams.map((team) => team.creatureType));
+  const guaranteed = group.guaranteedPlaces ?? group.finalPlaces;
+  const advancing = group.wildcardCandidate != null
+    ? `${guaranteed} guaranteed + wildcard candidate`
+    : `${group.finalPlaces} advance`;
   return (
     <section className="team-season" aria-label={stage}>
       <div className="team-season-head">
@@ -181,7 +195,7 @@ function QualificationDrawBlock({
           {groupCount === 2 ? (group.qualificationGroup === 1 ? ' · Semifinal A' : ' · Semifinal B') : ''}
         </strong>
         <span className="team-season-result">
-          {group.groupSize} teams · {group.finalPlaces} advance
+          {group.groupSize} teams · {advancing}
         </span>
       </div>
       <ul className="edition-card-podium">
@@ -212,14 +226,18 @@ function QualificationResultCard({
   const letter = qualificationGroupLetter(group.qualificationGroup);
   const stage = qualificationStageLabel(group.qualificationGroup, groupCount);
   const teams = orderedQualificationTeams(group);
+  const guaranteed = group.guaranteedPlaces ?? group.finalPlaces;
+  const hasWildcard = group.wildcardCandidate != null;
+  const title = hasWildcard
+    ? `Group ${letter} — ${group.groupSize} teams, top ${guaranteed} guaranteed + wildcard candidate at rank ${guaranteed + 1}`
+    : `Group ${letter} — ${group.groupSize} teams, ${group.finalPlaces} advance`;
   return (
     <Card
       eyebrow={stage}
-      title={`Group ${letter} — ${group.groupSize} teams, ${group.finalPlaces} advance`}
+      title={title}
       info={
         <p>
-          Final table of {stage}. The cut line follows the last qualifying place; teams above it
-          reached the Final, teams below it were eliminated. Points do not carry to the Final.
+          Final table of {stage}. {hasWildcard ? `Top ${guaranteed} qualify directly; rank ${guaranteed + 1} competes for a global wildcard on team points${group.wildcardWinner ? ` — ${group.wildcardWinner} earned it` : ''}. ` : 'The cut line follows the last qualifying place; teams above it reached the Final, teams below it were eliminated. '}Points do not carry to the Final.
         </p>
       }
     >
@@ -244,8 +262,9 @@ function QualificationResultCard({
                 saveId={saveId}
                 cup={cup}
                 team={team}
-                isCutRow={team.teamRank === group.finalPlaces}
-                isBelowCut={team.teamRank === group.finalPlaces + 1}
+                isCutRow={team.teamRank === guaranteed}
+                isBelowCut={team.teamRank === guaranteed + 1}
+                guaranteed={guaranteed}
               />
             ))}
           </tbody>
@@ -281,13 +300,17 @@ function QualificationRow({
   team,
   isCutRow,
   isBelowCut,
+  guaranteed,
 }: {
   saveId: string;
   cup: CupKind;
-  team: { creatureType: string; teamRank: number; teamScoreThousandths: number; qualified: boolean };
+  team: { creatureType: string; teamRank: number; teamScoreThousandths: number; qualified: boolean; qualificationStatus?: string };
   isCutRow: boolean;
   isBelowCut: boolean;
+  guaranteed?: number;
 }) {
+  const status = qualificationStatusLabel(team.qualificationStatus, team.qualified);
+  const isWildcard = team.qualificationStatus === 'Wildcard';
   return (
     <>
       <tr>
@@ -298,20 +321,33 @@ function QualificationRow({
         <td className="numeric">{formatPoints(team.teamScoreThousandths)}</td>
         <td>
           {team.qualified ? (
-            <span className="badge badge-ready">Qualified</span>
+            <span className="badge badge-ready">{status}</span>
           ) : (
-            <span className="badge badge-wait">Eliminated</span>
+            <span className="badge badge-wait">{status}</span>
           )}
         </td>
       </tr>
       {isCutRow ? (
         <tr className="cut-line" aria-hidden="true">
           <td colSpan={4} className="cut-line-cell">
-            <span className="cut-line-label">Qualification cut — {team.teamRank} advance</span>
+            <span className="cut-line-label">Guaranteed cut — top {team.teamRank} qualify{isWildcard || guaranteed !== undefined ? '' : ''}{guaranteed !== undefined && isBelowCut === false ? '' : ''}</span>
           </td>
         </tr>
       ) : null}
-      {isBelowCut ? null : null}
+      {isBelowCut && team.qualified === false ? (
+        <tr className="cut-line" aria-hidden="true">
+          <td colSpan={4} className="cut-line-cell">
+            <span className="cut-line-label">Wildcard candidate — rank {team.teamRank} competes across groups</span>
+          </td>
+        </tr>
+      ) : null}
+      {isBelowCut && team.qualified ? (
+        <tr className="cut-line" aria-hidden="true">
+          <td colSpan={4} className="cut-line-cell">
+            <span className="cut-line-label">Wildcard winner — rank {team.teamRank} earned a Final place on points</span>
+          </td>
+        </tr>
+      ) : null}
     </>
   );
 }

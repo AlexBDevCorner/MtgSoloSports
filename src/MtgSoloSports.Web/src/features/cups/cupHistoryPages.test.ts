@@ -116,11 +116,26 @@ describe('type cup tournament edition', () => {
 
   it('shows draw, cutoff tables and a fresh Final from persisted facts', () => {
     const section = read('TypeCupTournamentSection.tsx');
+    const model = read('typeCupTournamentModel.ts');
     assert.ok(section.includes('Qualification Group'), 'groups under Qualification Group A/B/C');
     assert.ok(section.includes('not strength seeded'), 'explicitly random, not seeded');
     assert.ok(section.includes('never redraws'), 'no client-side redraw');
-    assert.ok(section.includes('Qualified'), 'qualified status');
-    assert.ok(section.includes('Eliminated'), 'eliminated status');
+    assert.ok(
+      section.includes('Eliminated') || model.includes('Eliminated'),
+      'eliminated status',
+    );
+    assert.ok(
+      section.includes('Qualified') || model.includes('Qualified'),
+      'qualified status (guaranteed/wildcard)',
+    );
+    assert.ok(
+      section.includes('guaranteed') || model.includes('Guaranteed'),
+      'guaranteed places distinguished (MSS-071)',
+    );
+    assert.ok(
+      section.includes('wildcard') || section.includes('Wildcard') || model.includes('Wildcard'),
+      'wildcard places distinguished (MSS-071)',
+    );
     assert.ok(section.includes('cut-line'), 'visible cut line after the final qualifying place');
     assert.ok(section.includes('Type Cup Final'), 'Final as a new stage');
     assert.ok(section.includes('starts every team at zero') || section.includes('start at zero'), 'points reset explained');

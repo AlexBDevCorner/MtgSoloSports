@@ -16,6 +16,20 @@ export interface TypeCupTournamentTeam {
   teamBaseThousandths: number;
   medal: string;
   qualified: boolean;
+  /** MSS-071: Guaranteed | Wildcard | Eliminated | Qualified (Final rows). */
+  qualificationStatus?: string;
+}
+
+export interface TypeCupTournamentWildcard {
+  creatureType: string;
+  qualificationGroup: number;
+  groupRank: number;
+  teamScoreThousandths: number;
+  teamBaseThousandths: number;
+  groupSize: number;
+  normalizedNumerator: number;
+  normalizedDenominator: number;
+  tieDraw: boolean;
 }
 
 export interface TypeCupTournamentLeg {
@@ -40,6 +54,9 @@ export interface TypeCupTournamentQualificationGroup {
   legs: TypeCupTournamentLeg[];
   qualifiedTeams: string[];
   eliminatedTeams: string[];
+  guaranteedPlaces?: number;
+  wildcardCandidate?: string | null;
+  wildcardWinner?: string | null;
 }
 
 export interface TypeCupTournamentFinal {
@@ -69,6 +86,11 @@ export interface TypeCupTournament {
   final: TypeCupTournamentFinal | null;
   championCreatureType: string | null;
   tournamentChecksum: string;
+  /** MSS-071: 1 fixed quotas, 2 guaranteed plus wildcards. */
+  qualificationPolicyVersion?: number;
+  wildcardCount?: number;
+  guaranteedPlacesPerGroup?: number[];
+  wildcards?: TypeCupTournamentWildcard[];
 }
 
 export interface TypeCupDrawGroup {
@@ -95,6 +117,9 @@ export interface TypeCupDraw {
   rngAfterState: number;
   rngAfterStream: number;
   groups: TypeCupDrawGroup[];
+  qualificationPolicyVersion?: number;
+  guaranteedPlacesPerGroup?: number[];
+  wildcardCount?: number;
 }
 
 /** Tournament summary; 404 while the Final has no persisted result yet. */

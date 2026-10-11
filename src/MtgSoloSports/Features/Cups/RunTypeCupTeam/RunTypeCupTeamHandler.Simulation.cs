@@ -346,7 +346,8 @@ public sealed partial class RunTypeCupTeamHandler
     /// Each stage is ranked independently; qualification scores never carry to
     /// the Final (each stage accumulates only its own 32 rounds). The Final
     /// field for a tournament is derived from completed qualification standings
-    /// (top quota per group) when not already known from persisted standings.
+    /// (v1 fixed quotas, v2 guaranteed plus performance wildcards) when not
+    /// already known from persisted standings.
     /// </summary>
     internal static TournamentSimulation FinishTournament(
         TournamentState state,
@@ -360,52 +361,119 @@ public sealed partial class RunTypeCupTeamHandler
                 $"Type Cup tournament requires exactly {state.Plan.TotalRounds} rounds, was {ordered.Count}.");
         }
 
-        // Ensure the Final field exists for tournaments (derived from qual
-        // standings when the caller started from scratch without persisted
-        // qualifiers).
         EnsureFinalField(state, ordered);
+        List<StageSimulation> stages = RankAllStages(state, ordered);
+        StageSimulation final = stages[^1];
+        Pcg32State rngAfter = final.RngAfter;
+        return new TournamentSimulation(stages, final, rngAfter, final.Checksum, ordered);
+    }
 
+    private static List<StageSimulation> RankAllStages(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered)
+    {
         List<StageSimulation> stages = new();
         Pcg32State current = default;
         bool first = true;
+        TypeCupTournamentPlan.StageKey? previous = null;
         foreach (TypeCupTournamentPlan.StageKey stage in TypeCupTournamentPlan.StageSequence(state.Plan))
         {
-            List<TypeCupTeamRoundPayloadDocument> stagePayloads = ordered
-                .Where(o => o.Key.Phase == stage.Phase && o.Key.QualificationGroup == stage.QualificationGroup)
-                .Select(o => o.Payload)
-                .ToList();
-            int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
-            if (stagePayloads.Count != perStage)
-            {
-                throw new InvalidOperationException(
-                    $"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} must hold exactly {perStage} rounds.");
-            }
-
+            List<TypeCupTeamRoundPayloadDocument> stagePayloads = StagePayloads(ordered, stage);
+            ValidateStagePayloadCount(state, stage, stagePayloads);
             (IReadOnlyList<TeamEvent.TeamLegRanked> legs, IReadOnlyList<TeamEvent.TeamRanked> teams, Pcg32State after) =
                 RankStage(state, stage, stagePayloads);
-
-            // Cross-stage RNG continuity: each stage after the first must start
-            // where the previous stage's team ranking left the RNG.
-            if (!first)
-            {
-                TypeCupTeamRoundPayloadDocument firstPayload = stagePayloads
-                    .OrderBy(p => p.GroupNumber).ThenBy(p => p.RoundNumber).First();
-                if (current != new Pcg32State(firstPayload.RngBeforeState, firstPayload.RngBeforeStream))
-                {
-                    throw new InvalidOperationException(
-                        $"Type Cup tournament RNG chain is broken at the start of phase {stage.Phase} qual {stage.QualificationGroup}.");
-                }
-            }
-
+            ValidateStageContinuity(state, ordered, stage, previous, stagePayloads, current, first);
             first = false;
+            previous = stage;
             current = after;
-            string checksum = ComputeChecksum(teams);
-            TypeCupStageField field = state.Fields[stage];
-            stages.Add(new StageSimulation(stage, field.FieldSize, legs, teams, after, checksum));
+            stages.Add(new StageSimulation(stage, state.Fields[stage].FieldSize, legs, teams, after, ComputeChecksum(teams)));
         }
 
-        StageSimulation final = stages[^1];
-        return new TournamentSimulation(stages, final, current, final.Checksum, ordered);
+        return stages;
+    }
+
+    private static List<TypeCupTeamRoundPayloadDocument> StagePayloads(
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        TypeCupTournamentPlan.StageKey stage) =>
+        ordered
+            .Where(o => o.Key.Phase == stage.Phase && o.Key.QualificationGroup == stage.QualificationGroup)
+            .Select(o => o.Payload)
+            .ToList();
+
+    private static void ValidateStagePayloadCount(
+        TournamentState state,
+        TypeCupTournamentPlan.StageKey stage,
+        List<TypeCupTeamRoundPayloadDocument> stagePayloads)
+    {
+        int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
+        if (stagePayloads.Count != perStage)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} must hold exactly {perStage} rounds.");
+        }
+    }
+
+    private static void ValidateStageContinuity(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        TypeCupTournamentPlan.StageKey stage,
+        TypeCupTournamentPlan.StageKey? previous,
+        List<TypeCupTeamRoundPayloadDocument> stagePayloads,
+        Pcg32State current,
+        bool first)
+    {
+        if (first)
+        {
+            return;
+        }
+
+        TypeCupTeamRoundPayloadDocument firstPayload = stagePayloads
+            .OrderBy(p => p.GroupNumber).ThenBy(p => p.RoundNumber).First();
+        Pcg32State expectedBefore = current;
+        if (previous is not null && IsWildcardFinalStart(state, previous, stage))
+        {
+            expectedBefore = WildcardAfterFromOrderedPayloads(state, ordered, current);
+        }
+
+        if (expectedBefore != new Pcg32State(firstPayload.RngBeforeState, firstPayload.RngBeforeStream))
+        {
+            throw new InvalidOperationException(
+                $"Type Cup tournament RNG chain is broken at the start of phase {stage.Phase} qual {stage.QualificationGroup}.");
+        }
+    }
+
+    internal static Pcg32State WildcardAfterFromOrderedPayloads(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        Pcg32State rngBeforeWildcard)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(ordered);
+        if (!state.Plan.IsTournament || !state.Plan.IsWildcardPolicy || state.Plan.WildcardCount == 0)
+        {
+            return rngBeforeWildcard;
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> byGroup = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
+        {
+            TypeCupTournamentPlan.StageKey key = TypeCupTournamentPlan.QualificationKey(stage.QualificationGroup);
+            List<TypeCupTeamRoundPayloadDocument> stagePayloads = ordered
+                .Where(o => o.Key.Phase == key.Phase && o.Key.QualificationGroup == key.QualificationGroup)
+                .Select(o => o.Payload)
+                .ToList();
+            (IReadOnlyList<TeamEvent.TeamLegRanked> _, IReadOnlyList<TeamEvent.TeamRanked> teams, Pcg32State _) =
+                RankStage(state, key, stagePayloads);
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> list =
+                teams.Select(t => (t.TeamName, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            byGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, list);
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngBeforeWildcard);
+        (_, Pcg32State after) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, byGroup, rng, state.Rules);
+        return after;
     }
 
     internal static void EnsureFinalField(
@@ -423,8 +491,20 @@ public sealed partial class RunTypeCupTeamHandler
             return;
         }
 
-        // Derive finalists from the ordered qual payloads by ranking each qual
-        // stage in-memory (same math as persisted qualifiers).
+        if (!state.Plan.IsWildcardPolicy)
+        {
+            EnsureLegacyFinalField(state, ordered, finalKey);
+            return;
+        }
+
+        EnsureWildcardFinalField(state, ordered, finalKey);
+    }
+
+    private static void EnsureLegacyFinalField(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        TypeCupTournamentPlan.StageKey finalKey)
+    {
         Dictionary<int, IReadOnlyList<(string Team, int Rank)>> qualStandings = new();
         foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
         {
@@ -438,9 +518,76 @@ public sealed partial class RunTypeCupTeamHandler
             qualStandings[stage.QualificationGroup] = teams.Select(t => (t.TeamName, t.TeamRank)).ToList();
         }
 
-        IReadOnlyList<string> finalists = TypeCupTournamentPlan.SelectFinalists(state.Plan, qualStandings);
-        TypeCupStageField finalField = BuildFinalField(state, finalists);
-        state.Fields[finalKey] = finalField;
+        IReadOnlyList<string> legacyFinalists = TypeCupTournamentPlan.SelectFinalists(state.Plan, qualStandings);
+        state.Fields[finalKey] = BuildFinalField(state, legacyFinalists);
+    }
+
+    private static void EnsureWildcardFinalField(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        TypeCupTournamentPlan.StageKey finalKey)
+    {
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = BuildWildcardGroups(state, ordered);
+        Pcg32State before = WildcardRngBeforeFromOrdered(state, ordered);
+        Pcg32V1 rng = Pcg32V1.Restore(before);
+        (TypeCupTournamentPlan.WildcardSelection selection, Pcg32State _) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, wildcardByGroup, rng, state.Rules);
+        state.Fields[finalKey] = BuildFinalField(state, selection.Finalists);
+    }
+
+    private static Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> BuildWildcardGroups(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered)
+    {
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
+        {
+            TypeCupTournamentPlan.StageKey key = TypeCupTournamentPlan.QualificationKey(stage.QualificationGroup);
+            List<TypeCupTeamRoundPayloadDocument> stagePayloads = ordered
+                .Where(o => o.Key.Phase == key.Phase && o.Key.QualificationGroup == key.QualificationGroup)
+                .Select(o => o.Payload)
+                .ToList();
+            (IReadOnlyList<TeamEvent.TeamLegRanked> _, IReadOnlyList<TeamEvent.TeamRanked> teams, Pcg32State _) =
+                RankStage(state, key, stagePayloads);
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> list =
+                teams.Select(t => (t.TeamName, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            wildcardByGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, list);
+        }
+
+        return wildcardByGroup;
+    }
+
+    internal static Pcg32State WildcardRngBeforeFromOrdered(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered)
+    {
+        // Best-effort reconstruction of the RNG state after the last qual ranking
+        // from ordered payloads: rank each qual stage to its team-ranking after.
+        // Used only for field building without threading; simulation paths thread
+        // the authoritative current RNG instead.
+        Pcg32State? lastAfter = null;
+        foreach (TypeCupTournamentPlan.StageKey stage in TypeCupTournamentPlan.StageSequence(state.Plan))
+        {
+            if (stage.Phase != (int)TypeCupTournamentFormat.TournamentPhase.Qualification)
+            {
+                continue;
+            }
+
+            List<TypeCupTeamRoundPayloadDocument> stagePayloads = ordered
+                .Where(o => o.Key.Phase == stage.Phase && o.Key.QualificationGroup == stage.QualificationGroup)
+                .Select(o => o.Payload)
+                .ToList();
+            if (stagePayloads.Count != state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds)
+            {
+                continue;
+            }
+
+            (_, _, Pcg32State after) = RankStage(state, stage, stagePayloads);
+            lastAfter = after;
+        }
+
+        return lastAfter ?? state.Rng;
     }
 
     internal static TypeCupStageField BuildFinalField(TournamentState state, IReadOnlyList<string> finalists)

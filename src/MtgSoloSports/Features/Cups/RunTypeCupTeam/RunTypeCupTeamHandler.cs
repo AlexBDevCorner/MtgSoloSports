@@ -82,9 +82,13 @@ public sealed partial class RunTypeCupTeamHandler
         List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered =
             new(state.PlayedOrdered);
         Pcg32State current = state.Rng;
+        // If resuming after all quals with a wildcard tie, the Final must start
+        // past the tie draw. Recompute it deterministically from persisted
+        // standings plus the persisted RNG so one-shot and resume agree.
+        current = await ApplyPersistedWildcardRngAsync(context, state, ordered, current, cancellationToken).ConfigureAwait(false);
         while (ordered.Count < state.Plan.TotalRounds)
         {
-            EnsureInMemoryFinalField(state, ordered);
+            current = EnsureInMemoryFinalField(state, ordered, current);
             (TypeCupTournamentPlan.StageKey key, TypeCupTeamRoundPayloadDocument payload, Pcg32State after) =
                 PlayNextRound(state, ordered, current);
             ordered.Add((key, payload));
@@ -165,13 +169,13 @@ public sealed partial class RunTypeCupTeamHandler
         var assignments = TypeCupTournamentFormat.DrawQualificationGroups(types, rng, rules);
         Pcg32State rngAfter = rng.Snapshot();
         var groupSizes = TypeCupTournamentFormat.BalancedQualificationGroupSizes(teamCount, rules);
-        var finalPlaces = TypeCupTournamentFormat.AllocateFinalPlaces(groupSizes, rules);
+        var finalPlaces = TypeCupTournamentFormat.AllocateGuaranteedFinalPlaces(groupSizes, rules);
         foreach (int size in groupSizes)
         {
             TypeCupTournamentFormat.ValidateCompetitionFieldSize(size, rules);
         }
 
-        TypeCupTournamentFormat.ValidateTournamentDraw(types, assignments, groupSizes, finalPlaces, rules);
+        TypeCupTournamentFormat.ValidateWildcardTournamentDraw(types, assignments, groupSizes, finalPlaces, rules);
         string checksum = TypeCupTournamentFormat.ComputeDrawChecksum(assignments, teamCount, groupSizes);
         AddDrawRows(context, source, rules, teamCount, assignments, groupSizes, finalPlaces, rngBefore, rngAfter, checksum);
         await StageDrawRngAsync(context, rngAfter, cancellationToken).ConfigureAwait(false);
@@ -204,7 +208,7 @@ public sealed partial class RunTypeCupTeamHandler
                 QualificationGroupCount = groupSizes.Count,
                 FinalPlacesForGroup = finalPlaces[group - 1],
                 RulesVersion = rules.Version,
-                TournamentFormatVersion = RulesV1.DefaultTypeCupTournamentFormatVersion,
+                TournamentFormatVersion = RulesV1.WildcardTypeCupTournamentFormatVersion,
                 RngBeforeState = unchecked((long)rngBefore.State),
                 RngBeforeStream = unchecked((long)rngBefore.Stream),
                 RngAfterState = unchecked((long)rngAfter.State),
@@ -231,6 +235,10 @@ public sealed partial class RunTypeCupTeamHandler
     /// Builds the Final field from persisted qualification standings when
     /// resuming after all quals are complete but before the Final starts.
     /// One-shot runs from scratch build it in-memory once quals are simulated.
+    /// For v1 fixed quotas uses <see cref="TypeCupTournamentPlan.SelectFinalists"/>;
+    /// for v2 wildcard policy resolves guaranteed plus performance wildcards via
+    /// the single authoritative <see cref="TypeCupTournamentPlan.SelectWildcardFinalists"/>
+    /// (same standings plus same RNG give the same finalists in every runner).
     /// </summary>
     internal static async Task EnsureFinalFieldFromPersistedAsync(
         SaveDbContext context,
@@ -245,6 +253,20 @@ public sealed partial class RunTypeCupTeamHandler
         var finalKey = TypeCupTournamentPlan.FinalKey();
         if (state.Fields.ContainsKey(finalKey))
         {
+            return;
+        }
+
+        // Once the Final has started, its roster is immutable persisted history.
+        // Recover it from the already-persisted Final payloads rather than
+        // re-resolving the wildcard cutoff with the current (post-Final) RNG,
+        // which would reroll a tied cutoff on every reopen.
+        if (state.PlayedOrdered.Any(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final))
+        {
+            TypeCupTeamRoundPayloadDocument persistedPayload = state.PlayedOrdered
+                .First(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final).Payload;
+            IReadOnlyList<string> recovered =
+                RecoverFinalistsFromFinalPayload(persistedPayload, state.Selection, state.Rules.TypeCupFinalTeamCount);
+            state.Fields[finalKey] = BuildFinalField(state, recovered);
             return;
         }
 
@@ -268,43 +290,167 @@ public sealed partial class RunTypeCupTeamHandler
             return;
         }
 
-        Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = qualTeams
-            .GroupBy(e => e.QualificationGroup)
-            .ToDictionary(
-                g => g.Key,
-                g => (IReadOnlyList<(string Team, int Rank)>)g.OrderBy(t => t.TeamRank).Select(t => (t.CreatureType, t.TeamRank)).ToList());
-        IReadOnlyList<string> finalists = TypeCupTournamentPlan.SelectFinalists(state.Plan, byGroup);
+        IReadOnlyList<string> finalists = ResolveFinalistsFromPersisted(state, qualTeams, state.Rng);
         state.Fields[finalKey] = BuildFinalField(state, finalists);
+    }
+
+    internal static IReadOnlyList<string> RecoverFinalistsFromFinalPayload(
+        TypeCupTeamRoundPayloadDocument finalPayload,
+        IReadOnlyList<TypeCupSelectionEntity> selection,
+        int expectedFinalCount)
+    {
+        ArgumentNullException.ThrowIfNull(finalPayload);
+        ArgumentNullException.ThrowIfNull(selection);
+        if (expectedFinalCount <= 0)
+        {
+            throw new InvalidOperationException($"Type Cup Final must hold a positive team count, was {expectedFinalCount}.");
+        }
+
+        // Every Final rank-group round involves exactly one athlete per finalist
+        // team, so even a single persisted Final payload identifies the full
+        // 32-team roster via the selection athlete-to-team mapping. This keeps
+        // reopen/resume deterministic without re-consuming the wildcard tie draw.
+        Dictionary<int, string> typeByAthlete = selection.ToDictionary(e => e.SaveAthleteId, e => e.CreatureType);
+        HashSet<string> finalists = new(StringComparer.Ordinal);
+        foreach (var placement in finalPayload.Placements)
+        {
+            if (!typeByAthlete.TryGetValue(placement.AthleteId, out string? creatureType)
+                || string.IsNullOrWhiteSpace(creatureType))
+            {
+                throw new InvalidOperationException(
+                    $"Type Cup Final persisted round references unknown athlete {placement.AthleteId}; sporting state is corrupt.");
+            }
+
+            finalists.Add(creatureType);
+        }
+
+        if (finalists.Count != expectedFinalCount)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup Final persisted rounds must identify exactly {expectedFinalCount} teams, was {finalists.Count}; sporting state is corrupt.");
+        }
+
+        return finalists.OrderBy(t => t, StringComparer.Ordinal).ToList();
+    }
+
+    internal static IReadOnlyList<string> ResolveFinalistsFromPersisted(
+        TournamentState state,
+        List<TypeCupTeamStandingEntity> qualTeams,
+        Pcg32State rngBeforeWildcard)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        if (!state.Plan.IsWildcardPolicy)
+        {
+            Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = qualTeams
+                .GroupBy(e => e.QualificationGroup)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<(string Team, int Rank)>)g.OrderBy(t => t.TeamRank).Select(t => (t.CreatureType, t.TeamRank)).ToList());
+            return TypeCupTournamentPlan.SelectFinalists(state.Plan, byGroup);
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
+        {
+            List<TypeCupTeamStandingEntity> groupTeams = qualTeams
+                .Where(e => e.QualificationGroup == stage.QualificationGroup)
+                .OrderBy(e => e.TeamRank)
+                .ToList();
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> teams =
+                groupTeams.Select(t => (t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            wildcardByGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, teams);
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngBeforeWildcard);
+        (TypeCupTournamentPlan.WildcardSelection selection, Pcg32State _) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, wildcardByGroup, rng, state.Rules);
+        return selection.Finalists;
+    }
+
+    internal static Pcg32State WildcardRngAfterFromPersisted(
+        TournamentState state,
+        List<TypeCupTeamStandingEntity> qualTeams,
+        Pcg32State rngBeforeWildcard)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        if (!state.Plan.IsWildcardPolicy)
+        {
+            return rngBeforeWildcard;
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
+        {
+            List<TypeCupTeamStandingEntity> groupTeams = qualTeams
+                .Where(e => e.QualificationGroup == stage.QualificationGroup)
+                .OrderBy(e => e.TeamRank)
+                .ToList();
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> teams =
+                groupTeams.Select(t => (t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            wildcardByGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, teams);
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngBeforeWildcard);
+        (_, Pcg32State after) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, wildcardByGroup, rng, state.Rules);
+        return after;
     }
 
     /// <summary>
     /// Builds the Final field in-memory during a one-shot run once all
     /// qualification rounds are simulated but before Final simulation starts.
     /// Uses the same quota math as persisted qualifiers for identical results.
+    /// For wildcard editions also advances <paramref name="current"/> past any
+    /// seeded wildcard tie draw so the Final starts from the same RNG in every
+    /// runner. Returns the RNG to use for the next round.
     /// </summary>
-    internal static void EnsureInMemoryFinalField(
+    internal static Pcg32State EnsureInMemoryFinalField(
         TournamentState state,
-        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered)
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        Pcg32State current)
     {
         if (!state.Plan.IsTournament)
         {
-            return;
+            return current;
         }
 
         var finalKey = TypeCupTournamentPlan.FinalKey();
         if (state.Fields.ContainsKey(finalKey))
         {
-            return;
+            return current;
         }
 
         int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
         int qualRounds = state.Plan.QualificationGroupCount * perStage;
         if (ordered.Count < qualRounds)
         {
-            return;
+            return current;
         }
 
-        Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = new();
+        if (!state.Plan.IsWildcardPolicy)
+        {
+            Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = new();
+            foreach (var stage in state.Plan.QualificationStages)
+            {
+                var key = TypeCupTournamentPlan.QualificationKey(stage.QualificationGroup);
+                var stagePayloads = ordered
+                    .Where(o => o.Key.Phase == key.Phase && o.Key.QualificationGroup == key.QualificationGroup)
+                    .Select(o => o.Payload)
+                    .ToList();
+                var ranked = RankStage(state, key, stagePayloads);
+                byGroup[stage.QualificationGroup] = ranked.Teams.Select(t => (t.TeamName, t.TeamRank)).ToList();
+            }
+
+            IReadOnlyList<string> legacyFinalists = TypeCupTournamentPlan.SelectFinalists(state.Plan, byGroup);
+            state.Fields[finalKey] = BuildFinalField(state, legacyFinalists);
+            return current;
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = new();
         foreach (var stage in state.Plan.QualificationStages)
         {
             var key = TypeCupTournamentPlan.QualificationKey(stage.QualificationGroup);
@@ -313,11 +459,78 @@ public sealed partial class RunTypeCupTeamHandler
                 .Select(o => o.Payload)
                 .ToList();
             var ranked = RankStage(state, key, stagePayloads);
-            byGroup[stage.QualificationGroup] = ranked.Teams.Select(t => (t.TeamName, t.TeamRank)).ToList();
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> teams =
+                ranked.Teams.Select(t => (t.TeamName, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            wildcardByGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, teams);
         }
 
-        IReadOnlyList<string> finalists = TypeCupTournamentPlan.SelectFinalists(state.Plan, byGroup);
-        state.Fields[finalKey] = BuildFinalField(state, finalists);
+        Pcg32V1 rng = Pcg32V1.Restore(current);
+        (TypeCupTournamentPlan.WildcardSelection selection, Pcg32State after) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, wildcardByGroup, rng, state.Rules);
+        state.Fields[finalKey] = BuildFinalField(state, selection.Finalists);
+        return after;
+    }
+
+    internal static void EnsureInMemoryFinalField(
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered)
+    {
+        // Backward-compatible overload for callers that do not thread the wildcard
+        // RNG (v1 fixed quotas or v2 without a cutoff tie where RNG is unchanged).
+        // Wildcard ties need the stateful overload above; this path preserves the
+        // old behavior for untied fields by reusing the state's persisted RNG copy.
+        _ = EnsureInMemoryFinalField(state, ordered, state.Rng);
+    }
+
+    /// <summary>
+    /// When resuming after all qualification groups are persisted but before the
+    /// Final starts, advances the in-memory RNG past any wildcard tie draw so
+    /// the Final starts from the same state in one-shot and stepwise runners.
+    /// Reads persisted qualification standings (no RNG consumed for reads beyond
+    /// the deterministic copy); returns the RNG to use for the next round.
+    /// </summary>
+    internal static async Task<Pcg32State> ApplyPersistedWildcardRngAsync(
+        SaveDbContext context,
+        TournamentState state,
+        List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)> ordered,
+        Pcg32State current,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(ordered);
+        if (!state.Plan.IsTournament || !state.Plan.IsWildcardPolicy)
+        {
+            return current;
+        }
+
+        int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
+        int qualRounds = state.Plan.QualificationGroupCount * perStage;
+        if (ordered.Count < qualRounds)
+        {
+            return current;
+        }
+
+        // Final already started: the wildcard step (if any) is already reflected
+        // in the persisted Final first-round RngBefore, so do not advance again.
+        if (ordered.Any(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final))
+        {
+            return current;
+        }
+
+        List<TypeCupTeamStandingEntity> qualTeams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == state.Source.Id
+                && e.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Qualification)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (qualTeams.Count == 0)
+        {
+            return current;
+        }
+
+        return WildcardRngAfterFromPersisted(state, qualTeams, current);
     }
 
     /// <summary>
@@ -408,6 +621,11 @@ public sealed partial class RunTypeCupTeamHandler
             return;
         }
 
+        if (await TryRecoverStartedFinalAsync(context, source, selection, plan, fields, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         List<TypeCupTeamStandingEntity> qualTeams = await context.TypeCupTeamStandings
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id
@@ -419,14 +637,119 @@ public sealed partial class RunTypeCupTeamHandler
             return;
         }
 
-        Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = GroupQualStandings(qualTeams);
-        if (!QualStandingsComplete(plan, byGroup))
+        if (!plan.IsWildcardPolicy)
+        {
+            Dictionary<int, IReadOnlyList<(string Team, int Rank)>> byGroup = GroupQualStandings(qualTeams);
+            if (!QualStandingsComplete(plan, byGroup))
+            {
+                return;
+            }
+
+            IReadOnlyList<string> legacyFinalists = TypeCupTournamentPlan.SelectFinalists(plan, byGroup);
+            fields[finalKey] = await BuildPersistedFinalFieldAsync(context, selection, fields, legacyFinalists, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> wildcardByGroup = GroupWildcardStandings(plan, qualTeams);
+        if (!QualWildcardStandingsComplete(plan, wildcardByGroup))
         {
             return;
         }
 
-        IReadOnlyList<string> finalists = TypeCupTournamentPlan.SelectFinalists(plan, byGroup);
-        fields[finalKey] = await BuildPersistedFinalFieldAsync(context, selection, fields, finalists, cancellationToken).ConfigureAwait(false);
+        // Resolve winners with a deterministic RNG copy restored from the current
+        // save RNG (after the last qual ranking). The persisted RNG row itself is
+        // left untouched here; the tie draw (if any) becomes visible as the
+        // Final first-round RngBefore when the Final starts, so one-shot,
+        // stepwise and resume all agree without reads consuming RNG.
+        RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
+        Pcg32State rngBefore = rngRow.ToState();
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
+        (TypeCupTournamentPlan.WildcardSelection wildcardSelection, Pcg32State _) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(plan, wildcardByGroup, rng, rules);
+        fields[finalKey] = await BuildPersistedFinalFieldAsync(context, selection, fields, wildcardSelection.Finalists, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Recovers the Final roster from immutable persisted Final rounds once the
+    /// Final has started. Returns true when recovery applied. This keeps reopen
+    /// deterministic without re-resolving the wildcard cutoff with post-Final
+    /// RNG, which has advanced beyond the wildcard tie draw and would reroll a
+    /// tied cutoff on every reopen.
+    /// </summary>
+    private static async Task<bool> TryRecoverStartedFinalAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        List<TypeCupSelectionEntity> selection,
+        TypeCupTournamentPlan.Plan plan,
+        Dictionary<TypeCupTournamentPlan.StageKey, TypeCupStageField> fields,
+        CancellationToken cancellationToken)
+    {
+        List<TypeCupTeamRoundEntity> finalRounds = await context.TypeCupTeamRounds
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id
+                && e.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Final)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (finalRounds.Count == 0)
+        {
+            return false;
+        }
+
+        TypeCupTeamRoundEntity first = finalRounds
+            .OrderBy(e => e.GroupNumber)
+            .ThenBy(e => e.RoundNumber)
+            .First();
+        TypeCupTeamRoundPayloadDocument finalPayload =
+            TypeCupTeamRoundPayloadDocument.FromStored(first.PayloadJson);
+        RulesV1 finalRules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> recovered =
+            RecoverFinalistsFromFinalPayload(finalPayload, selection, finalRules.TypeCupFinalTeamCount);
+        fields[TypeCupTournamentPlan.FinalKey()] = await BuildPersistedFinalFieldAsync(context, selection, fields, recovered, cancellationToken).ConfigureAwait(false);
+        _ = plan;
+        return true;
+    }
+
+    internal static Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> GroupWildcardStandings(
+        TypeCupTournamentPlan.Plan plan,
+        List<TypeCupTeamStandingEntity> qualTeams)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> result = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in plan.QualificationStages)
+        {
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> teams = qualTeams
+                .Where(e => e.QualificationGroup == stage.QualificationGroup)
+                .OrderBy(e => e.TeamRank)
+                .Select(e => (e.CreatureType, e.TeamRank, e.TeamScoreThousandths, e.TeamBaseThousandths))
+                .ToList();
+            result[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, teams);
+        }
+
+        return result;
+    }
+
+    private static bool QualWildcardStandingsComplete(
+        TypeCupTournamentPlan.Plan plan,
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> byGroup)
+    {
+        if (byGroup.Count != plan.QualificationGroupCount)
+        {
+            return false;
+        }
+
+        foreach (var stage in plan.QualificationStages)
+        {
+            if (!byGroup.TryGetValue(stage.QualificationGroup, out var standings)
+                || standings.Teams.Count != stage.GroupSize)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static Dictionary<int, IReadOnlyList<(string Team, int Rank)>> GroupQualStandings(
@@ -911,8 +1234,89 @@ public sealed partial class RunTypeCupTeamHandler
             return RankStageGroupLeg(state, prevStage, prev.GroupNumber, groupPayloads).RngAfter;
         }
 
-        // New stage: previous stage's team ranking after.
-        return RankStageTeams(state, prevStage).RngAfter;
+        // New stage: previous stage's team ranking after, plus any wildcard tie
+        // draw before the Final (MSS-071). Untied wildcards leave RNG unchanged.
+        Pcg32State stageAfter = RankStageTeams(state, prevStage).RngAfter;
+        if (IsWildcardFinalStart(state, prevStage, curStage))
+        {
+            return WildcardAfterFromOrdered(state, stageAfter);
+        }
+
+        return stageAfter;
+    }
+
+    internal static bool IsWildcardFinalStart(
+        TournamentState state,
+        TypeCupTournamentPlan.StageKey prevStage,
+        TypeCupTournamentPlan.StageKey curStage)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (!state.Plan.IsTournament || !state.Plan.IsWildcardPolicy)
+        {
+            return false;
+        }
+
+        if (state.Plan.WildcardCount == 0)
+        {
+            return false;
+        }
+
+        // Cur is the Final first round and prev is the last qualification stage.
+        if (!IsTournamentFinalStage(state, curStage))
+        {
+            return false;
+        }
+
+        if (prevStage.Phase != (int)TypeCupTournamentFormat.TournamentPhase.Qualification)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static Pcg32State WildcardAfterFromOrdered(
+        TournamentState state,
+        Pcg32State rngBeforeWildcard)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (!state.Plan.IsTournament || !state.Plan.IsWildcardPolicy || state.Plan.WildcardCount == 0)
+        {
+            return rngBeforeWildcard;
+        }
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> byGroup = new();
+        foreach (TypeCupTournamentPlan.QualificationStage stage in state.Plan.QualificationStages)
+        {
+            TypeCupTournamentPlan.StageKey key = TypeCupTournamentPlan.QualificationKey(stage.QualificationGroup);
+            List<TypeCupTeamRoundPayloadDocument> stagePayloads = state.PlayedOrdered
+                .Where(o => o.Key.Phase == key.Phase && o.Key.QualificationGroup == key.QualificationGroup)
+                .Select(o => o.Payload)
+                .ToList();
+            // Only completed quals contribute; partial quals cannot start the Final
+            // (validated elsewhere), so incomplete stages are skipped here only when
+            // called for continuity of a started Final (all quals complete then).
+            if (stagePayloads.Count != state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds)
+            {
+                continue;
+            }
+
+            var ranked = RankStage(state, key, stagePayloads);
+            List<(string Team, int Rank, int TeamScoreThousandths, int TeamBaseThousandths)> teams =
+                ranked.Teams.Select(t => (t.TeamName, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths)).ToList();
+            byGroup[stage.QualificationGroup] = new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup, stage.GroupSize, teams);
+        }
+
+        if (byGroup.Count != state.Plan.QualificationGroupCount)
+        {
+            return rngBeforeWildcard;
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngBeforeWildcard);
+        (_, Pcg32State after) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(state.Plan, byGroup, rng, state.Rules);
+        return after;
     }
 
     internal static Pcg32State ExpectedRngAfterLast(TournamentState state)

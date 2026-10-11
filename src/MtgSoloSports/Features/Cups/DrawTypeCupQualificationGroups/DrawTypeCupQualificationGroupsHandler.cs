@@ -166,10 +166,20 @@ public sealed class DrawTypeCupQualificationGroupsHandler
 
     private static void EnsureScalableFormat(RulesV1 rules)
     {
-        if (rules.TypeCupTournamentFormatVersion != RulesV1.DefaultTypeCupTournamentFormatVersion)
+        // MSS-071: saves with snapshot v1 (fixed quotas) remain able to host new
+        // v2 wildcard editions at an edition boundary; only legacy v0 is rejected.
+        // New snapshots default to v2, but per-edition draw rows carry the policy.
+        if (rules.TypeCupTournamentFormatVersion == RulesV1.LegacyTypeCupTournamentFormatVersion)
         {
             throw new DrawTypeCupQualificationGroupsConflictException(
-                $"Save uses legacy Type Cup format v{rules.TypeCupTournamentFormatVersion}; qualification draw requires v{RulesV1.DefaultTypeCupTournamentFormatVersion}.");
+                $"Save uses legacy Type Cup format v{rules.TypeCupTournamentFormatVersion}; qualification draw requires scalable format v{RulesV1.FixedQuotaTypeCupTournamentFormatVersion} or v{RulesV1.WildcardTypeCupTournamentFormatVersion}.");
+        }
+
+        if (rules.TypeCupTournamentFormatVersion != RulesV1.FixedQuotaTypeCupTournamentFormatVersion
+            && rules.TypeCupTournamentFormatVersion != RulesV1.WildcardTypeCupTournamentFormatVersion)
+        {
+            throw new DrawTypeCupQualificationGroupsConflictException(
+                $"Save uses unknown Type Cup format v{rules.TypeCupTournamentFormatVersion}.");
         }
     }
 
@@ -183,13 +193,16 @@ public sealed class DrawTypeCupQualificationGroupsHandler
         var assignments = TypeCupTournamentFormat.DrawQualificationGroups(types, rng, state.Rules);
         Pcg32State rngAfter = rng.Snapshot();
         var groupSizes = TypeCupTournamentFormat.BalancedQualificationGroupSizes(state.TeamCount, state.Rules);
-        var finalPlaces = TypeCupTournamentFormat.AllocateFinalPlaces(groupSizes, state.Rules);
+        // MSS-071: new draws always use the wildcard policy (equal guaranteed
+        // plus global wildcards). Old v1 draws keep their fixed quotas via the
+        // persisted per-edition version and are never rewritten.
+        var finalPlaces = TypeCupTournamentFormat.AllocateGuaranteedFinalPlaces(groupSizes, state.Rules);
         foreach (int size in groupSizes)
         {
             TypeCupTournamentFormat.ValidateCompetitionFieldSize(size, state.Rules);
         }
 
-        TypeCupTournamentFormat.ValidateTournamentDraw(types, assignments, groupSizes, finalPlaces, state.Rules);
+        TypeCupTournamentFormat.ValidateWildcardTournamentDraw(types, assignments, groupSizes, finalPlaces, state.Rules);
         string checksum = TypeCupTournamentFormat.ComputeDrawChecksum(assignments, state.TeamCount, groupSizes);
         return new DrawOutcome(assignments, groupSizes, finalPlaces, checksum, rngAfter, []);
     }
@@ -275,7 +288,10 @@ public sealed class DrawTypeCupQualificationGroupsHandler
             0UL,
             0UL,
             0UL,
-            []);
+            [],
+            rules.TypeCupTournamentFormatVersion,
+            [],
+            0);
     }
 
     private static DrawTypeCupQualificationGroupsResponse BuildQualificationResponse(
@@ -307,6 +323,12 @@ public sealed class DrawTypeCupQualificationGroupsHandler
             groups.Add(new TypeCupQualificationGroupResult(group, row.GroupSize, row.FinalPlacesForGroup, members));
         }
 
+        int policy = first.TournamentFormatVersion;
+        int wildcards = policy == RulesV1.WildcardTypeCupTournamentFormatVersion
+            ? RulesV1.DefaultTypeCupFinalTeamCount - quotas.Sum()
+            : 0;
+        // For v1, guaranteed equals the fixed quotas; for v2, quotas already are guaranteed.
+        List<int> guaranteed = [.. quotas];
         return new DrawTypeCupQualificationGroupsResponse(
             saveId,
             source.SeasonNumber,
@@ -323,7 +345,10 @@ public sealed class DrawTypeCupQualificationGroupsHandler
             unchecked((ulong)first.RngBeforeStream),
             unchecked((ulong)first.RngAfterState),
             unchecked((ulong)first.RngAfterStream),
-            groups);
+            groups,
+            policy,
+            guaranteed,
+            wildcards);
     }
 
     private static List<TypeCupTournamentDrawEntity> BuildRows(
@@ -353,7 +378,7 @@ public sealed class DrawTypeCupQualificationGroupsHandler
                 QualificationGroupCount = groupSizes.Count,
                 FinalPlacesForGroup = finalPlaces[group - 1],
                 RulesVersion = rules.Version,
-                TournamentFormatVersion = RulesV1.DefaultTypeCupTournamentFormatVersion,
+                TournamentFormatVersion = RulesV1.WildcardTypeCupTournamentFormatVersion,
                 RngBeforeState = unchecked((long)rngBefore.State),
                 RngBeforeStream = unchecked((long)rngBefore.Stream),
                 RngAfterState = unchecked((long)rngAfter.State),
