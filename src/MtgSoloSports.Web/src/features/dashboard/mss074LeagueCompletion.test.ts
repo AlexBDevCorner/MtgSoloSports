@@ -534,3 +534,180 @@ describe('MSS-074 dashboard fast-forward skips the transient screen', () => {
     );
   });
 });
+
+describe('MSS-074 manual final-stage completion enters the pending transition', () => {
+  beforeEach(() => {
+    installGlobals((url) => {
+      if (url.endsWith('/advance-next-event')) {
+        return okJson({
+          saveId: SAVE,
+          executedAction: 'CompleteNextGlobalStage',
+          executedDetail: 'Completed global stage 32.',
+          currentSeasonNumber: 2,
+          nextSeasonNumber: 3,
+          computedPhase: 'SeasonComplete',
+          persistedPhase: 'SeasonComplete',
+          sourceSeasonNumber: 2,
+          isCurrentSeasonComplete: true,
+          seasonComplete: true,
+          movementResolved: false,
+          qualifierResolved: false,
+          rebalanced: false,
+          cupSelectionResolved: false,
+          cupIndividualResolved: false,
+          cupTeamResolved: false,
+          cupComplete: false,
+          readyToStartNextSeason: false,
+          expectedCup: 'ColorCup',
+          legalNextActions: ['ResolveAutomaticMovement'],
+          nextActionDetail: 'Resolve promotion and relegation.',
+          eventProgress: null,
+        });
+      }
+      return okJson({});
+    });
+  });
+
+  it('routes a final manual stage through onLeagueCompleted, not onAdvanced', async () => {
+    let advanced = 0;
+    let leagueCompleted = 0;
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(SeasonFlow, {
+          saveId: SAVE,
+          progress: leagueRunningProgress(),
+          status: leagueRunningStatus(),
+          onAdvanced: () => {
+            advanced += 1;
+          },
+          onLeagueCompleted: () => {
+            leagueCompleted += 1;
+          },
+        }),
+      );
+    });
+    await act(async () => {
+      (findButtonByText(renderer!, 'Complete stage 32 for all 1 leagues')['onClick'] as () => void)();
+    });
+    await flush(12);
+    assert.equal(leagueCompleted, 1, 'final stage notifies the pending-transition guard');
+    assert.equal(advanced, 0, 'final stage does not take the ordinary refresh path');
+  });
+
+  it('keeps the ordinary refresh path for a non-final manual stage', async () => {
+    installGlobals((url) => {
+      if (String(url).endsWith('/advance-next-event')) {
+        return okJson({
+          saveId: SAVE,
+          executedAction: 'CompleteNextGlobalStage',
+          executedDetail: 'Completed global stage 5.',
+          currentSeasonNumber: 2,
+          nextSeasonNumber: null,
+          computedPhase: 'SeasonInProgress',
+          persistedPhase: 'SeasonInProgress',
+          sourceSeasonNumber: null,
+          isCurrentSeasonComplete: false,
+          seasonComplete: false,
+          movementResolved: false,
+          qualifierResolved: false,
+          rebalanced: false,
+          cupSelectionResolved: false,
+          cupIndividualResolved: false,
+          cupTeamResolved: false,
+          cupComplete: false,
+          readyToStartNextSeason: false,
+          expectedCup: 'ColorCup',
+          legalNextActions: ['CompleteNextGlobalStage'],
+          nextActionDetail: 'Complete the global stage.',
+          eventProgress: null,
+        });
+      }
+      return okJson({});
+    });
+    let advanced = 0;
+    let leagueCompleted = 0;
+    let renderer: ReturnType<typeof create> | null = null;
+    const earlyProgress: SeasonProgress = {
+      ...leagueRunningProgress(),
+      globalStage: 5,
+      leagues: [
+        { leagueId: 1, leagueName: 'Superleague', leagueKind: 'Superleague', currentStage: 5, completedStages: 4, isLeagueComplete: false },
+      ],
+    };
+    const earlyStatus: SeasonStatus = { ...leagueRunningStatus(), globalStage: 5 };
+    await act(async () => {
+      renderer = create(
+        React.createElement(SeasonFlow, {
+          saveId: SAVE,
+          progress: earlyProgress,
+          status: earlyStatus,
+          onAdvanced: () => {
+            advanced += 1;
+          },
+          onLeagueCompleted: () => {
+            leagueCompleted += 1;
+          },
+        }),
+      );
+    });
+    await act(async () => {
+      (findButtonByText(renderer!, 'Complete stage 5 for all 1 leagues')['onClick'] as () => void)();
+    });
+    await flush(12);
+    assert.equal(advanced, 1, 'non-final stage uses the ordinary refresh');
+    assert.equal(leagueCompleted, 0, 'non-final stage does not enter the pending transition');
+  });
+
+  it('manually completing the last stage shows loading until authoritative movement arrives', async () => {
+    let refreshed = 0;
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(DashboardPage, {
+          saveId: SAVE,
+          data: dashboardData(leagueRunningProgress(), leagueRunningStatus()),
+          loading: false,
+          error: null,
+          notFound: false,
+          onRefresh: () => {
+            refreshed += 1;
+          },
+        }),
+      );
+    });
+    await flush();
+    await act(async () => {
+      (findButtonByText(renderer!, 'Complete stage 32 for all 1 leagues')['onClick'] as () => void)();
+    });
+    await flush(12);
+    assert.equal(refreshed, 1, 'manual completion refreshes authoritative status');
+    const pendingText = textOf(renderer!);
+    assert.ok(pendingText.includes('Loading postseason status'), 'slow refresh shows loading');
+    assert.ok(!pendingText.includes('League season complete'), 'obsolete panel never flashes');
+    assert.ok(
+      !pendingText.includes('Complete stage 32 for all'),
+      'stale enabled league control never returns while pending',
+    );
+    assert.ok(!hasButtonWithText(renderer!, 'Fast-forward league season'), 'stale fast-forward stays hidden');
+
+    await act(async () => {
+      renderer!.update(
+        React.createElement(DashboardPage, {
+          saveId: SAVE,
+          data: dashboardData(completeProgress(), movementPendingStatus()),
+          loading: false,
+          error: null,
+          notFound: false,
+          onRefresh: () => {
+            refreshed += 1;
+          },
+        }),
+      );
+    });
+    await flush();
+    const settledText = textOf(renderer!);
+    assert.ok(settledText.includes('Promotion & relegation'), 'settles directly on movement');
+    assert.ok(!settledText.includes('League season complete'), 'no intermediate panel after settle');
+  });
+});

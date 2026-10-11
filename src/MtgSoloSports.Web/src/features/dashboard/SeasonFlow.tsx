@@ -25,6 +25,7 @@ export function SeasonFlow({
   statusError,
   refreshError,
   onAdvanced,
+  onLeagueCompleted,
   transitionPending,
 }: {
   saveId: string;
@@ -43,6 +44,13 @@ export function SeasonFlow({
    */
   refreshError?: string | null;
   onAdvanced: () => void;
+  /**
+   * MSS-074: called when a manual `Complete stage` commit finishes the league
+   * season. The Dashboard sets its pending-transition guard and refreshes
+   * authoritative status, so stale enabled League-play controls never return
+   * while the refresh is pending.
+   */
+  onLeagueCompleted?: () => void;
   /**
    * MSS-074: true while a fast-forward commit has been persisted and the
    * authoritative postseason status refresh is still pending. While set, the
@@ -96,7 +104,17 @@ export function SeasonFlow({
           status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
         ),
       );
-      onAdvanced();
+      // MSS-074: a manual commit of the final league stage must enter the same
+      // pending-transition loading state as fast-forward until the authoritative
+      // refresh lands; otherwise stale enabled League-play controls flash.
+      const leagueJustCompleted =
+        result.executedAction === 'CompleteNextGlobalStage' &&
+        (result.isCurrentSeasonComplete || result.seasonComplete);
+      if (leagueJustCompleted && onLeagueCompleted) {
+        onLeagueCompleted();
+      } else {
+        onAdvanced();
+      }
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {

@@ -39,14 +39,15 @@ export function DashboardPage({
   onRefresh: () => void;
 }) {
   /**
-   * MSS-074: true after a fast-forward bulk commit has been persisted while the
-   * authoritative postseason status refresh is still pending. While set, the
-   * season flow shows a stable loading state instead of stale League-play
-   * content, so the removed intermediate completed-league screen never flashes.
-   * Cleared only once fresh data confirms league completion. A failed refresh
-   * keeps the guard (useDashboard retains the stale pre-completion snapshot on
-   * error), so stale actionable League-play controls never return; the pending
-   * view surfaces the retry instead.
+   * MSS-074: true after a fast-forward bulk commit or a manual final-stage
+   * commit has been persisted while the authoritative postseason status
+   * refresh is still pending. While set, the season flow shows a stable
+   * loading state instead of stale League-play content, so the removed
+   * intermediate completed-league screen never flashes. Cleared only once
+   * fresh data confirms league completion. A failed refresh keeps the guard
+   * (useDashboard retains the stale pre-completion snapshot on error), so
+   * stale actionable League-play controls never return; the pending view
+   * surfaces the retry instead.
    */
   const [leagueCompletionPending, setLeagueCompletionPending] = useState(false);
 
@@ -182,6 +183,10 @@ export function DashboardPage({
           statusError={data.statusError}
           refreshError={error}
           onAdvanced={onRefresh}
+          onLeagueCompleted={() => {
+            setLeagueCompletionPending(true);
+            onRefresh();
+          }}
           transitionPending={leagueCompletionPending}
         />
         {progress.isSeasonComplete || leagueCompletionPending ? null : (
