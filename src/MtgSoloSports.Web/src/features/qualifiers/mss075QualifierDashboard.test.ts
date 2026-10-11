@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { SeasonProgress, SeasonStatus } from '../dashboard/dashboardApi.ts';
 import { seasonFlow } from '../dashboard/seasonFlowSteps.ts';
 import type { QualifierEvent, QualifierList } from './qualifierApi.ts';
-import { buildQualifierOverview, shouldShowQualifierRun } from './qualifierModel.ts';
+import { buildQualifierOverview, isActiveQualifierSeason, shouldShowQualifierRun } from './qualifierModel.ts';
 
 function tieredProgress(): SeasonProgress {
   const leagues: SeasonProgress['leagues'] = [];
@@ -259,5 +259,52 @@ describe('MSS-075 qualifier dashboard agreement', () => {
     );
     const sl = overview.find((e) => e.key === 'Superleague:-')!;
     assert.equal(sl.status, 'pending');
+  });
+
+  it('hides run controls when viewing a historical season while the active season is pending', () => {
+    // Backend status for the active Season 3 postseason: qualifiers pending.
+    const sourceSeasonNumber = 3;
+    const canRun = true;
+
+    // Viewing the active transition still offers the bulk run.
+    assert.equal(isActiveQualifierSeason(3, sourceSeasonNumber), true);
+    const activeCanRun = canRun && isActiveQualifierSeason(3, sourceSeasonNumber);
+    assert.equal(shouldShowQualifierRun(activeCanRun, 0, 17), true);
+
+    // Viewing Season 1 (inaugural, no persisted qualifier list so the
+    // overview falls back to 17 canonical pending entries) must not offer a
+    // run: the endpoints would mutate Season 3, not the displayed season.
+    assert.equal(isActiveQualifierSeason(1, sourceSeasonNumber), false);
+    const historicalCanRun = canRun && isActiveQualifierSeason(1, sourceSeasonNumber);
+    assert.equal(historicalCanRun, false);
+    const historicalOverview = buildQualifierOverview(null, true);
+    assert.equal(historicalOverview.length, 17);
+    assert.equal(
+      historicalOverview.filter((e) => e.status === 'complete').length,
+      0,
+    );
+    assert.equal(
+      shouldShowQualifierRun(
+        historicalCanRun,
+        historicalOverview.filter((e) => e.status === 'complete').length,
+        historicalOverview.length,
+      ),
+      false,
+    );
+
+    // Viewing a completed historical season never offers a rerun either.
+    assert.equal(isActiveQualifierSeason(2, sourceSeasonNumber), false);
+    const completedHistorical = buildQualifierOverview(fullList(), true);
+    const completedCount = completedHistorical.filter((e) => e.status === 'complete').length;
+    assert.equal(completedCount, 17);
+    assert.equal(
+      shouldShowQualifierRun(canRun && isActiveQualifierSeason(2, sourceSeasonNumber), completedCount, completedHistorical.length),
+      false,
+    );
+
+    // Null on either side means no active transition is selected.
+    assert.equal(isActiveQualifierSeason(null, sourceSeasonNumber), false);
+    assert.equal(isActiveQualifierSeason(3, null), false);
+    assert.equal(isActiveQualifierSeason(3, undefined), false);
   });
 });

@@ -126,6 +126,21 @@ export function shouldShowQualifierRun(canRun: boolean, completed: number, total
 }
 
 /**
+ * MSS-075 correction: run endpoints always execute the latest pending
+ * postseason transition (they take no season argument). A historical season
+ * selection must never present a run control that would mutate the active
+ * season, so run authorization is gated on viewing the backend's
+ * `sourceSeasonNumber`. Null on either side means no active transition is
+ * selected and runs stay hidden.
+ */
+export function isActiveQualifierSeason(
+  effectiveSeason: number | null,
+  sourceSeasonNumber: number | null | undefined,
+): boolean {
+  return effectiveSeason !== null && sourceSeasonNumber != null && effectiveSeason === sourceSeasonNumber;
+}
+
+/**
  * Merges persisted qualifier results over the canonical list so
  * completed/pending state stays visible even mid-phase. `includeFeeders`
  * comes from league data (tiered saves expect 17 events, v1 saves expect 1)
