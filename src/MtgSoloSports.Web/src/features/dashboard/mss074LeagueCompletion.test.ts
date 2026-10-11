@@ -331,6 +331,29 @@ describe('MSS-074 authoritative end-of-league transition', () => {
     assert.ok(text.includes('Season status unavailable'), 'failure is recoverable');
     findButtonByText(renderer!, 'Retry');
   });
+
+  it('keeps pending loading with retry when the postseason refresh fails', async () => {
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(SeasonFlow, {
+          saveId: SAVE,
+          progress: leagueRunningProgress(),
+          status: leagueRunningStatus(),
+          statusError: 'Request failed (500).',
+          refreshError: null,
+          onAdvanced: () => undefined,
+          transitionPending: true,
+        }),
+      );
+    });
+    const text = textOf(renderer!);
+    assert.ok(text.includes('Loading postseason status'), 'pending keeps loading on failure');
+    assert.ok(text.includes('Postseason refresh failed'), 'pending failure offers retry');
+    findButtonByText(renderer!, 'Retry');
+    assert.ok(!text.includes('Play stage 32'), 'stale league action stays hidden on failure');
+    assert.ok(!text.includes('League season complete'), 'no obsolete panel on failure');
+  });
 });
 
 describe('MSS-074 dashboard fast-forward skips the transient screen', () => {
@@ -448,5 +471,66 @@ describe('MSS-074 dashboard fast-forward skips the transient screen', () => {
     assert.ok(text.includes('Promotion & relegation'), 'movement is pending');
     assert.ok(text.includes('on Live'), 'movement offers its Live entry point');
     assert.ok(!text.includes('League season complete'), 'no auto-run claim via intermediate panel');
+  });
+
+  it('keeps the pending transition on a failed refresh instead of restoring stale league controls', async () => {
+    let refreshed = 0;
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(DashboardPage, {
+          saveId: SAVE,
+          data: dashboardData(leagueRunningProgress(), leagueRunningStatus()),
+          loading: false,
+          error: null,
+          notFound: false,
+          onRefresh: () => {
+            refreshed += 1;
+          },
+        }),
+      );
+    });
+    await flush();
+    await act(async () => {
+      (findButtonByText(renderer!, 'Fast-forward league season')['onClick'] as () => void)();
+    });
+    await flush();
+    await act(async () => {
+      (findButtonByText(renderer!, 'Confirm fast-forward')['onClick'] as () => void)();
+    });
+    await flush(12);
+    assert.equal(refreshed, 1);
+
+    // The refresh fails at the top level: useDashboard keeps the stale
+    // pre-completion snapshot and surfaces an error. The pending guard must
+    // stay set so stale actionable League-play controls never return.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(DashboardPage, {
+          saveId: SAVE,
+          data: dashboardData(leagueRunningProgress(), leagueRunningStatus()),
+          loading: false,
+          error: 'Request failed (500).',
+          notFound: false,
+          onRefresh: () => {
+            refreshed += 1;
+          },
+        }),
+      );
+    });
+    await flush();
+    const failedText = textOf(renderer!);
+    assert.ok(failedText.includes('Loading postseason status'), 'failed refresh keeps loading');
+    assert.ok(failedText.includes('Postseason refresh failed'), 'failed refresh offers retry');
+    findButtonByText(renderer!, 'Retry');
+    assert.ok(!failedText.includes('League season complete'), 'no obsolete panel on failure');
+    assert.ok(
+      !hasButtonWithText(renderer!, 'Fast-forward league season'),
+      'stale fast-forward stays hidden on failure',
+    );
+    assert.ok(
+      !failedText.includes('Complete stage 32 for all'),
+      'stale actionable league control stays hidden on failure',
+    );
   });
 });

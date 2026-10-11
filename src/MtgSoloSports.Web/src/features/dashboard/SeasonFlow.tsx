@@ -23,6 +23,7 @@ export function SeasonFlow({
   progress,
   status,
   statusError,
+  refreshError,
   onAdvanced,
   transitionPending,
 }: {
@@ -35,6 +36,12 @@ export function SeasonFlow({
    * never claim no actions remain.
    */
   statusError?: string | null;
+  /**
+   * MSS-074: top-level dashboard refresh failure. `useDashboard` retains the
+   * stale pre-completion snapshot on such an error, so the pending transition
+   * must surface this retry instead of restoring stale League-play controls.
+   */
+  refreshError?: string | null;
   onAdvanced: () => void;
   /**
    * MSS-074: true while a fast-forward commit has been persisted and the
@@ -49,9 +56,23 @@ export function SeasonFlow({
   const [lastDone, setLastDone] = useState<{ text: string; target: SummaryTarget } | null>(null);
 
   if (transitionPending) {
+    const pendingError = statusError ?? refreshError ?? null;
     return (
       <div className="season-flow">
         <Loading label="Loading postseason status…" />
+        {pendingError ? (
+          <Notice tone="error" title="Postseason refresh failed">
+            <p>{pendingError}</p>
+            <p>
+              <button type="button" className="ghost-button" disabled={running} onClick={onAdvanced}>
+                Retry
+              </button>
+            </p>
+            <p className="muted small">
+              League results already persisted; retry loads the authoritative postseason step.
+            </p>
+          </Notice>
+        ) : null}
       </div>
     );
   }

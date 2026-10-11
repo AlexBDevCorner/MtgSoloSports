@@ -43,8 +43,10 @@ export function DashboardPage({
    * authoritative postseason status refresh is still pending. While set, the
    * season flow shows a stable loading state instead of stale League-play
    * content, so the removed intermediate completed-league screen never flashes.
-   * Cleared once the fresh status confirms league completion, or when the
-   * refresh surfaces an error that must be shown with retry.
+   * Cleared only once fresh data confirms league completion. A failed refresh
+   * keeps the guard (useDashboard retains the stale pre-completion snapshot on
+   * error), so stale actionable League-play controls never return; the pending
+   * view surfaces the retry instead.
    */
   const [leagueCompletionPending, setLeagueCompletionPending] = useState(false);
 
@@ -56,15 +58,10 @@ export function DashboardPage({
     if (!leagueCompletionPending || !data) {
       return;
     }
-    if (
-      data.progress.isSeasonComplete ||
-      data.status?.isCurrentSeasonComplete ||
-      data.statusError ||
-      error
-    ) {
+    if (data.progress.isSeasonComplete || data.status?.isCurrentSeasonComplete) {
       setLeagueCompletionPending(false);
     }
-  }, [leagueCompletionPending, data, error]);
+  }, [leagueCompletionPending, data]);
 
   if (loading && !data) {
     return <Loading label="Loading dashboard…" />;
@@ -183,6 +180,7 @@ export function DashboardPage({
           progress={progress}
           status={status}
           statusError={data.statusError}
+          refreshError={error}
           onAdvanced={onRefresh}
           transitionPending={leagueCompletionPending}
         />
