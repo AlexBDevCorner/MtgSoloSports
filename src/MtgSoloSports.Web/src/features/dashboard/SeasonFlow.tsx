@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
-import { Notice } from '../../shared/ui/Notice';
+import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link, navigate } from '../routing/router';
 import { cupsPath, livePath, qualifiersPath, standingsPath } from '../routing/routes';
 import { transitionForAction } from '../events/eventModel';
@@ -23,7 +23,10 @@ export function SeasonFlow({
   progress,
   status,
   statusError,
+  refreshError,
   onAdvanced,
+  onLeagueCompleted,
+  transitionPending,
 }: {
   saveId: string;
   progress: SeasonProgress;
@@ -34,11 +37,53 @@ export function SeasonFlow({
    * never claim no actions remain.
    */
   statusError?: string | null;
+  /**
+   * MSS-074: top-level dashboard refresh failure. `useDashboard` retains the
+   * stale pre-completion snapshot on such an error, so the pending transition
+   * must surface this retry instead of restoring stale League-play controls.
+   */
+  refreshError?: string | null;
   onAdvanced: () => void;
+  /**
+   * MSS-074: called when a manual `Complete stage` commit finishes the league
+   * season. The Dashboard sets its pending-transition guard and refreshes
+   * authoritative status, so stale enabled League-play controls never return
+   * while the refresh is pending.
+   */
+  onLeagueCompleted?: () => void;
+  /**
+   * MSS-074: true while a fast-forward commit has been persisted and the
+   * authoritative postseason status refresh is still pending. While set, the
+   * panel shows a stable loading state instead of stale League-play content,
+   * so the removed intermediate completed-league screen never flashes.
+   */
+  transitionPending?: boolean;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastDone, setLastDone] = useState<{ text: string; target: SummaryTarget } | null>(null);
+
+  if (transitionPending) {
+    const pendingError = statusError ?? refreshError ?? null;
+    return (
+      <div className="season-flow">
+        <Loading label="Loading postseason status…" />
+        {pendingError ? (
+          <Notice tone="error" title="Postseason refresh failed">
+            <p>{pendingError}</p>
+            <p>
+              <button type="button" className="ghost-button" disabled={running} onClick={onAdvanced}>
+                Retry
+              </button>
+            </p>
+            <p className="muted small">
+              League results already persisted; retry loads the authoritative postseason step.
+            </p>
+          </Notice>
+        ) : null}
+      </div>
+    );
+  }
 
   const flow = seasonFlow(progress, status);
   const next = flow.next;
@@ -59,7 +104,17 @@ export function SeasonFlow({
           status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
         ),
       );
-      onAdvanced();
+      // MSS-074: a manual commit of the final league stage must enter the same
+      // pending-transition loading state as fast-forward until the authoritative
+      // refresh lands; otherwise stale enabled League-play controls flash.
+      const leagueJustCompleted =
+        result.executedAction === 'CompleteNextGlobalStage' &&
+        (result.isCurrentSeasonComplete || result.seasonComplete);
+      if (leagueJustCompleted && onLeagueCompleted) {
+        onLeagueCompleted();
+      } else {
+        onAdvanced();
+      }
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {

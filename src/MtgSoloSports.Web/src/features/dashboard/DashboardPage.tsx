@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { groupLeaguesByTier } from '../../shared/leagueTiers';
@@ -37,6 +38,32 @@ export function DashboardPage({
   notFound: boolean;
   onRefresh: () => void;
 }) {
+  /**
+   * MSS-074: true after a fast-forward bulk commit or a manual final-stage
+   * commit has been persisted while the authoritative postseason status
+   * refresh is still pending. While set, the season flow shows a stable
+   * loading state instead of stale League-play content, so the removed
+   * intermediate completed-league screen never flashes. Cleared only once
+   * fresh data confirms league completion. A failed refresh keeps the guard
+   * (useDashboard retains the stale pre-completion snapshot on error), so
+   * stale actionable League-play controls never return; the pending view
+   * surfaces the retry instead.
+   */
+  const [leagueCompletionPending, setLeagueCompletionPending] = useState(false);
+
+  useEffect(() => {
+    setLeagueCompletionPending(false);
+  }, [saveId]);
+
+  useEffect(() => {
+    if (!leagueCompletionPending || !data) {
+      return;
+    }
+    if (data.progress.isSeasonComplete || data.status?.isCurrentSeasonComplete) {
+      setLeagueCompletionPending(false);
+    }
+  }, [leagueCompletionPending, data]);
+
   if (loading && !data) {
     return <Loading label="Loading dashboard…" />;
   }
@@ -149,13 +176,29 @@ export function DashboardPage({
           </p>
         }
       >
-        <SeasonFlow saveId={saveId} progress={progress} status={status} statusError={data.statusError} onAdvanced={onRefresh} />
-        {progress.isSeasonComplete ? null : (
+        <SeasonFlow
+          saveId={saveId}
+          progress={progress}
+          status={status}
+          statusError={data.statusError}
+          refreshError={error}
+          onAdvanced={onRefresh}
+          onLeagueCompleted={() => {
+            setLeagueCompletionPending(true);
+            onRefresh();
+          }}
+          transitionPending={leagueCompletionPending}
+        />
+        {progress.isSeasonComplete || leagueCompletionPending ? null : (
           <FastForwardSeason
             saveId={saveId}
             progress={progress}
             status={status}
-            onCompleted={onRefresh}
+            onCompleted={() => {
+              setLeagueCompletionPending(true);
+              onRefresh();
+            }}
+            onRefresh={onRefresh}
           />
         )}
         <div className="next-action-details">
