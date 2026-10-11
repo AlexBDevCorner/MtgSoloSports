@@ -158,6 +158,19 @@ public sealed class PlayTypeCupTeamRoundHandler
             return;
         }
 
+        // If the Final has already started, its roster is immutable history.
+        // Recover it from the persisted Final payloads rather than re-resolving
+        // the wildcard cutoff with post-Final RNG.
+        if (state.PlayedOrdered.Any(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final))
+        {
+            TypeCupTeamRoundPayloadDocument persistedPayload = state.PlayedOrdered
+                .First(o => o.Key.Phase == (int)TypeCupTournamentFormat.TournamentPhase.Final).Payload;
+            IReadOnlyList<string> recovered = RunTypeCupTeamHandler.RecoverFinalistsFromFinalPayload(
+                persistedPayload, state.Selection, state.Rules.TypeCupFinalTeamCount);
+            state.Fields[next] = RunTypeCupTeamHandler.BuildFinalField(state, recovered);
+            return;
+        }
+
         // All qualification groups must be complete with persisted standings
         // before the Final can start; derive the 32 finalists from them.
         List<TypeCupTeamStandingEntity> qualTeams = await context.TypeCupTeamStandings

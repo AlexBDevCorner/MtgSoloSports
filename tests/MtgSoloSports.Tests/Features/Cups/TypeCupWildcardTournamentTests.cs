@@ -201,6 +201,73 @@ public sealed class TypeCupWildcardTournamentTests
         }
     }
 
+    [Fact]
+    public async Task TiedCutoff_FinalField_StableAcrossFinalResume()
+    {
+        // MSS-071 correction P1: after the Final starts, reopening the save must
+        // recover the Final roster from immutable persisted Final rounds, never
+        // by re-resolving the wildcard cutoff with post-Final RNG (which would
+        // reroll a tied cutoff on every reopen). The tie is forced after the
+        // Final starts so the persisted RNG chain stays valid: the Final's
+        // RngBefore was untied, and only the standings are retied to prove the
+        // reopen ignores post-Final RNG.
+        var (store, root) = CreateStore();
+        try
+        {
+            Guid saveId = await SetupFieldAsync(store, 84, 84210UL, 84310UL);
+            await SelectAsync(store, saveId);
+            await DrawAsync(store, saveId);
+            PlayTypeCupTeamRoundHandler step = new(store);
+            for (int index = 0; index < 96; index++)
+            {
+                await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+            }
+
+            List<string> expected = await LoadFinalFieldAsync(store, saveId);
+
+            // First Final round persists the immutable Final roster.
+            await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+
+            // Retie the cutoff after the Final started. A buggy reopen would
+            // re-resolve these tied standings with post-Final RNG and diverge;
+            // the fixed reopen recovers the persisted Final roster instead.
+            await ForceRankElevenTieAsync(store, saveId);
+            List<string> afterFirst = await LoadFinalFieldAsync(store, saveId);
+            afterFirst.ShouldBe(expected);
+
+            // Every further Final round advances the save RNG far beyond the
+            // wildcard tie draw. Each reopen must still recover the same roster
+            // from persisted Final payloads.
+            for (int index = 1; index < 31; index++)
+            {
+                await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+                List<string> reopened = await LoadFinalFieldAsync(store, saveId);
+                reopened.ShouldBe(expected);
+            }
+
+            // Finish the Final stepwise; the completed tournament's finalists
+            // must still match the originally persisted roster.
+            await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+
+            GetTypeCupTournamentHandler get = new(store);
+            GetTypeCupTournamentResponse summary = await get.HandleAsync(saveId, sourceSeasonNumber: 2);
+            summary.Finalists.OrderBy(t => t, StringComparer.Ordinal).ToList().ShouldBe(expected);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task<List<string>> LoadFinalFieldAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        RunTypeCupTeamHandler.TournamentState state = await RunTypeCupTeamHandler
+            .LoadStateAsync(context, saveId, sourceSeasonNumber: 2, CancellationToken.None).ConfigureAwait(false);
+        state.Fields.TryGetValue(TypeCupTournamentPlan.FinalKey(), out TypeCupStageField? field).ShouldBeTrue();
+        return field!.TeamTypes.OrderBy(t => t, StringComparer.Ordinal).ToList();
+    }
+
     private static async Task<Pcg32State> WildcardRngBeforeFinalAsync(SaveStore store, Guid saveId)
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
