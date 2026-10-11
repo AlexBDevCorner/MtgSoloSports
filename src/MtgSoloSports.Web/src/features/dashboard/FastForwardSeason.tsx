@@ -1,22 +1,17 @@
 import { useState } from 'react';
-import { Notice } from '../../shared/ui/Notice';
+import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
-import { Link } from '../routing/router';
-import { cupsPath, historyPath, standingsPath } from '../routing/routes';
 import {
   completeSeason,
-  type CompleteSeasonResult,
   type SeasonProgress,
   type SeasonStatus,
 } from './dashboardApi';
 import {
   fastForwardAvailability,
   fastForwardConfirmationText,
-  postFastForwardNextStep,
-  summarizeCompleteSeason,
 } from './fastForwardSeasonHelpers';
 
-type Phase = 'idle' | 'confirming' | 'running' | 'success' | 'error';
+type Phase = 'idle' | 'confirming' | 'running' | 'committed' | 'error';
 
 /**
  * MSS-042 one-click "Fast-forward league season" shortcut, rendered
@@ -29,25 +24,34 @@ type Phase = 'idle' | 'confirming' | 'running' | 'success' | 'error';
  * stage boundaries, and stops after Stage 32 results — before movement,
  * qualifiers, Cup selection/events and the next-season transition, which stay
  * on the normal one-event-at-a-time lifecycle controls.
+ *
+ * MSS-074: after the bulk operation commits, the component reports completion
+ * through `onCompleted` and shows only a neutral loading state. It never
+ * renders the former completed-league summary or its four-button
+ * action bar; the Dashboard season flow derives the next postseason step
+ * from authoritative lifecycle status.
  */
 export function FastForwardSeason({
   saveId,
   progress,
   status,
   onCompleted,
+  onRefresh,
 }: {
   saveId: string;
   progress: SeasonProgress;
   status: SeasonStatus | null;
   onCompleted: () => void;
+  /** Generic refresh for error recovery; defaults to `onCompleted`. */
+  onRefresh?: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [wasConflict, setWasConflict] = useState(false);
-  const [result, setResult] = useState<CompleteSeasonResult | null>(null);
 
   const availability = fastForwardAvailability(progress, status);
   const running = phase === 'running';
+  const refreshState = onRefresh ?? onCompleted;
 
   async function handleConfirm(): Promise<void> {
     if (running) {
@@ -57,9 +61,8 @@ export function FastForwardSeason({
     setError(null);
     setWasConflict(false);
     try {
-      const completed = await completeSeason(saveId);
-      setResult(completed);
-      setPhase('success');
+      await completeSeason(saveId);
+      setPhase('committed');
       onCompleted();
     } catch (failure) {
       setError(apiErrorMessage(failure));
@@ -68,31 +71,10 @@ export function FastForwardSeason({
     }
   }
 
-  if (phase === 'success' && result) {
+  if (phase === 'committed') {
     return (
-      <section aria-label="Fast-forward league season — completed">
-        <Notice tone="info" title="League season complete">
-          <p>{summarizeCompleteSeason(result)}</p>
-          <p>{postFastForwardNextStep(result)}</p>
-          <p className="muted small">
-            No postseason action has run: movement, qualifier, Cup selection and Cup events are
-            still pending on the normal lifecycle controls, one event at a time.
-          </p>
-        </Notice>
-        <div className="live-buttons" role="group" aria-label="Postseason next steps">
-          <Link to={standingsPath(saveId)} className="primary-button">
-            Inspect final tables
-          </Link>
-          <Link to={historyPath(saveId)} className="ghost-button">
-            Replay history
-          </Link>
-          <Link to={cupsPath(saveId)} className="ghost-button">
-            Inspect Cups
-          </Link>
-          <button type="button" className="ghost-button" onClick={onCompleted}>
-            Refresh status
-          </button>
-        </div>
+      <section aria-label="Fast-forward league season — loading postseason">
+        <Loading label="Loading postseason status…" />
       </section>
     );
   }
@@ -116,7 +98,7 @@ export function FastForwardSeason({
             </p>
           )}
           <div className="live-buttons" role="group" aria-label="Fast-forward recovery">
-            <button type="button" className="ghost-button" onClick={onCompleted}>
+            <button type="button" className="ghost-button" onClick={refreshState}>
               Refresh state
             </button>
             {availability.available ? (

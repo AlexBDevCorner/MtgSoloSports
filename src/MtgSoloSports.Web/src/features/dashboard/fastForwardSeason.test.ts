@@ -6,12 +6,9 @@ import { fileURLToPath } from 'node:url';
 import {
   fastForwardAvailability,
   fastForwardConfirmationText,
-  postFastForwardNextStep,
   remainingGlobalStages,
-  summarizeCompleteSeason,
 } from './fastForwardSeasonHelpers.ts';
 import type {
-  CompleteSeasonResult,
   SeasonProgress,
   SeasonProgressLeague,
   SeasonStatus,
@@ -23,6 +20,8 @@ const helpers = readFileSync(join(here, 'fastForwardSeasonHelpers.ts'), 'utf8');
 const api = readFileSync(join(here, 'dashboardApi.ts'), 'utf8');
 const dashboardPage = readFileSync(join(here, 'DashboardPage.tsx'), 'utf8');
 const livePage = readFileSync(join(here, '..', 'live', 'LivePage.tsx'), 'utf8');
+const seasonFlow = readFileSync(join(here, 'SeasonFlow.tsx'), 'utf8');
+const shell = readFileSync(join(here, '..', 'shell', 'AppShell.tsx'), 'utf8');
 
 function league(
   leagueId: number,
@@ -75,27 +74,6 @@ function status(overrides?: Partial<SeasonStatus>): SeasonStatus {
     nextActionDetail: 'Complete the global stage.',
     eventProgress: null,
     ...overrides,
-  };
-}
-
-function completedResult(seasonNumber: number): CompleteSeasonResult {
-  return {
-    saveId: 'save-1',
-    seasonNumber,
-    stagesCompleted: 32,
-    globalStageBefore: 1,
-    globalStageAfter: 33,
-    isSeasonComplete: true,
-    rngBeforeState: 1,
-    rngBeforeStream: 2,
-    rngAfterState: 3,
-    rngAfterStream: 4,
-    progress: {
-      stagesCompleted: 32,
-      totalStagesInSeason: 32,
-      globalStageBefore: 1,
-      globalStageAfter: 33,
-    },
   };
 }
 
@@ -165,21 +143,6 @@ describe('MSS-042 fast-forward copy', () => {
     assert.match(text, /before movement, qualifiers and Cups/);
     assert.match(text, /cannot be undone/);
   });
-
-  it('summarizes success from real response counts and cursors', () => {
-    const summary = summarizeCompleteSeason(completedResult(2));
-    assert.match(summary, /Season 2/);
-    assert.match(summary, /32/);
-    assert.match(summary, /1 → 33/);
-  });
-
-  it('hands Season 1 to the inaugural Superleague and later seasons to movement/qualifier/Cups', () => {
-    assert.match(postFastForwardNextStep(completedResult(1)), /inaugural Superleague/);
-    assert.match(
-      postFastForwardNextStep(completedResult(2)),
-      /movement → qualifier → feeder rebalancing/,
-    );
-  });
 });
 
 describe('MSS-042 fast-forward wiring', () => {
@@ -208,28 +171,24 @@ describe('MSS-042 fast-forward wiring', () => {
     assert.ok(!component.includes('simulate'), 'never triggers the postseason batch endpoint');
   });
 
-  it('shows busy, disabled, error and success states with refresh recovery', () => {
+  it('shows busy, disabled, error and committed-transition states with refresh recovery', () => {
     assert.ok(component.includes('aria-busy'), 'unmistakable running state');
     assert.ok(component.includes('<progress'), 'indeterminate busy indicator');
     assert.ok(component.includes('disabled'), 'disabled states exist');
     assert.ok(component.includes('Refresh state'), 'failed runs offer authoritative refresh');
     assert.ok(component.includes('Retry fast-forward'), 'retry is offered while stages remain');
+    assert.ok(component.includes('onCompleted()'), 'commit refreshes dashboard progress state');
     assert.ok(
-      component.includes('summarizeCompleteSeason(result)'),
-      'success uses real response counts/cursors',
+      component.includes('Loading postseason status'),
+      'commit shows a neutral loading transition',
     );
-    assert.ok(component.includes('onCompleted()'), 'success refreshes dashboard progress state');
   });
 
-  it('keeps postseason inspectable one event at a time', () => {
+  it('keeps postseason on the normal one-event-at-a-time lifecycle controls', () => {
     assert.ok(
-      component.includes('stops before movement, qualifiers and Cups') ||
-        component.includes('No postseason action has run'),
+      component.includes('stops before movement, qualifiers and Cups'),
       'postseason exclusion is explicit',
     );
-    assert.ok(component.includes('standingsPath(saveId)'), 'links to final league tables');
-    assert.ok(component.includes('historyPath(saveId)'), 'links to persisted history');
-    assert.ok(component.includes('cupsPath(saveId)'), 'links to Cup inspection');
     assert.ok(helpers.includes('CompleteNextGlobalStage'), 'postseason gate reuses lifecycle actions');
   });
 
@@ -244,8 +203,8 @@ describe('MSS-042 fast-forward wiring', () => {
       'shortcut receives live progress and lifecycle status',
     );
     assert.ok(
-      dashboardPage.includes('saveId={saveId}') && dashboardPage.includes('onCompleted={onRefresh}'),
-      'shortcut uses the route-scoped save id and refreshes dashboard state',
+      dashboardPage.includes('saveId={saveId}'),
+      'shortcut uses the route-scoped save id',
     );
   });
 
@@ -255,5 +214,60 @@ describe('MSS-042 fast-forward wiring', () => {
       'live links to the dashboard shortcut',
     );
     assert.ok(!livePage.includes('completeSeason('), 'live keeps single-league controls only');
+  });
+});
+
+describe('MSS-074 skip the transient league-complete screen', () => {
+  it('removes the League season complete panel and its four-button action bar', () => {
+    assert.ok(!component.includes('League season complete'), 'no intermediate completed-league title');
+    assert.ok(!component.includes('Inspect final tables'), 'no Inspect final tables shortcut');
+    assert.ok(!component.includes('Replay history'), 'no Replay history shortcut');
+    assert.ok(!component.includes('Inspect Cups'), 'no Inspect Cups shortcut');
+    assert.ok(!component.includes('Refresh status'), 'no Refresh status shortcut in the removed bar');
+    assert.ok(!component.includes('Postseason next steps'), 'removed action-bar group is gone');
+    assert.ok(!helpers.includes('summarizeCompleteSeason'), 'obsolete summary helper is gone');
+    assert.ok(!helpers.includes('postFastForwardNextStep'), 'obsolete next-step helper is gone');
+  });
+
+  it('shows a neutral loading transition after the commit, without inventing postseason steps', () => {
+    assert.ok(component.includes("'committed'"), 'commit phase is distinct from running');
+    assert.ok(
+      component.includes('loading postseason'),
+      'committed state names the loading transition',
+    );
+    assert.ok(
+      !component.includes('ResolveInauguralMovement') && !component.includes('ResolveAutomaticMovement'),
+      'fast-forward never runs postseason actions itself',
+    );
+  });
+
+  it('keeps final tables, history, Cups and refresh reachable outside the removed bar', () => {
+    assert.ok(dashboardPage.includes('standingsPath(saveId)'), 'dashboard still links to standings');
+    assert.ok(dashboardPage.includes('cupsPath(saveId)'), 'dashboard still links to Cups');
+    assert.ok(shell.includes('historyPath'), 'global navigation still links to history');
+    assert.ok(shell.includes('standingsPath'), 'global navigation still links to standings');
+    assert.ok(shell.includes('cupsPath'), 'global navigation still links to cups');
+    assert.ok(dashboardPage.includes('onClick={onRefresh}'), 'dashboard keeps its normal refresh control');
+    assert.ok(dashboardPage.includes('Refresh'), 'dashboard refresh copy remains');
+    assert.ok(seasonFlow.includes('Refresh') || seasonFlow.includes('Retry'), 'season flow keeps error retry');
+  });
+
+  it('drives the post-fast-forward transition from authoritative status, not local counters', () => {
+    assert.ok(
+      dashboardPage.includes('leagueCompletionPending'),
+      'dashboard tracks the pending postseason refresh',
+    );
+    assert.ok(
+      dashboardPage.includes('transitionPending={leagueCompletionPending}'),
+      'season flow receives the pending transition flag',
+    );
+    assert.ok(
+      seasonFlow.includes('transitionPending'),
+      'season flow supports a pending-transition loading state',
+    );
+    assert.ok(
+      seasonFlow.includes('Loading postseason status'),
+      'pending transition prefers loading over stale league content',
+    );
   });
 });

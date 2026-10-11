@@ -1,4 +1,4 @@
-import type { CompleteSeasonResult, SeasonProgress, SeasonStatus } from './dashboardApi';
+import type { SeasonProgress, SeasonStatus } from './dashboardApi';
 
 /**
  * MSS-042 pure presentation rules for the one-click "Fast-forward league
@@ -10,6 +10,11 @@ import type { CompleteSeasonResult, SeasonProgress, SeasonStatus } from './dashb
  * before any postseason action (movement, qualifier, Cup selection/events,
  * next-season transition). Postseason stays on the normal one-event-at-a-time
  * lifecycle controls.
+ *
+ * MSS-074: the former success summary plus its four-button action bar was
+ * removed. After the bulk operation commits, the Dashboard shows a neutral
+ * loading state and derives the next step from authoritative lifecycle status
+ * instead of local result copy.
  */
 
 export const TOTAL_STAGES_PER_SEASON = 32;
@@ -85,29 +90,4 @@ export function fastForwardConfirmationText(
     `(stops after persisted Stage 32 results, before movement, qualifiers and Cups). ` +
     `Saved results cannot be undone through the UI.`
   );
-}
-
-/**
- * Compact one-line summary of a successful bulk completion, built only from
- * real response counts/cursors (season, stages completed, before/after
- * global-stage cursors).
- */
-export function summarizeCompleteSeason(result: CompleteSeasonResult): string {
-  return (
-    `Season ${result.seasonNumber}: completed ${result.stagesCompleted} ` +
-    `stage${result.stagesCompleted === 1 ? '' : 's'} ` +
-    `(global stage ${result.globalStageBefore} → ${result.globalStageAfter}).`
-  );
-}
-
-/**
- * Next-step hint after fast-forward, kept season-aware: Season 1 hands off
- * to the inaugural Superleague creation; later seasons proceed through
- * movement, qualifier, feeder rebalancing and the season-parity Cup.
- */
-export function postFastForwardNextStep(result: CompleteSeasonResult): string {
-  if (result.seasonNumber === 1) {
-    return 'Next: inspect the final Season 1 tables, then run the next lifecycle event to create the inaugural Superleague for Season 2.';
-  }
-  return 'Next: inspect the final tables, then advance the postseason one event at a time (movement → qualifier → feeder rebalancing → Color/Type Cup events).';
 }

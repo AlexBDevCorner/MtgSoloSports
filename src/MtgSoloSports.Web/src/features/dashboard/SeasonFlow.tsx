@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
-import { Notice } from '../../shared/ui/Notice';
+import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link, navigate } from '../routing/router';
 import { cupsPath, livePath, qualifiersPath, standingsPath } from '../routing/routes';
 import { transitionForAction } from '../events/eventModel';
@@ -24,6 +24,7 @@ export function SeasonFlow({
   status,
   statusError,
   onAdvanced,
+  transitionPending,
 }: {
   saveId: string;
   progress: SeasonProgress;
@@ -35,10 +36,25 @@ export function SeasonFlow({
    */
   statusError?: string | null;
   onAdvanced: () => void;
+  /**
+   * MSS-074: true while a fast-forward commit has been persisted and the
+   * authoritative postseason status refresh is still pending. While set, the
+   * panel shows a stable loading state instead of stale League-play content,
+   * so the removed intermediate completed-league screen never flashes.
+   */
+  transitionPending?: boolean;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastDone, setLastDone] = useState<{ text: string; target: SummaryTarget } | null>(null);
+
+  if (transitionPending) {
+    return (
+      <div className="season-flow">
+        <Loading label="Loading postseason status…" />
+      </div>
+    );
+  }
 
   const flow = seasonFlow(progress, status);
   const next = flow.next;
