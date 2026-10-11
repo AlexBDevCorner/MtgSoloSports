@@ -435,7 +435,7 @@ describe('MSS-069 LiveQualifierView mounted behavior', () => {
     assert.ok(text.includes('Round 16 / 16'), `completed shows Round 16 / 16, got: ${text.slice(0, 800)}`);
     assert.ok(!text.includes('/ 272'), 'completed event never shows / 272');
     assert.ok(text.includes('8 incumbents vs 8 challengers'), 'incumbent/challenger origins render');
-    assert.ok(text.includes('QUALIFIED') && text.includes('ELIMINATED'), 'text badges mark the top-8 cutoff');
+    assert.ok(text.includes('Qualified') && text.includes('Eliminated'), 'text badges mark the top-8 cutoff');
     assert.ok(text.includes('Cutoff'), 'cutoff row renders after rank 8');
     assert.ok(text.includes('Play next qualifier on Live'), 'next legal qualifier offered without Dashboard trip');
     assert.ok(text.includes('f1f2-blue'), 'next link targets the canonical next qualifier (f1f2-blue)');

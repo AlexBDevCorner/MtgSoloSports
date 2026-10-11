@@ -206,8 +206,27 @@ export function movementKindLabel(kind: string | null | undefined): string {
     case 'Safe':
       return 'Stayed (safe)';
     default:
-      return kind && kind.length > 0 ? kind : 'Moved';
+      return humanizeMovementKind(kind);
   }
+}
+
+/**
+ * Presentation-only fallback for future movement kinds: splits PascalCase so
+ * raw identifiers never leak into the UI. Known kinds stay explicit above.
+ */
+function humanizeMovementKind(kind: string | null | undefined): string {
+  if (typeof kind !== 'string' || kind.trim().length === 0) {
+    return 'Moved';
+  }
+  const spaced = kind
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (spaced.length === 0) {
+    return 'Moved';
+  }
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export interface TieredLeagueRef {

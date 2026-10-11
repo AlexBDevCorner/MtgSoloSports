@@ -67,7 +67,7 @@ describe('athlete search page', () => {
   it('covers the required sporting filters with AND/OR semantics documented', () => {
     for (const token of [
       'Current league or pool',
-      'Sporting colour',
+      'Sporting color',
       'Creature types',
       'Honours at least',
       'Titles at least',

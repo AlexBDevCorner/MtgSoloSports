@@ -8,6 +8,7 @@ import { CatalogCounts } from '../catalog/CatalogCounts';
 import type { CatalogStats } from '../catalog/catalogApi';
 import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
 import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
+import { phaseLabel } from '../../shared/displayLabels';
 import type { SavesState } from './useSaves';
 import './SavesPage.css';
 
@@ -143,7 +144,7 @@ export function SavesPage({
                   >
                     <span className="save-name">{save.name}</span>
                     <span className="save-meta">
-                      Season {save.currentSeason} · {save.phase} ·{' '}
+                      Season {save.currentSeason} · {phaseLabel(save.phase)} ·{' '}
                       {new Date(save.createdUtc).toLocaleDateString()}
                     </span>
                   </Link>

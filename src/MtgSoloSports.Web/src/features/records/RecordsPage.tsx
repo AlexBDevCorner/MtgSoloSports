@@ -14,6 +14,12 @@ import {
   type ScoringRecordHolder,
 } from './recordsApi';
 import { formatScoringContext } from './scoringFormat';
+import {
+  careerRecordLabel,
+  honourKindLabel,
+  scoringRecordLabel,
+  scoringScopeLabel,
+} from '../../shared/displayLabels';
 
 /** Display-only projection of a fixed-point bonus (no sporting math). */
 function formatBonus(thousandths: number): string {
@@ -66,8 +72,8 @@ function ScoringTable({ saveId, records }: { saveId: string; records: ScoringRec
           {records.map((record) => (
             <tr key={record.recordKey}>
               <td>
-                {record.label}
-                <span className="card-sub"> · {record.scope}</span>
+                {scoringRecordLabel(record.recordKey, record.label)}
+                <span className="card-sub"> · {scoringScopeLabel(record.scope)}</span>
               </td>
               <td className="numeric">{record.valueDisplay}</td>
               <td>
@@ -258,7 +264,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
               <tbody>
                 {records.map((record) => (
                   <tr key={record.recordKey}>
-                    <td>{record.label}</td>
+                    <td>{careerRecordLabel(record.recordKey, record.label)}</td>
                     <td className="numeric">{record.valueDisplay}</td>
                     <td>
                       {record.isVacant ? (
@@ -300,11 +306,11 @@ export function RecordsPage({ saveId }: { saveId: string }) {
         eyebrow="Scoring records"
         title={`Individual Cups — ${individualScoring.length}`}
         info={
-          <p>
-            Colour Cup individual and Qualifier scoring, separated by event type and
-            round/stage scope. Values come from persisted Cup and Qualifier results so
-            old seasons keep contributing after new seasons start.
-          </p>
+            <p>
+              Color Cup individual and Qualifier scoring, separated by event type and
+              round/stage scope. Values come from persisted Cup and Qualifier results so
+              old seasons keep contributing after new seasons start.
+            </p>
         }
       >
         <ScoringTable saveId={saveId} records={individualScoring} />
@@ -314,11 +320,11 @@ export function RecordsPage({ saveId }: { saveId: string }) {
         eyebrow="Scoring records"
         title={`Team Cups — ${teamScoring.length}`}
         info={
-          <p>
-            Colour Cup and Type Cup team scoring, separated by event type and
-            leg/group-stage scope. Individual leg rounds, leg group-stage totals, team
-            single-round totals and full team-event totals are tracked separately.
-          </p>
+            <p>
+              Color Cup and Type Cup team scoring, separated by event type and
+              leg/group-stage scope. Individual leg rounds, leg group-stage totals, team
+              single-round totals and full team-event totals are tracked separately.
+            </p>
         }
       >
         <ScoringTable saveId={saveId} records={teamScoring} />
@@ -334,7 +340,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
           <ul className="story-list">
             {history.map((item, index) => (
               <li key={`${item.recordKey}-${item.athleteId}-${item.seasonNumber}-${index}`}>
-                <span className="badge badge-ready">{item.recordKey}</span>{' '}
+                <span className="badge badge-ready">{careerRecordLabel(item.recordKey)}</span>{' '}
                 <AthleteLink saveId={saveId} athleteId={item.athleteId} name={item.athleteName} />{' '}
                 <span>{item.text}</span>
               </li>
@@ -370,7 +376,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                     <td>
                       <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                     </td>
-                    <td>{row.honourKind}</td>
+                    <td>{honourKindLabel(row.honourKind)}</td>
                   </tr>
                 ))}
               </tbody>
