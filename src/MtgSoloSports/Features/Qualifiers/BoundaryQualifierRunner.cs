@@ -467,6 +467,13 @@ public sealed class BoundaryQualifierRunner
 
         await ValidatePersistedAsync(context, state, simulation, cancellationToken).ConfigureAwait(false);
         await EmitStoriesAsync(context, state, simulation, cancellationToken).ConfigureAwait(false);
+        QualifierProgress progress = await QualifierProgressEvaluator
+            .LoadAsync(context, state.Source, state.Next, state.Rules, cancellationToken).ConfigureAwait(false);
+        if (progress.IsComplete)
+        {
+            state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
+        }
+
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return simulation;
     }

@@ -384,6 +384,7 @@ export default function App() {
               boundary={route.boundary}
               color={route.color}
               urlSeason={route.season}
+              onMutated={dashboard.refresh}
             />
           );
         }
@@ -394,6 +395,7 @@ export default function App() {
             onQualifiersChange={(selection) => {
               navigate(qualifiersPath(saveId, { season: selection.season }));
             }}
+            onMutated={dashboard.refresh}
           />
         );
       case 'cups':

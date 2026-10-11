@@ -17,6 +17,9 @@ export interface EventProgress {
   qualificationGroup?: number | null;
   qualificationGroupCount?: number | null;
   tournamentStage?: string | null;
+  /** MSS-075 authoritative qualifier event counts (present for qualifier only). */
+  completedEvents?: number | null;
+  totalEvents?: number | null;
 }
 
 export interface EventRoundView {

@@ -50,7 +50,9 @@ public static class PostseasonEvents
         int? TournamentPhase = null,
         int? QualificationGroup = null,
         int? QualificationGroupCount = null,
-        string? TournamentStage = null);
+        string? TournamentStage = null,
+        int? CompletedEvents = null,
+        int? TotalEvents = null);
 
     public static bool IsKnown(string? key) => key is not null && All.Contains(key, StringComparer.Ordinal);
 
@@ -204,14 +206,12 @@ public static class PostseasonEvents
             return await WithTypeCupProgressAsync(context, snapshot, source, rules, cancellationToken).ConfigureAwait(false);
         }
 
-        int played = key switch
-        {
-            Qualifier => await CountQualifierRoundsAsync(context, source, cancellationToken).ConfigureAwait(false),
-            ColorCupIndividual => await context.ColorCupIndividualRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
-            _ => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
-        };
+        int played = await CountPlayedAsync(context, key, source, cancellationToken).ConfigureAwait(false);
         EventShape shape = Shape(key, rules);
         (int group, int round) = Cursor(Math.Min(played, shape.TotalRounds - 1), shape);
+        (int? completedEvents, int? totalEvents) = await LoadQualifierEventCountsAsync(
+            context, key, source, sourceNumber, rules, cancellationToken).ConfigureAwait(false);
+
         SeasonEventProgress progress = new(
             key,
             sourceNumber,
@@ -220,12 +220,53 @@ public static class PostseasonEvents
             shape.GroupCount,
             shape.RoundsPerGroup,
             shape.IsGrouped ? group : null,
-            shape.IsGrouped ? round : null);
+            shape.IsGrouped ? round : null,
+            CompletedEvents: completedEvents,
+            TotalEvents: totalEvents);
         return snapshot with
         {
             EventProgress = progress,
             ComputedPhase = played > 0 ? InProgressPhase(key) : snapshot.ComputedPhase,
         };
+    }
+
+    internal static async Task<int> CountPlayedAsync(
+        SaveDbContext context,
+        string key,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        return key switch
+        {
+            Qualifier => await CountQualifierRoundsAsync(context, source, cancellationToken).ConfigureAwait(false),
+            ColorCupIndividual => await context.ColorCupIndividualRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+            _ => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
+        };
+    }
+
+    internal static async Task<(int? CompletedEvents, int? TotalEvents)> LoadQualifierEventCountsAsync(
+        SaveDbContext context,
+        string key,
+        SeasonEntity source,
+        int sourceNumber,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(key, Qualifier, StringComparison.Ordinal))
+        {
+            return (null, null);
+        }
+
+        SeasonEntity? next = await context.Seasons.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber + 1, cancellationToken).ConfigureAwait(false);
+        if (next is null)
+        {
+            return (0, Qualifiers.QualifierProgressEvaluator.ExpectedEvents(rules));
+        }
+
+        Qualifiers.QualifierProgress qualifierProgress = await Qualifiers.QualifierProgressEvaluator
+            .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        return (qualifierProgress.CompletedEvents, qualifierProgress.TotalEvents);
     }
 
     private static async Task<SeasonLifecycleSnapshot> WithTypeCupProgressAsync(

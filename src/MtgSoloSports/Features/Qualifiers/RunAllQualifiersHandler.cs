@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Saves;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
@@ -73,6 +74,7 @@ public sealed class RunAllQualifiersHandler
             executed.Add(Describe(boundary, color));
         }
 
+        await EnsurePhaseReconciledAsync(saveId, sourceNumber, rules, cancellationToken).ConfigureAwait(false);
         return await BuildResponseAsync(saveId, sourceNumber, nextNumber, completed, executed, cancellationToken).ConfigureAwait(false);
     }
 
@@ -126,11 +128,28 @@ public sealed class RunAllQualifiersHandler
             return false;
         }
 
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         int storageColor = QualifierIdentity.ToStorageColor(color);
-        return await context.QualifierStandings.AnyAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == storageColor,
-            cancellationToken).ConfigureAwait(false);
+        List<QualifierStandingEntity> eventStandings = await context.QualifierStandings.AsNoTracking()
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == storageColor)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        List<QualifierRoundEntity> eventRounds = await context.QualifierRounds.AsNoTracking()
+            .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
+                && e.QualifierBoundary == (int)boundary && e.QualifierSportingColor == storageColor)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (eventStandings.Count == 0 && eventRounds.Count == 0)
+        {
+            return false;
+        }
+
+        if (QualifierProgressEvaluator.IsEventComplete(eventStandings, eventRounds, boundary, rules, sourceNumber))
+        {
+            return true;
+        }
+
+        QualifierProgressEvaluator.ValidateEventNotCorrupt(eventStandings, eventRounds, boundary, rules, sourceNumber);
+        return false;
     }
 
     internal async Task RunSingleAsync(
@@ -145,6 +164,35 @@ public sealed class RunAllQualifiersHandler
 
         BoundaryQualifierRunner runner = new(_store);
         await runner.RunSingleUnderLockAsync(saveId, boundary, color!.Value, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task EnsurePhaseReconciledAsync(
+        Guid saveId, int sourceNumber, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = _store.OpenDbContext(saveId);
+        SeasonEntity? source = await context.Seasons
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
+        SeasonEntity? next = await context.Seasons
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber + 1, cancellationToken).ConfigureAwait(false);
+        if (source is null || next is null)
+        {
+            return;
+        }
+
+        QualifierProgress progress = await QualifierProgressEvaluator
+            .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        if (!progress.IsComplete)
+        {
+            return;
+        }
+
+        SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        string resolved = SavePhaseParser.ToText(SavePhase.QualifierResolved);
+        if (!string.Equals(metadata.Phase, resolved, StringComparison.Ordinal))
+        {
+            metadata.Phase = resolved;
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     internal async Task<RunAllQualifiersResponse> BuildResponseAsync(

@@ -391,28 +391,19 @@ public sealed class RebalanceFeedersHandler
                 "Automatic movement must be resolved before feeder rebalancing can run.");
         }
 
-        int qualifierStandings = await context.QualifierStandings.CountAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-        int qualifierRounds = await context.QualifierRounds.CountAsync(
-            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-        (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
-        if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
+        Qualifiers.QualifierProgress qualifierProgress = await Qualifiers.QualifierProgressEvaluator
+            .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        if (!qualifierProgress.IsComplete)
         {
             throw new RebalanceFeedersConflictException(
-                "All qualifiers (Superleague plus feeder boundaries) must be resolved before feeder rebalancing can run.");
+                $"All qualifiers (Superleague plus feeder boundaries) must be resolved before feeder rebalancing can run ({qualifierProgress.CompletedEvents}/{qualifierProgress.TotalEvents} events, {qualifierProgress.CompletedRounds}/{qualifierProgress.TotalRounds} rounds).");
         }
     }
 
     internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
     {
-        if (rules.FeederDivisionsPerColor != 3)
-        {
-            return (rules.QualifierSize, rules.QualifierRounds);
-        }
-
-        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
-        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
-        return (standings, rounds);
+        ArgumentNullException.ThrowIfNull(rules);
+        return Qualifiers.QualifierProgressEvaluator.ExpectedTotals(rules);
     }
 
     internal static async Task<HashSet<int>> LoadMovedAthletesAsync(

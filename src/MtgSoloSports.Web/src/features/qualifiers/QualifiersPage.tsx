@@ -22,6 +22,7 @@ import {
   qualifierProgressLine,
   qualifierRoleLabel,
   qualifierRoleTier,
+  shouldShowQualifierRun,
   type QualifierEntry,
 } from './qualifierModel';
 import {
@@ -99,10 +100,12 @@ export function QualifiersPage({
   saveId,
   urlSeason,
   onQualifiersChange,
+  onMutated,
 }: {
   saveId: string;
   urlSeason: number | null;
   onQualifiersChange: (selection: QualifiersSelection) => void;
+  onMutated?: () => void;
 }) {
   const [season, setSeason] = useState<number | null>(urlSeason);
   const [running, setRunning] = useState(false);
@@ -155,10 +158,16 @@ export function QualifiersPage({
   );
   const completed = overview.filter((entry) => entry.status === 'complete').length;
   const canRun = (status?.legalNextActions ?? []).includes('RunQualifier');
+  // MSS-075: never offer a bulk run when the persisted overview already shows
+  // every event complete. A stale status that still says RunQualifier must not
+  // invite a duplicate run; hide the action and surface the next step instead.
+  const allComplete = overview.length > 0 && completed === overview.length;
+  const showRun = shouldShowQualifierRun(canRun, completed, overview.length);
 
   async function refreshAll(): Promise<void> {
     listState.refresh();
     statusState.refresh();
+    onMutated?.();
   }
 
   async function handleRunRemaining(): Promise<void> {
@@ -224,7 +233,7 @@ export function QualifiersPage({
             : `Latest qualifiers — ${completed}/${overview.length} complete`
         }
         action={
-          canRun ? (
+          showRun ? (
             <button
               type="button"
               className="primary-button"
@@ -270,6 +279,26 @@ export function QualifiersPage({
                 <span aria-hidden="true">✓ </span>
                 {actionDone}
               </p>
+            ) : null}
+            {allComplete ? (
+              <p className="flow-done" role="status">
+                <span aria-hidden="true">✓ </span>
+                All {overview.length} qualifiers complete — results are persisted and never rerun.{' '}
+                <Link to={dashboardPath(saveId)}>Continue on the Dashboard</Link> for the next postseason step.
+              </p>
+            ) : null}
+            {allComplete && canRun ? (
+              <Notice tone="info" title="Status is refreshing">
+                <p>
+                  Persisted results show every qualifier complete; the lifecycle status still lists a qualifier run. Refreshing
+                  will converge to the next step (normally feeder rebalancing) without rerunning any qualifier.
+                </p>
+                <p>
+                  <button type="button" className="ghost-button" onClick={() => void refreshAll()}>
+                    Refresh now
+                  </button>
+                </p>
+              </Notice>
             ) : null}
             {!listState.data ? (
               <Notice tone="empty" title="No qualifiers resolved yet">
@@ -399,11 +428,13 @@ export function QualifierDetailPage({
   boundary,
   color,
   urlSeason,
+  onMutated,
 }: {
   saveId: string;
   boundary: 'Superleague' | 'Feeder1Feeder2' | 'Feeder2Feeder3';
   color: string | null;
   urlSeason: number | null;
+  onMutated?: () => void;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -458,6 +489,7 @@ export function QualifierDetailPage({
       }
       listState.refresh();
       statusState.refresh();
+      onMutated?.();
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
@@ -477,6 +509,7 @@ export function QualifierDetailPage({
       setDone(`Ran ${result.executedNow.length} qualifier${result.executedNow.length === 1 ? '' : 's'} in canonical order.`);
       listState.refresh();
       statusState.refresh();
+      onMutated?.();
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {

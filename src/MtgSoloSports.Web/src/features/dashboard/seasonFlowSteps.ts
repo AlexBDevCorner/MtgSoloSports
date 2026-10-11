@@ -75,7 +75,12 @@ interface ActionCopy {
   target: SummaryTarget;
 }
 
-function actionCopy(action: string, nextSeason: number, tiered: boolean): ActionCopy | null {
+function actionCopy(
+  action: string,
+  nextSeason: number,
+  tiered: boolean,
+  qualifierTotalEvents?: number | null,
+): ActionCopy | null {
   switch (action) {
     case 'CompleteNextGlobalStage':
       return {
@@ -100,15 +105,19 @@ function actionCopy(action: string, nextSeason: number, tiered: boolean): Action
         summary: 'Promotion and relegation resolved.',
         target: 'standings',
       };
-    case 'RunQualifier':
+    case 'RunQualifier': {
+      const total = qualifierTotalEvents ?? (tiered ? 17 : 1);
+      const plural = total === 1 ? 'Run qualifier' : `Run ${total} qualifiers`;
+      const summary = total === 1 ? 'Qualifier finished.' : `All ${total} qualifiers finished.`;
       return {
-        label: tiered ? 'Run 17 qualifiers' : 'Run qualifier',
+        label: plural,
         explanation: tiered
           ? 'Superleague places 17–24 face Feeder 1 runners-up for the last 8 Superleague places, plus 8 Feeder 1↔Feeder 2 and 8 Feeder 2↔Feeder 3 qualifiers — one step, canonical order.'
           : 'Superleague places 17–24 face feeder runners-up (places 2–4) for the last 8 Superleague places.',
-        summary: tiered ? 'All 17 qualifiers finished.' : 'Qualifier finished.',
+        summary,
         target: 'standings',
       };
+    }
     case 'RebalanceFeeders':
       return {
         label: 'Rebalance & reveal feeders',
@@ -233,14 +242,18 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';
     let detail = state === 'current' && eventDetail ? eventDetail : step.detail;
-    if (state === 'current' && step.key === 'qualifier' && tiered && status?.eventProgress) {
-      // MSS-069: the qualifier lifecycle step is phase-wide (17 events,
-      // 272 total rounds). Never present the phase total as one 16-round
-      // event ("Round 16 / 272"); label it explicitly as totals.
+    if (state === 'current' && step.key === 'qualifier' && status?.eventProgress) {
+      // MSS-075: the qualifier lifecycle step is phase-wide (1 or 17 events).
+      // Never present the phase total as one 16-round event; label totals.
+      // Authoritative event counts come from the backend when present;
+      // otherwise derive from 16 rounds per event without hardcoding totals.
       const played = status.eventProgress.roundsPlayed;
       const total = status.eventProgress.totalRounds;
-      const completedEvents = Math.min(17, Math.floor(played / 16));
-      detail = `${completedEvents}/17 qualifiers · ${played}/${total} total rounds`;
+      const totalEvents =
+        status.eventProgress.totalEvents ?? (total > 0 ? Math.max(1, Math.round(total / 16)) : tiered ? 17 : 1);
+      const completedEvents =
+        status.eventProgress.completedEvents ?? Math.min(totalEvents, Math.floor(played / 16));
+      detail = `${completedEvents}/${totalEvents} qualifiers · ${played}/${total} total rounds`;
     }
     return detail ? { key: step.key, label: step.label, detail, state } : { key: step.key, label: step.label, state };
   });
@@ -272,7 +285,8 @@ function nextFor(
     return null;
   }
   const liveEvent = status.eventProgress ? status.eventProgress.event : null;
-  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered);
+  const qualifierTotal = status.eventProgress?.totalEvents ?? null;
+  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered, qualifierTotal);
   if (!copy) {
     return {
       kind: 'event',
@@ -296,7 +310,12 @@ function nextFor(
 }
 
 /** One-line confirmation shown after a step runs, plus where its results live. */
-export function executedSummary(action: string, nextSeason: number, tiered = false): { text: string; target: SummaryTarget } {
-  const copy = actionCopy(action, nextSeason, tiered);
+export function executedSummary(
+  action: string,
+  nextSeason: number,
+  tiered = false,
+  qualifierTotalEvents?: number | null,
+): { text: string; target: SummaryTarget } {
+  const copy = actionCopy(action, nextSeason, tiered, qualifierTotalEvents);
   return copy ? { text: copy.summary, target: copy.target } : { text: 'Event finished.', target: 'standings' };
 }

@@ -184,20 +184,8 @@ public sealed class GetQualifierRoundsHandler
         CancellationToken cancellationToken)
     {
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        (LeagueEntity upper, LeagueEntity lower) = await BoundaryQualifierRunner.LoadBoundaryLeaguesAsync(
-            context, source, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonStandingEntity> upperStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
-            context, source, upper, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonStandingEntity> lowerStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
-            context, source, lower, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonMembershipEntity> sourceMemberships = await BoundaryQualifierRunner.LoadSourceMembershipsAsync(
-            context, source, rules, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, SeasonMembershipEntity> membershipByAthlete = sourceMemberships.ToDictionary(m => m.SaveAthleteId);
-        Dictionary<int, string> namesByAthlete = await BoundaryQualifierRunner.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
-
-        FeederQualifierFieldSelection.FeederField field = FeederQualifierFieldSelection.Select(
-            boundary, sportingColor, upperStandings, upper, lowerStandings, lower,
-            membershipByAthlete, namesByAthlete, rules);
+        (FeederQualifierFieldSelection.FeederField field, Dictionary<int, string> namesByAthlete) =
+            await LoadFieldAsync(context, source, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
 
         List<QualifierRoundEntity> roundRows = await context.QualifierRounds.AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
@@ -210,7 +198,14 @@ public sealed class GetQualifierRoundsHandler
             .OrderBy(e => e.QualifierRank)
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        bool isComplete = standingRows.Count > 0;
+        bool isComplete = QualifierProgressEvaluator.IsEventComplete(
+            standingRows, roundRows, boundary, rules, source.SeasonNumber);
+        if (!isComplete)
+        {
+            QualifierProgressEvaluator.ValidateEventNotCorrupt(
+                standingRows, roundRows, boundary, rules, source.SeasonNumber);
+        }
+
         int roundsPlayed = roundRows.Count;
         string checksum = isComplete
             ? GetQualifierListHandler.ComputeChecksum(standingRows)
@@ -239,6 +234,30 @@ public sealed class GetQualifierRoundsHandler
             rounds,
             fieldMembers,
             standings);
+    }
+
+    internal static async Task<(FeederQualifierFieldSelection.FeederField Field, Dictionary<int, string> NamesByAthlete)> LoadFieldAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        QualifierBoundary boundary,
+        int sportingColor,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        (LeagueEntity upper, LeagueEntity lower) = await BoundaryQualifierRunner.LoadBoundaryLeaguesAsync(
+            context, source, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
+        List<SeasonStandingEntity> upperStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
+            context, source, upper, rules, cancellationToken).ConfigureAwait(false);
+        List<SeasonStandingEntity> lowerStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
+            context, source, lower, rules, cancellationToken).ConfigureAwait(false);
+        List<SeasonMembershipEntity> sourceMemberships = await BoundaryQualifierRunner.LoadSourceMembershipsAsync(
+            context, source, rules, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, SeasonMembershipEntity> membershipByAthlete = sourceMemberships.ToDictionary(m => m.SaveAthleteId);
+        Dictionary<int, string> namesByAthlete = await BoundaryQualifierRunner.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        FeederQualifierFieldSelection.FeederField field = FeederQualifierFieldSelection.Select(
+            boundary, sportingColor, upperStandings, upper, lowerStandings, lower,
+            membershipByAthlete, namesByAthlete, rules);
+        return (field, namesByAthlete);
     }
 
     internal static async Task<Dictionary<int, SaveAthleteEntity>> LoadCardsAsync(

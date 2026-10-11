@@ -310,11 +310,11 @@ public static class SeasonLifecycleEvaluator
         CancellationToken cancellationToken)
     {
         await EnsureAutomaticMovementCompleteAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
-        (int qualifierStandings, int qualifierRounds) = await LoadQualifierCountsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        Qualifiers.QualifierProgress progress = await Qualifiers.QualifierProgressEvaluator
+            .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         string expectedCup = CupExtensionPoint.ExpectedCupForSource(source.SeasonNumber);
-        (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
 
-        if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
+        if (!progress.IsComplete)
         {
             return SnapshotAutomaticResolved(saveId, source, next, rules, persistedPhase, expectedCup);
         }
@@ -386,14 +386,8 @@ public static class SeasonLifecycleEvaluator
 
     internal static (int Standings, int Rounds) ExpectedQualifierTotals(RulesV1 rules)
     {
-        if (rules.FeederDivisionsPerColor != 3)
-        {
-            return (rules.QualifierSize, rules.QualifierRounds);
-        }
-
-        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
-        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
-        return (standings, rounds);
+        ArgumentNullException.ThrowIfNull(rules);
+        return Qualifiers.QualifierProgressEvaluator.ExpectedTotals(rules);
     }
 
     internal static async Task<MovementCounts> LoadMovementCountsAsync(

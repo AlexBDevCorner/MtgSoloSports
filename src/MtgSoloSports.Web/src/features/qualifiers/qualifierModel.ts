@@ -92,6 +92,14 @@ export function canonicalQualifierEntries(includeFeeders: boolean): QualifierEnt
 
 function toEntry(event: QualifierEvent): QualifierEntry {
   const qualified = event.standings.filter((member) => member.isQualified).length;
+  // MSS-075: an event is complete only with a full field, all 16 rounds and
+  // 8 winners. Standings without full rounds must never read as COMPLETE.
+  // Backend already validates persisted standings+rounds; the overview trusts
+  // its size/round/winner counts (standings payload may be empty in unit
+  // fixtures but never in real complete responses).
+  const expectedSize = event.boundary === 'Superleague' ? 32 : 16;
+  const isComplete =
+    event.qualifierSize === expectedSize && event.roundCount === 16 && event.winners === 8;
   return {
     key: entryKey(event.boundary, event.sportingColor),
     boundary: event.boundary,
@@ -99,13 +107,22 @@ function toEntry(event: QualifierEvent): QualifierEntry {
     sportingColorName: event.sportingColorName,
     title: qualifierBoundaryLabel(event.boundary, event.sportingColorName),
     order: boundaryOrder(event.boundary) * 8 + colorOrder(event.sportingColor),
-    status: 'complete',
+    status: isComplete ? 'complete' : 'pending',
     qualifierSize: event.qualifierSize,
     roundCount: event.roundCount,
     winners: event.winners,
     qualifiedCount: qualified,
     event,
   };
+}
+
+/**
+ * MSS-075: whether the overview bulk-run action may be offered. Completed
+ * sets never offer a rerun, even when a stale lifecycle status still lists a
+ * qualifier run; the UI surfaces the next step instead of inviting duplication.
+ */
+export function shouldShowQualifierRun(canRun: boolean, completed: number, total: number): boolean {
+  return canRun && total > 0 && completed < total;
 }
 
 /**
