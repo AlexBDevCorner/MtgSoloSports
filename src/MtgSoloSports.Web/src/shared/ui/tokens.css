@@ -44,6 +44,10 @@
   --topbar-h: 48px;
   --control-h: 32px;
 
+  /* MSS-073: single deliberate card height for Dashboard/Athlete grids.
+     Normal cards share this bounded height; long content scrolls inside. */
+  --card-height: 360px;
+
   --font: Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

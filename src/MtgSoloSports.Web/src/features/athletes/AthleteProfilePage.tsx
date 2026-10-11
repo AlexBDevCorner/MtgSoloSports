@@ -94,6 +94,7 @@ export function AthleteProfilePage({
       <Card
         eyebrow="Athlete profile"
         title={card.name}
+        className="athlete-header"
         action={
           <span className="live-buttons">
             <Link to={livePath(saveId)} className="ghost-button">
@@ -139,7 +140,7 @@ export function AthleteProfilePage({
         ) : null}
       </Card>
 
-      <div className="page-grid">
+      <div className="page-grid page-grid--panels">
         <Card eyebrow="Career" title={`${career.seasonsActive} season(s) active`}>
           <dl className="stats">
             <div>
@@ -380,6 +381,7 @@ export function AthleteProfilePage({
         <Card
           eyebrow="History"
           title={`Season-by-season — ${seasons.length} season(s)`}
+          className="span-wide"
           info={
             <p>
               Season summaries are transactional projections rebuilt from authoritative stage and
@@ -443,6 +445,7 @@ export function AthleteProfilePage({
         <Card
           eyebrow="Cups"
           title={`Cup history — ${cupHistory.length} appearance(s)`}
+          className="span-wide"
           info={
             <p>
               Every completed Cup is its own row: season, event, team, place and result. Team rows

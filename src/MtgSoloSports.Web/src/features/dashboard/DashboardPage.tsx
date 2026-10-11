@@ -239,7 +239,7 @@ export function DashboardPage({
         </div>
       </Card>
 
-      <div className="page-grid">
+      <div className="page-grid page-grid--panels">
         <Card
           eyebrow="Leaders"
           title={superleagueBoard ? `Superleague — top ${Math.min(5, superleagueBoard.top.length)}` : 'Superleague leaders'}
