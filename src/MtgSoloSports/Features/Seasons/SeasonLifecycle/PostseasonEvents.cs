@@ -54,6 +54,12 @@ public static class PostseasonEvents
         int? CompletedEvents = null,
         int? TotalEvents = null);
 
+    public sealed record SeasonQualifierProgress(
+        int CompletedEvents,
+        int TotalEvents,
+        int RoundsPlayed,
+        int TotalRounds);
+
     public static bool IsKnown(string? key) => key is not null && All.Contains(key, StringComparer.Ordinal);
 
     public static string Title(string key) => key switch
@@ -196,14 +202,15 @@ public static class PostseasonEvents
         string? key = snapshot.LegalNextActions.Count > 0 ? KeyForAction(snapshot.LegalNextActions[0]) : null;
         if (key is null || snapshot.SourceSeasonNumber is not int sourceNumber)
         {
-            return snapshot;
+            return await WithQualifierProgressAsync(context, snapshot, rules, cancellationToken).ConfigureAwait(false);
         }
 
         SeasonEntity source = await context.Seasons.AsNoTracking()
             .SingleAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
         if (string.Equals(key, TypeCupTeam, StringComparison.Ordinal))
         {
-            return await WithTypeCupProgressAsync(context, snapshot, source, rules, cancellationToken).ConfigureAwait(false);
+            SeasonLifecycleSnapshot withTypeCup = await WithTypeCupProgressAsync(context, snapshot, source, rules, cancellationToken).ConfigureAwait(false);
+            return await WithQualifierProgressAsync(context, withTypeCup, rules, cancellationToken).ConfigureAwait(false);
         }
 
         int played = await CountPlayedAsync(context, key, source, cancellationToken).ConfigureAwait(false);
@@ -223,11 +230,64 @@ public static class PostseasonEvents
             shape.IsGrouped ? round : null,
             CompletedEvents: completedEvents,
             TotalEvents: totalEvents);
-        return snapshot with
+        SeasonLifecycleSnapshot withEvent = snapshot with
         {
             EventProgress = progress,
             ComputedPhase = played > 0 ? InProgressPhase(key) : snapshot.ComputedPhase,
         };
+        return await WithQualifierProgressAsync(context, withEvent, rules, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// MSS-075 correction: attaches authoritative qualifier event/round totals
+    /// for every normal (non-inaugural) pending transition, including after the
+    /// last qualifier completes when the next legal action is RebalanceFeeders
+    /// and <see cref="SeasonEventProgress"/> is therefore null. Dashboard uses
+    /// this for the completed Qualifier step detail (for example 17/17 and
+    /// 272/272) instead of inferring from the current round-based event.
+    /// Read-only; never repairs.
+    /// </summary>
+    public static async Task<SeasonLifecycleSnapshot> WithQualifierProgressAsync(
+        SaveDbContext context,
+        SeasonLifecycleSnapshot snapshot,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (snapshot.IsInauguralTransition || snapshot.SourceSeasonNumber is not int sourceNumber)
+        {
+            return snapshot;
+        }
+
+        SeasonEntity? source = await context.Seasons.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
+        if (source is null)
+        {
+            return snapshot;
+        }
+
+        SeasonEntity? next = await context.Seasons.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber + 1, cancellationToken).ConfigureAwait(false);
+        if (next is null)
+        {
+            return snapshot;
+        }
+
+        if (!source.IsComplete || !next.HasSuperleague || next.IsComplete)
+        {
+            return snapshot;
+        }
+
+        Qualifiers.QualifierProgress qualifierProgress = await Qualifiers.QualifierProgressEvaluator
+            .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        SeasonQualifierProgress qualifier = new(
+            qualifierProgress.CompletedEvents,
+            qualifierProgress.TotalEvents,
+            qualifierProgress.CompletedRounds,
+            qualifierProgress.TotalRounds);
+        return snapshot with { QualifierProgress = qualifier };
     }
 
     internal static async Task<int> CountPlayedAsync(

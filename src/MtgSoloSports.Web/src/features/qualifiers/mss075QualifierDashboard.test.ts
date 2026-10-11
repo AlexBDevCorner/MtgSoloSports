@@ -110,25 +110,32 @@ function fullList(): QualifierList {
 
 describe('MSS-075 qualifier dashboard agreement', () => {
   it('renders the same Season 3 full completion on both pages without hardcoded totals', () => {
+    // Real backend shape after the last qualifier completes: the next legal
+    // action is RebalanceFeeders so eventProgress is null; authoritative
+    // totals come from qualifierProgress.
     const status = qualifierStatus(
-      {},
       {
-        event: 'qualifier',
-        sourceSeasonNumber: 3,
-        roundsPlayed: 272,
-        totalRounds: 272,
-        groupCount: 1,
-        roundsPerGroup: 272,
-        group: null,
-        roundInGroup: null,
-        completedEvents: 17,
-        totalEvents: 17,
+        qualifierResolved: true,
+        computedPhase: 'QualifierResolved',
+        persistedPhase: 'QualifierResolved',
+        legalNextActions: ['RebalanceFeeders'],
+        nextActionDetail: 'Rebalance feeders.',
+        eventProgress: null,
+        qualifierProgress: {
+          completedEvents: 17,
+          totalEvents: 17,
+          roundsPlayed: 272,
+          totalRounds: 272,
+        },
       },
+      null,
     );
     const flow = seasonFlow(tieredProgress(), status);
     const qualifierStep = flow.steps.find((step) => step.key === 'qualifier')!;
     assert.equal(qualifierStep.detail, '17/17 qualifiers · 272/272 total rounds');
-    assert.equal(flow.next?.label, 'Run 17 qualifiers');
+    assert.equal(qualifierStep.state, 'done');
+    assert.equal(flow.steps.find((s) => s.key === 'rebalance')?.state, 'current');
+    assert.equal(flow.next?.label, 'Rebalance & reveal feeders');
 
     const overview = buildQualifierOverview(fullList(), true);
     const completed = overview.filter((entry) => entry.status === 'complete').length;
@@ -138,7 +145,14 @@ describe('MSS-075 qualifier dashboard agreement', () => {
 
   it('represents partial completion identically (2/17, 32/272)', () => {
     const status = qualifierStatus(
-      {},
+      {
+        qualifierProgress: {
+          completedEvents: 2,
+          totalEvents: 17,
+          roundsPlayed: 32,
+          totalRounds: 272,
+        },
+      },
       {
         event: 'qualifier',
         sourceSeasonNumber: 3,
@@ -154,6 +168,7 @@ describe('MSS-075 qualifier dashboard agreement', () => {
     );
     const flow = seasonFlow(tieredProgress(), status);
     assert.equal(flow.steps.find((s) => s.key === 'qualifier')?.detail, '2/17 qualifiers · 32/272 total rounds');
+    assert.equal(flow.next?.label, 'Run 17 qualifiers');
 
     const partial = buildQualifierOverview(
       {
@@ -180,18 +195,34 @@ describe('MSS-075 qualifier dashboard agreement', () => {
         computedPhase: 'QualifierResolved',
         legalNextActions: ['RebalanceFeeders'],
         eventProgress: null,
+        qualifierProgress: {
+          completedEvents: 17,
+          totalEvents: 17,
+          roundsPlayed: 272,
+          totalRounds: 272,
+        },
       },
       null,
     );
     const flow = seasonFlow(tieredProgress(), doneStatus);
     assert.equal(flow.steps.find((s) => s.key === 'qualifier')?.state, 'done');
+    assert.equal(flow.steps.find((s) => s.key === 'qualifier')?.detail, '17/17 qualifiers · 272/272 total rounds');
     assert.equal(flow.steps.find((s) => s.key === 'rebalance')?.state, 'current');
     assert.equal(flow.next?.label, 'Rebalance & reveal feeders');
   });
 
   it('supports single-feeder saves without hardcoded 17/272', () => {
     const status = qualifierStatus(
-      { sourceSeasonNumber: 2, nextSeasonNumber: 3 },
+      {
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        qualifierProgress: {
+          completedEvents: 0,
+          totalEvents: 1,
+          roundsPlayed: 5,
+          totalRounds: 16,
+        },
+      },
       {
         event: 'qualifier',
         sourceSeasonNumber: 2,

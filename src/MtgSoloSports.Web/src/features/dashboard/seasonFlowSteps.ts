@@ -242,18 +242,28 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';
     let detail = state === 'current' && eventDetail ? eventDetail : step.detail;
-    if (state === 'current' && step.key === 'qualifier' && status?.eventProgress) {
-      // MSS-075: the qualifier lifecycle step is phase-wide (1 or 17 events).
-      // Never present the phase total as one 16-round event; label totals.
-      // Authoritative event counts come from the backend when present;
-      // otherwise derive from 16 rounds per event without hardcoding totals.
-      const played = status.eventProgress.roundsPlayed;
-      const total = status.eventProgress.totalRounds;
-      const totalEvents =
-        status.eventProgress.totalEvents ?? (total > 0 ? Math.max(1, Math.round(total / 16)) : tiered ? 17 : 1);
-      const completedEvents =
-        status.eventProgress.completedEvents ?? Math.min(totalEvents, Math.floor(played / 16));
-      detail = `${completedEvents}/${totalEvents} qualifiers · ${played}/${total} total rounds`;
+    if (step.key === 'qualifier' && (state === 'current' || state === 'done')) {
+      // MSS-075 correction: after full completion the next legal action is
+      // RebalanceFeeders so eventProgress is null. Use the authoritative
+      // qualifierProgress totals (present even when completed) so the done
+      // Qualifier step keeps its 17/17 and 272/272 detail. Fall back to the
+      // current eventProgress for older payloads.
+      const qualifier = status?.qualifierProgress;
+      if (qualifier) {
+        detail = `${qualifier.completedEvents}/${qualifier.totalEvents} qualifiers · ${qualifier.roundsPlayed}/${qualifier.totalRounds} total rounds`;
+      } else if (state === 'current' && status?.eventProgress) {
+        // MSS-075: the qualifier lifecycle step is phase-wide (1 or 17 events).
+        // Never present the phase total as one 16-round event; label totals.
+        // Authoritative event counts come from the backend when present;
+        // otherwise derive from 16 rounds per event without hardcoding totals.
+        const played = status.eventProgress.roundsPlayed;
+        const total = status.eventProgress.totalRounds;
+        const totalEvents =
+          status.eventProgress.totalEvents ?? (total > 0 ? Math.max(1, Math.round(total / 16)) : tiered ? 17 : 1);
+        const completedEvents =
+          status.eventProgress.completedEvents ?? Math.min(totalEvents, Math.floor(played / 16));
+        detail = `${completedEvents}/${totalEvents} qualifiers · ${played}/${total} total rounds`;
+      }
     }
     return detail ? { key: step.key, label: step.label, detail, state } : { key: step.key, label: step.label, state };
   });
@@ -285,7 +295,7 @@ function nextFor(
     return null;
   }
   const liveEvent = status.eventProgress ? status.eventProgress.event : null;
-  const qualifierTotal = status.eventProgress?.totalEvents ?? null;
+  const qualifierTotal = status.qualifierProgress?.totalEvents ?? status.eventProgress?.totalEvents ?? null;
   const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered, qualifierTotal);
   if (!copy) {
     return {

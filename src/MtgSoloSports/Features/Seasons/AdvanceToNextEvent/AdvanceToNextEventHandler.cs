@@ -88,7 +88,8 @@ public sealed class AdvanceToNextEventHandler
             after.ExpectedCup,
             after.LegalNextActions,
             after.NextActionDetail,
-            after.EventProgress);
+            after.EventProgress,
+            after.QualifierProgress);
     }
 
     internal async Task<string> ResolveNextActionAsync(Guid saveId, CancellationToken cancellationToken)

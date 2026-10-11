@@ -187,8 +187,14 @@ public sealed class RunAllQualifiersHandler
         }
 
         SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        // MSS-075 correction: reconciliation only moves the persisted phase
+        // forward to QualifierResolved. Repeating run-all after feeder
+        // rebalance (or later Cup steps) must remain a no-op success without
+        // rewriting the phase backwards.
+        SavePhase persisted = SavePhaseParser.Parse(metadata.Phase);
         string resolved = SavePhaseParser.ToText(SavePhase.QualifierResolved);
-        if (!string.Equals(metadata.Phase, resolved, StringComparison.Ordinal))
+        if (persisted < SavePhase.QualifierResolved
+            && !string.Equals(metadata.Phase, resolved, StringComparison.Ordinal))
         {
             metadata.Phase = resolved;
             await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

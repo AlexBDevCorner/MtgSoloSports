@@ -65,6 +65,13 @@ public sealed class Mss075FullCompletionTests
         after.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.QualifierResolved));
         after.LegalNextActions.ShouldBe([SeasonLifecycleActions.RebalanceFeeders]);
         after.EventProgress.ShouldBeNull();
+        // MSS-075 correction: completed totals remain available via
+        // QualifierProgress even though the next legal action is rebalance.
+        after.QualifierProgress.ShouldNotBeNull();
+        after.QualifierProgress!.TotalEvents.ShouldBe(17);
+        after.QualifierProgress.CompletedEvents.ShouldBe(17);
+        after.QualifierProgress.TotalRounds.ShouldBe(272);
+        after.QualifierProgress.RoundsPlayed.ShouldBe(272);
 
         GetQualifierListResponse list = await new GetQualifierListHandler(store).HandleAsync(
             saveId, fromSeasonNumber: runAll.FromSeasonNumber).ConfigureAwait(false);
@@ -81,6 +88,10 @@ public sealed class Mss075FullCompletionTests
 
         GetSeasonStatusResponse afterRebalance = await new GetSeasonStatusHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         afterRebalance.Rebalanced.ShouldBeTrue();
+        // Completed qualifier totals survive rebalance for the done step.
+        afterRebalance.QualifierProgress.ShouldNotBeNull();
+        afterRebalance.QualifierProgress!.CompletedEvents.ShouldBe(17);
+        afterRebalance.QualifierProgress.TotalEvents.ShouldBe(17);
     }
 
     private static void AssertListComplete(GetQualifierListResponse list)

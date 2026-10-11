@@ -50,6 +50,11 @@ public sealed class Mss075PartialCompletionTests
         afterSuper.EventProgress.TotalRounds.ShouldBe(272);
         afterSuper.EventProgress.CompletedEvents.ShouldBe((int?)1);
         afterSuper.EventProgress.TotalEvents.ShouldBe((int?)17);
+        afterSuper.QualifierProgress.ShouldNotBeNull();
+        afterSuper.QualifierProgress!.CompletedEvents.ShouldBe(1);
+        afterSuper.QualifierProgress.TotalEvents.ShouldBe(17);
+        afterSuper.QualifierProgress.RoundsPlayed.ShouldBe(16);
+        afterSuper.QualifierProgress.TotalRounds.ShouldBe(272);
 
         GetQualifierListResponse list = await new GetQualifierListHandler(store).HandleAsync(saveId, fromSeasonNumber: source).ConfigureAwait(false);
         list.Events.Count.ShouldBe(1);
@@ -67,6 +72,9 @@ public sealed class Mss075PartialCompletionTests
         afterOneFeeder.EventProgress.ShouldNotBeNull();
         afterOneFeeder.EventProgress!.RoundsPlayed.ShouldBe(32);
         afterOneFeeder.EventProgress.CompletedEvents.ShouldBe((int?)2);
+        afterOneFeeder.QualifierProgress.ShouldNotBeNull();
+        afterOneFeeder.QualifierProgress!.CompletedEvents.ShouldBe(2);
+        afterOneFeeder.QualifierProgress.RoundsPlayed.ShouldBe(32);
 
         GetQualifierListResponse list2 = await new GetQualifierListHandler(store).HandleAsync(saveId, fromSeasonNumber: source).ConfigureAwait(false);
         list2.Events.Count.ShouldBe(2);

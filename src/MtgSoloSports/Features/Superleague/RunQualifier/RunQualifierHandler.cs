@@ -224,7 +224,8 @@ public sealed class RunQualifierHandler
         await EmitQualifierStoriesAsync(context, state.Source, state.Next, simulation, state.Rules, cancellationToken).ConfigureAwait(false);
         Qualifiers.QualifierProgress progress = await Qualifiers.QualifierProgressEvaluator
             .LoadAsync(context, state.Source, state.Next, state.Rules, cancellationToken).ConfigureAwait(false);
-        if (progress.IsComplete)
+        if (progress.IsComplete
+            && Features.Saves.SavePhaseParser.Parse(state.Metadata.Phase) < Features.Saves.SavePhase.QualifierResolved)
         {
             state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
         }

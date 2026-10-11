@@ -32,4 +32,5 @@ public sealed record GetSeasonStatusResponse(
     string ExpectedCup,
     IReadOnlyList<string> LegalNextActions,
     string NextActionDetail,
-    PostseasonEvents.SeasonEventProgress? EventProgress);
+    PostseasonEvents.SeasonEventProgress? EventProgress,
+    PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null);

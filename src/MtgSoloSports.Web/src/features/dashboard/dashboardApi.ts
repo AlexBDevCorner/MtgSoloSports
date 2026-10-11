@@ -23,6 +23,13 @@ export interface SeasonProgress {
   leagues: SeasonProgressLeague[];
 }
 
+export interface QualifierProgress {
+  completedEvents: number;
+  totalEvents: number;
+  roundsPlayed: number;
+  totalRounds: number;
+}
+
 export interface SeasonStatus {
   saveId: string;
   currentSeasonNumber: number;
@@ -46,6 +53,9 @@ export interface SeasonStatus {
   legalNextActions: string[];
   nextActionDetail: string;
   eventProgress: EventProgress | null;
+  /** MSS-075 correction: authoritative qualifier totals, present for normal
+   * pending transitions even after completion when eventProgress is null. */
+  qualifierProgress?: QualifierProgress | null;
 }
 
 export interface AdvanceNextEventResult {
@@ -73,6 +83,7 @@ export interface AdvanceNextEventResult {
   legalNextActions: string[];
   nextActionDetail: string;
   eventProgress: EventProgress | null;
+  qualifierProgress?: QualifierProgress | null;
 }
 
 export interface CompleteSeasonProgress {

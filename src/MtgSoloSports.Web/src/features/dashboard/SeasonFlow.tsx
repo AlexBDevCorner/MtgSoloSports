@@ -56,7 +56,7 @@ export function SeasonFlow({
           result.executedAction,
           result.nextSeasonNumber ?? result.currentSeasonNumber,
           isTieredProgress(progress),
-          status?.eventProgress?.totalEvents ?? null,
+          status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
         ),
       );
       onAdvanced();
@@ -87,7 +87,7 @@ export function SeasonFlow({
           result.executedAction,
           result.nextSeasonNumber ?? result.currentSeasonNumber,
           isTieredProgress(progress),
-          status?.eventProgress?.totalEvents ?? null,
+          status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents ?? result.qualifierProgress?.totalEvents ?? result.eventProgress?.totalEvents ?? null,
         ),
       );
       onAdvanced();
@@ -154,8 +154,8 @@ export function SeasonFlow({
                   to={qualifiersPath(saveId, { season: flow.seasonNumber })}
                   className="primary-button"
                 >
-                  {status?.eventProgress?.totalEvents
-                    ? `Open ${status.eventProgress.totalEvents} qualifiers`
+                  {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
+                    ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
                     : 'Open qualifiers'}
                 </Link>
               ) : (
