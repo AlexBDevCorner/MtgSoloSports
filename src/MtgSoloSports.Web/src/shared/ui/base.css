@@ -244,6 +244,139 @@ a.rail-link:hover {
   align-items: start;
 }
 
+/* ---------- Bounded panel grid (MSS-073) ----------
+ *
+ * Dashboard and Athlete profile opt in with
+ * className="page-grid page-grid--panels". Normal cards share one
+ * deliberate bounded height (--card-height); long lists/tables scroll
+ * inside .card-body so a long panel never stretches its grid row or its
+ * neighbours. Genuinely wide tables (Athlete History/Cups) span two
+ * normal columns via .span-wide. Other pages keep the legacy auto-fit
+ * .page-grid above so this treatment stays scoped to Dashboard/Athlete. */
+
+.page-grid--panels {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: var(--card-height);
+  grid-auto-flow: dense;
+  align-items: stretch;
+  max-width: 100%;
+}
+
+.page-grid--panels > .card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.page-grid--panels > .card > .card-head {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.page-grid--panels .card-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.page-grid--panels .card-title {
+  overflow-wrap: break-word;
+}
+
+.page-grid--panels > .card > .card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.page-grid--panels > .card > .card-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.page-grid--panels > .card > .card-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-grid--panels > .card > .card-body::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 2px solid var(--surface);
+}
+
+.page-grid--panels > .card > .card-body::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.page-grid--panels > .card > .card-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Wide panels: roughly two normal columns including the grid gap. In the
+   2-column layout this is a full row; in the 3-column wide layout it is
+   two of three columns. Single-column layouts reset to full width. */
+.page-grid--panels > .span-wide {
+  grid-column: span 2;
+}
+
+/* Wide-table readability: keep numeric columns compact, let descriptive
+   text and secondary metadata wrap instead of forcing overflow-x. The
+   shared .table-wrap keeps overflow-x: auto as a last-resort fallback,
+   but at common desktop widths these tables fit without a horizontal
+   scrollbar. */
+.page-grid--panels > .span-wide .data-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+.page-grid--panels > .span-wide .data-table th,
+.page-grid--panels > .span-wide .data-table td {
+  min-width: 0;
+}
+
+.page-grid--panels > .span-wide .data-table td {
+  overflow-wrap: break-word;
+}
+
+.page-grid--panels > .span-wide .data-table td.numeric,
+.page-grid--panels > .span-wide .data-table th.numeric {
+  white-space: nowrap;
+}
+
+.page-grid--panels > .span-wide .card-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 11px;
+}
+
+/* Athlete identity header: a distinct compact header, not an ordinary
+   fixed-height data panel. Constrain the card so a wide viewport does not
+   leave a huge empty block merely because the container fills the page. */
+.athlete-header {
+  align-self: start;
+  width: min(100%, 860px);
+}
+
+.athlete-header .athlete-hero {
+  align-items: center;
+  max-width: 100%;
+}
+
+.athlete-header .card-art-large {
+  width: 120px;
+  height: 168px;
+}
+
 .page-section {
   display: flex;
   flex-direction: column;
@@ -1222,6 +1355,25 @@ code {
 
 /* ---------- Responsive ---------- */
 
+@media (min-width: 1700px) {
+  /* Wide desktop: three normal columns; .span-wide covers two of them. */
+  .page-grid--panels {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  /* Laptop/tablet narrow: single full-width column; wide panels take the
+     available width instead of forcing page-level horizontal overflow. */
+  .page-grid--panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-grid--panels > .span-wide {
+    grid-column: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .color-counts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1231,7 +1383,16 @@ code {
     flex-direction: column;
   }
 
-  .card-art-large {
+  .athlete-header {
+    width: 100%;
+  }
+
+  .athlete-header .athlete-hero {
+    align-items: flex-start;
+  }
+
+  .card-art-large,
+  .athlete-header .card-art-large {
     width: 100%;
     max-width: 280px;
     height: auto;
@@ -1255,6 +1416,19 @@ code {
 
   .field-row {
     grid-template-columns: 1fr;
+  }
+
+  /* Narrow/mobile panels stay one full-width column; dense tables compress
+     instead of pushing the page sideways. Horizontal scrolling inside
+     .table-wrap remains only as a last resort where data truly cannot fit. */
+  .page-grid--panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-grid--panels .data-table th,
+  .page-grid--panels .data-table td {
+    padding: 4px 6px;
+    font-size: 12px;
   }
 }
 
