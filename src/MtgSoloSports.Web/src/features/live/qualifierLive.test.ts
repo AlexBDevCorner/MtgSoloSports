@@ -63,7 +63,7 @@ describe('MSS-069 qualifier Live identity', () => {
     assert.ok(!view.includes('/ 272') || view.includes('272 total rounds') === false, 'no phase total under event title');
     assert.ok(eventView.includes("event === 'qualifier' ? 16"), 'Superleague Live fixed to 16');
     assert.ok(view.includes('Top-8 cutoff') || view.includes('top 8'), 'cutoff visible');
-    assert.ok(view.includes('QUALIFIED') && view.includes('ELIMINATED'), 'text badges, never color alone');
+    assert.ok(view.includes('Qualified') && view.includes('Eliminated'), 'text badges, never color alone');
     assert.ok(view.includes('8 incumbents vs 8 challengers'), 'incumbent/challenger origins');
   });
 

@@ -70,7 +70,21 @@ export function stateLabel(state: string): string {
   if (state === 'Selected') {
     return 'Squads selected';
   }
-  return state === 'InProgress' ? 'In progress' : 'Completed';
+  if (state === 'InProgress') {
+    return 'In progress';
+  }
+  if (state === 'Completed') {
+    return 'Completed';
+  }
+  const spaced = state
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (spaced.length === 0) {
+    return 'Completed';
+  }
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /** Why a Type Cup member represents its type; null when no reason was stored. */

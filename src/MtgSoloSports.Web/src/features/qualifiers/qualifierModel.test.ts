@@ -106,8 +106,8 @@ describe('qualifierFieldRows', () => {
     );
     assert.equal(rows.length, 2);
     assert.equal(rows[0]!.athleteId, 1);
-    assert.equal(qualifierOutcomeLabel(rows[0]!), 'QUALIFIED');
-    assert.equal(qualifierOutcomeLabel({ ...rows[1]!, isQualified: false }), 'ELIMINATED');
+    assert.equal(qualifierOutcomeLabel(rows[0]!), 'Qualified');
+    assert.equal(qualifierOutcomeLabel({ ...rows[1]!, isQualified: false }), 'Eliminated');
   });
 
   it('describes progress from persisted facts', () => {

@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { groupLeaguesByTier } from '../../shared/leagueTiers';
+import {
+  careerRecordLabel,
+  cupLabel,
+  honourKindLabel,
+  lifecycleActionLabel,
+  phaseLabel,
+  storyEventLabel,
+} from '../../shared/displayLabels';
 import { AthleteLink, Link } from '../routing/router';
 import { cupsPath, livePath, recordsPath, savesPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import type { DashboardData } from './useDashboard';
@@ -138,7 +146,7 @@ export function DashboardPage({
         </div>
         <div className="kpi">
           <dt>Phase</dt>
-          <dd title={detail.phase}>{detail.phase}</dd>
+          <dd>{phaseLabel(detail.phase)}</dd>
         </div>
         <div className="kpi">
           <dt>Leagues</dt>
@@ -208,15 +216,15 @@ export function DashboardPage({
               <dl className="stats">
                 <div>
                   <dt>Lifecycle phase</dt>
-                  <dd>{status.computedPhase}</dd>
+                  <dd>{phaseLabel(status.computedPhase)}</dd>
                 </div>
                 <div>
                   <dt>Legal next action</dt>
-                  <dd>{status.legalNextActions.join(', ')}</dd>
+                  <dd>{status.legalNextActions.length > 0 ? status.legalNextActions.map(lifecycleActionLabel).join(', ') : '—'}</dd>
                 </div>
                 <div>
                   <dt>Expected Cup</dt>
-                  <dd>{status.expectedCup}</dd>
+                  <dd>{cupLabel(status.expectedCup)}</dd>
                 </div>
                 <div>
                   <dt>Cup selection</dt>
@@ -468,7 +476,7 @@ export function DashboardPage({
                       <td>
                         <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />
                       </td>
-                      <td>{honour.honourKind}</td>
+                      <td>{honourKindLabel(honour.honourKind)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -479,13 +487,13 @@ export function DashboardPage({
 
         <Card
           eyebrow="Cup context"
-          title={status ? `${status.expectedCup} — ${status.cupComplete ? 'complete' : 'pending'}` : 'Post-season Cup'}
+          title={status ? `${cupLabel(status.expectedCup)} — ${status.cupComplete ? 'complete' : 'pending'}` : 'Post-season Cup'}
         >
           {status ? (
             <dl className="stats">
               <div>
                 <dt>Expected Cup</dt>
-                <dd>{status.expectedCup}</dd>
+                <dd>{cupLabel(status.expectedCup)}</dd>
               </div>
               <div>
                 <dt>Source season</dt>
@@ -519,7 +527,7 @@ export function DashboardPage({
             <ul className="story-list">
               {cupHonours.slice(0, 5).map((honour, index) => (
                 <li key={`${honour.seasonNumber}-${honour.honourKind}-${honour.athleteId}-${index}`}>
-                  <span className="badge badge-ready">{honour.honourKind}</span>{' '}
+                  <span className="badge badge-ready">{honourKindLabel(honour.honourKind)}</span>{' '}
                   <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />{' '}
                   <span className="muted small">
                     · Season {honour.seasonNumber} · {honour.leagueName}
@@ -559,7 +567,7 @@ export function DashboardPage({
                 <tbody>
                   {recordPreview.map((record) => (
                     <tr key={record.recordKey}>
-                      <td>{record.label}</td>
+                      <td>{careerRecordLabel(record.recordKey, record.label)}</td>
                       <td className="numeric">{record.valueDisplay}</td>
                       <td>
                         {record.isVacant ? (
@@ -631,7 +639,7 @@ export function DashboardPage({
             <ul className="story-list">
               {stories.map((story) => (
                 <li key={story.id}>
-                  <span className="badge badge-ready">{story.eventType}</span>{' '}
+                  <span className="badge badge-ready">{storyEventLabel(story.eventType)}</span>{' '}
                   <AthleteLink saveId={saveId} athleteId={story.athleteId} name={story.athleteName} />{' '}
                   <span>{story.text}</span>
                 </li>

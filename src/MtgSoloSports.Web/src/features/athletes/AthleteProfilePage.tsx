@@ -1,6 +1,13 @@
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { leagueLevelLabel, movementKindLabel } from '../../shared/leagueTiers';
+import {
+  careerRecordLabel,
+  cupHistoryEventLabel,
+  cupLabel,
+  honourKindLabel,
+  storyEventLabel,
+} from '../../shared/displayLabels';
 import { Link } from '../routing/router';
 import { dashboardPath, livePath, savesPath } from '../routing/routes';
 import { medalBadge } from '../cups/cupFormat';
@@ -359,7 +366,7 @@ export function AthleteProfilePage({
                     <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.honourKind}-${index}`}>
                       <td className="numeric">{honour.seasonNumber}</td>
                       <td>{honour.leagueName}</td>
-                      <td>{honour.honourKind}</td>
+                      <td>{honourKindLabel(honour.honourKind)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -433,7 +440,7 @@ export function AthleteProfilePage({
                   {cupSelections.map((selection, index) => (
                     <tr key={`${selection.cupKind}-${selection.sourceSeasonNumber}-${selection.team}-${index}`}>
                       <td className="numeric">{selection.sourceSeasonNumber}</td>
-                      <td>{selection.cupKind}</td>
+                      <td>{cupLabel(selection.cupKind)}</td>
                       <td>{selection.team}</td>
                       <td className="numeric">#{selection.selectionRank}</td>
                     </tr>
@@ -468,7 +475,7 @@ export function AthleteProfilePage({
                 <tbody>
                   {state.recordHoldings.map((record) => (
                     <tr key={record.recordKey}>
-                      <td>{record.label}</td>
+                      <td>{careerRecordLabel(record.recordKey, record.label)}</td>
                       <td className="numeric">{record.valueDisplay}</td>
                     </tr>
                   ))}
@@ -584,7 +591,7 @@ export function AthleteProfilePage({
                       <td className="numeric">{entry.sourceSeasonNumber}</td>
                       <td>
                         {entry.eventName}{' '}
-                        <span className="badge badge-wait">{entry.event}</span>
+                        <span className="badge badge-wait">{cupHistoryEventLabel(entry.event)}</span>
                         {entry.tournamentStage ? (
                           <span className="badge badge-wait" title="Persisted tournament stage">
                             {' '}
@@ -633,7 +640,7 @@ export function AthleteProfilePage({
             <ul className="story-list">
               {state.stories.map((story) => (
                 <li key={story.id}>
-                  <span className="badge badge-ready">{story.eventType}</span>{' '}
+                  <span className="badge badge-ready">{storyEventLabel(story.eventType)}</span>{' '}
                   <span>{story.text}</span>
                 </li>
               ))}

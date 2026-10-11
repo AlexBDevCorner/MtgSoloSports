@@ -18,6 +18,7 @@ import {
   parseQualifierLiveParam,
   qualifierApiBoundary,
   qualifierApiColor,
+  qualifierRoleLabel,
 } from '../qualifiers/qualifierModel';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
@@ -363,12 +364,12 @@ export function LiveQualifierView({
                           <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                           <span className="card-sub">
                             {' '}
-                            · {row.role} · {row.fromLeagueName} P{row.fromSeasonRank}
+                            · {qualifierRoleLabel(row.role)} · {row.fromLeagueName} P{row.fromSeasonRank}
                           </span>
                         </td>
                         <td>
                           <span className={row.isQualified ? 'badge badge-done' : 'badge badge-wait'}>
-                            {row.isQualified ? 'QUALIFIED' : 'ELIMINATED'}
+                            {row.isQualified ? 'Qualified' : 'Eliminated'}
                           </span>
                         </td>
                       </tr>
@@ -401,7 +402,7 @@ export function LiveQualifierView({
                       </span>
                     </td>
                     <td>
-                      <span className="badge badge-wait">{row.role}</span>
+                      <span className="badge badge-wait">{qualifierRoleLabel(row.role)}</span>
                     </td>
                   </tr>
                 ))}

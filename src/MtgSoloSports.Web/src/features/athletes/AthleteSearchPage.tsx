@@ -353,7 +353,7 @@ export function AthleteSearchPage({
               Historical filters come from persisted history in the backend: non-pool seasons
               count distinct seasons outside the pool (0 or 1 per season, kept after pool
               returns), honours count league and Cup podiums, titles count first places only.
-              Filters combine with AND across categories; multiple colours, types or leagues
+              Filters combine with AND across categories; multiple colors, types or leagues
               combine with OR.
             </p>
           }
@@ -405,7 +405,7 @@ export function AthleteSearchPage({
           {optionsError ? <p className="muted small">League options: {optionsError}</p> : null}
 
           <ToggleList
-            legend="Sporting colour"
+            legend="Sporting color"
             options={colourOptions}
             selected={params.colours.map(String)}
             getKey={(option) => option.key}

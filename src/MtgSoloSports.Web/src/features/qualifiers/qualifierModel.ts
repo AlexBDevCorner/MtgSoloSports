@@ -204,13 +204,27 @@ export function qualifierProgressLine(entry: QualifierEntry): string {
   return `${size} athletes · ${entry.event.roundCount} rounds · top ${winners} qualify · ${entry.qualifiedCount ?? winners}/${size} qualified.`;
 }
 
-/** "QUALIFIED" / "ELIMINATED": text labels, never color alone. */
+/** "Qualified" / "Eliminated": text labels, never color alone. */
 export function qualifierOutcomeLabel(row: QualifierFieldRow): string {
-  return row.isQualified ? 'QUALIFIED' : 'ELIMINATED';
+  return row.isQualified ? 'Qualified' : 'Eliminated';
 }
 
 export function qualifierRoleLabel(role: string): string {
-  return role === 'Incumbent' ? 'Incumbent' : role === 'Challenger' ? 'Challenger' : role;
+  if (role === 'Incumbent') {
+    return 'Incumbent';
+  }
+  if (role === 'Challenger') {
+    return 'Challenger';
+  }
+  const spaced = role
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (spaced.length === 0) {
+    return '—';
+  }
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /**

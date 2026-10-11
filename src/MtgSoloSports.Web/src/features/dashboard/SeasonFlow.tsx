@@ -4,6 +4,7 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link, navigate } from '../routing/router';
 import { cupsPath, livePath, qualifiersPath, standingsPath } from '../routing/routes';
 import { transitionForAction } from '../events/eventModel';
+import { cupLabel } from '../../shared/displayLabels';
 import { advanceToNextEvent, type SeasonProgress, type SeasonStatus } from './dashboardApi';
 import { executedSummary, isTieredProgress, seasonFlow, type SummaryTarget } from './seasonFlowSteps';
 
@@ -316,7 +317,7 @@ export function SeasonFlow({
       ) : status.legalNextActions.length === 0 && !status.cupComplete && !status.readyToStartNextSeason ? (
         <Notice tone="warn" title="Postseason incomplete">
           <p>
-            The backend returned no next step, but the {status.expectedCup} is not complete. Refresh to
+            The backend returned no next step, but the {cupLabel(status.expectedCup)} is not complete. Refresh to
             reload the authoritative lifecycle — this panel never invents its own next action.
           </p>
           <p>
