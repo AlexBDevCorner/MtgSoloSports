@@ -84,6 +84,18 @@ Before lock files exist, use ordinary restore/install only for the repository-bo
 - Prefer local feature components; move to shared UI only after real reuse emerges.
 - Dark presentation is the default direction, with sports-database screens for history and expressive card-based presentation for live rounds.
 
+## Project agent skills
+
+Reusable skills live in `.opencode/skills/` and are discovered by OpenCode on demand. Use them alongside, never instead of, the repository's architecture, deterministic-simulation, and autonomous-worker rules above.
+
+- **`ponytail`** (DietrichGebert/ponytail): load for implementation, bug fixes, refactoring, dependency choices, and code review. Prefer its **full** (default) mode: solve the entire task with the smallest maintainable change, without skipping tests, validation, accessibility, or sporting invariants.
+- **`frontend-design`** (anthropics/skills): load for new React UI and visual/UX refinements. Preserve the game's existing dark, sports-statistics aesthetic unless a task explicitly calls for a redesign. Make information hierarchy, legibility, responsiveness, and intentional interaction the focus; do not redesign unrelated panes.
+- **`web-design-guidelines`** (vercel-labs/agent-skills): load when reviewing frontend changes and before considering a significant UI task complete. Check keyboard/focus behavior, semantic markup, contrast, reduced motion, overflow, responsive layout, and usable empty/loading/error states. The upstream skill fetches current guidelines; if they cannot be retrieved, still perform the local checks and report the limitation.
+
+For frontend work, prefer existing CSS, React components and native browser features. Do not introduce Tailwind, shadcn/ui, animation libraries, or a new component library solely because a design skill suggests one. The design skills guide choices; the task scope and repository constraints control implementation.
+
+Upstream references: [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail), [Frontend Design](https://github.com/anthropics/skills/tree/main/skills/frontend-design), [Web Design Guidelines](https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines). The Ponytail MIT and Frontend Design Apache 2.0 license texts are included beside those skills.
+
 ## Autonomous worker rules
 
 - Implement exactly one dispatched task from the read-only `control/` checkout.
