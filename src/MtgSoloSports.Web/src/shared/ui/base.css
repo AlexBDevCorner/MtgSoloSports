@@ -368,13 +368,134 @@ a.rail-link:hover {
 }
 
 .athlete-header .athlete-hero {
-  align-items: center;
+  align-items: flex-start;
   max-width: 100%;
 }
 
 .athlete-header .card-art-large {
   width: 120px;
   height: 168px;
+}
+
+/* Athlete profile at-a-glance summary (MSS-076): identity plus grouped
+   career metric cells. Values use full-contrast text at readable sizes;
+   labels stay small but legible. Grids reflow within the pane so no
+   field hides, clips or forces page-level horizontal overflow. */
+.athlete-summary {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.athlete-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.athlete-identity-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.athlete-identity-item dt {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.athlete-identity-item dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.athlete-identity-item--color dd {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.athlete-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.athlete-metric-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.athlete-metric-heading {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.athlete-metric-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.athlete-metric-cells li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.athlete-metric-cells .metric-label {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  overflow-wrap: break-word;
+}
+
+.athlete-metric-cells .metric-value {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.athlete-bonus-value {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.athlete-bonus-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 
 .page-section {

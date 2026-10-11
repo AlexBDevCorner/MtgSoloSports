@@ -4,6 +4,7 @@ import { leagueLevelLabel, movementKindLabel } from '../../shared/leagueTiers';
 import { Link } from '../routing/router';
 import { dashboardPath, livePath, savesPath } from '../routing/routes';
 import { medalBadge } from '../cups/cupFormat';
+import { summarizeCareer } from './athleteCareerSummary';
 import type { AthleteProfileState } from './useAthleteProfile';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
@@ -85,9 +86,21 @@ export function AthleteProfilePage({
 
   const { card, career, seasons, honours, movements, cupSelections } = profile;
   const cupHistory = profile.cupHistory ?? [];
+  // At-a-glance career totals derived from the same persisted payload the
+  // detailed panes render (one season summary = one season; one selection
+  // = one cap; one history row = one medal chance). No resimulation.
+  const summary = summarizeCareer(seasons, cupSelections, cupHistory);
   const statusLabel = career.isActive
     ? `Active · ${career.currentLeagueName ?? 'League'}`
     : 'Common pool';
+  const statusText = career.isActive ? 'Active' : 'Common pool';
+  const currentLeagueText = career.isActive ? (career.currentLeagueName ?? 'League') : '—';
+  const creatureText = card.creatureTypes.join(' ') || '—';
+  const nationalityText = card.typeCupNationality ?? 'Uncapped';
+  const bonusNote =
+    career.currentEffectiveBonusThousandths === 0
+      ? 'No active bonus'
+      : `Updated through Season ${career.lastSeasonNumber} · Stage ${career.lastStageNumber}`;
 
   return (
     <div className="dashboard">
@@ -120,18 +133,108 @@ export function AthleteProfilePage({
               {card.name.slice(0, 2).toUpperCase()}
             </span>
           )}
-          <span className="card-identity">
-            <span className="card-name">{card.typeLine}</span>
-            <span className="card-sub">
-              {card.sportingColorName} · {card.manaCost || 'No cost'} ·{' '}
-              {card.creatureTypes.join(', ') || 'Unknown type'}
-              {card.setCode ? ` · ${card.setCode}` : ''}
-            </span>
-            <span className="card-sub">{statusLabel}</span>
-            <span className="card-sub">
-              Type Cup nationality: {card.typeCupNationality ?? 'Uncapped — eligible for any printed type'}
-            </span>
-          </span>
+          <div className="athlete-summary">
+            <dl className="athlete-identity">
+              <div className="athlete-identity-item athlete-identity-item--color">
+                <dt>Color</dt>
+                <dd>{card.sportingColorName}</dd>
+              </div>
+              <div className="athlete-identity-item">
+                <dt>Type</dt>
+                <dd>{creatureText}</dd>
+              </div>
+              <div className="athlete-identity-item">
+                <dt>Type Cup nationality</dt>
+                <dd>{nationalityText}</dd>
+              </div>
+              <div className="athlete-identity-item">
+                <dt>Current league</dt>
+                <dd>{currentLeagueText}</dd>
+              </div>
+              <div className="athlete-identity-item">
+                <dt>Status</dt>
+                <dd>{statusText}</dd>
+              </div>
+            </dl>
+            <div className="athlete-metrics">
+              <section className="athlete-metric-group" aria-label="Seasons by tier">
+                <h3 className="athlete-metric-heading">Seasons</h3>
+                <ul className="athlete-metric-cells">
+                  <li>
+                    <span className="metric-label">Superleague</span>
+                    <span className="metric-value">{summary.seasons.superleague}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 1</span>
+                    <span className="metric-value">{summary.seasons.feeder1}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 2</span>
+                    <span className="metric-value">{summary.seasons.feeder2}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 3</span>
+                    <span className="metric-value">{summary.seasons.feeder3}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Pool</span>
+                    <span className="metric-value">{summary.seasons.pool}</span>
+                  </li>
+                </ul>
+              </section>
+              <section className="athlete-metric-group" aria-label="Titles by tier">
+                <h3 className="athlete-metric-heading">Titles</h3>
+                <ul className="athlete-metric-cells">
+                  <li>
+                    <span className="metric-label">Superleague</span>
+                    <span className="metric-value">{summary.titles.superleague}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 1</span>
+                    <span className="metric-value">{summary.titles.feeder1}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 2</span>
+                    <span className="metric-value">{summary.titles.feeder2}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Feeder 3</span>
+                    <span className="metric-value">{summary.titles.feeder3}</span>
+                  </li>
+                </ul>
+              </section>
+              <section className="athlete-metric-group" aria-label="Cup caps and medals">
+                <h3 className="athlete-metric-heading">Cups</h3>
+                <ul className="athlete-metric-cells">
+                  <li>
+                    <span className="metric-label">Color caps</span>
+                    <span className="metric-value">{summary.caps.color}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Type caps</span>
+                    <span className="metric-value">{summary.caps.type}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Gold</span>
+                    <span className="metric-value">{summary.medals.gold}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Silver</span>
+                    <span className="metric-value">{summary.medals.silver}</span>
+                  </li>
+                  <li>
+                    <span className="metric-label">Bronze</span>
+                    <span className="metric-value">{summary.medals.bronze}</span>
+                  </li>
+                </ul>
+              </section>
+              <section className="athlete-metric-group" aria-label="Current active bonus">
+                <h3 className="athlete-metric-heading">Active bonus</h3>
+                <p className="athlete-bonus-value">{formatBonus(career.currentEffectiveBonusThousandths)}</p>
+                <p className="athlete-bonus-note">{bonusNote}</p>
+              </section>
+            </div>
+          </div>
         </div>
         {state.error ? (
           <Notice tone="warn" title="Showing last loaded state">
