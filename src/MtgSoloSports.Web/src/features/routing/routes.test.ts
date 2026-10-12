@@ -71,6 +71,8 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, ''), {
@@ -83,6 +85,8 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
       qualifier: null,
     });
     assert.equal(livePath(SAVE, { league: 7, round: 3 }), `/saves/${SAVE}/live?league=7&round=3`);
@@ -101,6 +105,8 @@ describe('MSS-040 route shapes', () => {
         round: 7,
         event: null,
         group: null,
+        tournamentPhase: null,
+        qualificationGroup: null,
       },
     );
     assert.equal(
@@ -129,6 +135,8 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/history`, '?season=0&competition=x'), {
@@ -140,6 +148,8 @@ describe('MSS-040 route shapes', () => {
       round: null,
       event: null,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
     });
   });
 
@@ -154,6 +164,8 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: 2,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=bogus&round=5'), {
@@ -166,6 +178,8 @@ describe('MSS-040 route shapes', () => {
       transition: null,
       eventSeason: null,
       group: null,
+      tournamentPhase: null,
+      qualificationGroup: null,
       qualifier: null,
     });
     assert.equal(
@@ -181,6 +195,8 @@ describe('MSS-040 route shapes', () => {
       round: 8,
       event: 'type-cup-team',
       group: 1,
+      tournamentPhase: null,
+      qualificationGroup: null,
     });
     assert.equal(
       historyPath(SAVE, { season: 3, event: 'type-cup-team', group: 1, round: 8 }),

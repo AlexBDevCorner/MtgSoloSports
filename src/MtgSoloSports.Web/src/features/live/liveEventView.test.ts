@@ -25,7 +25,10 @@ describe('live event mode', () => {
   });
 
   it("offers play controls only for the save's next event and season", () => {
-    assert.ok(view.includes('const playable = progress !== null && progress.sourceSeasonNumber === season;'));
+    assert.ok(
+      view.includes('progress.sourceSeasonNumber === season && !complete'),
+      'playable requires the next season and an incomplete event (MSS-079)',
+    );
     assert.ok(view.includes('complete ? ('), 'completion notice first');
     assert.ok(view.includes(') : playable ? ('), 'Next Round and Run remaining only when playable');
     assert.ok(view.includes('Not the next event'), 'otherwise points back to the Dashboard');
