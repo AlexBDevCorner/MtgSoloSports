@@ -98,9 +98,39 @@ export function playEventRound(saveId: string, key: EventKey): Promise<PlayRound
   return fetchJson<PlayRoundResult>(`/api/saves/${saveId}/${STEP_ROUTES[key]}/rounds/next`, { method: 'POST' });
 }
 
+/** Stage-scoped fast-forward: finishes the canonical Type Cup stage only (MSS-078). */
+export interface FinishTypeCupStageResult {
+  round: EventRoundView;
+  roundsPlayed: number;
+  totalRounds: number;
+  isComplete: boolean;
+  tournamentStage?: string | null;
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
+  rankGroup?: number | null;
+  roundInGroup?: number | null;
+  stageRoundsPlayed?: number | null;
+  stageTotalRounds?: number | null;
+  roundsPlayedThisCall?: number | null;
+}
+
 /** Existing one-shot endpoint: plays all remaining rounds and completes the event. */
 export function runEventRemaining(saveId: string, key: EventKey): Promise<unknown> {
   return fetchJson<unknown>(`/api/saves/${saveId}/${STEP_ROUTES[key]}`, { method: 'POST' });
+}
+
+/** MSS-078: atomically finishes the canonical Type Cup stage; rejects stale stages with 409. */
+export function finishTypeCupTeamStage(
+  saveId: string,
+  stage: { tournamentPhase: number; qualificationGroup: number } | null,
+): Promise<FinishTypeCupStageResult> {
+  const params = new URLSearchParams();
+  if (stage) {
+    params.set('tournamentPhase', String(stage.tournamentPhase));
+    params.set('qualificationGroup', String(stage.qualificationGroup));
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : '';
+  return fetchJson<FinishTypeCupStageResult>(`/api/saves/${saveId}/cups/type/team/stages/finish${query}`, { method: 'POST' });
 }
 
 export async function fetchSeasonEvents(saveId: string, season: number, signal?: AbortSignal): Promise<SeasonEventSummary[]> {

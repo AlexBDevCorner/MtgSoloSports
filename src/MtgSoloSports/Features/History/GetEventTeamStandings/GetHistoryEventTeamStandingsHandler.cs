@@ -6,6 +6,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.History.GetEventTeamStandings;
@@ -373,7 +374,231 @@ public sealed class GetHistoryEventTeamStandingsHandler
             return new HashSet<string>(finalStandings, StringComparer.Ordinal);
         }
 
-        return CollectStageUnion(await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false), eventKey, teamByAthlete, tournamentPhase, qualificationGroup);
+        HashSet<string> union = CollectStageUnion(await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false), eventKey, teamByAthlete, tournamentPhase, qualificationGroup);
+        if (union.Count > 0)
+        {
+            return union;
+        }
+
+        // MSS-078 correction: the Final has no persisted rounds yet. When every
+        // qualification group has a persisted table, derive the 32 finalists
+        // from those authoritative standings (same quotas/math as the runners)
+        // so the pending Final renders its zeroed starting field. While quals
+        // are still partial, return the empty union so the UI keeps its
+        // pending message instead of unscoped totals. Read-only: the RNG copy
+        // is restored, never consumed.
+        HashSet<string> pending = await ResolvePendingFinalistsFromQualsAsync(context, season, cancellationToken).ConfigureAwait(false);
+        return pending;
+    }
+
+    internal static async Task<HashSet<string>> ResolvePendingFinalistsFromQualsAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(season);
+        List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws.AsNoTracking()
+            .Where(e => e.SourceSeasonId == season.Id)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (draws.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        int policy = draws[0].TournamentFormatVersion;
+        if (draws.Any(d => d.TournamentFormatVersion != policy))
+        {
+            throw new InvalidOperationException("Type Cup qualification draw has mixed tournament format versions within one edition.");
+        }
+
+        List<int> groups = draws.Select(d => d.QualificationGroup).Distinct().OrderBy(g => g).ToList();
+        if (groups.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        List<TypeCupTeamStandingEntity> qualTeams = await context.TypeCupTeamStandings.AsNoTracking()
+            .Where(e => e.SourceSeasonId == season.Id && e.TournamentPhase == (int)TypeCupTournamentFormat.TournamentPhase.Qualification)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (qualTeams.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        if (policy == RulesV1.FixedQuotaTypeCupTournamentFormatVersion)
+        {
+            return ResolvePendingFixedQuota(draws, groups, qualTeams);
+        }
+
+        if (policy != RulesV1.WildcardTypeCupTournamentFormatVersion)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        return await ResolvePendingWildcardsAsync(context, draws, groups, qualTeams, rules, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static HashSet<string> ResolvePendingFixedQuota(
+        List<TypeCupTournamentDrawEntity> draws,
+        List<int> groups,
+        List<TypeCupTeamStandingEntity> qualTeams)
+    {
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(groups);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        HashSet<string> finalists = new(StringComparer.Ordinal);
+        foreach (int group in groups)
+        {
+            List<TypeCupTournamentDrawEntity> drawRows = draws.Where(d => d.QualificationGroup == group).ToList();
+            int size = drawRows[0].GroupSize;
+            int quota = drawRows[0].FinalPlacesForGroup;
+            if (drawRows.Any(r => r.GroupSize != size || r.FinalPlacesForGroup != quota))
+            {
+                throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent size/quota metadata.");
+            }
+
+            List<TypeCupTeamStandingEntity> ordered = qualTeams
+                .Where(e => e.QualificationGroup == group)
+                .OrderBy(e => e.TeamRank)
+                .ToList();
+            if (ordered.Count != size)
+            {
+                return new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            ValidateQualRanks(group, ordered);
+            foreach (TypeCupTeamStandingEntity row in ordered.Take(quota))
+            {
+                finalists.Add(row.CreatureType);
+            }
+        }
+
+        return finalists;
+    }
+
+    internal static async Task<HashSet<string>> ResolvePendingWildcardsAsync(
+        SaveDbContext context,
+        List<TypeCupTournamentDrawEntity> draws,
+        List<int> groups,
+        List<TypeCupTeamStandingEntity> qualTeams,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(groups);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        ArgumentNullException.ThrowIfNull(rules);
+        int groupCount = groups.Count;
+        int guaranteed = rules.TypeCupFinalTeamCount / groupCount;
+        int wildcardCount = rules.TypeCupFinalTeamCount - (groupCount * guaranteed);
+        HashSet<string> finalists = new(StringComparer.Ordinal);
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates = new(groupCount);
+        foreach (int group in groups)
+        {
+            if (!CollectPendingGroup(draws, qualTeams, group, guaranteed, wildcardCount, finalists, candidates))
+            {
+                return new HashSet<string>(StringComparer.Ordinal);
+            }
+        }
+
+        if (wildcardCount > 0 && candidates.Count > 0)
+        {
+            await AddPendingWildcardWinnersAsync(context, candidates, wildcardCount, rules, finalists, cancellationToken).ConfigureAwait(false);
+        }
+
+        return finalists;
+    }
+
+    internal static bool CollectPendingGroup(
+        List<TypeCupTournamentDrawEntity> draws,
+        List<TypeCupTeamStandingEntity> qualTeams,
+        int group,
+        int guaranteed,
+        int wildcardCount,
+        HashSet<string> finalists,
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(qualTeams);
+        ArgumentNullException.ThrowIfNull(finalists);
+        ArgumentNullException.ThrowIfNull(candidates);
+        List<TypeCupTournamentDrawEntity> drawRows = draws.Where(d => d.QualificationGroup == group).ToList();
+        int size = drawRows[0].GroupSize;
+        if (drawRows.Any(r => r.GroupSize != size))
+        {
+            throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent size metadata.");
+        }
+
+        List<TypeCupTeamStandingEntity> ordered = qualTeams
+            .Where(e => e.QualificationGroup == group)
+            .OrderBy(e => e.TeamRank)
+            .ToList();
+        if (ordered.Count != size)
+        {
+            return false;
+        }
+
+        ValidateQualRanks(group, ordered);
+        foreach (TypeCupTeamStandingEntity row in ordered.Take(guaranteed))
+        {
+            finalists.Add(row.CreatureType);
+        }
+
+        if (wildcardCount > 0)
+        {
+            if (ordered.Count <= guaranteed)
+            {
+                return false;
+            }
+
+            TypeCupTeamStandingEntity candidate = ordered[guaranteed];
+            candidates.Add(new TypeCupTournamentFormat.WildcardCandidate(
+                group,
+                candidate.CreatureType,
+                candidate.TeamRank,
+                candidate.TeamScoreThousandths,
+                candidate.TeamBaseThousandths,
+                size));
+        }
+
+        return true;
+    }
+
+    internal static async Task AddPendingWildcardWinnersAsync(
+        SaveDbContext context,
+        List<TypeCupTournamentFormat.WildcardCandidate> candidates,
+        int wildcardCount,
+        RulesV1 rules,
+        HashSet<string> finalists,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(finalists);
+        RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
+        Pcg32V1 rng = Pcg32V1.Restore(rngRow.ToState());
+        TypeCupTournamentFormat.WildcardResolution resolution =
+            TypeCupTournamentFormat.ResolveWildcards(candidates, wildcardCount, rng, rules);
+        foreach (TypeCupTournamentFormat.WildcardCandidate winner in resolution.Winners)
+        {
+            finalists.Add(winner.Team);
+        }
+    }
+
+    internal static void ValidateQualRanks(int group, List<TypeCupTeamStandingEntity> ordered)
+    {
+        ArgumentNullException.ThrowIfNull(ordered);
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].TeamRank != i + 1)
+            {
+                throw new InvalidOperationException($"Type Cup qualification group {group} ranks are corrupt.");
+            }
+        }
     }
 
     internal static HashSet<string> CollectStageUnion(

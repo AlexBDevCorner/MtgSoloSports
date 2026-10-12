@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
@@ -7,6 +7,7 @@ import {
   fetchEventRounds,
   fetchEventTeamStandings,
   fetchSeasonEvents,
+  finishTypeCupTeamStage,
   playEventRound,
   runEventRemaining,
   type EventProgress,
@@ -15,11 +16,22 @@ import {
   type PlayedRound,
   type SeasonEventSummary,
 } from '../events/eventsApi';
-import { EVENT_TITLES, isTeamEvent, progressLabel, resultsTarget, roundLabel, type EventKey } from '../events/eventModel';
+import { EVENT_TITLES, isTeamEvent, progressLabel, resultsTarget, type EventKey } from '../events/eventModel';
 import { projectRevealedTeamStandings } from '../events/teamStandingsProjection';
 import { optionalDraw, optionalTournament } from '../cups/typeCupTournamentApi';
 import type { TypeCupDraw, TypeCupTournament } from '../cups/typeCupTournamentApi';
 import { TypeCupLiveStages } from './typeCupLiveStages';
+import {
+  buildTypeCupStages,
+  canonicalStageKey,
+  chronologicalStageRounds,
+  selectedStageKey,
+  stageKeyEquals,
+  stageLocalRound,
+  stageRoundAccessibleLabel,
+  type TypeCupStageInfo,
+  type TypeCupStageKey,
+} from './typeCupLiveModel';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
@@ -102,7 +114,20 @@ export function LiveEventView({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MSS-078 correction: stage-scoped starting field for a pending stage with
+  // no persisted round (e.g. Final finalists at zero before Round 1).
+  // Tagged with the stage key so a stale stage never renders under a new
+  // heading. Null while the stage has rounds (reveal/baseline owns standings)
+  // or while the pending roster is still loading/empty.
+  const [pendingStageStandings, setPendingStageStandings] = useState<{
+    stageKey: string;
+    standings: EventTeamStandings;
+  } | null>(null);
   const [revision, setRevision] = useState(0);
+  // MSS-078: two-step confirmation for the tournament-wide fast-forward so a
+  // single click can never silently finish every leftover group and the Final.
+  const [confirmEntire, setConfirmEntire] = useState(false);
+  const [stageFinishing, setStageFinishing] = useState<number | null>(null);
   // MSS-069 correction: the 17-event next-qualifier/fast-forward flow is
   // tiered-only. v1 saves resolve a single 32-athlete Superleague qualifier
   // under the same `qualifier` event key, so the CTA must stay hidden there.
@@ -151,7 +176,7 @@ export function LiveEventView({
   }, [saveId, season, event, team, revision]);
 
   const isTypeCupEvent = event === 'type-cup-team';
-  const urlStage =
+  const urlStage: TypeCupStageKey | null =
     urlTournamentPhase !== null &&
     urlTournamentPhase !== undefined &&
     urlQualificationGroup !== null &&
@@ -159,9 +184,107 @@ export function LiveEventView({
       ? { tournamentPhase: urlTournamentPhase, qualificationGroup: urlQualificationGroup }
       : null;
 
+  const shape = summary ?? progress;
+  // MSS-069: the Superleague qualifier is one 16-round event. The phase-wide
+  // 272-round total lives on the qualifier overview only and must never appear
+  // under this individual event title (e.g. "Round 16 / 272").
+  const totalRounds = event === 'qualifier' ? 16 : (shape?.totalRounds ?? (team ? 32 : 16));
+  const roundsPerGroup = event === 'qualifier' ? 16 : (shape?.roundsPerGroup ?? (team ? 8 : 16));
+  const groupCount = event === 'qualifier' ? 1 : (shape?.groupCount ?? (team ? 4 : 1));
+  const complete = summary?.isComplete ?? false;
+  // Type Cup tournaments span several 32-round stages in canonical order;
+  // the backend progress cursor names the current stage explicitly.
+  const isTypeTournamentLive =
+    event === 'type-cup-team' &&
+    ((tournament ? !tournament.isDirectFinal : false) ||
+      (draw ? !draw.isDirectFinal : false) ||
+      (progress?.qualificationGroupCount ?? 0) > 0);
+  // Rounds may only be played for the save's next lifecycle event; playing any
+  // other event would move the RNG under a partly played one (the backend
+  // refuses it too).
+  const playable = progress !== null && progress.sourceSeasonNumber === season && !complete;
+  // MSS-079: once the tournament is complete the backend progress cursor is
+  // gone (the next legal action is StartNextSeason). Never keep showing the
+  // stale in-progress stage after that; replay selection resets instead.
+  const stageProgressText = complete ? null : (progress?.tournamentStage ?? lastStage);
+  const progressText = stageProgressText ?? progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
+
+  // MSS-078: per-stage workspace. Each qualification group and the Final is
+  // its own stage with stage-local 1..32 rounds; `group` stays the squad
+  // rank group inside a stage and never names a qualification group.
+  const qualGroupCount =
+    tournament?.qualificationGroupCount ?? draw?.qualificationGroupCount ?? progress?.qualificationGroupCount ?? 0;
+  const isDirectFinalType = (tournament ? tournament.isDirectFinal : false) || (draw ? draw.isDirectFinal : false);
+  const stageTotal = groupCount * roundsPerGroup > 0 ? groupCount * roundsPerGroup : 32;
+  const progressStage: TypeCupStageKey | null =
+    !complete && progress?.tournamentPhase !== null && progress?.tournamentPhase !== undefined &&
+    progress?.qualificationGroup !== null && progress?.qualificationGroup !== undefined
+      ? { tournamentPhase: progress.tournamentPhase, qualificationGroup: progress.qualificationGroup }
+      : null;
+  const canonicalStage: TypeCupStageKey | null = isTypeTournamentLive
+    ? canonicalStageKey({ complete, progressStage, rounds })
+    : null;
+  const doneQualGroups = new Set((tournament?.qualificationGroups ?? []).map((g) => g.qualificationGroup));
+  const finalComplete = Boolean(tournament?.final);
+  const typeCupStages: TypeCupStageInfo[] = isTypeTournamentLive
+    ? buildTypeCupStages({
+        qualificationGroupCount: qualGroupCount,
+        isDirectFinal: isDirectFinalType,
+        isLegacy: false,
+        rounds,
+        doneQualificationGroups: doneQualGroups,
+        finalComplete,
+        activeStage: progressStage,
+        tournamentComplete: complete,
+        squadGroupCount: groupCount,
+        roundsPerGroup,
+      })
+    : [];
+  const selectedTypeStage: TypeCupStageKey | null = isTypeTournamentLive
+    ? selectedStageKey({ urlStage, canonicalStage, stages: typeCupStages, rounds })
+    : null;
+  const selectedStageInfo = selectedTypeStage
+    ? (typeCupStages.find((s) => stageKeyEquals(s.key, selectedTypeStage)) ?? null)
+    : null;
+  const stageOrdered = selectedTypeStage && isTypeTournamentLive
+    ? chronologicalStageRounds(rounds, selectedTypeStage, roundsPerGroup)
+    : [];
+  const stagePlayed = stageOrdered.length;
+  const canonicalStageInfo = canonicalStage
+    ? (typeCupStages.find((s) => stageKeyEquals(s.key, canonicalStage)) ?? null)
+    : null;
+  const viewingOtherStage = Boolean(
+    isTypeTournamentLive && selectedTypeStage && canonicalStage && !stageKeyEquals(selectedTypeStage, canonicalStage),
+  );
+
   const selected: PlayedRound | null = useMemo(() => {
     if (rounds.length === 0) {
       return null;
+    }
+    // MSS-078: tournament stages own their rounds. The selected stage comes
+    // from the explicit URL stage or the canonical cursor; the round is the
+    // latest in that stage unless the URL names an explicit squad-local round.
+    if (isTypeTournamentLive && selectedTypeStage) {
+      const ordered = chronologicalStageRounds(rounds, selectedTypeStage, roundsPerGroup);
+      if (urlRound !== null) {
+        const wantedGroup = team ? urlGroup : null;
+        const staged = ordered.find((e) => e.round.round === urlRound && e.round.group === wantedGroup);
+        if (staged) {
+          return staged.round;
+        }
+        // MSS-079 correction: an explicit stage+round that was never persisted
+        // must stay missing so the fetch surfaces a 404. Only genuinely
+        // stage-less legacy URLs may fall back; never substitute another
+        // stage for an explicit stage URL.
+        return {
+          group: wantedGroup,
+          round: urlRound,
+          tournamentPhase: selectedTypeStage.tournamentPhase,
+          qualificationGroup: selectedTypeStage.qualificationGroup,
+        };
+      }
+      const last = ordered[ordered.length - 1];
+      return last ? last.round : null;
     }
     const wantedGroup = team ? urlGroup : null;
     if (urlRound !== null) {
@@ -211,12 +334,20 @@ export function LiveEventView({
       }
     }
     return rounds[rounds.length - 1]!;
-    // urlStage is derived from urlTournamentPhase/urlQualificationGroup.
+    // selectedTypeStage/stage rounds derive from rounds+URL stage; canonical
+    // progress (progressStage text) does not change selection identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rounds, urlRound, urlGroup, team, isTypeCupEvent, urlTournamentPhase, urlQualificationGroup]);
+  }, [rounds, urlRound, urlGroup, team, isTypeCupEvent, urlTournamentPhase, urlQualificationGroup, isTypeTournamentLive, selectedTypeStage?.tournamentPhase, selectedTypeStage?.qualificationGroup, roundsPerGroup]);
 
   useEffect(() => {
     if (!selected) {
+      // MSS-078 correction: a pending stage has no persisted round. Clear the
+      // previous stage's reveal/baseline so it never lingers under the new
+      // stage heading (stage isolation, fresh Final scores).
+      setRoundView(null);
+      setBaseline(null);
+      setRevealed([]);
+      setError(null);
       return;
     }
     const selectedStage =
@@ -235,19 +366,49 @@ export function LiveEventView({
     ) {
       return;
     }
+    // MSS-078 correction: switching stages must never display the previous
+    // stage's persisted reveal under the new heading, even while the new
+    // fetch is pending. Clear upfront; the catch below also clears on any
+    // failure (404 or otherwise) so a stale reveal can never linger.
+    setRoundView(null);
+    setBaseline(null);
+    setRevealed([]);
     const controller = new AbortController();
     setError(null);
+    const wantedRound = selected.round;
+    const wantedGroup = selected.group;
+    const wantedPhase = selectedStage?.tournamentPhase ?? null;
+    const wantedQual = selectedStage?.qualificationGroup ?? null;
     fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal, selectedStage)
-      .then(setRoundView)
-      .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
-          setError(apiErrorMessage(failure));
-          // MSS-079 correction: an explicit but unpersisted stage+round must not
-          // keep showing the previous stage's replay alongside the error.
-          if (failure instanceof ApiError && failure.status === 404) {
-            setRoundView(null);
-          }
+      .then((view) => {
+        if (controller.signal.aborted) {
+          return;
         }
+        // Guard against a late response for a previously selected stage
+        // overwriting the freshly cleared workspace.
+        if (
+          view.roundNumber !== wantedRound ||
+          (view.group ?? null) !== (wantedGroup ?? null) ||
+          (view.tournamentPhase ?? null) !== wantedPhase ||
+          (view.qualificationGroup ?? null) !== wantedQual
+        ) {
+          return;
+        }
+        setRoundView(view);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        if (controller.signal.aborted) {
+          return;
+        }
+        setError(apiErrorMessage(failure));
+        // MSS-078 correction: any fetch failure must leave no stale reveal.
+        // The workspace was already cleared upfront; ensure it stays cleared.
+        setRoundView(null);
+        setBaseline(null);
+        setRevealed([]);
       });
     return () => controller.abort();
     // roundView is the cache this effect fills; re-running on it would loop.
@@ -267,44 +428,59 @@ export function LiveEventView({
       shownPhase !== null && shownPhase !== undefined && shownQual !== null && shownQual !== undefined
         ? { tournamentPhase: shownPhase, qualificationGroup: shownQual }
         : null;
+    const wantedGroup = shownGroup;
+    const wantedRound = shownRound;
+    const wantedPhase = stage?.tournamentPhase ?? null;
+    const wantedQual = stage?.qualificationGroup ?? null;
     fetchEventTeamStandings(saveId, season, event, controller.signal, { group: shownGroup, round: shownRound }, stage)
-      .then((standings) =>
+      .then((standings) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         setBaseline({
-          group: shownGroup,
-          round: shownRound,
-          tournamentPhase: stage?.tournamentPhase ?? null,
-          qualificationGroup: stage?.qualificationGroup ?? null,
+          group: wantedGroup,
+          round: wantedRound,
+          tournamentPhase: wantedPhase,
+          qualificationGroup: wantedQual,
           standings,
-        }),
-      )
+        });
+      })
       .catch(() => undefined);
     return () => controller.abort();
   }, [saveId, season, event, shownGroup, shownRound, shownPhase, shownQual]);
 
-  const shape = summary ?? progress;
-  // MSS-069: the Superleague qualifier is one 16-round event. The phase-wide
-  // 272-round total lives on the qualifier overview only and must never appear
-  // under this individual event title (e.g. "Round 16 / 272").
-  const totalRounds = event === 'qualifier' ? 16 : (shape?.totalRounds ?? (team ? 32 : 16));
-  const roundsPerGroup = event === 'qualifier' ? 16 : (shape?.roundsPerGroup ?? (team ? 8 : 16));
-  const groupCount = event === 'qualifier' ? 1 : (shape?.groupCount ?? (team ? 4 : 1));
-  const complete = summary?.isComplete ?? false;
-  // Type Cup tournaments span several 32-round stages in canonical order;
-  // the backend progress cursor names the current stage explicitly.
-  const isTypeTournamentLive =
-    event === 'type-cup-team' &&
-    ((tournament ? !tournament.isDirectFinal : false) ||
-      (draw ? !draw.isDirectFinal : false) ||
-      (progress?.qualificationGroupCount ?? 0) > 0);
-  // Rounds may only be played for the save's next lifecycle event; playing any
-  // other event would move the RNG under a partly played one (the backend
-  // refuses it too).
-  const playable = progress !== null && progress.sourceSeasonNumber === season && !complete;
-  // MSS-079: once the tournament is complete the backend progress cursor is
-  // gone (the next legal action is StartNextSeason). Never keep showing the
-  // stale in-progress stage after that; replay selection resets instead.
-  const stageProgressText = complete ? null : (progress?.tournamentStage ?? lastStage);
-  const progressText = stageProgressText ?? progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
+  // MSS-078 correction: a pending stage with no persisted round still needs
+  // its stage-scoped starting field (Final finalists at zero once quals are
+  // complete). Fetch the stage roster without a before-round cursor; never
+  // fall back to unscoped tournament-wide totals.
+  const pendingStage: TypeCupStageKey | null =
+    isTypeTournamentLive && selectedTypeStage && !selected ? selectedTypeStage : null;
+  const pendingStageKey = pendingStage ? `${pendingStage.tournamentPhase}/${pendingStage.qualificationGroup}` : null;
+  useEffect(() => {
+    if (!pendingStage || !pendingStageKey) {
+      setPendingStageStandings(null);
+      return;
+    }
+    const controller = new AbortController();
+    const key = pendingStageKey;
+    const stage = { tournamentPhase: pendingStage.tournamentPhase, qualificationGroup: pendingStage.qualificationGroup };
+    fetchEventTeamStandings(saveId, season, event, controller.signal, undefined, stage)
+      .then((standings) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPendingStageStandings({ stageKey: key, standings });
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPendingStageStandings(null);
+      });
+    return () => controller.abort();
+    // pendingStage object identity changes per render; depend on its key parts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveId, season, event, pendingStageKey, pendingStage?.tournamentPhase, pendingStage?.qualificationGroup]);
 
   const refreshAfter = useCallback(() => {
     setRevision((value) => value + 1);
@@ -317,6 +493,7 @@ export function LiveEventView({
     }
     setBusy(true);
     setError(null);
+    setConfirmEntire(false);
     try {
       const result = await playEventRound(saveId, event);
       setRoundView(result.round);
@@ -359,8 +536,81 @@ export function LiveEventView({
     }
   }
 
+  // MSS-078 correction: stage-scoped fast-forward via an atomic backend
+  // operation. The expected canonical stage travels with the request; the
+  // backend snapshots the canonical stage under the per-save lock and rejects
+  // a stale stage with 409 before persisting anything, so another tab can
+  // never push this button into the next group/Final.
+  async function handleFinishStage(): Promise<void> {
+    if (busy || !isTypeTournamentLive || !canonicalStage) {
+      return;
+    }
+    const canonicalSnapshot = canonicalStage;
+    const playedInStage = rounds.filter(
+      (r) => (r.tournamentPhase ?? null) === canonicalSnapshot.tournamentPhase && (r.qualificationGroup ?? null) === canonicalSnapshot.qualificationGroup,
+    ).length;
+    const remaining = stageTotal - playedInStage;
+    if (remaining <= 0) {
+      refreshAfter();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setConfirmEntire(false);
+    setStageFinishing(remaining);
+    try {
+      const result = await finishTypeCupTeamStage(saveId, canonicalSnapshot);
+      if (result.tournamentStage) {
+        setLastStage(result.tournamentStage);
+      }
+      setRoundView(result.round);
+      const stage =
+        result.tournamentPhase !== null && result.tournamentPhase !== undefined &&
+        result.qualificationGroup !== null && result.qualificationGroup !== undefined
+          ? { tournamentPhase: result.tournamentPhase, qualificationGroup: result.qualificationGroup }
+          : (result.round.tournamentPhase !== null && result.round.tournamentPhase !== undefined &&
+              result.round.qualificationGroup !== null && result.round.qualificationGroup !== undefined
+              ? { tournamentPhase: result.round.tournamentPhase, qualificationGroup: result.round.qualificationGroup }
+              : null);
+      onSelectRound(result.round.group, result.round.roundNumber, stage);
+      refreshAfter();
+    } catch (failure) {
+      const message = apiErrorMessage(failure);
+      if (isAlreadyCompleteMessage(message)) {
+        setLastStage(null);
+        setRoundView(null);
+        onSelectRound(null, null, null);
+        refreshAfter();
+      } else if (message.toLowerCase().includes('stage changed')) {
+        // Stale Finish click: another tab advanced the canonical stage. Refresh
+        // so the UI follows the new canonical stage instead of persisting there.
+        refreshAfter();
+      }
+      setError(friendlyCompleteMessage(message));
+    } finally {
+      setBusy(false);
+      setStageFinishing(null);
+    }
+  }
+
+  function handleSelectTypeStage(stage: TypeCupStageKey): void {
+    const ordered = chronologicalStageRounds(rounds, stage, roundsPerGroup);
+    const last = ordered[ordered.length - 1];
+    if (last) {
+      onSelectRound(last.round.group, last.round.round, stage);
+    } else {
+      onSelectRound(null, null, stage);
+    }
+  }
+
   async function handleRunRemaining(): Promise<void> {
     if (busy) {
+      return;
+    }
+    // MSS-078: tournament-wide fast-forward needs an explicit second click so
+    // it can never be mistaken for the stage-scoped action.
+    if (isTypeTournamentLive && !confirmEntire) {
+      setConfirmEntire(true);
       return;
     }
     setBusy(true);
@@ -372,6 +622,7 @@ export function LiveEventView({
       setRoundView(null);
       setBaseline(null);
       setLastStage(null);
+      setConfirmEntire(false);
       onSelectRound(null, null, null);
       refreshAfter();
     } catch (failure) {
@@ -433,45 +684,19 @@ export function LiveEventView({
     [baseline, revealed],
   );
 
-  const selectedStageForPills =
-    selected?.tournamentPhase !== null &&
-    selected?.tournamentPhase !== undefined &&
-    selected?.qualificationGroup !== null &&
-    selected?.qualificationGroup !== undefined
-      ? { tournamentPhase: selected.tournamentPhase, qualificationGroup: selected.qualificationGroup }
-      : urlStage;
+  const selectedOverall =
+    isTypeTournamentLive && selected
+      ? stageLocalRound(selected.group ?? 1, selected.round, roundsPerGroup)
+      : null;
+  const shownOverall =
+    isTypeTournamentLive && roundView ? stageLocalRound(roundView.group ?? 1, roundView.roundNumber, roundsPerGroup) : null;
+  const stageProgressLine = isTypeTournamentLive && selectedStageInfo
+    ? `${selectedStageInfo.label} · Round ${selectedOverall ?? stagePlayed} / ${stageTotal}`
+    : null;
+  // Generic (non-tournament) squad navigation stays untouched.
   const visibleGroup = selected?.group ?? (team ? 1 : null);
-  const groupsPlayed = team ? Array.from(new Set(rounds.map((r) => r.group ?? 1))) : [];
-  const typeStages = isTypeCupEvent
-    ? Array.from(
-        new Map(
-          rounds
-            .filter(
-              (r) =>
-                r.tournamentPhase !== null &&
-                r.tournamentPhase !== undefined &&
-                r.qualificationGroup !== null &&
-                r.qualificationGroup !== undefined,
-            )
-            .map(
-              (r) =>
-                [
-                  `${r.tournamentPhase}/${r.qualificationGroup}`,
-                  { tournamentPhase: r.tournamentPhase!, qualificationGroup: r.qualificationGroup! },
-                ] as const,
-            ),
-        ).values(),
-      )
-    : [];
-  const pills =
-    isTypeCupEvent && selectedStageForPills && typeStages.length > 1
-      ? rounds.filter(
-          (r) =>
-            r.group === visibleGroup &&
-            (r.tournamentPhase ?? null) === selectedStageForPills.tournamentPhase &&
-            (r.qualificationGroup ?? null) === selectedStageForPills.qualificationGroup,
-        )
-      : rounds.filter((r) => r.group === visibleGroup);
+  const groupsPlayed = !isTypeTournamentLive && team ? Array.from(new Set(rounds.map((r) => r.group ?? 1))) : [];
+  const genericPills: PlayedRound[] = isTypeTournamentLive ? [] : rounds.filter((r) => r.group === visibleGroup);
   const title = `${EVENT_TITLES[event]} · Season ${season}`;
   const resultsPath = resultsTarget(event) === 'standings' ? standingsPath(saveId) : cupsPath(saveId);
   // MSS-069: after the 32-athlete Superleague qualifier the canonical Live
@@ -488,11 +713,35 @@ export function LiveEventView({
   const canRunAllFromComplete =
     isSuperleagueLive && isTiered && progress !== null && progress.sourceSeasonNumber === season;
 
+  const nextRoundLabel = isTypeTournamentLive
+    ? viewingOtherStage && canonicalStageInfo
+      ? `Next Round · ${canonicalStageInfo.label}`
+      : selectedStageInfo
+        ? `Next Round · ${selectedStageInfo.label}`
+        : 'Next Round'
+    : 'Next Round';
+  const finishStageLabel = isTypeTournamentLive && canonicalStageInfo
+    ? stageFinishing !== null
+      ? `Finishing ${canonicalStageInfo.label}… ${stageFinishing}`
+      : `Finish ${canonicalStageInfo.label}`
+    : 'Finish current stage';
+  const finishStageRemaining = isTypeTournamentLive && canonicalStage
+    ? stageTotal -
+      rounds.filter(
+        (r) => (r.tournamentPhase ?? null) === canonicalStage.tournamentPhase && (r.qualificationGroup ?? null) === canonicalStage.qualificationGroup,
+      ).length
+    : 0;
+
   return (
     <div className="live-layout">
       <aside className="live-sidebar" aria-label="Event management">
         <Card eyebrow="Postseason event" title={title}>
-          <p className="muted small live-count">{progressText}</p>
+          <p className="muted small live-count">
+            {isTypeTournamentLive && stageProgressLine ? stageProgressLine : progressText}
+            {isTypeTournamentLive && canonicalStageInfo && !complete && viewingOtherStage
+              ? ` · Active: ${canonicalStageInfo.label}`
+              : null}
+          </p>
           {complete ? (
             isSuperleagueLive && nextQualifierParam ? (
               <Notice tone="info" title={`${EVENT_TITLES[event]} complete`}>
@@ -554,21 +803,48 @@ export function LiveEventView({
                   className="primary-button"
                   disabled={busy}
                   aria-busy={busy}
+                  title={
+                    isTypeTournamentLive && canonicalStageInfo
+                      ? `Simulate the next round of ${canonicalStageInfo.label} on the backend.`
+                      : 'Simulate the next round on the backend.'
+                  }
                   onClick={() => {
                     void handleNext();
                   }}
                 >
-                  {busy ? 'Simulating…' : 'Next Round'}
+                  {busy ? 'Simulating…' : nextRoundLabel}
                 </button>
+                {isTypeTournamentLive ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={busy || finishStageRemaining <= 0}
+                    title={
+                      canonicalStageInfo
+                        ? `Persists the remaining ${finishStageRemaining} rounds of ${canonicalStageInfo.label} only; stops before the next stage.`
+                        : 'Persists the remaining rounds of the active stage only.'
+                    }
+                    onClick={() => {
+                      void handleFinishStage();
+                    }}
+                  >
+                    {finishStageLabel}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="ghost-button"
                   disabled={busy}
+                  title={
+                    isTypeTournamentLive
+                      ? 'Tournament-wide fast-forward: persists every remaining qualification group and the Final.'
+                      : undefined
+                  }
                   onClick={() => {
                     void handleRunRemaining();
                   }}
                 >
-                  Run remaining rounds
+                  {isTypeTournamentLive ? 'Finish entire Type Cup' : 'Run remaining rounds'}
                 </button>
                 {isSuperleagueLive && isTiered ? (
                   <button
@@ -585,6 +861,35 @@ export function LiveEventView({
                 ) : null}
               </div>
               <p className="muted small">{"Each round is saved and can't be undone."}</p>
+              {isTypeTournamentLive && confirmEntire ? (
+                <Notice tone="error" title="Finish the entire Type Cup?">
+                  <p>
+                    This plays every remaining qualification group and the Final. To stop at the
+                    end of {canonicalStageInfo?.label ?? 'the current stage'}, use{' '}
+                    {canonicalStageInfo ? `Finish ${canonicalStageInfo.label}` : 'Finish current stage'} instead.
+                  </p>
+                  <p className="live-buttons">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy}
+                      onClick={() => {
+                        void handleRunRemaining();
+                      }}
+                    >
+                      {busy ? 'Finishing…' : 'Yes, finish entire Type Cup'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy}
+                      onClick={() => setConfirmEntire(false)}
+                    >
+                      Keep stage scope
+                    </button>
+                  </p>
+                </Notice>
+              ) : null}
               {isSuperleagueLive && nextQualifierParam ? (
                 <p className="muted small">
                   After this event, continue directly to the next qualifier on Live — no
@@ -618,9 +923,8 @@ export function LiveEventView({
           ) : null}
           {isTypeTournamentLive && playable && !complete ? (
             <p className="muted small">
-              Qualification groups complete in canonical draw order before the Final. Run remaining
-              finishes every leftover group and the Final on the backend — no Dashboard round trip
-              needed between groups.
+              Stages complete in canonical draw order. Finish {canonicalStageInfo?.label ?? 'current stage'} stops
+              at this stage; Finish entire Type Cup plays every leftover stage.
             </p>
           ) : null}
         </Card>
@@ -629,10 +933,13 @@ export function LiveEventView({
           <TypeCupLiveStages
             saveId={saveId}
             season={season}
-            progress={progress}
+            stages={typeCupStages}
+            selected={selectedTypeStage}
+            canonical={canonicalStage}
             tournament={tournament}
             draw={draw}
-            lastStage={lastStage}
+            complete={complete}
+            onSelectStage={handleSelectTypeStage}
           />
         ) : null}
 
@@ -640,60 +947,20 @@ export function LiveEventView({
           eyebrow="Rounds"
           title={
             team
-              ? isTypeTournamentLive
-                ? `Squad rank group ${visibleGroup ?? 1} · ${stageProgressText ?? progressText}`
+              ? isTypeTournamentLive && selectedStageInfo
+                ? `${selectedStageInfo.label} · Round ${selectedOverall ?? stagePlayed} / ${stageTotal}`
                 : `Group ${visibleGroup ?? 1}`
               : 'Played rounds'
           }
         >
-          {isTypeTournamentLive ? (
+          {isTypeTournamentLive && selectedStageInfo ? (
             <p className="muted small">
-              Rank groups are squad positions (#1 vs #1, #2 vs #2, …) inside the current
-              qualification group or Final — not the qualification groups themselves. Stage
-              progress above names the active group.
+              {selectedStageInfo.kind === 'final'
+                ? 'Final rounds start fresh at zero. Squad groups are rank positions inside the Final.'
+                : `Squad groups are rank positions inside ${selectedStageInfo.label} (Squad #1 vs #1, …), not qualification groups.`}
             </p>
           ) : null}
-          {isTypeTournamentLive && typeStages.length > 1 ? (
-            <div className="segmented" role="group" aria-label="Tournament stages">
-              {typeStages.map((stage) => {
-                const label =
-                  stage.tournamentPhase === 2
-                    ? 'Final'
-                    : stage.tournamentPhase === 0
-                      ? 'Single field'
-                      : `Qualification ${stage.qualificationGroup}`;
-                const active =
-                  selectedStageForPills?.tournamentPhase === stage.tournamentPhase &&
-                  selectedStageForPills?.qualificationGroup === stage.qualificationGroup;
-                return (
-                  <button
-                    key={`${stage.tournamentPhase}/${stage.qualificationGroup}`}
-                    type="button"
-                    className={active ? 'nav-item current' : 'nav-item'}
-                    aria-pressed={active}
-                    onClick={() => {
-                      const last = rounds
-                        .filter(
-                          (r) =>
-                            (r.tournamentPhase ?? null) === stage.tournamentPhase &&
-                            (r.qualificationGroup ?? null) === stage.qualificationGroup &&
-                            r.group === visibleGroup,
-                        )
-                        .at(-1);
-                      if (last) {
-                        onSelectRound(last.group, last.round, stage);
-                      } else {
-                        onSelectRound(visibleGroup, null, stage);
-                      }
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {team && groupsPlayed.length > 0 ? (
+          {!isTypeTournamentLive && team && groupsPlayed.length > 0 ? (
             <div className="segmented" role="group" aria-label="Groups">
               {groupsPlayed.map((group) => (
                 <button
@@ -702,28 +969,10 @@ export function LiveEventView({
                   className={group === visibleGroup ? 'nav-item current' : 'nav-item'}
                   aria-pressed={group === visibleGroup}
                   onClick={() => {
-                    const scoped =
-                      isTypeTournamentLive && selectedStageForPills && typeStages.length > 1
-                        ? rounds.filter(
-                            (r) =>
-                              r.group === group &&
-                              (r.tournamentPhase ?? null) === selectedStageForPills.tournamentPhase &&
-                              (r.qualificationGroup ?? null) === selectedStageForPills.qualificationGroup,
-                          )
-                        : rounds.filter((r) => r.group === group);
+                    const scoped = rounds.filter((r) => r.group === group);
                     const last = scoped.at(-1);
                     if (last) {
-                      const stage =
-                        last.tournamentPhase !== null &&
-                        last.tournamentPhase !== undefined &&
-                        last.qualificationGroup !== null &&
-                        last.qualificationGroup !== undefined
-                          ? {
-                              tournamentPhase: last.tournamentPhase,
-                              qualificationGroup: last.qualificationGroup,
-                            }
-                          : (selectedStageForPills ?? null);
-                      onSelectRound(group, last.round, stage);
+                      onSelectRound(group, last.round, null);
                     }
                   }}
                 >
@@ -732,11 +981,61 @@ export function LiveEventView({
               ))}
             </div>
           ) : null}
-          {pills.length === 0 ? (
+          {isTypeTournamentLive ? (
+            stageOrdered.length === 0 ? (
+              <p className="muted small">
+                {selectedStageInfo?.kind === 'final'
+                  ? 'No Final rounds yet. Press Next Round to play Final Round 1 — scores start at zero.'
+                  : 'No rounds in this stage yet.'}
+              </p>
+            ) : (
+              <div className="round-pills round-pills-compact" role="group" aria-label={`${selectedStageInfo?.label} rounds in stage order`}>
+                {stageOrdered.map(({ round: r, overall }) => {
+                  const isCurrent =
+                    selected !== null &&
+                    r.round === selected.round &&
+                    r.group === selected.group &&
+                    (r.tournamentPhase ?? null) === (selected.tournamentPhase ?? null) &&
+                    (r.qualificationGroup ?? null) === (selected.qualificationGroup ?? null);
+                  const accessible = stageRoundAccessibleLabel({
+                    overall,
+                    total: stageTotal,
+                    squadGroup: r.group,
+                    roundInGroup: r.round,
+                    stageLabel: selectedStageInfo?.label ?? 'Stage',
+                  });
+                  return (
+                    <button
+                      key={`${r.tournamentPhase ?? 'x'}/${r.qualificationGroup ?? 'x'}/${r.group ?? 0}-${r.round}`}
+                      type="button"
+                      className={isCurrent ? 'nav-item current' : 'nav-item'}
+                      aria-pressed={isCurrent}
+                      aria-label={accessible}
+                      title={`${accessible} · Squad #${r.group ?? 1} Round ${r.round} of ${roundsPerGroup}`}
+                      onClick={() =>
+                        onSelectRound(
+                          r.group,
+                          r.round,
+                          r.tournamentPhase !== null &&
+                            r.tournamentPhase !== undefined &&
+                            r.qualificationGroup !== null &&
+                            r.qualificationGroup !== undefined
+                            ? { tournamentPhase: r.tournamentPhase, qualificationGroup: r.qualificationGroup }
+                            : null,
+                        )
+                      }
+                    >
+                      {overall}
+                    </button>
+                  );
+                })}
+              </div>
+            )
+          ) : genericPills.length === 0 ? (
             <p className="muted small">No rounds played yet.</p>
           ) : (
             <div className="round-pills round-pills-compact" role="group" aria-label="Played rounds">
-              {pills.map((r) => (
+              {genericPills.map((r) => (
                 <button
                   key={`${r.tournamentPhase ?? 'x'}/${r.qualificationGroup ?? 'x'}/${r.group ?? 0}-${r.round}`}
                   type="button"
@@ -778,9 +1077,15 @@ export function LiveEventView({
             baselineReady ? (
               <table className="mini-table">
                 <caption className="reveal-subhead">
-                  Team standings so far
+                  {isTypeTournamentLive && selectedStageInfo
+                    ? selectedStageInfo.kind === 'final'
+                      ? 'Final standings'
+                      : `Team standings in ${selectedStageInfo.label}`
+                    : 'Team standings so far'}
                   <span className="muted small live-team-caption">
-                    {`${roundLabel(roundView.group, roundView.roundNumber)} · ${revealed.length}/${roundView.placements.length} revealed`}
+                    {isTypeTournamentLive && selectedStageInfo && shownOverall !== null
+                      ? `${selectedStageInfo.label} · Round ${shownOverall} / ${stageTotal} (Squad #${roundView.group ?? 1} · Round ${roundView.roundNumber} of ${roundsPerGroup}) · ${revealed.length}/${roundView.placements.length} revealed`
+                      : `${selectedStageInfo?.label ? `${selectedStageInfo.label} · ` : ''}${revealed.length}/${roundView.placements.length} revealed`}
                   </span>
                 </caption>
                 <thead>
@@ -805,7 +1110,40 @@ export function LiveEventView({
                 </tbody>
               </table>
             ) : null
-          ) : team && teams ? (
+          ) : isTypeTournamentLive &&
+            !roundView &&
+            pendingStage &&
+            selectedStageInfo &&
+            pendingStageStandings &&
+            pendingStageStandings.stageKey === pendingStageKey &&
+            pendingStageStandings.standings.teams.length > 0 ? (
+            <table className="mini-table">
+              <caption className="reveal-subhead">
+                {selectedStageInfo.kind === 'final' ? 'Final standings' : `Team standings in ${selectedStageInfo.label}`}
+                <span className="muted small live-team-caption">
+                  {selectedStageInfo.kind === 'final'
+                    ? `${selectedStageInfo.label} · starting at zero · ${pendingStageStandings.standings.teams.length} finalists`
+                    : `${selectedStageInfo.label} · starting at zero`}
+                </span>
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Team</th>
+                  <th scope="col" className="numeric">
+                    Points
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingStageStandings.standings.teams.map((row) => (
+                  <tr key={row.teamName}>
+                    <td>{row.teamName}</td>
+                    <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : team && teams && (!isTypeTournamentLive || showFinal) ? (
             <table className="mini-table">
               <caption className="reveal-subhead">{teams.isFinal ? 'Team standings' : 'Team standings so far'}</caption>
               <thead>
@@ -839,7 +1177,13 @@ export function LiveEventView({
           <RoundReveal
             placements={roundView.placements}
             revealKey={`${event}:${season}:${roundView.tournamentPhase ?? 'x'}:${roundView.qualificationGroup ?? 'x'}:${roundView.group ?? 0}:${roundView.roundNumber}:${roundView.payloadChecksum}`}
-            roundLabel={`${roundLabel(roundView.group, roundView.roundNumber)} results`}
+            roundLabel={
+              isTypeTournamentLive && selectedStageInfo && shownOverall !== null
+                ? `${selectedStageInfo.label} · Round ${shownOverall} / ${stageTotal} (Squad #${roundView.group ?? 1} · Round ${roundView.roundNumber} of ${roundsPerGroup}) results`
+                : selectedStageInfo
+                  ? `${selectedStageInfo.label} results`
+                  : 'Round results'
+            }
             meta={`Rules v${roundView.rulesVersion} · checksum ${roundView.payloadChecksum.slice(0, 12)}…`}
             autoPlayOnStart={false}
             layout="live"
@@ -847,8 +1191,19 @@ export function LiveEventView({
             onRevealedChange={setRevealed}
           />
         ) : (
-          <Card eyebrow="Postseason event" title={EVENT_TITLES[event]}>
-            <p className="muted">{complete ? 'Pick a round to replay it.' : 'Press Next Round to simulate round 1.'}</p>
+          <Card
+            eyebrow="Postseason event"
+            title={isTypeTournamentLive && selectedStageInfo ? selectedStageInfo.label : EVENT_TITLES[event]}
+          >
+            <p className="muted">
+              {complete
+                ? 'Pick a round to replay it.'
+                : isTypeTournamentLive && selectedStageInfo
+                  ? selectedStageInfo.kind === 'final'
+                    ? 'Final starts fresh at zero. Press Next Round to play Final Round 1.'
+                    : `Press Next Round to simulate ${selectedStageInfo.label} Round 1.`
+                  : 'Press Next Round to simulate round 1.'}
+            </p>
           </Card>
         )}
       </section>

@@ -5,130 +5,205 @@ import { cupEditionPath } from '../routing/routes';
 import { TeamBadge } from '../cups/TeamBadge';
 import { formatPoints } from '../cups/cupFormat';
 import type { TypeCupDraw, TypeCupTournament } from '../cups/typeCupTournamentApi';
-import {
-  qualificationGroupLetter,
-  qualificationStageLabel,
-} from '../cups/typeCupTournamentModel';
-import type { EventProgress } from '../events/eventsApi';
+import { qualificationStageLabel } from '../cups/typeCupTournamentModel';
+import type { TypeCupStageInfo, TypeCupStageKey } from './typeCupLiveModel';
+import { stageKeyEquals } from './typeCupLiveModel';
 
 /**
- * Tournament progression for a scalable Type Cup on Live (MSS-063).
- * Read-only over persisted draw/tournament facts plus the backend progress
- * cursor: which qualification group is active/completed/pending and the Final.
- * Completed groups show their final team table with an obvious cutoff;
- * detailed legs stay behind on-demand toggles so large tournaments stay
- * bounded. Fast progression stays on the backend canonical order via the
- * existing Run-remaining control; this view never simulates.
+ * Compact Type Cup stage navigation for Live (MSS-078).
+ * One workspace per tournament stage: the nav lists Group A/B/C plus Final
+ * with unambiguous completed/active/pending states (data-driven, never
+ * hardcoded). Only the selected stage's completed summary appears here;
+ * the Rounds card owns that stage's rounds, reveal and standings. Never
+ * simulates; progression stays on the backend canonical order.
  */
 export function TypeCupLiveStages({
   saveId,
   season,
-  progress,
+  stages,
+  selected,
+  canonical,
   tournament,
   draw,
-  lastStage,
+  complete,
+  onSelectStage,
 }: {
   saveId: string;
   season: number;
-  progress: EventProgress | null;
+  stages: readonly TypeCupStageInfo[];
+  selected: TypeCupStageKey | null;
+  canonical: TypeCupStageKey | null;
   tournament: TypeCupTournament | null;
   draw: TypeCupDraw | null;
-  lastStage: string | null;
+  complete: boolean;
+  onSelectStage: (stage: TypeCupStageKey) => void;
 }) {
-  const groupCount =
-    tournament?.qualificationGroupCount ??
-    draw?.qualificationGroupCount ??
-    progress?.qualificationGroupCount ??
-    0;
-  if (groupCount <= 0) {
+  if (stages.length <= 1) {
     return null;
   }
-  const activeQual = progress?.qualificationGroup ?? null;
-  const activePhase = progress?.tournamentPhase ?? null;
-  const doneGroups = new Set((tournament?.qualificationGroups ?? []).map((group) => group.qualificationGroup));
-  const tournamentComplete = Boolean(tournament?.final);
-  // MSS-079: once the Final is persisted the tournament is complete. Never
-  // keep showing the stale in-progress cursor after that; replay selection
-  // resets and the Final result carries the completion state.
-  const currentStage = tournamentComplete ? null : (lastStage ?? progress?.tournamentStage ?? null);
+  const groupCount = stages.filter((s) => s.kind === 'qualification').length;
+  const selectedInfo = selected ? (stages.find((s) => stageKeyEquals(s.key, selected)) ?? null) : null;
+  const canonicalInfo = canonical ? (stages.find((s) => stageKeyEquals(s.key, canonical)) ?? null) : null;
+  const viewingOther = selected && canonical && !stageKeyEquals(selected, canonical);
+  const selectedIndex = selectedInfo ? stages.findIndex((s) => stageKeyEquals(s.key, selectedInfo.key)) : -1;
+  const nextStage = selectedIndex >= 0 && selectedIndex + 1 < stages.length ? stages[selectedIndex + 1]! : null;
+  const doneCount = stages.filter((s) => s.status === 'completed').length;
+  void draw;
 
   return (
     <Card
-      eyebrow="Type Cup tournament"
-      title={`Qualification + Final · ${groupCount} groups`}
+      eyebrow="Type Cup stages"
+      title={`Stages · ${groupCount} groups + Final`}
       info={
         <p>
-          Qualification groups play in canonical draw order on the backend, then the fresh 32-team
-          Final starts at zero. Completed tables below are persisted facts; the frontend never
-          computes who qualified.
+          Each qualification group and the Final is its own stage with fresh 1–32 rounds. Points never
+          carry to the Final.
         </p>
       }
     >
-      {currentStage ? <p className="muted small">Current stage: {currentStage}</p> : null}
-      <ol className="edition-card-podium">
-        {Array.from({ length: groupCount }, (_, index) => index + 1).map((qual) => {
-          const letter = qualificationGroupLetter(qual);
-          const done = doneGroups.has(qual);
-          const active = activePhase === 1 && activeQual === qual;
-          const status = done ? 'Completed' : active ? 'Active' : 'Pending';
+      <p className="muted small">
+        {doneCount} of {stages.length} stages complete
+        {canonicalInfo && !complete ? ` · Active: ${canonicalInfo.label}` : null}
+        {complete ? ' · Tournament complete' : null}
+      </p>
+      <div className="segmented" role="group" aria-label="Type Cup stages">
+        {stages.map((stage) => {
+          const active = selected ? stageKeyEquals(stage.key, selected) : false;
+          const badgeClass =
+            stage.status === 'completed' ? 'badge badge-done' : stage.status === 'active' ? 'badge badge-ready' : 'badge badge-wait';
+          const statusText = stage.status === 'completed' ? 'Completed' : stage.status === 'active' ? 'Active' : 'Pending';
           return (
-            <li key={qual}>
-              <span>
-                Qualification Group {letter}
-                {groupCount === 2 ? (qual === 1 ? ' · Semifinal A' : ' · Semifinal B') : ''} —{' '}
-                <span className={done ? 'badge badge-done' : active ? 'badge badge-ready' : 'badge badge-wait'}>
-                  {status}
-                </span>
-              </span>
-            </li>
+            <button
+              key={`${stage.key.tournamentPhase}/${stage.key.qualificationGroup}`}
+              type="button"
+              className={active ? 'nav-item current' : 'nav-item'}
+              aria-pressed={active}
+              aria-label={`${stage.label}, ${statusText}, ${stage.played} of ${stage.total} rounds`}
+              onClick={() => onSelectStage(stage.key)}
+            >
+              {stage.shortLabel} · <span className={badgeClass}>{statusText}</span>
+            </button>
           );
         })}
-        <li>
-          <span>
-            Type Cup Final —{' '}
-            <span
-              className={
-                tournament?.final
-                  ? 'badge badge-done'
-                  : activePhase === 2
-                    ? 'badge badge-ready'
-                    : 'badge badge-wait'
-              }
-            >
-              {tournament?.final ? 'Completed' : activePhase === 2 ? 'Active' : 'Pending'}
-            </span>
-          </span>
-        </li>
-      </ol>
-
-      {(tournament?.qualificationGroups ?? []).map((group) => (
-        <CompletedGroupBlock
-          key={group.qualificationGroup}
-          saveId={saveId}
-          group={group}
-          groupCount={groupCount}
-        />
-      ))}
-
-      {tournament?.final ? (
+      </div>
+      {viewingOther && canonicalInfo ? (
         <p className="muted small">
-          Final complete: {tournament.final.championCreatureType} wins the Type Cup.{' '}
-          <Link to={cupEditionPath(saveId, 'type', season)} className="card-link">
-            Open the Final result
-          </Link>
+          Viewing {selectedInfo?.label} (replay). Active: {canonicalInfo.label}.{' '}
+          <button type="button" className="ghost-button" onClick={() => canonical && onSelectStage(canonical)}>
+            Follow active stage
+          </button>
         </p>
-      ) : doneGroups.size === groupCount && groupCount > 0 ? (
+      ) : null}
+      {selectedInfo ? (
+        <SelectedStageSummary
+          saveId={saveId}
+          season={season}
+          stage={selectedInfo}
+          tournament={tournament}
+          complete={complete}
+          nextStage={nextStage}
+          onSelectStage={onSelectStage}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function SelectedStageSummary({
+  saveId,
+  season,
+  stage,
+  tournament,
+  complete,
+  nextStage,
+  onSelectStage,
+}: {
+  saveId: string;
+  stage: TypeCupStageInfo;
+  season: number;
+  tournament: TypeCupTournament | null;
+  complete: boolean;
+  nextStage: TypeCupStageInfo | null;
+  onSelectStage: (stage: TypeCupStageKey) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  if (stage.kind === 'final') {
+    if (tournament?.final) {
+      return (
+        <div>
+          <p className="muted small">
+            Final complete: {tournament.final.championCreatureType} wins the Type Cup.{' '}
+            <Link to={cupEditionPath(saveId, 'type', season)} className="card-link">
+              Open the Final result
+            </Link>
+          </p>
+          <p className="muted small">
+            <button type="button" className="ghost-button" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              {open ? 'Hide details' : 'Why this order?'}
+            </button>
+          </p>
+          {open ? (
+            <p className="muted small">
+              Order and cutoff are persisted backend facts for the Final; qualification points reset
+              before the Final and group victories carry no honours.
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+    const qualsDone = (tournament?.qualificationGroups ?? []).length;
+    const qualCount = tournament?.qualificationGroupCount ?? 0;
+    if (!complete && qualsDone >= qualCount && qualCount > 0 && stage.played === 0) {
+      return (
         <p className="muted small">
           Every qualification group has a persisted table. Press Next Round to start the Final —
           all scores reset to zero.
         </p>
-      ) : doneGroups.size > 0 ? (
+      );
+    }
+    if (stage.played === 0) {
+      return <p className="muted small">Final pending. Qualification groups complete in canonical draw order first.</p>;
+    }
+    return (
+      <p className="muted small">
+        Final in progress: Round {stage.played} / {stage.total}. Scores started fresh at zero.
+      </p>
+    );
+  }
+  const group = (tournament?.qualificationGroups ?? []).find((g) => g.qualificationGroup === stage.qualificationGroup);
+  if (!group) {
+    if (stage.status === 'completed') {
+      return <p className="muted small">{stage.label} complete.</p>;
+    }
+    if (stage.played === 0) {
+      return (
         <p className="muted small">
-          Continue with Next Round for the next qualification group — no Dashboard round trip
-          needed. Completed tables above already show their qualification cutoffs.
+          {stage.label} pending{nextStage ? '' : ''}.{' '}
+          {nextStage && stage.status !== 'active' ? (
+            <button type="button" className="ghost-button" onClick={() => onSelectStage(nextStage.key)}>
+              Continue to {nextStage.label}
+            </button>
+          ) : null}
+        </p>
+      );
+    }
+    return (
+      <p className="muted small">
+        {stage.label} in progress: Round {stage.played} / {stage.total}.
+      </p>
+    );
+  }
+  return (
+    <div>
+      <CompletedGroupBlock saveId={saveId} group={group} groupCount={tournament?.qualificationGroupCount ?? 0} />
+      {nextStage ? (
+        <p className="live-buttons">
+          <button type="button" className="ghost-button" onClick={() => onSelectStage(nextStage.key)}>
+            Continue to {nextStage.label}
+          </button>
         </p>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
