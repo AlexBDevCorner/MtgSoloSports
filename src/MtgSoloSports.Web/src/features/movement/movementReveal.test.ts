@@ -12,11 +12,12 @@ function read(rel: string): string {
 }
 
 describe('MSS-050 promotion and relegation reveal', () => {
-  it('presents movements through a dedicated visual reveal on the Standings page', () => {
+  it('presents movements through a dedicated visual reveal on Live, not Standings (MSS-077)', () => {
     const page = read('features/standings/StandingsPage.tsx');
-    assert.ok(page.includes('MovementSection'), 'standings mounts the movement reveal');
-    const section = read('features/movement/MovementSection.tsx');
-    assert.ok(section.includes('<MovementReveal'), 'the section renders the movement board');
+    assert.ok(!page.includes('MovementSection'), 'standings no longer mounts movement');
+    assert.ok(!page.includes('Promotion & relegation'), 'standings shows tables only');
+    const view = read('features/transitions/TransitionRevealView.tsx');
+    assert.ok(view.includes('<MovementReveal'), 'Live transition view renders the movement board');
     const reveal = read('features/movement/MovementReveal.tsx');
     assert.ok(reveal.includes('Promotion & relegation'), 'dedicated presentation, not a static table');
   });
@@ -67,10 +68,10 @@ describe('MSS-050 promotion and relegation reveal', () => {
   });
 
   it('revisits completed historical events from persisted facts, not current leagues', () => {
-    const section = read('features/movement/MovementSection.tsx');
-    assert.ok(section.includes('fetchAutomaticMovement(saveId, seasonNumber'), 'the source season pins the historical event');
-    assert.ok(section.includes('fetchInauguralRoster'), 'Season 1 revisits its inaugural movements');
-    assert.ok(section.includes('fromSeasonNumber'), 'the request names the historical transition');
+    const view = read('features/transitions/TransitionRevealView.tsx');
+    assert.ok(view.includes('fetchAutomaticMovement(saveId, season'), 'the source season pins the historical event');
+    assert.ok(view.includes('fetchInauguralRoster'), 'Season 1 revisits its inaugural movements');
+    assert.ok(view.includes('fromSeasonNumber'), 'the request names the historical transition');
     const reveal = read('features/movement/MovementReveal.tsx');
     assert.ok(reveal.includes('revealKey'), 'a new event identity restarts the presentation');
     assert.ok(!reveal.includes('/simulate'), 'the reveal never resimulates');
@@ -80,9 +81,9 @@ describe('MSS-050 promotion and relegation reveal', () => {
   it('covers the no-movement and not-yet-resolved edge states', () => {
     const reveal = read('features/movement/MovementReveal.tsx');
     assert.ok(reveal.includes('No league movements'), 'an empty transition explains itself');
-    const section = read('features/movement/MovementSection.tsx');
-    assert.ok(section.includes('not resolved yet'), 'mid-postseason shows where to continue');
-    assert.ok(section.includes('dashboardPath'), 'the edge state links back to the Dashboard');
+    const view = read('features/transitions/TransitionRevealView.tsx');
+    assert.ok(view.includes('not resolved yet'), 'mid-postseason shows where to continue');
+    assert.ok(view.includes('dashboardPath'), 'the edge state links back to the Dashboard');
   });
 
   it('uses existing card imagery with a fallback and stays responsive with reduced-motion support', () => {

@@ -155,14 +155,15 @@ describe('MSS-053 first-time versus historical reveal modes', () => {
     }
   });
 
-  it('keeps historical Standings views on the completed final state with replay', () => {
-    for (const rel of ['features/movement/MovementSection.tsx', 'features/rebalance/RebalanceSection.tsx']) {
-      const section = read(rel);
-      assert.ok(section.includes('initialMode="complete"'), `${rel} opens history fully revealed`);
-    }
+  it('keeps Standings focused on tables while Live keeps replayable transition history (MSS-077)', () => {
     const page = read('features/standings/StandingsPage.tsx');
-    assert.ok(page.includes('MovementSection'), 'standings keeps the historical movement surface');
-    assert.ok(page.includes('RebalanceSection'), 'standings keeps the historical rebalance surface');
+    assert.ok(!page.includes('MovementSection'), 'standings no longer mounts movement');
+    assert.ok(!page.includes('RebalanceSection'), 'standings no longer mounts rebalance');
+    assert.ok(!page.includes('Promotion & relegation'), 'standings shows tables only');
+    assert.ok(!page.includes('Feeder rebalance'), 'standings shows tables only');
+    const view = read('features/transitions/TransitionRevealView.tsx');
+    assert.ok(view.includes('<MovementReveal'), 'Live keeps the historical movement surface');
+    assert.ok(view.includes('<RebalanceReveal'), 'Live keeps the historical rebalance surface');
     assert.ok(
       read('features/movement/MovementReveal.tsx').includes('Replay the reveal'),
       'movement history can replay the reveal',

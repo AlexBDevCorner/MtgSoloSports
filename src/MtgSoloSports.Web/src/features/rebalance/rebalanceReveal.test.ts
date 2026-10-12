@@ -12,11 +12,12 @@ function read(rel: string): string {
 }
 
 describe('MSS-051 feeder-league rebalance reveal', () => {
-  it('presents rebalancing through a dedicated visual reveal on the Standings page', () => {
+  it('presents rebalancing through a dedicated visual reveal on Live, not Standings (MSS-077)', () => {
     const page = read('features/standings/StandingsPage.tsx');
-    assert.ok(page.includes('RebalanceSection'), 'standings mounts the rebalance reveal');
-    const section = read('features/rebalance/RebalanceSection.tsx');
-    assert.ok(section.includes('<RebalanceReveal'), 'the section renders the rebalance board');
+    assert.ok(!page.includes('RebalanceSection'), 'standings no longer mounts rebalance');
+    assert.ok(!page.includes('Feeder rebalance'), 'standings shows tables only');
+    const view = read('features/transitions/TransitionRevealView.tsx');
+    assert.ok(view.includes('<RebalanceReveal'), 'Live transition view renders the rebalance board');
     const reveal = read('features/rebalance/RebalanceReveal.tsx');
     assert.ok(reveal.includes('Feeder rebalance'), 'dedicated presentation, not a static table');
     assert.ok(reveal.includes('rebalance-league'), 'leagues stay grouped one at a time');
@@ -75,12 +76,12 @@ describe('MSS-051 feeder-league rebalance reveal', () => {
   });
 
   it('revisits completed historical events from persisted facts, not current leagues', () => {
-    const section = read('features/rebalance/RebalanceSection.tsx');
+    const view = read('features/transitions/TransitionRevealView.tsx');
     assert.ok(
-      section.includes('fetchRebalanceResult(saveId, seasonNumber'),
+      view.includes('fetchRebalanceResult(saveId, season'),
       'the source season pins the historical event',
     );
-    assert.ok(section.includes('fromSeasonNumber'), 'the request names the historical transition');
+    assert.ok(view.includes('fromSeasonNumber'), 'the request names the historical transition');
     const reveal = read('features/rebalance/RebalanceReveal.tsx');
     assert.ok(reveal.includes('revealKey'), 'a new event identity restarts the presentation');
     assert.ok(!reveal.includes('/simulate'), 'the reveal never resimulates');
