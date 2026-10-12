@@ -439,4 +439,341 @@ describe('MSS-078 Type Cup Group C workspace isolation', () => {
     );
     (renderer as unknown as { unmount: () => void }).unmount();
   });
+
+  it('clears the prior played reveal when the next stage fetch fails without a 404', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    const g = globalThis as unknown as Record<string, unknown>;
+    const played = [...qualRounds(1, 32), ...qualRounds(2, 32), ...qualRounds(3, 10)];
+    g['fetch'] = (input: unknown, init?: { method?: string }) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method !== 'GET') {
+        log.posts.push(`${method} ${url}`);
+        return Promise.resolve(okJson({}));
+      }
+      log.gets.push(url);
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds/`)) {
+        const parsed = new URL(url, 'http://localhost');
+        const qual = parsed.searchParams.get('qualificationGroup');
+        // Group B round fetch fails with a non-404 so the old Group A reveal
+        // must still be cleared (no indefinite stale replay).
+        if (qual === '2') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Boom',
+            json: () => Promise.resolve({}),
+            text: () => Promise.resolve('Boom'),
+          });
+        }
+        const roundMatch = /\/rounds\/(\d+)/.exec(url);
+        const roundNumber = roundMatch ? Number.parseInt(roundMatch[1]!, 10) : 1;
+        const group = parsed.searchParams.get('group') ? Number.parseInt(parsed.searchParams.get('group')!, 10) : 1;
+        const phase = parsed.searchParams.get('tournamentPhase') ? Number.parseInt(parsed.searchParams.get('tournamentPhase')!, 10) : 1;
+        const q = parsed.searchParams.get('qualificationGroup') ? Number.parseInt(parsed.searchParams.get('qualificationGroup')!, 10) : 1;
+        return Promise.resolve(
+          okJson({
+            seasonNumber: SEASON,
+            event: 'type-cup-team',
+            title: 'Type Cup — team',
+            group,
+            roundNumber,
+            rulesVersion: 1,
+            payloadChecksum: `c${q}-${group}-${roundNumber}-persisted`,
+            placements: makePlacements(32),
+            tournamentPhase: phase,
+            qualificationGroup: q,
+          }),
+        );
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds`)) {
+        return Promise.resolve(okJson({ rounds: played }));
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/team-standings`)) {
+        return Promise.resolve(
+          okJson({ isFinal: false, groupsCompleted: 0, teams: [{ teamName: 'Goblin', rank: 1, scoreThousandths: 101000 }], members: [] }),
+        );
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events`)) {
+        return Promise.resolve(
+          okJson({
+            events: [
+              {
+                event: 'type-cup-team',
+                title: 'Type Cup — team',
+                roundsPlayed: played.length,
+                totalRounds: 128,
+                groupCount: 4,
+                roundsPerGroup: 8,
+                isComplete: false,
+              },
+            ],
+          }),
+        );
+      }
+      if (url.includes('/cups/type/tournament')) {
+        return Promise.resolve(
+          okJson({
+            saveId: SAVE,
+            sourceSeasonNumber: SEASON,
+            sourceSeasonId: 7,
+            isDirectFinal: false,
+            teamCount: 96,
+            qualificationGroupCount: 3,
+            groupSizes: [32, 32, 32],
+            finalPlacesPerGroup: [10, 10, 10],
+            drawChecksum: 'draw',
+            qualificationGroups: [],
+            finalists: [],
+            final: null,
+            championCreatureType: null,
+            tournamentChecksum: 't',
+          }),
+        );
+      }
+      if (url.includes('/cups/type/draw')) {
+        return Promise.resolve(
+          okJson({
+            saveId: SAVE,
+            sourceSeasonNumber: SEASON,
+            sourceSeasonId: 7,
+            rulesVersion: 1,
+            tournamentFormatVersion: 2,
+            isDirectFinal: false,
+            teamCount: 96,
+            qualificationGroupCount: 3,
+            groupSizes: [32, 32, 32],
+            finalPlacesPerGroup: [10, 10, 10],
+            drawChecksum: 'draw',
+            rngBeforeState: 1,
+            rngBeforeStream: 2,
+            rngAfterState: 3,
+            rngAfterStream: 4,
+            groups: [
+              { qualificationGroup: 1, groupSize: 32, finalPlaces: 10, creatureTypes: ['Goblin'] },
+              { qualificationGroup: 2, groupSize: 32, finalPlaces: 10, creatureTypes: ['Dragon'] },
+              { qualificationGroup: 3, groupSize: 32, finalPlaces: 10, creatureTypes: ['Faerie'] },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(okJson({}));
+    };
+    const shared = {
+      saveId: SAVE,
+      event: 'type-cup-team' as const,
+      season: SEASON,
+      progress: {
+        event: 'type-cup-team' as const,
+        sourceSeasonNumber: SEASON,
+        roundsPlayed: played.length,
+        totalRounds: 128,
+        groupCount: 4,
+        roundsPerGroup: 8,
+        group: 4,
+        roundInGroup: 8,
+        tournamentPhase: 1,
+        qualificationGroup: 3,
+        qualificationGroupCount: 3,
+        tournamentStage: 'Qualification Group 3 of 3',
+      },
+      onSelectRound: () => undefined,
+      onMutated: () => undefined,
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          ...shared,
+          urlGroup: 4,
+          urlRound: 8,
+          urlTournamentPhase: 1,
+          urlQualificationGroup: 1,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    let text = renderedText(renderer);
+    assert.ok(text.includes('c1-4-8'), 'Group A reveal loaded before the switch');
+
+    await act(async () => {
+      (renderer as unknown as { update: (node: React.ReactNode) => void }).update(
+        React.createElement(LiveEventView, {
+          ...shared,
+          urlGroup: 4,
+          urlRound: 8,
+          urlTournamentPhase: 1,
+          urlQualificationGroup: 2,
+        }),
+      );
+    });
+    await flush();
+    text = renderedText(renderer);
+    assert.ok(!text.includes('c1-4-8'), 'stale Group A reveal cleared despite non-404 failure');
+    assert.ok(text.includes('Qualification Group B'), 'new stage heading owns the workspace');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('shows zeroed finalists for a pending Final once quals are complete', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    const g = globalThis as unknown as Record<string, unknown>;
+    const complete = [...qualRounds(1, 32), ...qualRounds(2, 32), ...qualRounds(3, 32)];
+    g['fetch'] = (input: unknown, init?: { method?: string }) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (method !== 'GET') {
+        log.posts.push(`${method} ${url}`);
+        return Promise.resolve(okJson({}));
+      }
+      log.gets.push(url);
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds/`)) {
+        const roundMatch = /\/rounds\/(\d+)/.exec(url);
+        const roundNumber = roundMatch ? Number.parseInt(roundMatch[1]!, 10) : 1;
+        const parsed = new URL(url, 'http://localhost');
+        const group = parsed.searchParams.get('group') ? Number.parseInt(parsed.searchParams.get('group')!, 10) : 1;
+        const phase = parsed.searchParams.get('tournamentPhase') ? Number.parseInt(parsed.searchParams.get('tournamentPhase')!, 10) : 1;
+        const qual = parsed.searchParams.get('qualificationGroup') ? Number.parseInt(parsed.searchParams.get('qualificationGroup')!, 10) : 1;
+        return Promise.resolve(
+          okJson({
+            seasonNumber: SEASON,
+            event: 'type-cup-team',
+            title: 'Type Cup — team',
+            group,
+            roundNumber,
+            rulesVersion: 1,
+            payloadChecksum: `c${qual}-${group}-${roundNumber}-persisted`,
+            placements: makePlacements(32),
+            tournamentPhase: phase,
+            qualificationGroup: qual,
+          }),
+        );
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds`)) {
+        return Promise.resolve(okJson({ rounds: complete }));
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/team-standings`)) {
+        const parsed = new URL(url, 'http://localhost');
+        const phase = parsed.searchParams.get('tournamentPhase');
+        if (phase === '2') {
+          return Promise.resolve(
+            okJson({
+              isFinal: false,
+              groupsCompleted: 0,
+              teams: [
+                { teamName: 'Finalist-A', rank: null, scoreThousandths: 0 },
+                { teamName: 'Finalist-B', rank: null, scoreThousandths: 0 },
+              ],
+              members: [],
+            }),
+          );
+        }
+        return Promise.resolve(
+          okJson({
+            isFinal: false,
+            groupsCompleted: 0,
+            teams: [{ teamName: 'Goblin', rank: null, scoreThousandths: 101000 }],
+            members: [],
+          }),
+        );
+      }
+      if (url.includes(`/history/seasons/${SEASON}/events`)) {
+        return Promise.resolve(
+          okJson({
+            events: [
+              {
+                event: 'type-cup-team',
+                title: 'Type Cup — team',
+                roundsPlayed: complete.length,
+                totalRounds: 128,
+                groupCount: 4,
+                roundsPerGroup: 8,
+                isComplete: false,
+              },
+            ],
+          }),
+        );
+      }
+      if (url.includes('/cups/type/tournament')) {
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          json: () => Promise.resolve({}),
+          text: () => Promise.resolve('Not Found'),
+        });
+      }
+      if (url.includes('/cups/type/draw')) {
+        return Promise.resolve(
+          okJson({
+            saveId: SAVE,
+            sourceSeasonNumber: SEASON,
+            sourceSeasonId: 7,
+            rulesVersion: 1,
+            tournamentFormatVersion: 2,
+            isDirectFinal: false,
+            teamCount: 96,
+            qualificationGroupCount: 3,
+            groupSizes: [32, 32, 32],
+            finalPlacesPerGroup: [10, 10, 10],
+            drawChecksum: 'draw',
+            rngBeforeState: 1,
+            rngBeforeStream: 2,
+            rngAfterState: 3,
+            rngAfterStream: 4,
+            groups: [
+              { qualificationGroup: 1, groupSize: 32, finalPlaces: 10, creatureTypes: ['Goblin'] },
+              { qualificationGroup: 2, groupSize: 32, finalPlaces: 10, creatureTypes: ['Dragon'] },
+              { qualificationGroup: 3, groupSize: 32, finalPlaces: 10, creatureTypes: ['Faerie'] },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(okJson({}));
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          saveId: SAVE,
+          event: 'type-cup-team',
+          season: SEASON,
+          progress: {
+            event: 'type-cup-team',
+            sourceSeasonNumber: SEASON,
+            roundsPlayed: complete.length,
+            totalRounds: 128,
+            groupCount: 4,
+            roundsPerGroup: 8,
+            group: null,
+            roundInGroup: null,
+            tournamentPhase: 2,
+            qualificationGroup: 0,
+            qualificationGroupCount: 3,
+            tournamentStage: 'Final',
+          },
+          urlGroup: null,
+          urlRound: null,
+          urlTournamentPhase: 2,
+          urlQualificationGroup: 0,
+          onSelectRound: () => undefined,
+          onMutated: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Type Cup Final'), 'pending Final workspace heading');
+    assert.ok(text.includes('Final standings'), 'pending Final shows its own standings, not qual totals');
+    assert.ok(text.includes('Finalist-A') && text.includes('Finalist-B'), 'zeroed finalist roster renders');
+    assert.ok(text.includes('0.000'), 'finalists start at zero');
+    assert.ok(text.includes('starting at zero'), 'fresh-start disclosure');
+    assert.ok(!text.includes('101.000'), 'no unscoped qualification totals leak into the Final');
+    assert.ok(
+      log.gets.some((u) => u.includes('team-standings') && u.includes('tournamentPhase=2')),
+      'pending Final fetches its stage-scoped roster',
+    );
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
 });

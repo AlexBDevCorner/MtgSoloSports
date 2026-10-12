@@ -181,6 +181,61 @@ public sealed class TypeCupStageIdentityTests
     }
 
     [Fact]
+    public async Task TeamStandings_PendingFinal_ReturnsZeroedFinalistsOnceQualsComplete()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            Guid saveId = await SetupTournamentAsync(store, TeamCount, 79411UL, 79412UL);
+            PlayTypeCupTeamRoundHandler step = new(store);
+            GetHistoryEventTeamStandingsHandler standings = new(store);
+
+            // Partial quals: only Group 1 complete (32 rounds). Final has no
+            // roster yet, so the stage-scoped pending Final stays empty and the
+            // UI keeps its pending message instead of unscoped totals.
+            for (int i = 0; i < 32; i++)
+            {
+                await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+            }
+
+            HistoryEventTeamStandingsResponse partial =
+                await standings.HandleAsync(saveId, 2, "type-cup-team", cancellationToken: CancellationToken.None, tournamentPhase: 2, qualificationGroup: 0);
+            partial.IsFinal.ShouldBeFalse();
+            partial.Teams.Count.ShouldBe(0);
+
+            // Complete every qualification group (96 rounds) but do not start
+            // the Final. The pending Final must now expose the 32 finalists at
+            // zero with a finalist-only member scope.
+            for (int i = 32; i < 96; i++)
+            {
+                await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+            }
+
+            HistoryEventTeamStandingsResponse pending =
+                await standings.HandleAsync(saveId, 2, "type-cup-team", cancellationToken: CancellationToken.None, tournamentPhase: 2, qualificationGroup: 0);
+            pending.IsFinal.ShouldBeFalse();
+            pending.Teams.Count.ShouldBe(32);
+            pending.Teams.ShouldAllBe(t => t.ScoreThousandths == 0);
+            pending.Members.Count.ShouldBe(32 * 4);
+            HashSet<string> pendingSet = pending.Teams.Select(t => t.TeamName).ToHashSet(StringComparer.Ordinal);
+            pending.Members.ShouldAllBe(m => pendingSet.Contains(m.TeamName));
+
+            // Starting the Final must not change the roster: the first Final
+            // round's union and the persisted Final standings agree with the
+            // pending derivation.
+            await step.HandleAsync(saveId, sourceSeasonNumber: 2);
+            HistoryEventTeamStandingsResponse afterStart =
+                await standings.HandleAsync(saveId, 2, "type-cup-team", cancellationToken: CancellationToken.None, tournamentPhase: 2, qualificationGroup: 0);
+            afterStart.Teams.Count.ShouldBe(32);
+            afterStart.Teams.Select(t => t.TeamName).ToHashSet(StringComparer.Ordinal).SetEquals(pendingSet).ShouldBeTrue();
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task TeamStandings_LegacyAmbiguousBefore_RequiresStage()
     {
         var (store, root) = CreateStore();

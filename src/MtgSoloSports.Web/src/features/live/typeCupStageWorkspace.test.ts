@@ -63,6 +63,28 @@ describe('MSS-078 Type Cup Live stage workspace', () => {
     assert.ok(view.includes('setBaseline(null);'), 'pending selection drops the old baseline');
   });
 
+  it('never leaves a stale reveal while switching stages or on fetch failure', () => {
+    assert.ok(
+      view.includes('Clear upfront') || view.includes('switching stages must never display'),
+      'stage switch clears before the new fetch resolves',
+    );
+    assert.ok(
+      view.includes('any fetch failure must leave no stale reveal'),
+      'non-404 failures also clear the previous stage reveal',
+    );
+    assert.ok(!view.includes('failure.status === 404'), 'no 404-only clear that would retain stale reveals');
+  });
+
+  it('shows a stage-scoped starting field for a pending Final with complete quals', () => {
+    assert.ok(view.includes('pendingStageStandings'), 'pending stage fetches its own scoped standings');
+    assert.ok(view.includes('starting at zero'), 'pending Final discloses fresh zero scores');
+    assert.ok(view.includes('finalists'), 'pending Final names its finalist roster');
+    assert.ok(
+      view.includes('fetchEventTeamStandings(saveId, season, event, controller.signal, undefined, stage)'),
+      'pending roster uses the stage-scoped endpoint without a before cursor',
+    );
+  });
+
   it('never shows unscoped tournament totals inside a Type Cup stage workspace', () => {
     assert.ok(
       view.includes('(!isTypeTournamentLive || showFinal)'),

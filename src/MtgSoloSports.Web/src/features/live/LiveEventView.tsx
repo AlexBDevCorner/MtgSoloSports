@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
@@ -113,6 +113,15 @@ export function LiveEventView({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MSS-078 correction: stage-scoped starting field for a pending stage with
+  // no persisted round (e.g. Final finalists at zero before Round 1).
+  // Tagged with the stage key so a stale stage never renders under a new
+  // heading. Null while the stage has rounds (reveal/baseline owns standings)
+  // or while the pending roster is still loading/empty.
+  const [pendingStageStandings, setPendingStageStandings] = useState<{
+    stageKey: string;
+    standings: EventTeamStandings;
+  } | null>(null);
   const [revision, setRevision] = useState(0);
   // MSS-078: two-step confirmation for the tournament-wide fast-forward so a
   // single click can never silently finish every leftover group and the Final.
@@ -356,19 +365,49 @@ export function LiveEventView({
     ) {
       return;
     }
+    // MSS-078 correction: switching stages must never display the previous
+    // stage's persisted reveal under the new heading, even while the new
+    // fetch is pending. Clear upfront; the catch below also clears on any
+    // failure (404 or otherwise) so a stale reveal can never linger.
+    setRoundView(null);
+    setBaseline(null);
+    setRevealed([]);
     const controller = new AbortController();
     setError(null);
+    const wantedRound = selected.round;
+    const wantedGroup = selected.group;
+    const wantedPhase = selectedStage?.tournamentPhase ?? null;
+    const wantedQual = selectedStage?.qualificationGroup ?? null;
     fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal, selectedStage)
-      .then(setRoundView)
-      .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
-          setError(apiErrorMessage(failure));
-          // MSS-079 correction: an explicit but unpersisted stage+round must not
-          // keep showing the previous stage's replay alongside the error.
-          if (failure instanceof ApiError && failure.status === 404) {
-            setRoundView(null);
-          }
+      .then((view) => {
+        if (controller.signal.aborted) {
+          return;
         }
+        // Guard against a late response for a previously selected stage
+        // overwriting the freshly cleared workspace.
+        if (
+          view.roundNumber !== wantedRound ||
+          (view.group ?? null) !== (wantedGroup ?? null) ||
+          (view.tournamentPhase ?? null) !== wantedPhase ||
+          (view.qualificationGroup ?? null) !== wantedQual
+        ) {
+          return;
+        }
+        setRoundView(view);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        if (controller.signal.aborted) {
+          return;
+        }
+        setError(apiErrorMessage(failure));
+        // MSS-078 correction: any fetch failure must leave no stale reveal.
+        // The workspace was already cleared upfront; ensure it stays cleared.
+        setRoundView(null);
+        setBaseline(null);
+        setRevealed([]);
       });
     return () => controller.abort();
     // roundView is the cache this effect fills; re-running on it would loop.
@@ -388,19 +427,59 @@ export function LiveEventView({
       shownPhase !== null && shownPhase !== undefined && shownQual !== null && shownQual !== undefined
         ? { tournamentPhase: shownPhase, qualificationGroup: shownQual }
         : null;
+    const wantedGroup = shownGroup;
+    const wantedRound = shownRound;
+    const wantedPhase = stage?.tournamentPhase ?? null;
+    const wantedQual = stage?.qualificationGroup ?? null;
     fetchEventTeamStandings(saveId, season, event, controller.signal, { group: shownGroup, round: shownRound }, stage)
-      .then((standings) =>
+      .then((standings) => {
+        if (controller.signal.aborted) {
+          return;
+        }
         setBaseline({
-          group: shownGroup,
-          round: shownRound,
-          tournamentPhase: stage?.tournamentPhase ?? null,
-          qualificationGroup: stage?.qualificationGroup ?? null,
+          group: wantedGroup,
+          round: wantedRound,
+          tournamentPhase: wantedPhase,
+          qualificationGroup: wantedQual,
           standings,
-        }),
-      )
+        });
+      })
       .catch(() => undefined);
     return () => controller.abort();
   }, [saveId, season, event, shownGroup, shownRound, shownPhase, shownQual]);
+
+  // MSS-078 correction: a pending stage with no persisted round still needs
+  // its stage-scoped starting field (Final finalists at zero once quals are
+  // complete). Fetch the stage roster without a before-round cursor; never
+  // fall back to unscoped tournament-wide totals.
+  const pendingStage: TypeCupStageKey | null =
+    isTypeTournamentLive && selectedTypeStage && !selected ? selectedTypeStage : null;
+  const pendingStageKey = pendingStage ? `${pendingStage.tournamentPhase}/${pendingStage.qualificationGroup}` : null;
+  useEffect(() => {
+    if (!pendingStage || !pendingStageKey) {
+      setPendingStageStandings(null);
+      return;
+    }
+    const controller = new AbortController();
+    const key = pendingStageKey;
+    const stage = { tournamentPhase: pendingStage.tournamentPhase, qualificationGroup: pendingStage.qualificationGroup };
+    fetchEventTeamStandings(saveId, season, event, controller.signal, undefined, stage)
+      .then((standings) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPendingStageStandings({ stageKey: key, standings });
+      })
+      .catch(() => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setPendingStageStandings(null);
+      });
+    return () => controller.abort();
+    // pendingStage object identity changes per render; depend on its key parts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveId, season, event, pendingStageKey, pendingStage?.tournamentPhase, pendingStage?.qualificationGroup]);
 
   const refreshAfter = useCallback(() => {
     setRevision((value) => value + 1);
@@ -1046,6 +1125,39 @@ export function LiveEventView({
                 </tbody>
               </table>
             ) : null
+          ) : isTypeTournamentLive &&
+            !roundView &&
+            pendingStage &&
+            selectedStageInfo &&
+            pendingStageStandings &&
+            pendingStageStandings.stageKey === pendingStageKey &&
+            pendingStageStandings.standings.teams.length > 0 ? (
+            <table className="mini-table">
+              <caption className="reveal-subhead">
+                {selectedStageInfo.kind === 'final' ? 'Final standings' : `Team standings in ${selectedStageInfo.label}`}
+                <span className="muted small live-team-caption">
+                  {selectedStageInfo.kind === 'final'
+                    ? `${selectedStageInfo.label} · starting at zero · ${pendingStageStandings.standings.teams.length} finalists`
+                    : `${selectedStageInfo.label} · starting at zero`}
+                </span>
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Team</th>
+                  <th scope="col" className="numeric">
+                    Points
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingStageStandings.standings.teams.map((row) => (
+                  <tr key={row.teamName}>
+                    <td>{row.teamName}</td>
+                    <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : team && teams && (!isTypeTournamentLive || showFinal) ? (
             <table className="mini-table">
               <caption className="reveal-subhead">{teams.isFinal ? 'Team standings' : 'Team standings so far'}</caption>
