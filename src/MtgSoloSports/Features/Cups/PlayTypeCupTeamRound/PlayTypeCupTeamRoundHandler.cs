@@ -99,7 +99,9 @@ public sealed class PlayTypeCupTeamRoundHandler
             new Pcg32State(payload.RngBeforeState, payload.RngBeforeStream),
             new Pcg32State(payload.RngAfterState, payload.RngAfterStream),
             payload.Placements,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            stage.Phase,
+            stage.QualificationGroup).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return new PlayTypeCupTeamRoundResponse(
             view,

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
@@ -43,11 +44,56 @@ public sealed class ListHistoryEventsHandler
             PostseasonEvents.EventShape shape = string.Equals(key, PostseasonEvents.Qualifier, StringComparison.Ordinal)
                 ? new PostseasonEvents.EventShape(1, rules.QualifierRounds)
                 : PostseasonEvents.Shape(key, rules);
+            int totalRounds = shape.TotalRounds;
+            if (string.Equals(key, PostseasonEvents.TypeCupTeam, StringComparison.Ordinal))
+            {
+                totalRounds = await TypeCupTotalRoundsAsync(context, season, rules, totalRounds, cancellationToken).ConfigureAwait(false);
+            }
+
             bool complete = await HistoryEventRows.IsCompleteAsync(context, season, key, cancellationToken).ConfigureAwait(false);
             events.Add(new HistoryEventSummary(
-                key, PostseasonEvents.Title(key), rows.Count, shape.TotalRounds, shape.GroupCount, shape.RoundsPerGroup, complete));
+                key, PostseasonEvents.Title(key), rows.Count, totalRounds, shape.GroupCount, shape.RoundsPerGroup, complete));
         }
 
         return new ListHistoryEventsResponse(saveId, seasonNumber, events);
+    }
+
+    internal static async Task<int> TypeCupTotalRoundsAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        RulesV1 rules,
+        int fallback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonId == season.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (selection.Count == 0)
+            {
+                return fallback;
+            }
+
+            int teamCount = selection.Count / rules.TypeCupMinTeamSize;
+            List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonId == season.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            List<string> selectedTypes = selection
+                .Select(e => e.CreatureType)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(t => t, StringComparer.Ordinal)
+                .ToList();
+            var plan = Cups.RunTypeCupTeam.TypeCupTournamentPlan.BuildFromSelection(teamCount, selectedTypes, draws, rules);
+            return plan.TotalRounds;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is ArgumentException || ex is ArgumentOutOfRangeException || ex is Cups.RunTypeCupTeam.RunTypeCupTeamConflictException)
+        {
+            return fallback;
+        }
     }
 }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.History.GetEventRound;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -14,7 +15,10 @@ namespace MtgSoloSports.Features.History.GetEventTeamStandings;
 /// display projection summing each team's stored round points over every round
 /// played so far (no ranking, no tie-break, no RNG). With a before-round cursor
 /// the projection covers only the rounds played ahead of that round, so a round
-/// reveal can add its own stored points on top. Read-only; never resimulates.
+/// reveal can add its own stored points on top. Type Cup tournaments are
+/// stage-scoped: a qualification group's baseline never includes another
+/// group's or the Final's points, and Final baselines start fresh at zero.
+/// Read-only; never resimulates.
 /// </summary>
 public sealed class GetHistoryEventTeamStandingsHandler
 {
@@ -31,7 +35,9 @@ public sealed class GetHistoryEventTeamStandingsHandler
         string eventKey,
         int? beforeGroup = null,
         int? beforeRound = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? tournamentPhase = null,
+        int? qualificationGroup = null)
     {
         HistoryEventRows.ValidateRequest(saveId, seasonNumber, eventKey);
         if (!string.Equals(eventKey, PostseasonEvents.ColorCupTeam, StringComparison.Ordinal)
@@ -40,27 +46,50 @@ public sealed class GetHistoryEventTeamStandingsHandler
             throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no team standings.", nameof(eventKey));
         }
 
+        bool isTypeCup = string.Equals(eventKey, PostseasonEvents.TypeCupTeam, StringComparison.Ordinal);
+        if (!isTypeCup && (tournamentPhase is not null || qualificationGroup is not null))
+        {
+            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no tournament stages.", nameof(tournamentPhase));
+        }
+
         using SaveDbContext context = _store.OpenDbContext(saveId);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         PostseasonEvents.EventShape shape = PostseasonEvents.Shape(eventKey, rules);
         SeasonEntity season = await HistoryEventRows.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         bool color = string.Equals(eventKey, PostseasonEvents.ColorCupTeam, StringComparison.Ordinal);
+        if (isTypeCup)
+        {
+            GetHistoryEventRoundHandler.ValidateTypeCupStage(tournamentPhase, qualificationGroup);
+        }
+
         (int Group, int Round)? before = ValidateBefore(beforeGroup, beforeRound, shape);
+        if (isTypeCup && before is not null && tournamentPhase is null)
+        {
+            await RequireUnambiguousTypeCupBeforeAsync(context, season, eventKey, before.Value, cancellationToken).ConfigureAwait(false);
+        }
+
         Dictionary<int, string> teamByAthlete = await LoadTeamByAthleteAsync(context, season, eventKey, color, cancellationToken).ConfigureAwait(false);
         List<HistoryEventTeamMember> members = teamByAthlete
             .OrderBy(pair => pair.Key)
             .Select(pair => new HistoryEventTeamMember(pair.Key, pair.Value))
             .ToList();
 
-        if (before is null
+        if (before is null && tournamentPhase is null
             && await HistoryEventRows.IsCompleteAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false))
         {
             List<HistoryEventTeamRow> final = await LoadFinalAsync(context, season, color, cancellationToken).ConfigureAwait(false);
             return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: true, shape.GroupCount, final, members);
         }
 
+        if (before is null && tournamentPhase is not null)
+        {
+            List<HistoryEventTeamRow> stagedFinal = await LoadStageProvisionalAsync(context, season, eventKey, shape, teamByAthlete, tournamentPhase.Value, qualificationGroup!.Value, before: null, cancellationToken).ConfigureAwait(false);
+            int stagedGroups = await CountStageGroupsAsync(context, season, eventKey, shape, tournamentPhase.Value, qualificationGroup!.Value, before: null, cancellationToken).ConfigureAwait(false);
+            return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: false, stagedGroups, stagedFinal, members);
+        }
+
         (int groupsCompleted, List<HistoryEventTeamRow> provisional) =
-            await ProjectProvisionalAsync(context, season, eventKey, shape, teamByAthlete, before, cancellationToken).ConfigureAwait(false);
+            await ProjectProvisionalAsync(context, season, eventKey, shape, teamByAthlete, before, cancellationToken, tournamentPhase, qualificationGroup).ConfigureAwait(false);
         return new HistoryEventTeamStandingsResponse(saveId, seasonNumber, eventKey, IsFinal: false, groupsCompleted, provisional, members);
     }
 
@@ -129,6 +158,94 @@ public sealed class GetHistoryEventTeamStandingsHandler
         return teamByAthlete;
     }
 
+    internal static async Task RequireUnambiguousTypeCupBeforeAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        string eventKey,
+        (int Group, int Round) before,
+        CancellationToken cancellationToken)
+    {
+        List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        int stages = rows
+            .Where(r => r.Group == before.Group && r.Round == before.Round)
+            .Select(r => (r.TournamentPhase, r.QualificationGroup))
+            .Distinct()
+            .Count();
+        if (stages > 1)
+        {
+            throw new ArgumentException(
+                $"Type Cup group {before.Group} round {before.Round} exists in {stages} tournament stages; specify tournamentPhase and qualificationGroup.",
+                nameof(before));
+        }
+    }
+
+    internal static async Task<int> CountStageGroupsAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        string eventKey,
+        PostseasonEvents.EventShape shape,
+        int tournamentPhase,
+        int qualificationGroup,
+        (int Group, int Round)? before,
+        CancellationToken cancellationToken)
+    {
+        List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        rows = rows
+            .Where(r => r.TournamentPhase == tournamentPhase && r.QualificationGroup == qualificationGroup)
+            .ToList();
+        if (before is (int beforeGroup, int beforeRound))
+        {
+            rows = rows
+                .Where(row => row.Group < beforeGroup || (row.Group == beforeGroup && row.Round < beforeRound))
+                .ToList();
+        }
+
+        return rows.Count / shape.RoundsPerGroup;
+    }
+
+    internal static async Task<List<HistoryEventTeamRow>> LoadStageProvisionalAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        string eventKey,
+        PostseasonEvents.EventShape shape,
+        Dictionary<int, string> teamByAthlete,
+        int tournamentPhase,
+        int qualificationGroup,
+        (int Group, int Round)? before,
+        CancellationToken cancellationToken)
+    {
+        List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        rows = rows
+            .Where(r => r.TournamentPhase == tournamentPhase && r.QualificationGroup == qualificationGroup)
+            .ToList();
+        if (before is (int beforeGroup, int beforeRound))
+        {
+            rows = rows
+                .Where(row => row.Group < beforeGroup || (row.Group == beforeGroup && row.Round < beforeRound))
+                .ToList();
+        }
+
+        Dictionary<string, long> totals = teamByAthlete.Values.Distinct(StringComparer.Ordinal).ToDictionary(team => team, _ => 0L, StringComparer.Ordinal);
+        foreach (HistoryEventRows.StoredRound row in rows)
+        {
+            foreach (RoundPayloadEntry placement in HistoryEventRows.DecodePlacements(eventKey, row.PayloadJson))
+            {
+                if (!teamByAthlete.TryGetValue(placement.AthleteId, out string? team))
+                {
+                    throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} round references athlete {placement.AthleteId} outside the selected field.");
+                }
+
+                totals[team] += placement.FinalThousandths;
+            }
+        }
+
+        return totals
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new HistoryEventTeamRow(pair.Key, Rank: null, checked((int)pair.Value)))
+            .ToList();
+    }
+
     /// <summary>Sums each team's stored round points over every round played so far, or ahead of <paramref name="before"/> (display only).</summary>
     internal static async Task<(int GroupsCompleted, List<HistoryEventTeamRow> Teams)> ProjectProvisionalAsync(
         SaveDbContext context,
@@ -137,9 +254,19 @@ public sealed class GetHistoryEventTeamStandingsHandler
         PostseasonEvents.EventShape shape,
         Dictionary<int, string> teamByAthlete,
         (int Group, int Round)? before,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? tournamentPhase = null,
+        int? qualificationGroup = null)
     {
         List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        bool isTypeCup = string.Equals(eventKey, PostseasonEvents.TypeCupTeam, StringComparison.Ordinal);
+        if (isTypeCup && tournamentPhase is not null && qualificationGroup is not null)
+        {
+            rows = rows
+                .Where(r => r.TournamentPhase == tournamentPhase && r.QualificationGroup == qualificationGroup)
+                .ToList();
+        }
+
         if (before is (int beforeGroup, int beforeRound))
         {
             rows = rows

@@ -19,4 +19,6 @@ public sealed record EventRoundView(
     ulong RngBeforeStream,
     ulong RngAfterState,
     ulong RngAfterStream,
-    IReadOnlyList<HistoryRoundPlacement> Placements);
+    IReadOnlyList<HistoryRoundPlacement> Placements,
+    int? TournamentPhase = null,
+    int? QualificationGroup = null);

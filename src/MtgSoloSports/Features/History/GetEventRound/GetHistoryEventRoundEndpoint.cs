@@ -14,13 +14,15 @@ public static class GetHistoryEventRoundEndpoint
             string eventKey,
             int round,
             int? group,
+            int? tournamentPhase,
+            int? qualificationGroup,
             GetHistoryEventRoundHandler handler,
             CancellationToken cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(handler);
             try
             {
-                EventRoundView response = await handler.HandleAsync(saveId, seasonNumber, eventKey, round, group, cancellationToken).ConfigureAwait(false);
+                EventRoundView response = await handler.HandleAsync(saveId, seasonNumber, eventKey, round, group, cancellationToken, tournamentPhase, qualificationGroup).ConfigureAwait(false);
                 return Results.Ok(response);
             }
             catch (ArgumentException ex)
