@@ -45,7 +45,9 @@ describe('MSS-078 Type Cup Live stage workspace', () => {
     assert.ok(view.includes('Finish entire Type Cup'), 'tournament-wide action is explicitly labelled');
     assert.ok(view.includes('Finish the entire Type Cup?'), 'wider action needs confirmation');
     assert.ok(view.includes('Next Round · ${'), 'primary action names its canonical stage');
-    assert.ok(view.includes('playEventRound(saveId, event)'), 'stage finish reuses the canonical step endpoint');
+    assert.ok(view.includes('finishTypeCupTeamStage(saveId, canonicalSnapshot)'), 'stage finish uses the atomic stage-scoped endpoint with its snapshot');
+    assert.ok(view.includes('stage changed'), 'stale stage finish refreshes instead of crossing the boundary');
+    assert.ok(!view.includes('for (let i = 0; i < remaining; i += 1)'), 'stage finish never loops unscoped single-step mutations');
     assert.ok(!/new Random|Random\.Shared|Math\.random/.test(view), 'never simulates here');
   });
 

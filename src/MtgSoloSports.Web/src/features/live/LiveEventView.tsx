@@ -7,6 +7,7 @@ import {
   fetchEventRounds,
   fetchEventTeamStandings,
   fetchSeasonEvents,
+  finishTypeCupTeamStage,
   playEventRound,
   runEventRemaining,
   type EventProgress,
@@ -535,10 +536,11 @@ export function LiveEventView({
     }
   }
 
-  // MSS-078: stage-scoped fast-forward. Plays the remaining rounds of the
-  // canonical stage only (never the next group/Final) by reusing the tested
-  // single-step endpoint in canonical order. Resume-safe: each round persists
-  // before the next is played; a failure stops with prior rounds intact.
+  // MSS-078 correction: stage-scoped fast-forward via an atomic backend
+  // operation. The expected canonical stage travels with the request; the
+  // backend snapshots the canonical stage under the per-save lock and rejects
+  // a stale stage with 409 before persisting anything, so another tab can
+  // never push this button into the next group/Final.
   async function handleFinishStage(): Promise<void> {
     if (busy || !isTypeTournamentLive || !canonicalStage) {
       return;
@@ -555,43 +557,22 @@ export function LiveEventView({
     setBusy(true);
     setError(null);
     setConfirmEntire(false);
+    setStageFinishing(remaining);
     try {
-      let last: Awaited<ReturnType<typeof playEventRound>> | null = null;
-      for (let i = 0; i < remaining; i += 1) {
-        setStageFinishing(i + 1);
-        const result = await playEventRound(saveId, event);
-        last = result;
-        if (result.tournamentStage) {
-          setLastStage(result.tournamentStage);
-        }
-        const resultStage =
-          result.tournamentPhase !== null && result.tournamentPhase !== undefined &&
-          result.qualificationGroup !== null && result.qualificationGroup !== undefined
-            ? { tournamentPhase: result.tournamentPhase, qualificationGroup: result.qualificationGroup }
-            : (result.round.tournamentPhase !== null && result.round.tournamentPhase !== undefined &&
-                result.round.qualificationGroup !== null && result.round.qualificationGroup !== undefined
-                ? { tournamentPhase: result.round.tournamentPhase, qualificationGroup: result.round.qualificationGroup }
-                : null);
-        // Stop at the stage boundary: never play the next group/Final here.
-        if (resultStage && !stageKeyEquals(resultStage, canonicalSnapshot)) {
-          break;
-        }
-        if (result.isComplete) {
-          break;
-        }
+      const result = await finishTypeCupTeamStage(saveId, canonicalSnapshot);
+      if (result.tournamentStage) {
+        setLastStage(result.tournamentStage);
       }
-      if (last) {
-        setRoundView(last.round);
-        const stage =
-          last.tournamentPhase !== null && last.tournamentPhase !== undefined &&
-          last.qualificationGroup !== null && last.qualificationGroup !== undefined
-            ? { tournamentPhase: last.tournamentPhase, qualificationGroup: last.qualificationGroup }
-            : (last.round.tournamentPhase !== null && last.round.tournamentPhase !== undefined &&
-                last.round.qualificationGroup !== null && last.round.qualificationGroup !== undefined
-                ? { tournamentPhase: last.round.tournamentPhase, qualificationGroup: last.round.qualificationGroup }
-                : null);
-        onSelectRound(last.round.group, last.round.roundNumber, stage);
-      }
+      setRoundView(result.round);
+      const stage =
+        result.tournamentPhase !== null && result.tournamentPhase !== undefined &&
+        result.qualificationGroup !== null && result.qualificationGroup !== undefined
+          ? { tournamentPhase: result.tournamentPhase, qualificationGroup: result.qualificationGroup }
+          : (result.round.tournamentPhase !== null && result.round.tournamentPhase !== undefined &&
+              result.round.qualificationGroup !== null && result.round.qualificationGroup !== undefined
+              ? { tournamentPhase: result.round.tournamentPhase, qualificationGroup: result.round.qualificationGroup }
+              : null);
+      onSelectRound(result.round.group, result.round.roundNumber, stage);
       refreshAfter();
     } catch (failure) {
       const message = apiErrorMessage(failure);
@@ -599,6 +580,10 @@ export function LiveEventView({
         setLastStage(null);
         setRoundView(null);
         onSelectRound(null, null, null);
+        refreshAfter();
+      } else if (message.toLowerCase().includes('stage changed')) {
+        // Stale Finish click: another tab advanced the canonical stage. Refresh
+        // so the UI follows the new canonical stage instead of persisting there.
         refreshAfter();
       }
       setError(friendlyCompleteMessage(message));
