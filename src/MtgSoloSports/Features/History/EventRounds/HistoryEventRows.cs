@@ -18,7 +18,7 @@ namespace MtgSoloSports.Features.History.EventRounds;
 /// </summary>
 internal static class HistoryEventRows
 {
-    internal sealed record StoredRound(int? Group, int Round, int RulesVersion, string Checksum, Pcg32State Before, Pcg32State After, string PayloadJson);
+    internal sealed record StoredRound(int? Group, int Round, int? TournamentPhase, int? QualificationGroup, int RulesVersion, string Checksum, Pcg32State Before, Pcg32State After, string PayloadJson);
 
     internal static void ValidateRequest(Guid saveId, int seasonNumber, string eventKey)
     {
@@ -66,28 +66,28 @@ internal static class HistoryEventRows
                             && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
                         .OrderBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
-                    .Select(e => Stored(null, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
+                    .Select(e => Stored(null, e.RoundNumber, null, null, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
                     .ToList();
             case PostseasonEvents.ColorCupIndividual:
                 return (await context.ColorCupIndividualRounds.AsNoTracking()
                         .Where(e => e.SourceSeasonId == season.Id)
                         .OrderBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
-                    .Select(e => Stored(null, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
+                    .Select(e => Stored(null, e.RoundNumber, null, null, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
                     .ToList();
             case PostseasonEvents.ColorCupTeam:
                 return (await context.ColorCupTeamRounds.AsNoTracking()
                         .Where(e => e.SourceSeasonId == season.Id)
                         .OrderBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
-                    .Select(e => Stored(e.GroupNumber, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
+                    .Select(e => Stored(e.GroupNumber, e.RoundNumber, null, null, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
                     .ToList();
             default:
                 return (await context.TypeCupTeamRounds.AsNoTracking()
                         .Where(e => e.SourceSeasonId == season.Id)
                         .OrderBy(e => e.TournamentPhase).ThenBy(e => e.QualificationGroup).ThenBy(e => e.GroupNumber).ThenBy(e => e.RoundNumber)
                         .ToListAsync(cancellationToken).ConfigureAwait(false))
-                    .Select(e => Stored(e.GroupNumber, e.RoundNumber, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
+                    .Select(e => Stored(e.GroupNumber, e.RoundNumber, e.TournamentPhase, e.QualificationGroup, e.RulesVersion, e.PayloadChecksum, e.RngBeforeState, e.RngBeforeStream, e.RngAfterState, e.RngAfterStream, e.PayloadJson))
                     .ToList();
         }
     }
@@ -115,11 +115,13 @@ internal static class HistoryEventRows
     };
 
     private static StoredRound Stored(
-        int? group, int round, int rulesVersion, string checksum,
+        int? group, int round, int? tournamentPhase, int? qualificationGroup, int rulesVersion, string checksum,
         long beforeState, long beforeStream, long afterState, long afterStream, string payloadJson) =>
         new(
             group,
             round,
+            tournamentPhase,
+            qualificationGroup,
             rulesVersion,
             checksum,
             new Pcg32State(unchecked((ulong)beforeState), unchecked((ulong)beforeStream)),

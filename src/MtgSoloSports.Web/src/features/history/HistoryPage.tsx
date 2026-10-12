@@ -93,6 +93,8 @@ export interface HistorySelection {
   round: number | null;
   event: EventKey | null;
   group: number | null;
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
 }
 
 export function HistoryPage({
@@ -103,6 +105,8 @@ export function HistoryPage({
   urlRound,
   urlEvent,
   urlGroup,
+  urlTournamentPhase,
+  urlQualificationGroup,
   onHistoryChange,
 }: {
   saveId: string;
@@ -114,6 +118,9 @@ export function HistoryPage({
   /** Postseason event replay (`?event=&group=`); null shows league competitions. */
   urlEvent: EventKey | null;
   urlGroup: number | null;
+  /** MSS-079 Type Cup tournament stage for event replay. */
+  urlTournamentPhase?: number | null;
+  urlQualificationGroup?: number | null;
   onHistoryChange: (selection: HistorySelection) => void;
 }) {
   const [seasonNumber, setSeasonNumber] = useState<number | null>(urlSeason);
@@ -519,8 +526,19 @@ export function HistoryPage({
           event={urlEvent}
           urlGroup={urlGroup}
           urlRound={urlRound}
-          onChange={(group, round) =>
-            pushSelection({ season: seasonNumber, competition: null, stage: null, round, event: urlEvent, group })
+          urlTournamentPhase={urlTournamentPhase ?? null}
+          urlQualificationGroup={urlQualificationGroup ?? null}
+          onChange={(group, round, stage) =>
+            pushSelection({
+              season: seasonNumber,
+              competition: null,
+              stage: null,
+              round,
+              event: urlEvent,
+              group,
+              tournamentPhase: stage?.tournamentPhase ?? null,
+              qualificationGroup: stage?.qualificationGroup ?? null,
+            })
           }
         />
       ) : (

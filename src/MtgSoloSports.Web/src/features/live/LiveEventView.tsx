@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
@@ -34,6 +34,20 @@ function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
 }
 
+/** MSS-079: the backend rejects re-execution of a completed Cup with 409. */
+function isAlreadyCompleteMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('already been resolved') || normalized.includes('already complete');
+}
+
+/** MSS-079: never surface an internal exception for a completed Cup; point at replay. */
+function friendlyCompleteMessage(message: string): string {
+  if (isAlreadyCompleteMessage(message)) {
+    return `${message} The completed rounds stay replayable below; continue on the Dashboard for the next season.`;
+  }
+  return message;
+}
+
 /**
  * Live view of a postseason event played in rounds (qualifier and Cup
  * events). Each Next Round simulates exactly one round on the backend and
@@ -46,6 +60,8 @@ export function LiveEventView({
   progress,
   urlGroup,
   urlRound,
+  urlTournamentPhase,
+  urlQualificationGroup,
   onSelectRound,
   onMutated,
 }: {
@@ -56,8 +72,15 @@ export function LiveEventView({
   progress: EventProgress | null;
   urlGroup: number | null;
   urlRound: number | null;
+  /** MSS-079 Type Cup tournament stage from the URL; null keeps legacy URLs working. */
+  urlTournamentPhase?: number | null;
+  urlQualificationGroup?: number | null;
   /** Selects a played round in the URL; a null round follows the latest round. */
-  onSelectRound: (group: number | null, round: number | null) => void;
+  onSelectRound: (
+    group: number | null,
+    round: number | null,
+    stage?: { tournamentPhase: number; qualificationGroup: number } | null,
+  ) => void;
   onMutated: () => void;
 }) {
   const [summary, setSummary] = useState<SeasonEventSummary | null>(null);
@@ -68,7 +91,13 @@ export function LiveEventView({
   const [draw, setDraw] = useState<TypeCupDraw | null>(null);
   const [lastStage, setLastStage] = useState<string | null>(null);
   // Team totals before the shown round, tagged with the round they belong to.
-  const [baseline, setBaseline] = useState<{ group: number; round: number; standings: EventTeamStandings } | null>(null);
+  const [baseline, setBaseline] = useState<{
+    group: number;
+    round: number;
+    tournamentPhase: number | null;
+    qualificationGroup: number | null;
+    standings: EventTeamStandings;
+  } | null>(null);
   const [revealed, setRevealed] = useState<readonly RevealPlacement[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -121,28 +150,103 @@ export function LiveEventView({
     return () => controller.abort();
   }, [saveId, season, event, team, revision]);
 
+  const isTypeCupEvent = event === 'type-cup-team';
+  const urlStage =
+    urlTournamentPhase !== null &&
+    urlTournamentPhase !== undefined &&
+    urlQualificationGroup !== null &&
+    urlQualificationGroup !== undefined
+      ? { tournamentPhase: urlTournamentPhase, qualificationGroup: urlQualificationGroup }
+      : null;
+
   const selected: PlayedRound | null = useMemo(() => {
     if (rounds.length === 0) {
       return null;
     }
     const wantedGroup = team ? urlGroup : null;
-    const match = urlRound !== null ? rounds.find((r) => r.round === urlRound && r.group === wantedGroup) : undefined;
-    return match ?? rounds[rounds.length - 1]!;
-  }, [rounds, urlRound, urlGroup, team]);
+    if (urlRound !== null) {
+      if (isTypeCupEvent && urlStage) {
+        const staged = rounds.find(
+          (r) =>
+            r.round === urlRound &&
+            r.group === wantedGroup &&
+            (r.tournamentPhase ?? null) === urlStage.tournamentPhase &&
+            (r.qualificationGroup ?? null) === urlStage.qualificationGroup,
+        );
+        if (staged) {
+          return staged;
+        }
+        // MSS-079 correction: an explicit stage+round that was never persisted
+        // must stay missing so the fetch surfaces a 404. Only genuinely
+        // stage-less legacy URLs may fall back; never substitute another
+        // stage for an explicit stage URL.
+        return {
+          group: wantedGroup,
+          round: urlRound,
+          tournamentPhase: urlStage.tournamentPhase,
+          qualificationGroup: urlStage.qualificationGroup,
+        };
+      }
+      if (!isTypeCupEvent) {
+        const match = rounds.find((r) => r.round === urlRound && r.group === wantedGroup);
+        if (match) {
+          return match;
+        }
+      } else {
+        // Legacy Type Cup URL without a stage: an exact single match wins;
+        // otherwise follow the latest persisted stage so old links never
+        // silently replay the wrong qualification group (the fetch surfaces
+        // the ambiguity as a clear error when nothing is uniquely addressable).
+        const candidates = rounds.filter((r) => r.round === urlRound && r.group === wantedGroup);
+        if (candidates.length === 1) {
+          return candidates[0]!;
+        }
+        if (candidates.length > 1) {
+          return candidates[candidates.length - 1]!;
+        }
+      }
+      const fallback = rounds.find((r) => r.round === urlRound && r.group === wantedGroup);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    return rounds[rounds.length - 1]!;
+    // urlStage is derived from urlTournamentPhase/urlQualificationGroup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rounds, urlRound, urlGroup, team, isTypeCupEvent, urlTournamentPhase, urlQualificationGroup]);
 
   useEffect(() => {
     if (!selected) {
       return;
     }
-    if (roundView && roundView.roundNumber === selected.round && roundView.group === selected.group) {
+    const selectedStage =
+      selected.tournamentPhase !== null &&
+      selected.tournamentPhase !== undefined &&
+      selected.qualificationGroup !== null &&
+      selected.qualificationGroup !== undefined
+        ? { tournamentPhase: selected.tournamentPhase, qualificationGroup: selected.qualificationGroup }
+        : (urlStage ?? null);
+    if (
+      roundView &&
+      roundView.roundNumber === selected.round &&
+      roundView.group === selected.group &&
+      (roundView.tournamentPhase ?? null) === (selectedStage?.tournamentPhase ?? null) &&
+      (roundView.qualificationGroup ?? null) === (selectedStage?.qualificationGroup ?? null)
+    ) {
       return;
     }
     const controller = new AbortController();
-    fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal)
+    setError(null);
+    fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal, selectedStage)
       .then(setRoundView)
       .catch((failure: unknown) => {
         if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
           setError(apiErrorMessage(failure));
+          // MSS-079 correction: an explicit but unpersisted stage+round must not
+          // keep showing the previous stage's replay alongside the error.
+          if (failure instanceof ApiError && failure.status === 404) {
+            setRoundView(null);
+          }
         }
       });
     return () => controller.abort();
@@ -152,16 +256,30 @@ export function LiveEventView({
 
   const shownGroup = team ? (roundView?.group ?? null) : null;
   const shownRound = team ? (roundView?.roundNumber ?? null) : null;
+  const shownPhase = roundView?.tournamentPhase ?? null;
+  const shownQual = roundView?.qualificationGroup ?? null;
   useEffect(() => {
     if (shownGroup === null || shownRound === null) {
       return;
     }
     const controller = new AbortController();
-    fetchEventTeamStandings(saveId, season, event, controller.signal, { group: shownGroup, round: shownRound })
-      .then((standings) => setBaseline({ group: shownGroup, round: shownRound, standings }))
+    const stage =
+      shownPhase !== null && shownPhase !== undefined && shownQual !== null && shownQual !== undefined
+        ? { tournamentPhase: shownPhase, qualificationGroup: shownQual }
+        : null;
+    fetchEventTeamStandings(saveId, season, event, controller.signal, { group: shownGroup, round: shownRound }, stage)
+      .then((standings) =>
+        setBaseline({
+          group: shownGroup,
+          round: shownRound,
+          tournamentPhase: stage?.tournamentPhase ?? null,
+          qualificationGroup: stage?.qualificationGroup ?? null,
+          standings,
+        }),
+      )
       .catch(() => undefined);
     return () => controller.abort();
-  }, [saveId, season, event, shownGroup, shownRound]);
+  }, [saveId, season, event, shownGroup, shownRound, shownPhase, shownQual]);
 
   const shape = summary ?? progress;
   // MSS-069: the Superleague qualifier is one 16-round event. The phase-wide
@@ -181,8 +299,11 @@ export function LiveEventView({
   // Rounds may only be played for the save's next lifecycle event; playing any
   // other event would move the RNG under a partly played one (the backend
   // refuses it too).
-  const playable = progress !== null && progress.sourceSeasonNumber === season;
-  const stageProgressText = progress?.tournamentStage ?? lastStage;
+  const playable = progress !== null && progress.sourceSeasonNumber === season && !complete;
+  // MSS-079: once the tournament is complete the backend progress cursor is
+  // gone (the next legal action is StartNextSeason). Never keep showing the
+  // stale in-progress stage after that; replay selection resets instead.
+  const stageProgressText = complete ? null : (progress?.tournamentStage ?? lastStage);
   const progressText = stageProgressText ?? progressLabel({ roundsPlayed: rounds.length, totalRounds, groupCount, roundsPerGroup });
 
   const refreshAfter = useCallback(() => {
@@ -202,10 +323,37 @@ export function LiveEventView({
       if (result.tournamentStage) {
         setLastStage(result.tournamentStage);
       }
-      onSelectRound(result.round.group, result.round.roundNumber);
+      onSelectRound(
+        result.round.group,
+        result.round.roundNumber,
+        result.tournamentPhase !== null &&
+          result.tournamentPhase !== undefined &&
+          result.qualificationGroup !== null &&
+          result.qualificationGroup !== undefined
+          ? { tournamentPhase: result.tournamentPhase, qualificationGroup: result.qualificationGroup }
+          : (result.round.tournamentPhase !== null &&
+                result.round.tournamentPhase !== undefined &&
+                result.round.qualificationGroup !== null &&
+                result.round.qualificationGroup !== undefined
+              ? {
+                  tournamentPhase: result.round.tournamentPhase,
+                  qualificationGroup: result.round.qualificationGroup,
+                }
+              : null),
+      );
       refreshAfter();
     } catch (failure) {
-      setError(apiErrorMessage(failure));
+      const message = apiErrorMessage(failure);
+      // MSS-079: a completed Cup rejects re-execution with 409. Refresh the
+      // authoritative status so Live converges to completion/replay instead of
+      // confidently keeping stale playable controls.
+      if (isAlreadyCompleteMessage(message)) {
+        setLastStage(null);
+        setRoundView(null);
+        onSelectRound(null, null, null);
+        refreshAfter();
+      }
+      setError(friendlyCompleteMessage(message));
     } finally {
       setBusy(false);
     }
@@ -222,11 +370,19 @@ export function LiveEventView({
       // qualification group then the Final. Never simulated here.
       await runEventRemaining(saveId, event);
       setRoundView(null);
+      setBaseline(null);
       setLastStage(null);
-      onSelectRound(null, null);
+      onSelectRound(null, null, null);
       refreshAfter();
     } catch (failure) {
-      setError(apiErrorMessage(failure));
+      const message = apiErrorMessage(failure);
+      if (isAlreadyCompleteMessage(message)) {
+        setLastStage(null);
+        setRoundView(null);
+        onSelectRound(null, null, null);
+        refreshAfter();
+      }
+      setError(friendlyCompleteMessage(message));
     } finally {
       setBusy(false);
     }
@@ -258,18 +414,64 @@ export function LiveEventView({
   // ranking only appears once the event's last round is fully revealed.
   const lastRound = rounds.at(-1) ?? null;
   const shownIsLast =
-    roundView !== null && lastRound !== null && roundView.group === lastRound.group && roundView.roundNumber === lastRound.round;
+    roundView !== null &&
+    lastRound !== null &&
+    roundView.group === lastRound.group &&
+    roundView.roundNumber === lastRound.round &&
+    (roundView.tournamentPhase ?? null) === (lastRound.tournamentPhase ?? null) &&
+    (roundView.qualificationGroup ?? null) === (lastRound.qualificationGroup ?? null);
   const fullyRevealed = roundView !== null && revealed.length >= roundView.placements.length;
   const showFinal = teams !== null && teams.isFinal && shownIsLast && fullyRevealed;
-  const baselineReady = baseline !== null && baseline.group === shownGroup && baseline.round === shownRound;
+  const baselineReady =
+    baseline !== null &&
+    baseline.group === shownGroup &&
+    baseline.round === shownRound &&
+    (baseline.tournamentPhase ?? null) === (shownPhase ?? null) &&
+    (baseline.qualificationGroup ?? null) === (shownQual ?? null);
   const revealedTeams = useMemo(
     () => (baseline ? projectRevealedTeamStandings(baseline.standings.teams, baseline.standings.members, revealed) : []),
     [baseline, revealed],
   );
 
+  const selectedStageForPills =
+    selected?.tournamentPhase !== null &&
+    selected?.tournamentPhase !== undefined &&
+    selected?.qualificationGroup !== null &&
+    selected?.qualificationGroup !== undefined
+      ? { tournamentPhase: selected.tournamentPhase, qualificationGroup: selected.qualificationGroup }
+      : urlStage;
   const visibleGroup = selected?.group ?? (team ? 1 : null);
   const groupsPlayed = team ? Array.from(new Set(rounds.map((r) => r.group ?? 1))) : [];
-  const pills = rounds.filter((r) => r.group === visibleGroup);
+  const typeStages = isTypeCupEvent
+    ? Array.from(
+        new Map(
+          rounds
+            .filter(
+              (r) =>
+                r.tournamentPhase !== null &&
+                r.tournamentPhase !== undefined &&
+                r.qualificationGroup !== null &&
+                r.qualificationGroup !== undefined,
+            )
+            .map(
+              (r) =>
+                [
+                  `${r.tournamentPhase}/${r.qualificationGroup}`,
+                  { tournamentPhase: r.tournamentPhase!, qualificationGroup: r.qualificationGroup! },
+                ] as const,
+            ),
+        ).values(),
+      )
+    : [];
+  const pills =
+    isTypeCupEvent && selectedStageForPills && typeStages.length > 1
+      ? rounds.filter(
+          (r) =>
+            r.group === visibleGroup &&
+            (r.tournamentPhase ?? null) === selectedStageForPills.tournamentPhase &&
+            (r.qualificationGroup ?? null) === selectedStageForPills.qualificationGroup,
+        )
+      : rounds.filter((r) => r.group === visibleGroup);
   const title = `${EVENT_TITLES[event]} · Season ${season}`;
   const resultsPath = resultsTarget(event) === 'standings' ? standingsPath(saveId) : cupsPath(saveId);
   // MSS-069: after the 32-athlete Superleague qualifier the canonical Live
@@ -451,6 +653,46 @@ export function LiveEventView({
               progress above names the active group.
             </p>
           ) : null}
+          {isTypeTournamentLive && typeStages.length > 1 ? (
+            <div className="segmented" role="group" aria-label="Tournament stages">
+              {typeStages.map((stage) => {
+                const label =
+                  stage.tournamentPhase === 2
+                    ? 'Final'
+                    : stage.tournamentPhase === 0
+                      ? 'Single field'
+                      : `Qualification ${stage.qualificationGroup}`;
+                const active =
+                  selectedStageForPills?.tournamentPhase === stage.tournamentPhase &&
+                  selectedStageForPills?.qualificationGroup === stage.qualificationGroup;
+                return (
+                  <button
+                    key={`${stage.tournamentPhase}/${stage.qualificationGroup}`}
+                    type="button"
+                    className={active ? 'nav-item current' : 'nav-item'}
+                    aria-pressed={active}
+                    onClick={() => {
+                      const last = rounds
+                        .filter(
+                          (r) =>
+                            (r.tournamentPhase ?? null) === stage.tournamentPhase &&
+                            (r.qualificationGroup ?? null) === stage.qualificationGroup &&
+                            r.group === visibleGroup,
+                        )
+                        .at(-1);
+                      if (last) {
+                        onSelectRound(last.group, last.round, stage);
+                      } else {
+                        onSelectRound(visibleGroup, null, stage);
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           {team && groupsPlayed.length > 0 ? (
             <div className="segmented" role="group" aria-label="Groups">
               {groupsPlayed.map((group) => (
@@ -460,9 +702,28 @@ export function LiveEventView({
                   className={group === visibleGroup ? 'nav-item current' : 'nav-item'}
                   aria-pressed={group === visibleGroup}
                   onClick={() => {
-                    const last = rounds.filter((r) => r.group === group).at(-1);
+                    const scoped =
+                      isTypeTournamentLive && selectedStageForPills && typeStages.length > 1
+                        ? rounds.filter(
+                            (r) =>
+                              r.group === group &&
+                              (r.tournamentPhase ?? null) === selectedStageForPills.tournamentPhase &&
+                              (r.qualificationGroup ?? null) === selectedStageForPills.qualificationGroup,
+                          )
+                        : rounds.filter((r) => r.group === group);
+                    const last = scoped.at(-1);
                     if (last) {
-                      onSelectRound(group, last.round);
+                      const stage =
+                        last.tournamentPhase !== null &&
+                        last.tournamentPhase !== undefined &&
+                        last.qualificationGroup !== null &&
+                        last.qualificationGroup !== undefined
+                          ? {
+                              tournamentPhase: last.tournamentPhase,
+                              qualificationGroup: last.qualificationGroup,
+                            }
+                          : (selectedStageForPills ?? null);
+                      onSelectRound(group, last.round, stage);
                     }
                   }}
                 >
@@ -477,11 +738,36 @@ export function LiveEventView({
             <div className="round-pills round-pills-compact" role="group" aria-label="Played rounds">
               {pills.map((r) => (
                 <button
-                  key={`${r.group ?? 0}-${r.round}`}
+                  key={`${r.tournamentPhase ?? 'x'}/${r.qualificationGroup ?? 'x'}/${r.group ?? 0}-${r.round}`}
                   type="button"
-                  className={selected && r.round === selected.round && r.group === selected.group ? 'nav-item current' : 'nav-item'}
-                  aria-pressed={Boolean(selected && r.round === selected.round && r.group === selected.group)}
-                  onClick={() => onSelectRound(r.group, r.round)}
+                  className={
+                    selected &&
+                    r.round === selected.round &&
+                    r.group === selected.group &&
+                    (r.tournamentPhase ?? null) === (selected.tournamentPhase ?? null) &&
+                    (r.qualificationGroup ?? null) === (selected.qualificationGroup ?? null)
+                      ? 'nav-item current'
+                      : 'nav-item'
+                  }
+                  aria-pressed={Boolean(
+                    selected &&
+                      r.round === selected.round &&
+                      r.group === selected.group &&
+                      (r.tournamentPhase ?? null) === (selected.tournamentPhase ?? null) &&
+                      (r.qualificationGroup ?? null) === (selected.qualificationGroup ?? null),
+                  )}
+                  onClick={() =>
+                    onSelectRound(
+                      r.group,
+                      r.round,
+                      r.tournamentPhase !== null &&
+                        r.tournamentPhase !== undefined &&
+                        r.qualificationGroup !== null &&
+                        r.qualificationGroup !== undefined
+                        ? { tournamentPhase: r.tournamentPhase, qualificationGroup: r.qualificationGroup }
+                        : null,
+                    )
+                  }
                 >
                   {r.round}
                 </button>
@@ -552,7 +838,7 @@ export function LiveEventView({
         ) : roundView ? (
           <RoundReveal
             placements={roundView.placements}
-            revealKey={`${event}:${season}:${roundView.group ?? 0}:${roundView.roundNumber}:${roundView.payloadChecksum}`}
+            revealKey={`${event}:${season}:${roundView.tournamentPhase ?? 'x'}:${roundView.qualificationGroup ?? 'x'}:${roundView.group ?? 0}:${roundView.roundNumber}:${roundView.payloadChecksum}`}
             roundLabel={`${roundLabel(roundView.group, roundView.roundNumber)} results`}
             meta={`Rules v${roundView.rulesVersion} · checksum ${roundView.payloadChecksum.slice(0, 12)}…`}
             autoPlayOnStart={false}

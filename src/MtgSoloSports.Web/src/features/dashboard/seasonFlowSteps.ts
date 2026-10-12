@@ -42,6 +42,34 @@ export type FlowNext =
       liveTransition: TransitionKey | null;
     };
 
+/**
+ * MSS-079: Type Cup tournaments span several 32-round stages. The generic
+ * squad rank group label (`Group 4 · Round 8 / 8`) hides which qualification
+ * group or Final is active, so prefer the backend tournament stage label
+ * (`Qualification Group 2 of 3`, `Final`) with the rank cursor appended.
+ */
+function eventProgressDetail(progress: {
+  roundsPlayed: number;
+  totalRounds: number;
+  groupCount: number;
+  roundsPerGroup: number;
+  tournamentStage?: string | null;
+  group?: number | null;
+  roundInGroup?: number | null;
+}): string {
+  if (progress.tournamentStage) {
+    const cursor =
+      progress.group !== null &&
+      progress.group !== undefined &&
+      progress.roundInGroup !== null &&
+      progress.roundInGroup !== undefined
+        ? ` · Squad rank group ${progress.group} · Round ${progress.roundInGroup} / ${progress.roundsPerGroup}`
+        : '';
+    return `${progress.tournamentStage}${cursor}`;
+  }
+  return progressLabel(progress);
+}
+
 export interface SeasonFlowView {
   seasonNumber: number;
   steps: FlowStep[];
@@ -237,7 +265,7 @@ export function seasonFlow(progress: SeasonProgress, status: SeasonStatus | null
     ? definitions.findIndex((step) => step.actions.includes(legalAction))
     : definitions.findIndex((step) => !step.done);
 
-  const eventDetail = status?.eventProgress ? progressLabel(status.eventProgress) : undefined;
+  const eventDetail = status?.eventProgress ? eventProgressDetail(status.eventProgress) : undefined;
   const steps = definitions.map((step, index): FlowStep => {
     const state: FlowStepState =
       index === currentIndex ? 'current' : step.done || (currentIndex >= 0 && index < currentIndex) ? 'done' : 'upcoming';

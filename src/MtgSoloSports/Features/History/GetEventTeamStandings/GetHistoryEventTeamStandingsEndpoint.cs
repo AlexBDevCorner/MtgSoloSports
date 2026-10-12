@@ -13,13 +13,15 @@ public static class GetHistoryEventTeamStandingsEndpoint
             string eventKey,
             int? beforeGroup,
             int? beforeRound,
+            int? tournamentPhase,
+            int? qualificationGroup,
             GetHistoryEventTeamStandingsHandler handler,
             CancellationToken cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(handler);
             try
             {
-                HistoryEventTeamStandingsResponse response = await handler.HandleAsync(saveId, seasonNumber, eventKey, beforeGroup, beforeRound, cancellationToken).ConfigureAwait(false);
+                HistoryEventTeamStandingsResponse response = await handler.HandleAsync(saveId, seasonNumber, eventKey, beforeGroup, beforeRound, cancellationToken, tournamentPhase, qualificationGroup).ConfigureAwait(false);
                 return Results.Ok(response);
             }
             catch (ArgumentException ex)

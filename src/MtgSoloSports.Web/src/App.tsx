@@ -296,8 +296,20 @@ export default function App() {
               progress={status?.eventProgress?.event === liveEvent ? status.eventProgress : null}
               urlGroup={route.group}
               urlRound={route.round}
-              onSelectRound={(group, round) => {
-                navigate(livePath(saveId, { event: liveEvent, season: eventSeason, group, round }), { replace: true });
+              urlTournamentPhase={route.tournamentPhase}
+              urlQualificationGroup={route.qualificationGroup}
+              onSelectRound={(group, round, stage) => {
+                navigate(
+                  livePath(saveId, {
+                    event: liveEvent,
+                    season: eventSeason,
+                    group,
+                    round,
+                    tournamentPhase: stage?.tournamentPhase ?? null,
+                    qualificationGroup: stage?.qualificationGroup ?? null,
+                  }),
+                  { replace: true },
+                );
               }}
               onMutated={dashboard.refresh}
             />
@@ -337,6 +349,8 @@ export default function App() {
             urlRound={route.round}
             urlEvent={route.event}
             urlGroup={route.group}
+            urlTournamentPhase={route.tournamentPhase}
+            urlQualificationGroup={route.qualificationGroup}
             onHistoryChange={(selection) => {
               navigate(
                 historyPath(saveId, {
@@ -346,6 +360,8 @@ export default function App() {
                   round: selection.round,
                   event: selection.event,
                   group: selection.group,
+                  tournamentPhase: selection.tournamentPhase,
+                  qualificationGroup: selection.qualificationGroup,
                 }),
               );
             }}

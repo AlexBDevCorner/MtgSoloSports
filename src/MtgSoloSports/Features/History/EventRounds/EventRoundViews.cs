@@ -21,7 +21,9 @@ public static class EventRoundViews
         Pcg32State before,
         Pcg32State after,
         IReadOnlyList<RoundPayloadEntry> placements,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? tournamentPhase = null,
+        int? qualificationGroup = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(placements);
@@ -59,6 +61,7 @@ public static class EventRoundViews
 
         return new EventRoundView(
             seasonNumber, eventKey, title, group, roundNumber, rulesVersion, checksum,
-            before.State, before.Stream, after.State, after.Stream, mapped);
+            before.State, before.Stream, after.State, after.Stream, mapped,
+            tournamentPhase, qualificationGroup);
     }
 }

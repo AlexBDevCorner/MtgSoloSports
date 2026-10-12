@@ -23,6 +23,6 @@ public sealed class ListHistoryEventRoundsHandler
         SeasonEntity season = await HistoryEventRows.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
         return new ListHistoryEventRoundsResponse(
-            saveId, seasonNumber, eventKey, rows.Select(r => new HistoryEventRoundSummary(r.Group, r.Round)).ToList());
+            saveId, seasonNumber, eventKey, rows.Select(r => new HistoryEventRoundSummary(r.Group, r.Round, r.TournamentPhase, r.QualificationGroup)).ToList());
     }
 }

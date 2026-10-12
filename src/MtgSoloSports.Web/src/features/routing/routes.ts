@@ -92,6 +92,15 @@ export type Route =
       eventSeason: number | null;
       group: number | null;
       /**
+       * MSS-079 Type Cup tournament stage on Live (`tournamentPhase` 0/1/2 and
+       * `qualificationGroup`, 0 for Legacy/Final). Absent keeps legacy
+       * group/round-only URLs working for single-stage events; multi-stage
+       * Type Cups need it to address the same squad rank group/round in
+       * distinct qualification groups and the Final.
+       */
+      tournamentPhase: number | null;
+      qualificationGroup: number | null;
+      /**
        * Individual qualifier identity on Live (MSS-069):
        * `superleague` or `f1f2-<color>` / `f2f3-<color>` (color lower-case,
        * e.g. `f1f2-white`). Absent with `event=qualifier` means the
@@ -110,6 +119,9 @@ export type Route =
       round: number | null;
       event: EventKey | null;
       group: number | null;
+      /** MSS-079 Type Cup tournament stage for history replay (see live). */
+      tournamentPhase: number | null;
+      qualificationGroup: number | null;
     }
   | {
       name: 'standings';
@@ -153,6 +165,8 @@ export function livePath(
     season?: number | null;
     group?: number | null;
     qualifier?: string | null;
+    tournamentPhase?: number | null;
+    qualificationGroup?: number | null;
   },
 ): string {
   const params = new URLSearchParams();
@@ -176,6 +190,12 @@ export function livePath(
   }
   if (query?.qualifier !== undefined && query.qualifier !== null && query.qualifier !== '') {
     params.set('qualifier', query.qualifier);
+  }
+  if (query?.tournamentPhase !== undefined && query.tournamentPhase !== null) {
+    params.set('tournamentPhase', String(query.tournamentPhase));
+  }
+  if (query?.qualificationGroup !== undefined && query.qualificationGroup !== null) {
+    params.set('qualificationGroup', String(query.qualificationGroup));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/live${suffix}`;
@@ -206,6 +226,8 @@ export function historyPath(
     round?: number | null;
     event?: EventKey | null;
     group?: number | null;
+    tournamentPhase?: number | null;
+    qualificationGroup?: number | null;
   },
 ): string {
   const params = new URLSearchParams();
@@ -226,6 +248,12 @@ export function historyPath(
   }
   if (query?.group !== undefined && query.group !== null) {
     params.set('group', String(query.group));
+  }
+  if (query?.tournamentPhase !== undefined && query.tournamentPhase !== null) {
+    params.set('tournamentPhase', String(query.tournamentPhase));
+  }
+  if (query?.qualificationGroup !== undefined && query.qualificationGroup !== null) {
+    params.set('qualificationGroup', String(query.qualificationGroup));
   }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/history${suffix}`;
@@ -415,6 +443,46 @@ function parseSelection(params: URLSearchParams): SelectionKey | null {
   return isSelectionKey(value) ? value : null;
 }
 
+/**
+ * MSS-079 Type Cup tournament phase (`tournamentPhase` 0/1/2). Unknown or
+ * absent values stay null so legacy group/round-only URLs keep working for
+ * single-stage events.
+ */
+function parseTournamentPhase(params: URLSearchParams): number | null {
+  const raw = params.get('tournamentPhase');
+  if (raw === null || raw.trim() === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 2) {
+    return null;
+  }
+  if (String(parsed) !== raw.trim()) {
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * MSS-079 Type Cup qualification group (`qualificationGroup`, 0 for
+ * Legacy/Final, 1+ for qualification groups). Absent stays null for legacy
+ * URLs; explicit 0 is preserved for Final stages.
+ */
+function parseQualificationGroup(params: URLSearchParams): number | null {
+  const raw = params.get('qualificationGroup');
+  if (raw === null || raw.trim() === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return null;
+  }
+  if (String(parsed) !== raw.trim()) {
+    return null;
+  }
+  return parsed;
+}
+
 function parseTransition(params: URLSearchParams): TransitionKey | null {
   const value = params.get('transition');
   return isTransitionKey(value) ? value : null;
@@ -502,6 +570,8 @@ export function parseRoute(pathname: string, search: string): Route {
             ? parseOptionalPositiveInt(params, 'season')
             : null,
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
+        tournamentPhase: parseEvent(params) ? parseTournamentPhase(params) : null,
+        qualificationGroup: parseEvent(params) ? parseQualificationGroup(params) : null,
         qualifier: parseQualifier(params),
       };
     case 'history':
@@ -517,6 +587,8 @@ export function parseRoute(pathname: string, search: string): Route {
         round: parseOptionalPositiveInt(params, 'round'),
         event: parseEvent(params),
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
+        tournamentPhase: parseEvent(params) ? parseTournamentPhase(params) : null,
+        qualificationGroup: parseEvent(params) ? parseQualificationGroup(params) : null,
       };
     case 'records':
       if (segments.length !== 3) {
