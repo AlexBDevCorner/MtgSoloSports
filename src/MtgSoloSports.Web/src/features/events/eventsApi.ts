@@ -31,6 +31,9 @@ export interface EventRoundView {
   rulesVersion: number;
   payloadChecksum: string;
   placements: HistoryRoundPlacement[];
+  /** MSS-079 stage identity for Type Cup tournaments (null for single-stage events). */
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
 }
 
 export interface PlayRoundResult {
@@ -59,6 +62,9 @@ export interface SeasonEventSummary {
 export interface PlayedRound {
   group: number | null;
   round: number;
+  /** MSS-079 stage identity for Type Cup tournaments (null for single-stage events). */
+  tournamentPhase?: number | null;
+  qualificationGroup?: number | null;
 }
 
 export interface EventTeamRow {
@@ -125,8 +131,18 @@ export function fetchEventRound(
   round: number,
   group: number | null,
   signal?: AbortSignal,
+  /** MSS-079 stage identity for Type Cup tournaments. */
+  stage?: { tournamentPhase: number; qualificationGroup: number } | null,
 ): Promise<EventRoundView> {
-  const query = group === null ? '' : `?group=${group}`;
+  const params = new URLSearchParams();
+  if (group !== null) {
+    params.set('group', String(group));
+  }
+  if (stage) {
+    params.set('tournamentPhase', String(stage.tournamentPhase));
+    params.set('qualificationGroup', String(stage.qualificationGroup));
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : '';
   return fetchJson<EventRoundView>(
     `/api/saves/${saveId}/history/seasons/${season}/events/${key}/rounds/${round}${query}`,
     { signal },
@@ -140,8 +156,19 @@ export function fetchEventTeamStandings(
   signal?: AbortSignal,
   /** Limits the totals to the rounds played ahead of this round. */
   before?: { group: number; round: number },
+  /** MSS-079 stage scope for Type Cup tournaments; Final totals start fresh at zero. */
+  stage?: { tournamentPhase: number; qualificationGroup: number } | null,
 ): Promise<EventTeamStandings> {
-  const query = before ? `?beforeGroup=${before.group}&beforeRound=${before.round}` : '';
+  const params = new URLSearchParams();
+  if (before) {
+    params.set('beforeGroup', String(before.group));
+    params.set('beforeRound', String(before.round));
+  }
+  if (stage) {
+    params.set('tournamentPhase', String(stage.tournamentPhase));
+    params.set('qualificationGroup', String(stage.qualificationGroup));
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : '';
   return fetchJson<EventTeamStandings>(
     `/api/saves/${saveId}/history/seasons/${season}/events/${key}/team-standings${query}`,
     { signal },

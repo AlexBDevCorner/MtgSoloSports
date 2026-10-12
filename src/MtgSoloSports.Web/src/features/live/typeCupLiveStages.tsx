@@ -46,7 +46,11 @@ export function TypeCupLiveStages({
   const activeQual = progress?.qualificationGroup ?? null;
   const activePhase = progress?.tournamentPhase ?? null;
   const doneGroups = new Set((tournament?.qualificationGroups ?? []).map((group) => group.qualificationGroup));
-  const currentStage = lastStage ?? progress?.tournamentStage ?? null;
+  const tournamentComplete = Boolean(tournament?.final);
+  // MSS-079: once the Final is persisted the tournament is complete. Never
+  // keep showing the stale in-progress cursor after that; replay selection
+  // resets and the Final result carries the completion state.
+  const currentStage = tournamentComplete ? null : (lastStage ?? progress?.tournamentStage ?? null);
 
   return (
     <Card

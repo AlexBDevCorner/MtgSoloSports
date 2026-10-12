@@ -33,6 +33,8 @@ export function HistoryEventView({
   event,
   urlGroup,
   urlRound,
+  urlTournamentPhase,
+  urlQualificationGroup,
   onChange,
 }: {
   saveId: string;
@@ -40,7 +42,13 @@ export function HistoryEventView({
   event: EventKey;
   urlGroup: number | null;
   urlRound: number | null;
-  onChange: (group: number | null, round: number) => void;
+  urlTournamentPhase?: number | null;
+  urlQualificationGroup?: number | null;
+  onChange: (
+    group: number | null,
+    round: number,
+    stage?: { tournamentPhase: number; qualificationGroup: number } | null,
+  ) => void;
 }) {
   const [rounds, setRounds] = useState<PlayedRound[] | null>(null);
   const [roundView, setRoundView] = useState<EventRoundView | null>(null);
@@ -78,14 +86,52 @@ export function HistoryEventView({
     return () => controller.abort();
   }, [saveId, season, event, team, isTypeTournamentHistory]);
 
+  const isTypeCup = event === 'type-cup-team';
+  const urlStage =
+    urlTournamentPhase !== null &&
+    urlTournamentPhase !== undefined &&
+    urlQualificationGroup !== null &&
+    urlQualificationGroup !== undefined
+      ? { tournamentPhase: urlTournamentPhase, qualificationGroup: urlQualificationGroup }
+      : null;
+
   const selected: PlayedRound | null = useMemo(() => {
     if (!rounds || rounds.length === 0) {
       return null;
     }
     const wantedGroup = team ? urlGroup : null;
-    const match = urlRound !== null ? rounds.find((r) => r.round === urlRound && r.group === wantedGroup) : undefined;
-    return match ?? rounds[rounds.length - 1]!;
-  }, [rounds, urlRound, urlGroup, team]);
+    if (urlRound !== null) {
+      const staged = isTypeCup && urlStage
+        ? rounds.find(
+            (r) =>
+              r.round === urlRound &&
+              r.group === wantedGroup &&
+              (r.tournamentPhase ?? null) === urlStage.tournamentPhase &&
+              (r.qualificationGroup ?? null) === urlStage.qualificationGroup,
+          )
+        : undefined;
+      if (staged) {
+        return staged;
+      }
+      // Legacy group/round-only URLs: exact single match wins, otherwise fall
+      // back to the latest stage so old links never replay the wrong stage
+      // silently (the fetch below surfaces the ambiguity as a clear error).
+      const candidates = rounds.filter((r) => r.round === urlRound && r.group === wantedGroup);
+      if (candidates.length === 1) {
+        return candidates[0]!;
+      }
+      if (candidates.length > 1 && !urlStage) {
+        return candidates[candidates.length - 1]!;
+      }
+      const match = candidates[0];
+      if (match) {
+        return match;
+      }
+    }
+    return rounds[rounds.length - 1]!;
+    // urlStage is derived from urlTournamentPhase/urlQualificationGroup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rounds, urlRound, urlGroup, team, isTypeCup, urlTournamentPhase, urlQualificationGroup]);
 
   useEffect(() => {
     if (!selected) {
@@ -93,7 +139,15 @@ export function HistoryEventView({
       return;
     }
     const controller = new AbortController();
-    fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal)
+    setError(null);
+    const stage =
+      selected.tournamentPhase !== null &&
+      selected.tournamentPhase !== undefined &&
+      selected.qualificationGroup !== null &&
+      selected.qualificationGroup !== undefined
+        ? { tournamentPhase: selected.tournamentPhase, qualificationGroup: selected.qualificationGroup }
+        : (urlStage ?? null);
+    fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal, stage)
       .then(setRoundView)
       .catch((failure: unknown) => {
         if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
@@ -109,7 +163,43 @@ export function HistoryEventView({
 
   const groups = team ? Array.from(new Set(rounds.map((r) => r.group ?? 1))) : [];
   const visibleGroup = selected?.group ?? null;
-  const groupRounds = rounds.filter((r) => r.group === visibleGroup);
+  const selectedStage =
+    selected?.tournamentPhase !== null &&
+    selected?.tournamentPhase !== undefined &&
+    selected?.qualificationGroup !== null &&
+    selected?.qualificationGroup !== undefined
+      ? { tournamentPhase: selected.tournamentPhase, qualificationGroup: selected.qualificationGroup }
+      : urlStage;
+  const stages = isTypeCup
+    ? Array.from(
+        new Map(
+          rounds
+            .filter(
+              (r) =>
+                r.tournamentPhase !== null &&
+                r.tournamentPhase !== undefined &&
+                r.qualificationGroup !== null &&
+                r.qualificationGroup !== undefined,
+            )
+            .map(
+              (r) =>
+                [
+                  `${r.tournamentPhase}/${r.qualificationGroup}`,
+                  { tournamentPhase: r.tournamentPhase!, qualificationGroup: r.qualificationGroup! },
+                ] as const,
+            ),
+        ).values(),
+      )
+    : [];
+  const groupRounds =
+    isTypeCup && selectedStage
+      ? rounds.filter(
+          (r) =>
+            r.group === visibleGroup &&
+            (r.tournamentPhase ?? null) === selectedStage.tournamentPhase &&
+            (r.qualificationGroup ?? null) === selectedStage.qualificationGroup,
+        )
+      : rounds.filter((r) => r.group === visibleGroup);
 
   return (
     <>
@@ -129,6 +219,46 @@ export function HistoryEventView({
             <Link to={cupEditionPath(saveId, 'type', season)}>Type Cup edition page</Link>.
           </p>
         ) : null}
+        {isTypeCup && stages.length > 1 ? (
+          <label className="field">
+            <span>Tournament stage</span>
+            <select
+              value={selectedStage ? `${selectedStage.tournamentPhase}/${selectedStage.qualificationGroup}` : ''}
+              disabled={stages.length === 0}
+              onChange={(changed) => {
+                const [phaseRaw, qualRaw] = changed.target.value.split('/');
+                const tournamentPhase = Number.parseInt(phaseRaw ?? '', 10);
+                const qualificationGroup = Number.parseInt(qualRaw ?? '', 10);
+                if (Number.isNaN(tournamentPhase) || Number.isNaN(qualificationGroup)) {
+                  return;
+                }
+                const last = rounds
+                  .filter(
+                    (r) =>
+                      (r.tournamentPhase ?? null) === tournamentPhase &&
+                      (r.qualificationGroup ?? null) === qualificationGroup &&
+                      r.group === visibleGroup,
+                  )
+                  .at(-1);
+                if (last) {
+                  onChange(visibleGroup, last.round, { tournamentPhase, qualificationGroup });
+                } else {
+                  onChange(visibleGroup, selected?.round ?? 1, { tournamentPhase, qualificationGroup });
+                }
+              }}
+            >
+              {stages.map((stage) => (
+                <option key={`${stage.tournamentPhase}/${stage.qualificationGroup}`} value={`${stage.tournamentPhase}/${stage.qualificationGroup}`}>
+                  {stage.tournamentPhase === 2
+                    ? 'Final'
+                    : stage.tournamentPhase === 0
+                      ? 'Single field'
+                      : `Qualification ${stage.qualificationGroup}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {team ? (
           <label className="field">
             <span>{isTypeTournamentHistory && tournament && !tournament.isDirectFinal ? 'Squad rank group' : 'Group'}</span>
@@ -137,9 +267,16 @@ export function HistoryEventView({
               disabled={groups.length === 0}
               onChange={(changed) => {
                 const group = Number.parseInt(changed.target.value, 10);
-                const last = rounds.filter((r) => r.group === group).at(-1);
+                const last = groupRounds.filter((r) => r.group === group).at(-1) ?? rounds.filter((r) => r.group === group).at(-1);
                 if (last) {
-                  onChange(group, last.round);
+                  const stage =
+                    last.tournamentPhase !== null &&
+                    last.tournamentPhase !== undefined &&
+                    last.qualificationGroup !== null &&
+                    last.qualificationGroup !== undefined
+                      ? { tournamentPhase: last.tournamentPhase, qualificationGroup: last.qualificationGroup }
+                      : (selectedStage ?? null);
+                  onChange(group, last.round, stage);
                 }
               }}
             >
@@ -159,12 +296,15 @@ export function HistoryEventView({
             onChange={(changed) => {
               const round = Number.parseInt(changed.target.value, 10);
               if (!Number.isNaN(round)) {
-                onChange(visibleGroup, round);
+                onChange(visibleGroup, round, selectedStage ?? null);
               }
             }}
           >
             {groupRounds.map((r) => (
-              <option key={`${r.group ?? 0}-${r.round}`} value={r.round}>
+              <option
+                key={`${r.tournamentPhase ?? 'x'}/${r.qualificationGroup ?? 'x'}/${r.group ?? 0}-${r.round}`}
+                value={r.round}
+              >
                 Round {r.round}
               </option>
             ))}
@@ -187,7 +327,7 @@ export function HistoryEventView({
       ) : roundView ? (
         <RoundReveal
           placements={roundView.placements}
-          revealKey={`${event}:${season}:${roundView.group ?? 0}:${roundView.roundNumber}:${roundView.payloadChecksum}`}
+          revealKey={`${event}:${season}:${roundView.tournamentPhase ?? 'x'}:${roundView.qualificationGroup ?? 'x'}:${roundView.group ?? 0}:${roundView.roundNumber}:${roundView.payloadChecksum}`}
           roundLabel={`${EVENT_TITLES[event]} · Season ${season} · ${roundLabel(roundView.group, roundView.roundNumber)}`}
           meta={`Rules v${roundView.rulesVersion} · checksum ${roundView.payloadChecksum.slice(0, 12)}… · Replay never consumes RNG and never mutates save state.`}
           saveId={saveId}
