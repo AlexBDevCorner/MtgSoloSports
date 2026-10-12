@@ -57,6 +57,19 @@ describe('MSS-078 Type Cup Live stage workspace', () => {
     assert.ok(view.includes('Final starts fresh at zero') || stages.includes('scores reset to zero'), 'Final opens fresh');
   });
 
+  it('clears the prior stage reveal when a pending stage has no persisted round', () => {
+    assert.ok(view.includes('if (!selected) {'), 'pending stage without a round is handled');
+    assert.ok(view.includes('setRoundView(null);'), 'pending selection drops the old reveal');
+    assert.ok(view.includes('setBaseline(null);'), 'pending selection drops the old baseline');
+  });
+
+  it('never shows unscoped tournament totals inside a Type Cup stage workspace', () => {
+    assert.ok(
+      view.includes('(!isTypeTournamentLive || showFinal)'),
+      'tournament fallback only for the persisted Final, never unscoped quals in a pending stage',
+    );
+  });
+
   it('preserves stage/round selection across reload and Back/Forward via explicit stage URL', () => {
     assert.ok(view.includes('urlTournamentPhase') && view.includes('urlQualificationGroup'), 'stage identity in the URL');
     assert.ok(view.includes('selectedStageKey'), 'explicit stage wins, otherwise follow canonical');

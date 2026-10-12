@@ -326,4 +326,117 @@ describe('MSS-078 Type Cup Group C workspace isolation', () => {
     (renderer as unknown as { unmount: () => void }).unmount();
     assert.ok(seen.length >= 0, 'selection callback stays wired');
   });
+
+  it('clears the prior stage reveal when switching to a pending Final', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    installTypeCupFetch(log);
+    let renderer: ReturnType<typeof create> | null = null;
+    const shared = {
+      saveId: SAVE,
+      event: 'type-cup-team' as const,
+      season: SEASON,
+      progress: {
+        event: 'type-cup-team' as const,
+        sourceSeasonNumber: SEASON,
+        roundsPlayed: 74,
+        totalRounds: 128,
+        groupCount: 4,
+        roundsPerGroup: 8,
+        group: 2,
+        roundInGroup: 2,
+        tournamentPhase: 1,
+        qualificationGroup: 3,
+        qualificationGroupCount: 3,
+        tournamentStage: 'Qualification Group 3 of 3',
+      },
+      onSelectRound: () => undefined,
+      onMutated: () => undefined,
+    };
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          ...shared,
+          urlGroup: 2,
+          urlRound: 2,
+          urlTournamentPhase: 1,
+          urlQualificationGroup: 3,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    let text = renderedText(renderer);
+    assert.ok(text.includes('Qualification Group C'), 'starts in Group C');
+    assert.ok(text.includes('c3-'), 'Group C reveal loaded before the switch');
+
+    await act(async () => {
+      (renderer as unknown as { update: (node: React.ReactNode) => void }).update(
+        React.createElement(LiveEventView, {
+          ...shared,
+          urlGroup: null,
+          urlRound: null,
+          urlTournamentPhase: 2,
+          urlQualificationGroup: 0,
+        }),
+      );
+    });
+    await flush();
+    text = renderedText(renderer);
+    assert.ok(text.includes('Type Cup Final'), 'pending Final workspace heading');
+    assert.ok(!text.includes('c3-'), 'previous stage reveal cleared, no stale Group C checksum');
+    assert.ok(
+      !text.includes('Team standings in Qualification Group C'),
+      'previous stage standings cleared with the reveal',
+    );
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('hides unscoped qualification totals inside a pending Final with no rounds', async () => {
+    const log = { gets: [] as string[], posts: [] as string[] };
+    installTypeCupFetch(log);
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(LiveEventView, {
+          saveId: SAVE,
+          event: 'type-cup-team',
+          season: SEASON,
+          progress: {
+            event: 'type-cup-team',
+            sourceSeasonNumber: SEASON,
+            roundsPlayed: 74,
+            totalRounds: 128,
+            groupCount: 4,
+            roundsPerGroup: 8,
+            group: 2,
+            roundInGroup: 2,
+            tournamentPhase: 1,
+            qualificationGroup: 3,
+            qualificationGroupCount: 3,
+            tournamentStage: 'Qualification Group 3 of 3',
+          },
+          urlGroup: null,
+          urlRound: null,
+          urlTournamentPhase: 2,
+          urlQualificationGroup: 0,
+          onSelectRound: () => undefined,
+          onMutated: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Type Cup Final'), 'pending Final workspace heading');
+    assert.ok(
+      text.includes('No Final rounds yet') || text.includes('Final starts fresh'),
+      'pending Final explains its fresh start',
+    );
+    assert.ok(!text.includes('101.000'), 'no unscoped qualification totals leak into the Final');
+    assert.ok(
+      !text.includes('Team standings so far'),
+      'pending Final shows no unscoped fallback standings',
+    );
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
 });

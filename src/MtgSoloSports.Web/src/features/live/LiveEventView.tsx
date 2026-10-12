@@ -331,6 +331,13 @@ export function LiveEventView({
 
   useEffect(() => {
     if (!selected) {
+      // MSS-078 correction: a pending stage has no persisted round. Clear the
+      // previous stage's reveal/baseline so it never lingers under the new
+      // stage heading (stage isolation, fresh Final scores).
+      setRoundView(null);
+      setBaseline(null);
+      setRevealed([]);
+      setError(null);
       return;
     }
     const selectedStage =
@@ -1039,7 +1046,7 @@ export function LiveEventView({
                 </tbody>
               </table>
             ) : null
-          ) : team && teams ? (
+          ) : team && teams && (!isTypeTournamentLive || showFinal) ? (
             <table className="mini-table">
               <caption className="reveal-subhead">{teams.isFinal ? 'Team standings' : 'Team standings so far'}</caption>
               <thead>
