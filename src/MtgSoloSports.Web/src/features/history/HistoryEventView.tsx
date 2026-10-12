@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { optionalTournament } from '../cups/typeCupTournamentApi';
@@ -101,17 +101,26 @@ export function HistoryEventView({
     }
     const wantedGroup = team ? urlGroup : null;
     if (urlRound !== null) {
-      const staged = isTypeCup && urlStage
-        ? rounds.find(
-            (r) =>
-              r.round === urlRound &&
-              r.group === wantedGroup &&
-              (r.tournamentPhase ?? null) === urlStage.tournamentPhase &&
-              (r.qualificationGroup ?? null) === urlStage.qualificationGroup,
-          )
-        : undefined;
-      if (staged) {
-        return staged;
+      if (isTypeCup && urlStage) {
+        const staged = rounds.find(
+          (r) =>
+            r.round === urlRound &&
+            r.group === wantedGroup &&
+            (r.tournamentPhase ?? null) === urlStage.tournamentPhase &&
+            (r.qualificationGroup ?? null) === urlStage.qualificationGroup,
+        );
+        if (staged) {
+          return staged;
+        }
+        // MSS-079 correction: an explicit stage+round that was never persisted
+        // must stay missing so the fetch surfaces a 404. Never fall back to a
+        // different stage (e.g. Final) for an explicit stage URL.
+        return {
+          group: wantedGroup,
+          round: urlRound,
+          tournamentPhase: urlStage.tournamentPhase,
+          qualificationGroup: urlStage.qualificationGroup,
+        };
       }
       // Legacy group/round-only URLs: exact single match wins, otherwise fall
       // back to the latest stage so old links never replay the wrong stage
@@ -152,6 +161,11 @@ export function HistoryEventView({
       .catch((failure: unknown) => {
         if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
           setError(apiErrorMessage(failure));
+          // MSS-079 correction: an explicit but unpersisted stage+round must not
+          // keep showing the previous stage's replay alongside the error.
+          if (failure instanceof ApiError && failure.status === 404) {
+            setRoundView(null);
+          }
         }
       });
     return () => controller.abort();
@@ -267,7 +281,25 @@ export function HistoryEventView({
               disabled={groups.length === 0}
               onChange={(changed) => {
                 const group = Number.parseInt(changed.target.value, 10);
-                const last = groupRounds.filter((r) => r.group === group).at(-1) ?? rounds.filter((r) => r.group === group).at(-1);
+                if (Number.isNaN(group)) {
+                  return;
+                }
+                // MSS-079 correction: keep the chosen qualification stage when the
+                // squad-rank group changes. groupRounds is already scoped to the
+                // previous group, so filter the full list by the new group AND the
+                // selected stage. If that stage+group was never persisted, preserve
+                // the requested stage so the fetch surfaces a missing replay
+                // instead of jumping to the Final.
+                const scoped =
+                  isTypeCup && selectedStage
+                    ? rounds.filter(
+                        (r) =>
+                          r.group === group &&
+                          (r.tournamentPhase ?? null) === selectedStage.tournamentPhase &&
+                          (r.qualificationGroup ?? null) === selectedStage.qualificationGroup,
+                      )
+                    : rounds.filter((r) => r.group === group);
+                const last = scoped.at(-1);
                 if (last) {
                   const stage =
                     last.tournamentPhase !== null &&
@@ -277,6 +309,8 @@ export function HistoryEventView({
                       ? { tournamentPhase: last.tournamentPhase, qualificationGroup: last.qualificationGroup }
                       : (selectedStage ?? null);
                   onChange(group, last.round, stage);
+                } else {
+                  onChange(group, selected?.round ?? 1, selectedStage ?? null);
                 }
               }}
             >

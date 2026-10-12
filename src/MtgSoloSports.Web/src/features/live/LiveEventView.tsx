@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
@@ -176,7 +176,18 @@ export function LiveEventView({
         if (staged) {
           return staged;
         }
-      } else if (!isTypeCupEvent) {
+        // MSS-079 correction: an explicit stage+round that was never persisted
+        // must stay missing so the fetch surfaces a 404. Only genuinely
+        // stage-less legacy URLs may fall back; never substitute another
+        // stage for an explicit stage URL.
+        return {
+          group: wantedGroup,
+          round: urlRound,
+          tournamentPhase: urlStage.tournamentPhase,
+          qualificationGroup: urlStage.qualificationGroup,
+        };
+      }
+      if (!isTypeCupEvent) {
         const match = rounds.find((r) => r.round === urlRound && r.group === wantedGroup);
         if (match) {
           return match;
@@ -231,6 +242,11 @@ export function LiveEventView({
       .catch((failure: unknown) => {
         if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
           setError(apiErrorMessage(failure));
+          // MSS-079 correction: an explicit but unpersisted stage+round must not
+          // keep showing the previous stage's replay alongside the error.
+          if (failure instanceof ApiError && failure.status === 404) {
+            setRoundView(null);
+          }
         }
       });
     return () => controller.abort();
