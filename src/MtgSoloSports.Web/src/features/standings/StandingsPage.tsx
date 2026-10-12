@@ -22,9 +22,6 @@ import {
 } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
 import { historyPath, livePath, savesPath, type StandingsView } from '../routing/routes';
-import { MovementSection } from '../movement/MovementSection';
-import { RebalanceSection } from '../rebalance/RebalanceSection';
-import { zoneLabelForRank, zoneSummaryLine } from './zones';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import {
   allStageColumns,
@@ -598,22 +595,6 @@ export function StandingsPage({
         )}
       </Card>
 
-      {seasonNumber !== null ? (
-        <MovementSection
-          saveId={saveId}
-          seasonNumber={seasonNumber}
-          isSeasonComplete={seasonEntry?.isComplete ?? false}
-        />
-      ) : null}
-
-      {seasonNumber !== null ? (
-        <RebalanceSection
-          saveId={saveId}
-          seasonNumber={seasonNumber}
-          isSeasonComplete={seasonEntry?.isComplete ?? false}
-        />
-      ) : null}
-
       {view === 'season' ? (
         <Card
           eyebrow="Season table"
@@ -644,7 +625,6 @@ export function StandingsPage({
                     <tr>
                       <th scope="col" className="numeric">Rank</th>
                       <th scope="col">Card</th>
-                      <th scope="col">Zone</th>
                       <th scope="col" className="numeric">Champ pts</th>
                       <th scope="col" className="numeric">Stage W</th>
                       <th scope="col" className="numeric">Round W</th>
@@ -675,11 +655,6 @@ export function StandingsPage({
                               </span>
                             </div>
                           </td>
-                          <td>
-                            <span className="badge badge-wait" title="Visual zone only; no quotas applied.">
-                              {zoneLabelForRank(totals.seasonRank, leagueKind, leagueLevel)}
-                            </span>
-                          </td>
                           <td className="numeric">{formatPoints(totals.totalChampionshipPointsThousandths)}</td>
                           <td className="numeric">{totals.stageWins}</td>
                           <td className="numeric">{totals.roundWins}</td>
@@ -693,9 +668,7 @@ export function StandingsPage({
               <p className="muted small">
                 {useCurrentTotals
                   ? 'Live cumulative table from persisted completed stages; final ranks persist at season end.'
-                  : 'Persisted final table; completed seasons never change when new stages run.'}{' '}
-                Zones are visual only ({zoneSummaryLine(leagueKind, leagueLevel)}).
-                No color quotas are applied.
+                  : 'Persisted final table; completed seasons never change when new stages run.'}
               </p>
             </>
           )}
