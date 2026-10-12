@@ -132,15 +132,47 @@ public sealed class TypeCupStageIdentityTests
             Guid saveId = await SetupTournamentAsync(store, TeamCount, 79401UL, 79402UL);
             await new RunTypeCupTeamHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2);
 
+            HashSet<string> expectedFinal;
+            HashSet<string> expectedQual2;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                SeasonEntity season = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2);
+                expectedFinal = (await context.TypeCupTeamStandings.AsNoTracking()
+                    .Where(e => e.SourceSeasonId == season.Id && e.TournamentPhase == 2)
+                    .Select(e => e.CreatureType).Distinct().ToListAsync()).ToHashSet(StringComparer.Ordinal);
+                expectedQual2 = (await context.TypeCupTournamentDraws.AsNoTracking()
+                    .Where(e => e.SourceSeasonId == season.Id && e.QualificationGroup == 2)
+                    .Select(e => e.CreatureType).Distinct().ToListAsync()).ToHashSet(StringComparer.Ordinal);
+            }
+
+            expectedFinal.Count.ShouldBe(32);
+            expectedQual2.Count.ShouldBeGreaterThan(0);
+
             GetHistoryEventTeamStandingsHandler standings = new(store);
             HistoryEventTeamStandingsResponse finalBaseline =
                 await standings.HandleAsync(saveId, 2, "type-cup-team", 1, 1, CancellationToken.None, 2, 0);
             finalBaseline.IsFinal.ShouldBeFalse();
+            finalBaseline.Teams.Count.ShouldBe(32);
             finalBaseline.Teams.ShouldAllBe(t => t.ScoreThousandths == 0);
+            finalBaseline.Teams.Select(t => t.TeamName).ToHashSet(StringComparer.Ordinal).SetEquals(expectedFinal).ShouldBeTrue();
+            finalBaseline.Members.Count.ShouldBe(32 * 4);
+            finalBaseline.Members.ShouldAllBe(m => expectedFinal.Contains(m.TeamName));
 
             HistoryEventTeamStandingsResponse qual2Baseline =
                 await standings.HandleAsync(saveId, 2, "type-cup-team", 1, 1, CancellationToken.None, 1, 2);
+            qual2Baseline.IsFinal.ShouldBeFalse();
+            qual2Baseline.Teams.Count.ShouldBe(expectedQual2.Count);
             qual2Baseline.Teams.ShouldAllBe(t => t.ScoreThousandths == 0);
+            qual2Baseline.Teams.Select(t => t.TeamName).ToHashSet(StringComparer.Ordinal).SetEquals(expectedQual2).ShouldBeTrue();
+            qual2Baseline.Members.Count.ShouldBe(expectedQual2.Count * 4);
+            qual2Baseline.Members.ShouldAllBe(m => expectedQual2.Contains(m.TeamName));
+
+            HistoryEventTeamStandingsResponse finalStaged =
+                await standings.HandleAsync(saveId, 2, "type-cup-team", cancellationToken: CancellationToken.None, tournamentPhase: 2, qualificationGroup: 0);
+            finalStaged.IsFinal.ShouldBeFalse();
+            finalStaged.Teams.Count.ShouldBe(32);
+            finalStaged.Teams.Select(t => t.TeamName).ToHashSet(StringComparer.Ordinal).SetEquals(expectedFinal).ShouldBeTrue();
+            finalStaged.Members.Count.ShouldBe(32 * 4);
         }
         finally
         {
