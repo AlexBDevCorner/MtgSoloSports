@@ -85,8 +85,10 @@ describe('type cup tournament live progression', () => {
   it('shows qualification groups as active, completed or pending with text badges', () => {
     assert.ok(view.includes('<TypeCupLiveStages'), 'tournament progression card');
     const stages = readFileSync(join(here, 'typeCupLiveStages.tsx'), 'utf8');
-    assert.ok(stages.includes('Qualification Group'), 'generic group identity for 3+ groups');
-    assert.ok(stages.includes('Semifinal A'), 'friendly alias only for two groups');
+    const model = readFileSync(join(here, 'typeCupLiveModel.ts'), 'utf8');
+    assert.ok(stages.includes('Type Cup stages'), 'compact stage navigation');
+    assert.ok(model.includes('qualificationStageLabel'), 'generic group identity');
+    assert.ok(model.includes('Semifinal A'), 'friendly alias only for two groups');
     assert.ok(stages.includes('Completed'), 'completed text');
     assert.ok(stages.includes('Active'), 'active text');
     assert.ok(stages.includes('Pending'), 'pending text');
@@ -94,8 +96,8 @@ describe('type cup tournament live progression', () => {
   });
 
   it('keeps rank groups distinct from qualification groups and continues without dashboard trips', () => {
-    assert.ok(view.includes('Squad rank group'), 'rank-group versus qual-group wording');
-    assert.ok(view.includes('no Dashboard round trip'), 'continuation copy');
+    assert.ok(view.includes('Squad #'), 'rank groups use unmistakable Squad numbering');
+    assert.ok(view.includes('Finish entire Type Cup'), 'tournament-wide fast-forward is explicitly scoped');
     assert.ok(view.includes('canonical draw order'), 'backend canonical order');
   });
 });

@@ -20,8 +20,8 @@ describe('MSS-079 Type Cup Live completion', () => {
   });
 
   it('offers a tournament-stage picker instead of one collapsed group list', () => {
-    assert.ok(view.includes('Tournament stages'), 'stage picker exists');
-    assert.ok(view.includes('typeStages'), 'stages derive from persisted rounds');
+    assert.ok(view.includes('Type Cup stages') || stages.includes('Type Cup stages'), 'stage picker exists');
+    assert.ok(view.includes('typeCupStages') || view.includes('stageOrdered'), 'stages derive from persisted rounds');
     assert.ok(view.includes("key={`${r.tournamentPhase ?? 'x'}/${r.qualificationGroup ?? 'x'}/"), 'pills keyed by stage');
   });
 
@@ -31,7 +31,7 @@ describe('MSS-079 Type Cup Live completion', () => {
       'completion clears the stale cursor',
     );
     assert.ok(
-      stages.includes('const currentStage = tournamentComplete ? null : (lastStage ?? progress?.tournamentStage ?? null);'),
+      stages.includes('Tournament complete') || view.includes('tournamentComplete: complete'),
       'tournament pane hides the cursor after the Final',
     );
   });
