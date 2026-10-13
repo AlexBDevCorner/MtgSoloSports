@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -32,6 +32,16 @@ import {
   type TypeCupStageInfo,
   type TypeCupStageKey,
 } from './typeCupLiveModel';
+import {
+  isContestedIndex,
+  isQualifyingTeam,
+  isWildcardQualifiedTeam,
+  liveCutLineLabel,
+  liveCutoffLegend,
+  orderRevealedByOfficialOrder,
+  qualifiedRowCount,
+  resolveLiveQualificationCutoff,
+} from './typeCupLiveQualification';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
@@ -690,6 +700,33 @@ export function LiveEventView({
       : null;
   const shownOverall =
     isTypeTournamentLive && roundView ? stageLocalRound(roundView.group ?? 1, roundView.roundNumber, roundsPerGroup) : null;
+  // MSS-080 correction: the confirmed wildcard winner only applies at the
+  // group's final table. Earlier replay rounds are provisional snapshots, so
+  // the cutoff stays provisional until the last persisted stage round is
+  // fully revealed; otherwise the eventual winner would make a different
+  // provisional rank look confirmed. Null for the Final/single/direct-Final
+  // so no misleading highlight leaks across groups or stages.
+  const stageLastOverall = stageOrdered.length > 0 ? stageOrdered[stageOrdered.length - 1]!.overall : null;
+  const isViewingConfirmedTable =
+    shownOverall !== null && stageLastOverall !== null && shownOverall === stageLastOverall && fullyRevealed;
+  const liveCutoff =
+    isTypeTournamentLive && selectedStageInfo
+      ? resolveLiveQualificationCutoff({
+          stage: selectedStageInfo,
+          draw,
+          tournament,
+          isFinalTable: isViewingConfirmedTable,
+        })
+      : null;
+  const liveCutLegend = liveCutoffLegend(liveCutoff);
+  const liveCutLabel = liveCutLineLabel(liveCutoff);
+  // MSS-080 correction: at a confirmed final table the persisted backend
+  // teamRank order is authoritative. The provisional projection sorts tied
+  // scores alphabetically with no tie-break, so a tied qualifying boundary
+  // could otherwise highlight the wrong team by array index. Reorder to the
+  // official order when it covers exactly the displayed teams; provisional
+  // tables keep the live projection order.
+  const orderedRevealedTeams = orderRevealedByOfficialOrder(revealedTeams, liveCutoff);
   const stageProgressLine = isTypeTournamentLive && selectedStageInfo
     ? `${selectedStageInfo.label} · Round ${selectedOverall ?? stagePlayed} / ${stageTotal}`
     : null;
@@ -1075,40 +1112,74 @@ export function LiveEventView({
           )}
           {team && roundView && !showFinal ? (
             baselineReady ? (
-              <table className="mini-table">
-                <caption className="reveal-subhead">
-                  {isTypeTournamentLive && selectedStageInfo
-                    ? selectedStageInfo.kind === 'final'
-                      ? 'Final standings'
-                      : `Team standings in ${selectedStageInfo.label}`
-                    : 'Team standings so far'}
-                  <span className="muted small live-team-caption">
-                    {isTypeTournamentLive && selectedStageInfo && shownOverall !== null
-                      ? `${selectedStageInfo.label} · Round ${shownOverall} / ${stageTotal} (Squad #${roundView.group ?? 1} · Round ${roundView.roundNumber} of ${roundsPerGroup}) · ${revealed.length}/${roundView.placements.length} revealed`
-                      : `${selectedStageInfo?.label ? `${selectedStageInfo.label} · ` : ''}${revealed.length}/${roundView.placements.length} revealed`}
-                  </span>
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Team</th>
-                    <th scope="col" className="numeric">
-                      This round
-                    </th>
-                    <th scope="col" className="numeric">
-                      Points
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {revealedTeams.map((row) => (
-                    <tr key={row.teamName}>
-                      <td>{row.teamName}</td>
-                      <td className="numeric">{row.roundThousandths > 0 ? `+${formatPoints(row.roundThousandths)}` : '—'}</td>
-                      <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+              <>
+                <table className="mini-table">
+                  <caption className="reveal-subhead">
+                    {isTypeTournamentLive && selectedStageInfo
+                      ? selectedStageInfo.kind === 'final'
+                        ? 'Final standings'
+                        : `Team standings in ${selectedStageInfo.label}`
+                      : 'Team standings so far'}
+                    <span className="muted small live-team-caption">
+                      {isTypeTournamentLive && selectedStageInfo && shownOverall !== null
+                        ? `${selectedStageInfo.label} · Round ${shownOverall} / ${stageTotal} (Squad #${roundView.group ?? 1} · Round ${roundView.roundNumber} of ${roundsPerGroup}) · ${revealed.length}/${roundView.placements.length} revealed`
+                        : `${selectedStageInfo?.label ? `${selectedStageInfo.label} · ` : ''}${revealed.length}/${roundView.placements.length} revealed`}
+                    </span>
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Team</th>
+                      <th scope="col" className="numeric">
+                        This round
+                      </th>
+                      <th scope="col" className="numeric">
+                        Points
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {orderedRevealedTeams.map((row, index) => {
+                      const qualifying = isQualifyingTeam(row.teamName, index, liveCutoff);
+                      const contested = isContestedIndex(index, liveCutoff, orderedRevealedTeams.length);
+                      const wildcardQualified = isWildcardQualifiedTeam(row.teamName, index, liveCutoff);
+                      const rowClass = qualifying ? 'live-qualifying-row' : contested ? 'live-contested-row' : undefined;
+                      const qualifiedTotal = qualifiedRowCount(liveCutoff);
+                      const showCut =
+                        liveCutoff !== null &&
+                        liveCutLabel !== null &&
+                        qualifiedTotal > 0 &&
+                        index === qualifiedTotal - 1 &&
+                        orderedRevealedTeams.length > qualifiedTotal;
+                      return (
+                        <Fragment key={row.teamName}>
+                          <tr className={rowClass}>
+                            <td>
+                              {row.teamName}
+                              {wildcardQualified ? (
+                                <span className="live-contested-note"> · wildcard</span>
+                              ) : contested ? (
+                                <span className="live-contested-note"> · wildcard race</span>
+                              ) : null}
+                            </td>
+                            <td className="numeric">{row.roundThousandths > 0 ? `+${formatPoints(row.roundThousandths)}` : '—'}</td>
+                            <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                          </tr>
+                          {showCut ? (
+                            <tr className="live-cut-line" aria-hidden="true">
+                              <td colSpan={3} className="live-cut-cell">
+                                <span className="live-cut-label">{liveCutLabel}</span>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {liveCutoff !== null && liveCutLegend !== null && selectedStageInfo?.kind === 'qualification' ? (
+                  <p className="muted small live-qual-note">{liveCutLegend}</p>
+                ) : null}
+              </>
             ) : null
           ) : isTypeTournamentLive &&
             !roundView &&
@@ -1117,32 +1188,45 @@ export function LiveEventView({
             pendingStageStandings &&
             pendingStageStandings.stageKey === pendingStageKey &&
             pendingStageStandings.standings.teams.length > 0 ? (
-            <table className="mini-table">
-              <caption className="reveal-subhead">
-                {selectedStageInfo.kind === 'final' ? 'Final standings' : `Team standings in ${selectedStageInfo.label}`}
-                <span className="muted small live-team-caption">
-                  {selectedStageInfo.kind === 'final'
-                    ? `${selectedStageInfo.label} · starting at zero · ${pendingStageStandings.standings.teams.length} finalists`
-                    : `${selectedStageInfo.label} · starting at zero`}
-                </span>
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Team</th>
-                  <th scope="col" className="numeric">
-                    Points
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingStageStandings.standings.teams.map((row) => (
-                  <tr key={row.teamName}>
-                    <td>{row.teamName}</td>
-                    <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+            <>
+              <table className="mini-table">
+                <caption className="reveal-subhead">
+                  {selectedStageInfo.kind === 'final' ? 'Final standings' : `Team standings in ${selectedStageInfo.label}`}
+                  <span className="muted small live-team-caption">
+                    {selectedStageInfo.kind === 'final'
+                      ? `${selectedStageInfo.label} · starting at zero · ${pendingStageStandings.standings.teams.length} finalists`
+                      : `${selectedStageInfo.label} · starting at zero`}
+                  </span>
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Team</th>
+                    <th scope="col" className="numeric">
+                      Points
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pendingStageStandings.standings.teams.map((row) => (
+                    <tr key={row.teamName}>
+                      <td>{row.teamName}</td>
+                      <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {liveCutoff !== null && selectedStageInfo.kind === 'qualification' ? (
+                <p className="muted small live-qual-note">
+                  {liveCutoff.guaranteed <= 0
+                    ? liveCutLegend ?? 'No automatic places'
+                    : `Top ${liveCutoff.guaranteed} qualify · places decided once rounds begin${
+                        liveCutoff.hasContestedPlace && liveCutoff.wildcardCount > 0
+                          ? ` · rank ${liveCutoff.guaranteed + 1} competes for ${liveCutoff.wildcardCount} wildcard${liveCutoff.wildcardCount === 1 ? '' : 's'} across groups`
+                          : ''
+                      }`}
+                </p>
+              ) : null}
+            </>
           ) : team && teams && (!isTypeTournamentLive || showFinal) ? (
             <table className="mini-table">
               <caption className="reveal-subhead">{teams.isFinal ? 'Team standings' : 'Team standings so far'}</caption>
