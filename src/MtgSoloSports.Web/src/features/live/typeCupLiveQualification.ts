@@ -36,6 +36,22 @@ export interface LiveQualificationCutoff {
    * when the policy has no wildcards, or when this group's candidate lost.
    */
   wildcardWinner: string | null;
+  /**
+   * Persisted qualified team names for a confirmed final table, best-effort
+   * identity set (guaranteed + confirmed wildcard winner). Null while
+   * provisional or when the persisted group carries no usable identity list
+   * (callers fall back to rank-index highlighting). Lets the confirmed table
+   * highlight the authoritative teams even when provisional
+   * score/alphabetical order disagrees with the official tie-break.
+   */
+  qualifiedTeams: readonly string[] | null;
+  /**
+   * Persisted official rank order (team names best-first by backend teamRank)
+   * for a confirmed final table. Null while provisional or when the persisted
+   * group has no team rows. Lets the confirmed table display the official
+   * order instead of provisional score/alphabetical order at tied boundaries.
+   */
+  officialOrder: readonly string[] | null;
 }
 
 function isValidQuota(value: unknown): value is number {
@@ -56,6 +72,47 @@ function policyOf(tournament: TypeCupTournament | null, draw: TypeCupDraw | null
     return fromFormat;
   }
   return 1;
+}
+
+/**
+ * Persisted identity for a confirmed final table (MSS-080 correction).
+ * The provisional live projection sorts tied scores alphabetically with no
+ * tie-break, while the backend's TeamEvent.RankTeams breaks ties by
+ * group/round place counts, base totals and a seeded draw. At a tied
+ * qualifying boundary the provisional order can therefore disagree with the
+ * official persisted teamRank. The confirmed table must highlight by
+ * persisted identity (qualified flags / official rank order), never by
+ * provisional array index alone.
+ */
+function confirmedIdentity(
+  completed: NonNullable<TypeCupTournament['qualificationGroups']>[number],
+  guaranteed: number,
+  wildcardWinner: string | null,
+): { qualifiedTeams: readonly string[] | null; officialOrder: readonly string[] | null } {
+  const rows = Array.isArray(completed.teams)
+    ? [...completed.teams].sort((a, b) => a.teamRank - b.teamRank)
+    : [];
+  const officialOrder = rows.length > 0 ? rows.map((row) => row.creatureType) : null;
+  if (rows.length > 0) {
+    const flagged = rows.filter((row) => row.qualified).map((row) => row.creatureType);
+    if (flagged.length > 0) {
+      return { qualifiedTeams: flagged, officialOrder };
+    }
+  }
+  const listed = Array.isArray(completed.qualifiedTeams) && completed.qualifiedTeams.length > 0
+    ? [...completed.qualifiedTeams]
+    : null;
+  if (listed) {
+    return { qualifiedTeams: listed, officialOrder };
+  }
+  if (rows.length > 0 && guaranteed >= 0) {
+    const derived = rows.slice(0, guaranteed).map((row) => row.creatureType);
+    if (wildcardWinner != null && !derived.includes(wildcardWinner)) {
+      derived.push(wildcardWinner);
+    }
+    return { qualifiedTeams: derived.length > 0 ? derived : null, officialOrder };
+  }
+  return { qualifiedTeams: null, officialOrder };
 }
 
 export function resolveLiveQualificationCutoff(args: {
@@ -114,6 +171,8 @@ export function resolveLiveQualificationCutoff(args: {
         policyVersion,
         isConfirmed: false,
         wildcardWinner: null,
+        qualifiedTeams: null,
+        officialOrder: null,
       };
     }
     const rawWinner = completed.wildcardWinner;
@@ -132,6 +191,7 @@ export function resolveLiveQualificationCutoff(args: {
         ? false
         : hasWildcard &&
           (completed.wildcardCandidate != null || (Number.isInteger(size) && guaranteed < size));
+    const identity = confirmedIdentity(completed, guaranteed, wildcardWinner);
     return {
       qualificationGroup: qual,
       groupSize: Number.isInteger(size) ? size : null,
@@ -142,6 +202,8 @@ export function resolveLiveQualificationCutoff(args: {
       policyVersion,
       isConfirmed: true,
       wildcardWinner,
+      qualifiedTeams: identity.qualifiedTeams,
+      officialOrder: identity.officialOrder,
     };
   }
 
@@ -177,6 +239,8 @@ export function resolveLiveQualificationCutoff(args: {
     policyVersion,
     isConfirmed: false,
     wildcardWinner: null,
+    qualifiedTeams: null,
+    officialOrder: null,
   };
 }
 
@@ -224,6 +288,73 @@ export function isContestedIndex(
     return false;
   }
   return index === cutoff.guaranteed && totalRows > cutoff.guaranteed;
+}
+
+/**
+ * Confirmed-table qualifying check by persisted team identity (MSS-080).
+ * While provisional the cutoff has no identity set and this falls back to
+ * rank-index highlighting; once confirmed with a persisted qualified set it
+ * highlights the authoritative teams even when provisional alphabetical order
+ * disagrees with the official backend tie-break at the boundary.
+ */
+export function isQualifyingTeam(
+  teamName: string,
+  index: number,
+  cutoff: LiveQualificationCutoff | null,
+): boolean {
+  if (!cutoff) {
+    return false;
+  }
+  if (cutoff.isConfirmed && cutoff.qualifiedTeams != null && cutoff.qualifiedTeams.length > 0) {
+    return cutoff.qualifiedTeams.includes(teamName);
+  }
+  return isQualifyingIndex(index, cutoff);
+}
+
+/**
+ * Confirmed wildcard check by persisted winner identity (MSS-080). Index-only
+ * matching would label the provisional rank guaranteed+1 even when a tied
+ * boundary puts a different team there alphabetically; the persisted
+ * wildcardWinner names the actual qualifier.
+ */
+export function isWildcardQualifiedTeam(
+  teamName: string,
+  index: number,
+  cutoff: LiveQualificationCutoff | null,
+): boolean {
+  if (!cutoff || !cutoff.isConfirmed || cutoff.wildcardWinner == null) {
+    return false;
+  }
+  if (typeof teamName === 'string' && teamName.length > 0) {
+    return teamName === cutoff.wildcardWinner;
+  }
+  return isWildcardQualifiedIndex(index, cutoff);
+}
+
+/**
+ * Official order for a confirmed final table (MSS-080). Returns the input
+ * rows reordered to the persisted backend teamRank order when that order is
+ * available and covers exactly the displayed teams; otherwise returns the
+ * input order unchanged (fail closed to the provisional projection).
+ */
+export function orderRevealedByOfficialOrder<T extends { teamName: string }>(
+  rows: readonly T[],
+  cutoff: LiveQualificationCutoff | null,
+): T[] {
+  if (!cutoff || !cutoff.isConfirmed || cutoff.officialOrder == null) {
+    return [...rows];
+  }
+  if (cutoff.officialOrder.length !== rows.length) {
+    return [...rows];
+  }
+  const names = new Set(rows.map((row) => row.teamName));
+  for (const name of cutoff.officialOrder) {
+    if (!names.has(name)) {
+      return [...rows];
+    }
+  }
+  const rank = new Map(cutoff.officialOrder.map((name, position) => [name, position] as const));
+  return [...rows].sort((a, b) => (rank.get(a.teamName) ?? 0) - (rank.get(b.teamName) ?? 0));
 }
 
 /**

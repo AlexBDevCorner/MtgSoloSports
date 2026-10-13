@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import {
   isContestedIndex,
   isQualifyingIndex,
+  isQualifyingTeam,
   isWildcardQualifiedIndex,
+  isWildcardQualifiedTeam,
   liveCutLineLabel,
   liveCutoffLegend,
+  orderRevealedByOfficialOrder,
   qualifiedRowCount,
   resolveLiveQualificationCutoff,
 } from './typeCupLiveQualification.ts';
@@ -287,5 +290,111 @@ describe('MSS-080 live qualification cutoff', () => {
     assert.equal(isContestedIndex(0, cutoff, 8), true);
     assert.equal(liveCutLineLabel(cutoff), null);
     assert.ok((liveCutoffLegend(cutoff) ?? '').includes('No automatic places'));
+  });
+
+  it('uses persisted identity at a tied confirmed boundary, not provisional alphabetical index', () => {
+    const draw = drawOf([{ qualificationGroup: 1, groupSize: 2, finalPlaces: 1 }]);
+    const tournament = {
+      isDirectFinal: false,
+      wildcardCount: 0,
+      qualificationPolicyVersion: 1,
+      final: { teamCount: 2, championCreatureType: 'Zebra' },
+      qualificationGroups: [
+        {
+          qualificationGroup: 1,
+          groupSize: 2,
+          finalPlaces: 1,
+          guaranteedPlaces: 1,
+          wildcardCandidate: null,
+          wildcardWinner: null,
+          teams: [
+            { creatureType: 'Zebra', teamRank: 1, teamScoreThousandths: 100000, teamBaseThousandths: 90000, medal: 'None', qualified: true, qualificationStatus: 'Guaranteed' },
+            { creatureType: 'Alpha', teamRank: 2, teamScoreThousandths: 100000, teamBaseThousandths: 80000, medal: 'None', qualified: false, qualificationStatus: 'Eliminated' },
+          ],
+          legs: [],
+          qualifiedTeams: ['Zebra'],
+          eliminatedTeams: ['Alpha'],
+          checksum: 'q',
+        },
+      ],
+    } as never;
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament, isFinalTable: true });
+    assert.ok(cutoff);
+    assert.equal(cutoff.isConfirmed, true);
+    assert.deepEqual([...(cutoff.qualifiedTeams ?? [])], ['Zebra']);
+    assert.deepEqual([...(cutoff.officialOrder ?? [])], ['Zebra', 'Alpha']);
+    // Provisional alphabetical order would put Alpha first on the tied score;
+    // the official order must put the persisted winner first.
+    const provisional = [{ teamName: 'Alpha' }, { teamName: 'Zebra' }];
+    assert.deepEqual(
+      orderRevealedByOfficialOrder(provisional, cutoff).map((row) => row.teamName),
+      ['Zebra', 'Alpha'],
+    );
+    // Identity highlighting follows the official winner, not index 0.
+    assert.equal(isQualifyingTeam('Zebra', 1, cutoff), true);
+    assert.equal(isQualifyingTeam('Alpha', 0, cutoff), false);
+    // The old index-only check would have highlighted the wrong team.
+    assert.equal(isQualifyingIndex(0, cutoff), true);
+  });
+
+  it('names the persisted wildcard winner at a tied boundary, not the provisional rank', () => {
+    const draw = drawOf([{ qualificationGroup: 1, groupSize: 3, finalPlaces: 1 }]);
+    const tournament = {
+      isDirectFinal: false,
+      wildcardCount: 1,
+      qualificationPolicyVersion: 2,
+      final: { teamCount: 3, championCreatureType: 'Beta' },
+      qualificationGroups: [
+        {
+          qualificationGroup: 1,
+          groupSize: 3,
+          finalPlaces: 1,
+          guaranteedPlaces: 1,
+          wildcardCandidate: 'Zebra',
+          wildcardWinner: 'Zebra',
+          teams: [
+            { creatureType: 'Beta', teamRank: 1, teamScoreThousandths: 100000, teamBaseThousandths: 90000, medal: 'None', qualified: true, qualificationStatus: 'Guaranteed' },
+            { creatureType: 'Zebra', teamRank: 2, teamScoreThousandths: 90000, teamBaseThousandths: 80000, medal: 'None', qualified: true, qualificationStatus: 'Wildcard' },
+            { creatureType: 'Alpha', teamRank: 3, teamScoreThousandths: 90000, teamBaseThousandths: 70000, medal: 'None', qualified: false, qualificationStatus: 'Eliminated' },
+          ],
+          legs: [],
+          qualifiedTeams: ['Beta', 'Zebra'],
+          eliminatedTeams: ['Alpha'],
+          checksum: 'q',
+        },
+      ],
+    } as never;
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament, isFinalTable: true });
+    assert.ok(cutoff);
+    assert.equal(cutoff.wildcardWinner, 'Zebra');
+    assert.deepEqual([...(cutoff.officialOrder ?? [])], ['Beta', 'Zebra', 'Alpha']);
+    // Alphabetical (Alpha, Beta, Zebra) would put Beta at index 1, so an
+    // index-only wildcard check mislabels Beta as the wildcard.
+    assert.equal(isWildcardQualifiedIndex(1, cutoff), true);
+    assert.equal(isWildcardQualifiedTeam('Beta', 1, cutoff), false);
+    assert.equal(isWildcardQualifiedTeam('Zebra', 2, cutoff), true);
+    assert.equal(isQualifyingTeam('Zebra', 2, cutoff), true);
+    assert.equal(isQualifyingTeam('Alpha', 0, cutoff), false);
+    const provisional = [{ teamName: 'Alpha' }, { teamName: 'Beta' }, { teamName: 'Zebra' }];
+    assert.deepEqual(
+      orderRevealedByOfficialOrder(provisional, cutoff).map((row) => row.teamName),
+      ['Beta', 'Zebra', 'Alpha'],
+    );
+  });
+
+  it('keeps provisional tables in live projection order (no official reorder)', () => {
+    const draw = drawOf([{ qualificationGroup: 1, groupSize: 2, finalPlaces: 1 }]);
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament: null });
+    assert.ok(cutoff);
+    assert.equal(cutoff.isConfirmed, false);
+    assert.equal(cutoff.qualifiedTeams, null);
+    assert.equal(cutoff.officialOrder, null);
+    const rows = [{ teamName: 'Alpha' }, { teamName: 'Zebra' }];
+    assert.deepEqual(
+      orderRevealedByOfficialOrder(rows, cutoff).map((row) => row.teamName),
+      ['Alpha', 'Zebra'],
+    );
+    assert.equal(isQualifyingTeam('Alpha', 0, cutoff), true);
+    assert.equal(isQualifyingTeam('Zebra', 1, cutoff), false);
   });
 });

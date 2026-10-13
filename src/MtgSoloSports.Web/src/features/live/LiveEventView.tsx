@@ -34,10 +34,11 @@ import {
 } from './typeCupLiveModel';
 import {
   isContestedIndex,
-  isQualifyingIndex,
-  isWildcardQualifiedIndex,
+  isQualifyingTeam,
+  isWildcardQualifiedTeam,
   liveCutLineLabel,
   liveCutoffLegend,
+  orderRevealedByOfficialOrder,
   qualifiedRowCount,
   resolveLiveQualificationCutoff,
 } from './typeCupLiveQualification';
@@ -719,6 +720,13 @@ export function LiveEventView({
       : null;
   const liveCutLegend = liveCutoffLegend(liveCutoff);
   const liveCutLabel = liveCutLineLabel(liveCutoff);
+  // MSS-080 correction: at a confirmed final table the persisted backend
+  // teamRank order is authoritative. The provisional projection sorts tied
+  // scores alphabetically with no tie-break, so a tied qualifying boundary
+  // could otherwise highlight the wrong team by array index. Reorder to the
+  // official order when it covers exactly the displayed teams; provisional
+  // tables keep the live projection order.
+  const orderedRevealedTeams = orderRevealedByOfficialOrder(revealedTeams, liveCutoff);
   const stageProgressLine = isTypeTournamentLive && selectedStageInfo
     ? `${selectedStageInfo.label} · Round ${selectedOverall ?? stagePlayed} / ${stageTotal}`
     : null;
@@ -1130,10 +1138,10 @@ export function LiveEventView({
                     </tr>
                   </thead>
                   <tbody>
-                    {revealedTeams.map((row, index) => {
-                      const qualifying = isQualifyingIndex(index, liveCutoff);
-                      const contested = isContestedIndex(index, liveCutoff, revealedTeams.length);
-                      const wildcardQualified = isWildcardQualifiedIndex(index, liveCutoff);
+                    {orderedRevealedTeams.map((row, index) => {
+                      const qualifying = isQualifyingTeam(row.teamName, index, liveCutoff);
+                      const contested = isContestedIndex(index, liveCutoff, orderedRevealedTeams.length);
+                      const wildcardQualified = isWildcardQualifiedTeam(row.teamName, index, liveCutoff);
                       const rowClass = qualifying ? 'live-qualifying-row' : contested ? 'live-contested-row' : undefined;
                       const qualifiedTotal = qualifiedRowCount(liveCutoff);
                       const showCut =
@@ -1141,7 +1149,7 @@ export function LiveEventView({
                         liveCutLabel !== null &&
                         qualifiedTotal > 0 &&
                         index === qualifiedTotal - 1 &&
-                        revealedTeams.length > qualifiedTotal;
+                        orderedRevealedTeams.length > qualifiedTotal;
                       return (
                         <Fragment key={row.teamName}>
                           <tr className={rowClass}>
