@@ -89,7 +89,7 @@ describe('MSS-080 live qualification cutoff', () => {
     assert.equal(liveCutoffLegend(c), 'Top 10 provisionally qualify');
   });
 
-  it('prefers the completed tournament table and marks it confirmed', () => {
+  it('prefers the completed tournament table and marks it confirmed at the final table', () => {
     const draw = drawOf([{ qualificationGroup: 1, groupSize: 32, finalPlaces: 10 }]);
     const tournament = {
       isDirectFinal: false,
@@ -111,12 +111,59 @@ describe('MSS-080 live qualification cutoff', () => {
         },
       ],
     } as never;
-    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament });
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament, isFinalTable: true });
     assert.ok(cutoff);
     assert.equal(cutoff.isConfirmed, true);
     assert.equal(cutoff.guaranteed, 10);
     assert.equal(liveCutoffLegend(cutoff), 'Top 10 qualified · rank 11 contested 2 wildcards across groups');
     assert.equal(liveCutLineLabel(cutoff), 'Qualification cut — top 10 qualified');
+  });
+
+  it('keeps an earlier replay round of a completed group provisional, never confirmed', () => {
+    const draw = drawOf([{ qualificationGroup: 1, groupSize: 32, finalPlaces: 10 }]);
+    const tournament = {
+      isDirectFinal: false,
+      wildcardCount: 2,
+      qualificationPolicyVersion: 2,
+      final: { teamCount: 32, championCreatureType: 'Elf' },
+      qualificationGroups: [
+        {
+          qualificationGroup: 1,
+          groupSize: 32,
+          finalPlaces: 10,
+          guaranteedPlaces: 10,
+          wildcardCandidate: 'Elf',
+          wildcardWinner: 'Elf',
+          teams: [],
+          legs: [],
+          qualifiedTeams: [],
+          eliminatedTeams: [],
+          checksum: 'q',
+        },
+      ],
+    } as never;
+    // No isFinalTable (early replay): the eventual winner must not confirm rank 11.
+    for (const args of [
+      { stage: qualStage(1), draw, tournament },
+      { stage: qualStage(1), draw, tournament, isFinalTable: false },
+    ] as never[]) {
+      const cutoff = resolveLiveQualificationCutoff(args);
+      assert.ok(cutoff);
+      assert.equal(cutoff.isConfirmed, false);
+      assert.equal(cutoff.wildcardWinner, null);
+      assert.equal(cutoff.guaranteed, 10);
+      assert.equal(cutoff.hasContestedPlace, true);
+      assert.equal(qualifiedRowCount(cutoff), 10);
+      assert.equal(isQualifyingIndex(9, cutoff), true);
+      assert.equal(isQualifyingIndex(10, cutoff), false);
+      assert.equal(isWildcardQualifiedIndex(10, cutoff), false);
+      assert.equal(isContestedIndex(10, cutoff, 32), true);
+      assert.equal(
+        liveCutoffLegend(cutoff),
+        'Top 10 provisionally qualify · rank 11 competes for 2 wildcards across groups',
+      );
+      assert.equal(liveCutLineLabel(cutoff), 'Qualification cut — top 10 provisionally qualify');
+    }
   });
 
   it('highlights a confirmed wildcard winner as qualified, never contested', () => {
@@ -142,7 +189,7 @@ describe('MSS-080 live qualification cutoff', () => {
         },
       ],
     } as never;
-    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament });
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament, isFinalTable: true });
     assert.ok(cutoff);
     assert.equal(cutoff.isConfirmed, true);
     assert.equal(cutoff.wildcardWinner, 'Elf');
@@ -180,7 +227,7 @@ describe('MSS-080 live qualification cutoff', () => {
         },
       ],
     } as never;
-    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(2), draw, tournament });
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(2), draw, tournament, isFinalTable: true });
     assert.ok(cutoff);
     assert.equal(cutoff.isConfirmed, true);
     assert.equal(cutoff.wildcardWinner, null);

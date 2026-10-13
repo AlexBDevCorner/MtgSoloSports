@@ -265,15 +265,6 @@ export function LiveEventView({
   const viewingOtherStage = Boolean(
     isTypeTournamentLive && selectedTypeStage && canonicalStage && !stageKeyEquals(selectedTypeStage, canonicalStage),
   );
-  // MSS-080: authoritative per-group qualification cutoff for the selected
-  // stage only (draw quota live, completed tournament table on replay).
-  // Null for the Final/single/direct-Final so no misleading highlight leaks.
-  const liveCutoff =
-    isTypeTournamentLive && selectedStageInfo
-      ? resolveLiveQualificationCutoff({ stage: selectedStageInfo, draw, tournament })
-      : null;
-  const liveCutLegend = liveCutoffLegend(liveCutoff);
-  const liveCutLabel = liveCutLineLabel(liveCutoff);
 
   const selected: PlayedRound | null = useMemo(() => {
     if (rounds.length === 0) {
@@ -708,6 +699,26 @@ export function LiveEventView({
       : null;
   const shownOverall =
     isTypeTournamentLive && roundView ? stageLocalRound(roundView.group ?? 1, roundView.roundNumber, roundsPerGroup) : null;
+  // MSS-080 correction: the confirmed wildcard winner only applies at the
+  // group's final table. Earlier replay rounds are provisional snapshots, so
+  // the cutoff stays provisional until the last persisted stage round is
+  // fully revealed; otherwise the eventual winner would make a different
+  // provisional rank look confirmed. Null for the Final/single/direct-Final
+  // so no misleading highlight leaks across groups or stages.
+  const stageLastOverall = stageOrdered.length > 0 ? stageOrdered[stageOrdered.length - 1]!.overall : null;
+  const isViewingConfirmedTable =
+    shownOverall !== null && stageLastOverall !== null && shownOverall === stageLastOverall && fullyRevealed;
+  const liveCutoff =
+    isTypeTournamentLive && selectedStageInfo
+      ? resolveLiveQualificationCutoff({
+          stage: selectedStageInfo,
+          draw,
+          tournament,
+          isFinalTable: isViewingConfirmedTable,
+        })
+      : null;
+  const liveCutLegend = liveCutoffLegend(liveCutoff);
+  const liveCutLabel = liveCutLineLabel(liveCutoff);
   const stageProgressLine = isTypeTournamentLive && selectedStageInfo
     ? `${selectedStageInfo.label} · Round ${selectedOverall ?? stagePlayed} / ${stageTotal}`
     : null;

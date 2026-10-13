@@ -463,11 +463,13 @@ describe('MSS-080 live qualification highlight', () => {
     (renderer as unknown as { unmount: () => void }).unmount();
   });
 
-  it('highlights a confirmed wildcard winner as qualified in replay, never contested', async () => {
+  it('highlights a confirmed wildcard winner as qualified at the final table, never contested', async () => {
     installCompletedWinnerFetch();
     let renderer: ReturnType<typeof create> | null = null;
     await act(async () => {
-      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 2, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 1 }) as never));
+      // Last persisted stage round (Squad #4 Round 2) fully revealed: the
+      // final table may show the persisted wildcard winner as qualified.
+      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 4, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 1 }) as never));
     });
     assert.ok(renderer);
     await flush();
@@ -481,11 +483,33 @@ describe('MSS-080 live qualification highlight', () => {
     (renderer as unknown as { unmount: () => void }).unmount();
   });
 
+  it('keeps an earlier replay round of a completed tournament provisional, never confirmed', async () => {
+    installCompletedWinnerFetch();
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      // Early historical round: the eventual wildcard winner must not make the
+      // provisional rank 3 look confirmed.
+      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 2, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 1 }) as never));
+    });
+    assert.ok(renderer);
+    await flush();
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Team standings in Qualification Group A'), 'stage-scoped standings heading');
+    assert.equal(countOccurrences(text, 'live-qualifying-row'), 2, 'early replay highlights only the 2 guaranteed places');
+    assert.equal(countOccurrences(text, 'live-contested-row'), 1, 'rank 3 stays a contested wildcard race, not confirmed');
+    assert.ok(text.includes('Top 2 provisionally qualify'), 'early replay legend stays provisional');
+    assert.ok(text.includes('wildcard race'), 'contested rank is marked as a wildcard race');
+    assert.ok(!text.includes('Top 3 qualified'), 'early replay never claims the confirmed wildcard total');
+    assert.ok(!text.includes('wildcard Gamma'), 'early replay never names the eventual winner as qualified');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
   it('never leaks a confirmed winner highlight into another group', async () => {
     installCompletedWinnerFetch();
     let renderer: ReturnType<typeof create> | null = null;
     await act(async () => {
-      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 2, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 2 }) as never));
+      // Final table of the losing group: only its guaranteed place qualifies.
+      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 4, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 2 }) as never));
     });
     assert.ok(renderer);
     await flush();

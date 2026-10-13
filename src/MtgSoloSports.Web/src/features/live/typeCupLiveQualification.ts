@@ -62,8 +62,16 @@ export function resolveLiveQualificationCutoff(args: {
   stage: TypeCupStageInfo | null;
   draw: TypeCupDraw | null;
   tournament: TypeCupTournament | null;
+  /**
+   * MSS-080 correction: true only when the UI is showing the group's final
+   * table (last persisted stage round, fully revealed). Earlier replay rounds
+   * are provisional snapshots: the persisted eventual wildcard winner must
+   * never make a different provisional rank look confirmed. Defaults to false
+   * (fail closed to provisional) so callers must opt into confirmed display.
+   */
+  isFinalTable?: boolean;
 }): LiveQualificationCutoff | null {
-  const { stage, draw, tournament } = args;
+  const { stage, draw, tournament, isFinalTable } = args;
   if (!stage || stage.kind !== 'qualification' || stage.qualificationGroup == null) {
     return null;
   }
@@ -75,7 +83,10 @@ export function resolveLiveQualificationCutoff(args: {
     return null;
   }
 
-  // Completed groups carry their own persisted cutoff (most authoritative).
+  // Completed groups carry their own persisted cutoff (most authoritative),
+  // but only the final table may render it as confirmed. Earlier replay
+  // rounds show the same guaranteed quota provisionally so the eventual
+  // wildcard winner never labels a different provisional rank as confirmed.
   const completed = tournament?.qualificationGroups?.find((g) => g.qualificationGroup === qual);
   if (completed) {
     const guaranteed = completed.guaranteedPlaces ?? completed.finalPlaces;
@@ -86,6 +97,25 @@ export function resolveLiveQualificationCutoff(args: {
     const wildcardCount = tournament?.wildcardCount ?? draw?.wildcardCount ?? 0;
     const hasWildcard = policyVersion === 2 && wildcardCount > 0;
     const size = completed.groupSize;
+    if (isFinalTable !== true) {
+      const hasContestedPlace =
+        hasWildcard &&
+        (completed.wildcardCandidate != null ||
+          size == null ||
+          !Number.isInteger(size) ||
+          guaranteed < size);
+      return {
+        qualificationGroup: qual,
+        groupSize: Number.isInteger(size) ? size : null,
+        guaranteed,
+        wildcardCount,
+        hasWildcard,
+        hasContestedPlace,
+        policyVersion,
+        isConfirmed: false,
+        wildcardWinner: null,
+      };
+    }
     const rawWinner = completed.wildcardWinner;
     const wildcardWinner =
       typeof rawWinner === 'string' && rawWinner.length > 0 ? rawWinner : null;
