@@ -29,6 +29,13 @@ export interface LiveQualificationCutoff {
   policyVersion: number;
   /** True when the group's final table is persisted (confirmed), false while provisional. */
   isConfirmed: boolean;
+  /**
+   * Confirmed wildcard winner for this group (MSS-080 correction). Non-null
+   * only when the persisted tournament result resolves this group's
+   * rank guaranteed+1 candidate as a Final qualifier. Null while provisional,
+   * when the policy has no wildcards, or when this group's candidate lost.
+   */
+  wildcardWinner: string | null;
 }
 
 function isValidQuota(value: unknown): value is number {
@@ -79,9 +86,22 @@ export function resolveLiveQualificationCutoff(args: {
     const wildcardCount = tournament?.wildcardCount ?? draw?.wildcardCount ?? 0;
     const hasWildcard = policyVersion === 2 && wildcardCount > 0;
     const size = completed.groupSize;
+    const rawWinner = completed.wildcardWinner;
+    const wildcardWinner =
+      typeof rawWinner === 'string' && rawWinner.length > 0 ? rawWinner : null;
+    // MSS-080 correction: the persisted wildcardWinner resolves the
+    // cross-group race. A confirmed winner at rank guaranteed+1 qualified for
+    // the Final and must not stay rendered as contested/non-qualifying. Once
+    // the tournament Final is persisted the race is settled for every group:
+    // winners qualify, losers are eliminated (never still contested). While
+    // the Final is unresolved (tournament without a final, e.g. unit mocks),
+    // a missing winner with a live candidate stays contested/provisional.
+    const isSettled = tournament?.final != null;
     const hasContestedPlace =
-      hasWildcard &&
-      (completed.wildcardCandidate != null || (Number.isInteger(size) && guaranteed < size));
+      wildcardWinner != null || (isSettled && hasWildcard)
+        ? false
+        : hasWildcard &&
+          (completed.wildcardCandidate != null || (Number.isInteger(size) && guaranteed < size));
     return {
       qualificationGroup: qual,
       groupSize: Number.isInteger(size) ? size : null,
@@ -91,6 +111,7 @@ export function resolveLiveQualificationCutoff(args: {
       hasContestedPlace,
       policyVersion,
       isConfirmed: true,
+      wildcardWinner,
     };
   }
 
@@ -125,15 +146,42 @@ export function resolveLiveQualificationCutoff(args: {
     hasContestedPlace,
     policyVersion,
     isConfirmed: false,
+    wildcardWinner: null,
   };
+}
+
+/**
+ * Total confirmed/provisional qualifying rows (guaranteed plus a confirmed
+ * wildcard winner when the persisted tournament resolves one for this group).
+ */
+export function qualifiedRowCount(cutoff: LiveQualificationCutoff | null): number {
+  if (!cutoff || cutoff.guaranteed < 0) {
+    return 0;
+  }
+  if (cutoff.isConfirmed && cutoff.wildcardWinner != null) {
+    return cutoff.guaranteed + 1;
+  }
+  return cutoff.guaranteed;
+}
+
+/** True when the row is a confirmed wildcard-qualified place (rank guaranteed+1). */
+export function isWildcardQualifiedIndex(index: number, cutoff: LiveQualificationCutoff | null): boolean {
+  if (!cutoff || !cutoff.isConfirmed || cutoff.wildcardWinner == null) {
+    return false;
+  }
+  return index === cutoff.guaranteed;
 }
 
 /** True for a provisional/confirmed qualifying position (0-based index). */
 export function isQualifyingIndex(index: number, cutoff: LiveQualificationCutoff | null): boolean {
-  if (!cutoff || cutoff.guaranteed <= 0) {
+  if (!cutoff) {
     return false;
   }
-  return index < cutoff.guaranteed;
+  const total = qualifiedRowCount(cutoff);
+  if (total <= 0) {
+    return false;
+  }
+  return index < total;
 }
 
 /** True for the cross-group contested place (rank guaranteed+1, never guaranteed). */
@@ -158,6 +206,14 @@ export function liveCutoffLegend(cutoff: LiveQualificationCutoff | null): string
     return null;
   }
   const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
+  // Confirmed wildcard winner: rank guaranteed+1 qualified (never contested).
+  if (cutoff.isConfirmed && cutoff.wildcardWinner != null) {
+    const total = cutoff.guaranteed + 1;
+    if (cutoff.guaranteed <= 0) {
+      return `Top 1 qualified (wildcard ${cutoff.wildcardWinner})`;
+    }
+    return `Top ${total} qualified (Top ${cutoff.guaranteed} + wildcard ${cutoff.wildcardWinner})`;
+  }
   if (cutoff.guaranteed <= 0) {
     if (cutoff.hasWildcard && cutoff.wildcardCount > 0) {
       return `No automatic places · rank 1 competes for ${cutoff.wildcardCount} ${plural(cutoff.wildcardCount, 'wildcard', 'wildcards')}`;
@@ -173,7 +229,9 @@ export function liveCutoffLegend(cutoff: LiveQualificationCutoff | null): string
       : `rank ${cutoff.guaranteed + 1} competes for ${cutoff.wildcardCount} ${plural(cutoff.wildcardCount, 'wildcard', 'wildcards')} across groups`;
     return `${base} · ${race}`;
   }
-  if (cutoff.hasWildcard && cutoff.wildcardCount > 0) {
+  // Settled groups never imply remaining wildcard places; only provisional
+  // standings keep the cross-group "plus wildcards" note.
+  if (!cutoff.isConfirmed && cutoff.hasWildcard && cutoff.wildcardCount > 0) {
     return `${base} · plus ${cutoff.wildcardCount} ${plural(cutoff.wildcardCount, 'wildcard', 'wildcards')} across groups`;
   }
   return base;
@@ -181,10 +239,14 @@ export function liveCutoffLegend(cutoff: LiveQualificationCutoff | null): string
 
 /** Cut-line label rendered between the last qualifying and first nonqualifying row. */
 export function liveCutLineLabel(cutoff: LiveQualificationCutoff | null): string | null {
-  if (!cutoff || cutoff.guaranteed <= 0) {
+  if (!cutoff) {
+    return null;
+  }
+  const total = qualifiedRowCount(cutoff);
+  if (total <= 0) {
     return null;
   }
   return cutoff.isConfirmed
-    ? `Qualification cut — top ${cutoff.guaranteed} qualified`
-    : `Qualification cut — top ${cutoff.guaranteed} provisionally qualify`;
+    ? `Qualification cut — top ${total} qualified`
+    : `Qualification cut — top ${total} provisionally qualify`;
 }

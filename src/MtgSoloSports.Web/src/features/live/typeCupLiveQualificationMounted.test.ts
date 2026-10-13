@@ -187,6 +187,147 @@ function installQualFetch(): void {
   };
 }
 
+function installCompletedWinnerFetch(): void {
+  const g = globalThis as unknown as Record<string, unknown>;
+  const allRounds = [...qualRounds(1, 8), ...qualRounds(2, 8)];
+  g['fetch'] = (input: unknown, init?: { method?: string }) => {
+    const url = String(input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') {
+      return Promise.resolve(okJson({}));
+    }
+    if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds/`)) {
+      const roundMatch = /\/rounds\/(\d+)/.exec(url);
+      const roundNumber = roundMatch ? Number.parseInt(roundMatch[1]!, 10) : 1;
+      const parsed = new URL(url, 'http://localhost');
+      const group = parsed.searchParams.get('group') ? Number.parseInt(parsed.searchParams.get('group')!, 10) : 1;
+      const qual = parsed.searchParams.get('qualificationGroup') ? Number.parseInt(parsed.searchParams.get('qualificationGroup')!, 10) : 1;
+      return Promise.resolve(
+        okJson({
+          seasonNumber: SEASON,
+          event: 'type-cup-team',
+          title: 'Type Cup — team',
+          group,
+          roundNumber,
+          rulesVersion: 1,
+          payloadChecksum: `q${qual}-${group}-${roundNumber}-persisted`,
+          placements: [],
+          tournamentPhase: 1,
+          qualificationGroup: qual,
+        }),
+      );
+    }
+    if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/rounds`)) {
+      return Promise.resolve(okJson({ rounds: allRounds }));
+    }
+    if (url.includes(`/history/seasons/${SEASON}/events/type-cup-team/team-standings`)) {
+      const parsed = new URL(url, 'http://localhost');
+      const qual = parsed.searchParams.get('qualificationGroup');
+      if (qual === '2') {
+        return Promise.resolve(okJson({ isFinal: false, groupsCompleted: 0, teams: GROUP_B_TEAMS, members: [] }));
+      }
+      return Promise.resolve(okJson({ isFinal: false, groupsCompleted: 0, teams: GROUP_A_TEAMS, members: [] }));
+    }
+    if (url.includes(`/history/seasons/${SEASON}/events`)) {
+      return Promise.resolve(
+        okJson({
+          events: [
+            {
+              event: 'type-cup-team',
+              title: 'Type Cup — team',
+              roundsPlayed: allRounds.length,
+              totalRounds: 64,
+              groupCount: 4,
+              roundsPerGroup: 8,
+              isComplete: false,
+            },
+          ],
+        }),
+      );
+    }
+    if (url.includes('/cups/type/tournament')) {
+      return Promise.resolve(
+        okJson({
+          saveId: SAVE,
+          sourceSeasonNumber: SEASON,
+          sourceSeasonId: 7,
+          isDirectFinal: false,
+          teamCount: 8,
+          qualificationGroupCount: 2,
+          groupSizes: [4, 4],
+          finalPlacesPerGroup: [2, 1],
+          drawChecksum: 'draw',
+          qualificationGroups: [
+            {
+              qualificationGroup: 1,
+              groupSize: 4,
+              finalPlaces: 2,
+              guaranteedPlaces: 2,
+              checksum: 'q1',
+              teams: [],
+              legs: [],
+              qualifiedTeams: ['Alpha', 'Beta', 'Gamma'],
+              eliminatedTeams: ['Delta'],
+              wildcardCandidate: 'Gamma',
+              wildcardWinner: 'Gamma',
+            },
+            {
+              qualificationGroup: 2,
+              groupSize: 4,
+              finalPlaces: 1,
+              guaranteedPlaces: 1,
+              checksum: 'q2',
+              teams: [],
+              legs: [],
+              qualifiedTeams: ['Epsilon'],
+              eliminatedTeams: ['Zeta', 'Eta', 'Theta'],
+              wildcardCandidate: 'Zeta',
+              wildcardWinner: null,
+            },
+          ],
+          finalists: ['Alpha', 'Beta', 'Gamma', 'Epsilon'],
+          final: { teamCount: 4, championCreatureType: 'Alpha', teams: [], legs: [] },
+          championCreatureType: 'Alpha',
+          tournamentChecksum: 't',
+          qualificationPolicyVersion: 2,
+          wildcardCount: 1,
+          guaranteedPlacesPerGroup: [2, 1],
+          wildcards: [],
+        }),
+      );
+    }
+    if (url.includes('/cups/type/draw')) {
+      return Promise.resolve(
+        okJson({
+          saveId: SAVE,
+          sourceSeasonNumber: SEASON,
+          sourceSeasonId: 7,
+          rulesVersion: 1,
+          tournamentFormatVersion: 2,
+          isDirectFinal: false,
+          teamCount: 64,
+          qualificationGroupCount: 2,
+          groupSizes: [4, 4],
+          finalPlacesPerGroup: [2, 1],
+          drawChecksum: 'draw',
+          rngBeforeState: 1,
+          rngBeforeStream: 2,
+          rngAfterState: 3,
+          rngAfterStream: 4,
+          groups: [
+            { qualificationGroup: 1, groupSize: 4, finalPlaces: 2, creatureTypes: ['Alpha', 'Beta', 'Gamma', 'Delta'] },
+            { qualificationGroup: 2, groupSize: 4, finalPlaces: 1, creatureTypes: ['Epsilon', 'Zeta', 'Eta', 'Theta'] },
+          ],
+          qualificationPolicyVersion: 2,
+          guaranteedPlacesPerGroup: [2, 1],
+          wildcardCount: 1,
+        }),
+      );
+    }
+    return Promise.resolve(okJson({}));
+  };
+}
+
 async function flush(rounds = 14): Promise<void> {
   for (let i = 0; i < rounds; i += 1) {
     await act(async () => {
@@ -319,6 +460,41 @@ describe('MSS-080 live qualification highlight', () => {
     assert.equal(countOccurrences(text, 'live-contested-row'), 0, 'Final has no contested wildcard row');
     assert.ok(!text.includes('provisionally qualify'), 'Final shows no qualification legend');
     assert.ok(!text.includes('Qualification cut'), 'Final shows no cut line');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('highlights a confirmed wildcard winner as qualified in replay, never contested', async () => {
+    installCompletedWinnerFetch();
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 2, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 1 }) as never));
+    });
+    assert.ok(renderer);
+    await flush();
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Team standings in Qualification Group A'), 'stage-scoped standings heading');
+    assert.equal(countOccurrences(text, 'live-qualifying-row'), 3, 'confirmed winner group highlights 2 guaranteed + wildcard');
+    assert.equal(countOccurrences(text, 'live-contested-row'), 0, 'settled winner is never still contested');
+    assert.ok(text.includes('Top 3 qualified'), 'legend names the confirmed total including wildcard');
+    assert.ok(text.includes('wildcard Gamma'), 'legend names the confirmed wildcard winner');
+    assert.ok(text.includes('Qualification cut'), 'cut line stays visible after the wildcard row');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('never leaks a confirmed winner highlight into another group', async () => {
+    installCompletedWinnerFetch();
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(LiveEventView, baseProps({ urlGroup: 2, urlRound: 2, urlTournamentPhase: 1, urlQualificationGroup: 2 }) as never));
+    });
+    assert.ok(renderer);
+    await flush();
+    const text = renderedText(renderer);
+    assert.ok(text.includes('Team standings in Qualification Group B'), 'standings follow the selected group');
+    assert.equal(countOccurrences(text, 'live-qualifying-row'), 1, 'losing group highlights only its guaranteed place');
+    assert.equal(countOccurrences(text, 'live-contested-row'), 0, 'settled losing group is eliminated, not contested');
+    assert.ok(text.includes('Top 1 qualified'), 'losing group legend shows only its guaranteed cutoff');
+    assert.ok(!text.includes('wildcard Gamma'), 'prior group winner never leaks into Group B');
     (renderer as unknown as { unmount: () => void }).unmount();
   });
 

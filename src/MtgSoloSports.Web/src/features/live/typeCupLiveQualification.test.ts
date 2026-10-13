@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   isContestedIndex,
   isQualifyingIndex,
+  isWildcardQualifiedIndex,
   liveCutLineLabel,
   liveCutoffLegend,
+  qualifiedRowCount,
   resolveLiveQualificationCutoff,
 } from './typeCupLiveQualification.ts';
 import type { TypeCupStageInfo } from './typeCupLiveModel.ts';
@@ -114,6 +116,80 @@ describe('MSS-080 live qualification cutoff', () => {
     assert.equal(cutoff.isConfirmed, true);
     assert.equal(cutoff.guaranteed, 10);
     assert.equal(liveCutoffLegend(cutoff), 'Top 10 qualified · rank 11 contested 2 wildcards across groups');
+    assert.equal(liveCutLineLabel(cutoff), 'Qualification cut — top 10 qualified');
+  });
+
+  it('highlights a confirmed wildcard winner as qualified, never contested', () => {
+    const draw = drawOf([{ qualificationGroup: 1, groupSize: 32, finalPlaces: 10 }]);
+    const tournament = {
+      isDirectFinal: false,
+      wildcardCount: 2,
+      qualificationPolicyVersion: 2,
+      final: { teamCount: 32, championCreatureType: 'Elf' },
+      qualificationGroups: [
+        {
+          qualificationGroup: 1,
+          groupSize: 32,
+          finalPlaces: 10,
+          guaranteedPlaces: 10,
+          wildcardCandidate: 'Elf',
+          wildcardWinner: 'Elf',
+          teams: [],
+          legs: [],
+          qualifiedTeams: [],
+          eliminatedTeams: [],
+          checksum: 'q',
+        },
+      ],
+    } as never;
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(1), draw, tournament });
+    assert.ok(cutoff);
+    assert.equal(cutoff.isConfirmed, true);
+    assert.equal(cutoff.wildcardWinner, 'Elf');
+    assert.equal(cutoff.hasContestedPlace, false);
+    assert.equal(qualifiedRowCount(cutoff), 11);
+    assert.equal(isQualifyingIndex(9, cutoff), true);
+    assert.equal(isQualifyingIndex(10, cutoff), true);
+    assert.equal(isWildcardQualifiedIndex(10, cutoff), true);
+    assert.equal(isQualifyingIndex(11, cutoff), false);
+    assert.equal(isContestedIndex(10, cutoff, 32), false);
+    assert.equal(liveCutoffLegend(cutoff), 'Top 11 qualified (Top 10 + wildcard Elf)');
+    assert.equal(liveCutLineLabel(cutoff), 'Qualification cut — top 11 qualified');
+  });
+
+  it('settles a losing confirmed group as eliminated, never still contested', () => {
+    const draw = drawOf([{ qualificationGroup: 2, groupSize: 32, finalPlaces: 10 }]);
+    const tournament = {
+      isDirectFinal: false,
+      wildcardCount: 2,
+      qualificationPolicyVersion: 2,
+      final: { teamCount: 32, championCreatureType: 'Goblin' },
+      qualificationGroups: [
+        {
+          qualificationGroup: 2,
+          groupSize: 32,
+          finalPlaces: 10,
+          guaranteedPlaces: 10,
+          wildcardCandidate: 'Orc',
+          wildcardWinner: null,
+          teams: [],
+          legs: [],
+          qualifiedTeams: [],
+          eliminatedTeams: [],
+          checksum: 'q',
+        },
+      ],
+    } as never;
+    const cutoff = resolveLiveQualificationCutoff({ stage: qualStage(2), draw, tournament });
+    assert.ok(cutoff);
+    assert.equal(cutoff.isConfirmed, true);
+    assert.equal(cutoff.wildcardWinner, null);
+    assert.equal(cutoff.hasContestedPlace, false);
+    assert.equal(qualifiedRowCount(cutoff), 10);
+    assert.equal(isQualifyingIndex(9, cutoff), true);
+    assert.equal(isQualifyingIndex(10, cutoff), false);
+    assert.equal(isContestedIndex(10, cutoff, 32), false);
+    assert.equal(liveCutoffLegend(cutoff), 'Top 10 qualified');
     assert.equal(liveCutLineLabel(cutoff), 'Qualification cut — top 10 qualified');
   });
 

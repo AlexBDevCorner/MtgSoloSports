@@ -35,8 +35,10 @@ import {
 import {
   isContestedIndex,
   isQualifyingIndex,
+  isWildcardQualifiedIndex,
   liveCutLineLabel,
   liveCutoffLegend,
+  qualifiedRowCount,
   resolveLiveQualificationCutoff,
 } from './typeCupLiveQualification';
 import { RoundReveal } from '../reveal/RoundReveal';
@@ -1120,18 +1122,25 @@ export function LiveEventView({
                     {revealedTeams.map((row, index) => {
                       const qualifying = isQualifyingIndex(index, liveCutoff);
                       const contested = isContestedIndex(index, liveCutoff, revealedTeams.length);
+                      const wildcardQualified = isWildcardQualifiedIndex(index, liveCutoff);
                       const rowClass = qualifying ? 'live-qualifying-row' : contested ? 'live-contested-row' : undefined;
+                      const qualifiedTotal = qualifiedRowCount(liveCutoff);
                       const showCut =
                         liveCutoff !== null &&
                         liveCutLabel !== null &&
-                        index === liveCutoff.guaranteed - 1 &&
-                        revealedTeams.length > liveCutoff.guaranteed;
+                        qualifiedTotal > 0 &&
+                        index === qualifiedTotal - 1 &&
+                        revealedTeams.length > qualifiedTotal;
                       return (
                         <Fragment key={row.teamName}>
                           <tr className={rowClass}>
                             <td>
                               {row.teamName}
-                              {contested ? <span className="live-contested-note"> · wildcard race</span> : null}
+                              {wildcardQualified ? (
+                                <span className="live-contested-note"> · wildcard</span>
+                              ) : contested ? (
+                                <span className="live-contested-note"> · wildcard race</span>
+                              ) : null}
                             </td>
                             <td className="numeric">{row.roundThousandths > 0 ? `+${formatPoints(row.roundThousandths)}` : '—'}</td>
                             <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
