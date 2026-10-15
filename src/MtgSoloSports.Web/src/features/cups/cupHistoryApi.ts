@@ -40,11 +40,23 @@ export interface CupTeamSummary {
   lastSeasonNumber: number;
 }
 
+export interface ColorMedalRow {
+  teamKey: string;
+  teamName: string;
+  gold: number;
+  silver: number;
+  bronze: number;
+}
+
 export interface CupEditions {
   saveId: string;
   editions: CupEdition[];
   colorTeams: CupTeamSummary[];
   typeTeams: CupTeamSummary[];
+  /** MSS-081 additive: individual Color Cup medals by color; absent on older payloads. */
+  colorIndividualMedals?: ColorMedalRow[];
+  /** MSS-081 additive: team + individual Color Cup medals by color; absent on older payloads. */
+  colorCombinedMedals?: ColorMedalRow[];
 }
 
 export interface CupTeamLeg {

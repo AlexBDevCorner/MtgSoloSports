@@ -353,8 +353,11 @@ them touch rules, RNG or schema.
 - `ListCupEditions` — `GET /api/saves/{saveId}/cups/editions`. Every edition
   that has stored squad selections, newest first, with state (`Selected`,
   `InProgress`, `Completed`), team count, team podium and the Color Cup
-  individual champion; plus the all-time team table of each Cup. A Color
-  edition is `Completed` only when both the team and the individual event
+  individual champion; plus the all-time team table of each Cup, and (Color
+  only, MSS-081 additive) the all-time individual and combined medal tables
+  by color. Individual medals credit the persisted representation color of
+  each edition; combined is the exact per-color sum of team plus individual.
+  A Color edition is `Completed` only when both the team and the individual event
   have stored standings.
 - `GetColorCupTeamHistory` / `GetTypeCupTeamHistory` —
   `GET /api/saves/{saveId}/cups/{color|type}/teams/{teamKey}/history`. One

@@ -6,8 +6,19 @@ import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi'
 import { SELECTION_TITLES, selectionForAction } from '../events/eventModel';
 import { Link } from '../routing/router';
 import { cupEditionPath, livePath, type CupKind } from '../routing/routes';
-import { fetchCupEditions, type CupEdition, type CupEditions, type CupTeamSummary } from './cupHistoryApi';
+import { fetchCupEditions, type ColorMedalRow, type CupEdition, type CupEditions, type CupTeamSummary } from './cupHistoryApi';
 import { cupKindOf, cupTitle, medalBadge, ordinal, stateLabel } from './cupFormat';
+import {
+  COLOR_MEDAL_VIEWS,
+  combineMedalRows,
+  medalTotal,
+  medalViewDescription,
+  medalViewHeading,
+  medalViewLabel,
+  sortMedalRows,
+  toMedalRows,
+  type ColorMedalView,
+} from './colorCupMedals';
 import { EventLiveAction } from './EventLiveAction';
 import { CardArt } from './SquadTiles';
 import { TeamBadge, TeamMark } from './TeamBadge';
@@ -120,7 +131,12 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
             />
           ))}
           <div className="page-grid">
-            <TeamTable saveId={saveId} cup="color" teams={data.colorTeams} />
+            <ColorMedalTables
+              saveId={saveId}
+              teams={data.colorTeams}
+              individual={data.colorIndividualMedals ?? []}
+              combined={data.colorCombinedMedals ?? combineMedalRows(toMedalRows(data.colorTeams), data.colorIndividualMedals ?? [])}
+            />
             <TeamTable saveId={saveId} cup="type" teams={data.typeTeams} />
           </div>
         </>
@@ -223,3 +239,125 @@ function TeamTable({ saveId, cup, teams }: { saveId: string; cup: CupKind; teams
     </Card>
   );
 }
+function ColorMedalTables({
+  saveId,
+  teams,
+  individual,
+  combined,
+}: {
+  saveId: string;
+  teams: CupTeamSummary[];
+  individual: ColorMedalRow[];
+  combined: ColorMedalRow[];
+}) {
+  const [view, setView] = useState<ColorMedalView>('team');
+  const hasColorCups = teams.length > 0 || individual.length > 0 || combined.length > 0;
+  const teamRows = teams;
+  const individualRows = sortMedalRows(individual);
+  const combinedRows = sortMedalRows(combined);
+  const rows: ColorMedalRow[] =
+    view === 'team' ? sortMedalRows(toMedalRows(teamRows)) : view === 'individual' ? individualRows : combinedRows;
+
+  return (
+    <Card
+      eyebrow="Color Cup"
+      title={medalViewHeading(view)}
+      info={<p>{medalViewDescription(view)} Ordered by medals won.</p>}
+    >
+      <div role="tablist" aria-label="Color Cup medal standings view" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        {COLOR_MEDAL_VIEWS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="tab"
+            aria-selected={view === option}
+            className={view === option ? 'primary-button' : 'ghost-button'}
+            onClick={() => setView(option)}
+          >
+            {medalViewLabel(option)}
+          </button>
+        ))}
+      </div>
+      {!hasColorCups ? (
+        <p className="muted">No Color Cup has been played yet.</p>
+      ) : view === 'team' ? (
+        teamRows.length === 0 ? (
+          <p className="muted">No Color Cup has been played yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Team</th>
+                  <th scope="col" className="numeric">Cups</th>
+                  <th scope="col" className="numeric">🥇</th>
+                  <th scope="col" className="numeric">🥈</th>
+                  <th scope="col" className="numeric">🥉</th>
+                  <th scope="col" className="numeric">Total</th>
+                  <th scope="col" className="numeric">Best</th>
+                  <th scope="col" className="numeric">Last</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamRows.map((team) => (
+                  <tr key={team.teamKey}>
+                    <td>
+                      <TeamBadge saveId={saveId} cup="color" teamKey={team.teamKey} teamName={team.teamName} />
+                    </td>
+                    <td className="numeric">{team.editions}</td>
+                    <td className="numeric">{team.gold}</td>
+                    <td className="numeric">{team.silver}</td>
+                    <td className="numeric">{team.bronze}</td>
+                    <td className="numeric">{team.gold + team.silver + team.bronze}</td>
+                    <td className="numeric">{team.bestRank === null ? '—' : ordinal(team.bestRank)}</td>
+                    <td className="numeric">S{team.lastSeasonNumber}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : rows.length === 0 ? (
+        <p className="muted">
+          {view === 'individual'
+            ? 'No individual Color Cup medals have been awarded yet.'
+            : 'No Color Cup medals have been awarded yet.'}
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Team</th>
+                <th scope="col" className="numeric">🥇</th>
+                <th scope="col" className="numeric">🥈</th>
+                <th scope="col" className="numeric">🥉</th>
+                <th scope="col" className="numeric">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.teamKey}>
+                  <td>
+                    <TeamBadge saveId={saveId} cup="color" teamKey={row.teamKey} teamName={row.teamName} />
+                  </td>
+                  <td className="numeric">{row.gold}</td>
+                  <td className="numeric">{row.silver}</td>
+                  <td className="numeric">{row.bronze}</td>
+                  <td className="numeric">{medalTotal(row)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {view !== 'team' && hasColorCups && rows.length > 0 ? (
+        <p className="muted" style={{ marginTop: '8px' }}>
+          Each team podium counts once per color and is not multiplied by squad size; each individual podium counts
+          once.
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+

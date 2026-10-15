@@ -3,12 +3,17 @@ namespace MtgSoloSports.Features.Cups.ListCupEditions;
 /// <summary>
 /// Every Cup edition of a save, newest first, plus the all-time team table of
 /// each Cup. Built only from persisted selections, standings and rounds.
+/// <see cref="ColorIndividualMedals"/> and <see cref="ColorCombinedMedals"/>
+/// are additive Color Cup medal standings by color (MSS-081); the existing
+/// <see cref="ColorTeams"/> table and its calculation are unchanged.
 /// </summary>
 public sealed record ListCupEditionsResponse(
     Guid SaveId,
     IReadOnlyList<ListCupEditionsResponse.Edition> Editions,
     IReadOnlyList<ListCupEditionsResponse.TeamSummary> ColorTeams,
-    IReadOnlyList<ListCupEditionsResponse.TeamSummary> TypeTeams)
+    IReadOnlyList<ListCupEditionsResponse.TeamSummary> TypeTeams,
+    IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> ColorIndividualMedals,
+    IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> ColorCombinedMedals)
 {
     /// <summary>
     /// <see cref="Podium"/> is empty until the team event has finished;
@@ -45,4 +50,18 @@ public sealed record ListCupEditionsResponse(
         int Bronze,
         int? BestRank,
         int LastSeasonNumber);
+
+    /// <summary>
+    /// All-time Color Cup medals for one color. Used for the additive
+    /// Individual and Combined standings: one row per color, one medal per
+    /// podium award (a team podium counts once per color, never per squad
+    /// member). Sorted like <see cref="TeamSummary"/>: gold, then silver,
+    /// then bronze, then team name.
+    /// </summary>
+    public sealed record ColorMedalRow(
+        string TeamKey,
+        string TeamName,
+        int Gold,
+        int Silver,
+        int Bronze);
 }
