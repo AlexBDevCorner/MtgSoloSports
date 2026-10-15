@@ -32,15 +32,26 @@ public sealed class ListCupEditionsHandler
         string Medal,
         int TeamScoreThousandths);
 
+    internal sealed record IndividualMedal(
+        int SeasonNumber,
+        string TeamKey,
+        string TeamName,
+        int Medal);
+
     /// <summary>
     /// One Cup's persisted rows in neutral form. <see cref="Champions"/> is null
-    /// for a Cup without an individual event.
+    /// for a Cup without an individual event. <see cref="IndividualMedals"/>
+    /// holds one entry per awarded individual Color Cup medal (Gold/Silver/
+    /// Bronze), credited to the color the athlete represented in that edition
+    /// via the persisted individual-standing SportingColor; empty for a Cup
+    /// without an individual event.
     /// </summary>
     internal sealed record CupRows(
         List<Appearance> Appearances,
         List<Result> Results,
         HashSet<int> PlayedSeasons,
-        Dictionary<int, ListCupEditionsResponse.IndividualChampion>? Champions);
+        Dictionary<int, ListCupEditionsResponse.IndividualChampion>? Champions,
+        List<IndividualMedal> IndividualMedals);
 
     public async Task<ListCupEditionsResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -58,11 +69,16 @@ public sealed class ListCupEditionsHandler
             .. BuildEditions(CupTeamKeys.ColorCup, color.Appearances, color.Results, color.PlayedSeasons, color.Champions),
             .. BuildEditions(CupTeamKeys.TypeCup, type.Appearances, type.Results, type.PlayedSeasons, type.Champions),
         ];
+        List<ListCupEditionsResponse.TeamSummary> colorTeams = BuildTeams(color.Appearances, color.Results);
+        List<ListCupEditionsResponse.ColorMedalRow> colorIndividual = BuildIndividualMedals(color.Appearances, color.IndividualMedals);
+        List<ListCupEditionsResponse.ColorMedalRow> colorCombined = BuildCombinedMedals(colorTeams, colorIndividual);
         return new ListCupEditionsResponse(
             saveId,
             editions.OrderByDescending(e => e.SourceSeasonNumber).ThenBy(e => e.Cup, StringComparer.Ordinal).ToList(),
-            BuildTeams(color.Appearances, color.Results),
-            BuildTeams(type.Appearances, type.Results));
+            colorTeams,
+            BuildTeams(type.Appearances, type.Results),
+            colorIndividual,
+            colorCombined);
     }
 
     private static async Task<CupRows> LoadColorAsync(SaveDbContext context, CancellationToken cancellationToken)
@@ -94,7 +110,16 @@ public sealed class ListCupEditionsHandler
             .ToList();
         Dictionary<int, ListCupEditionsResponse.IndividualChampion> champions =
             await LoadChampionsAsync(context, cancellationToken).ConfigureAwait(false);
-        return new CupRows(appearances, results, [.. teamRoundSeasons, .. individualRoundSeasons], champions);
+        List<IndividualMedal> individualMedals = (await context.ColorCupIndividualStandings
+                .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false))
+            .Where(s => s.Medal != (int)ColorCupMedal.None)
+            .Select(s => new IndividualMedal(
+                s.SourceSeasonNumber,
+                CupTeamKeys.ColorKey((SportingColor)s.SportingColor),
+                CupTeamKeys.ColorName((SportingColor)s.SportingColor),
+                s.Medal))
+            .ToList();
+        return new CupRows(appearances, results, [.. teamRoundSeasons, .. individualRoundSeasons], champions, individualMedals);
     }
 
     private static async Task<Dictionary<int, ListCupEditionsResponse.IndividualChampion>> LoadChampionsAsync(
@@ -155,7 +180,7 @@ public sealed class ListCupEditionsHandler
                 ((TypeCupMedal)s.Medal).ToString(),
                 s.TeamScoreThousandths))
             .ToList();
-        return new CupRows(appearances, results, [.. roundSeasons], null);
+        return new CupRows(appearances, results, [.. roundSeasons], null, []);
     }
 
     /// <summary>
@@ -215,6 +240,109 @@ public sealed class ListCupEditionsHandler
                     teamResults.Count(r => r.TeamRank == 3),
                     teamResults.Count == 0 ? null : teamResults.Min(r => r.TeamRank),
                     team.Max(a => a.SeasonNumber));
+            })
+            .OrderByDescending(t => t.Gold)
+            .ThenByDescending(t => t.Silver)
+            .ThenByDescending(t => t.Bronze)
+            .ThenBy(t => t.TeamName, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// All-time individual Color Cup medals by color. Each awarded individual
+    /// medal counts once for the persisted representation color of that
+    /// edition (never the athlete's current league/team). Every supported
+    /// color is listed once a Color Cup exists, so colors without medals show
+    /// zeros; a save without Color Cups yields an empty table. In-progress or
+    /// unfinished Cups have no persisted individual standings and contribute
+    /// nothing. Sorting matches <see cref="BuildTeams"/>.
+    /// </summary>
+    internal static List<ListCupEditionsResponse.ColorMedalRow> BuildIndividualMedals(
+        List<Appearance> appearances,
+        List<IndividualMedal> medals)
+    {
+        ArgumentNullException.ThrowIfNull(appearances);
+        ArgumentNullException.ThrowIfNull(medals);
+        if (appearances.Count == 0)
+        {
+            return [];
+        }
+
+        return Enum.GetValues<SportingColor>()
+            .Select(color =>
+            {
+                string key = CupTeamKeys.ColorKey(color);
+                string name = CupTeamKeys.ColorName(color);
+                List<IndividualMedal> colorMedals = medals
+                    .Where(m => string.Equals(m.TeamKey, key, StringComparison.Ordinal)).ToList();
+                foreach (IndividualMedal medal in colorMedals)
+                {
+                    if (medal.Medal != (int)ColorCupMedal.Gold
+                        && medal.Medal != (int)ColorCupMedal.Silver
+                        && medal.Medal != (int)ColorCupMedal.Bronze)
+                    {
+                        throw new InvalidOperationException(
+                            $"Color Cup individual medal for Season {medal.SeasonNumber} has unknown medal {medal.Medal}.");
+                    }
+                }
+
+                return new ListCupEditionsResponse.ColorMedalRow(
+                    key,
+                    name,
+                    colorMedals.Count(m => m.Medal == (int)ColorCupMedal.Gold),
+                    colorMedals.Count(m => m.Medal == (int)ColorCupMedal.Silver),
+                    colorMedals.Count(m => m.Medal == (int)ColorCupMedal.Bronze));
+            })
+            .OrderByDescending(t => t.Gold)
+            .ThenByDescending(t => t.Silver)
+            .ThenByDescending(t => t.Bronze)
+            .ThenBy(t => t.TeamName, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Combined Color Cup medals by color: exact per-color, per-medal sum of
+    /// the existing team table and the individual table. One team podium is
+    /// one medal for its color (team standings hold one row per color per
+    /// season, never one per squad member); one individual podium is one
+    /// medal. Sorting matches <see cref="BuildTeams"/>.
+    /// </summary>
+    internal static List<ListCupEditionsResponse.ColorMedalRow> BuildCombinedMedals(
+        IReadOnlyList<ListCupEditionsResponse.TeamSummary> teamTable,
+        IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> individualTable)
+    {
+        ArgumentNullException.ThrowIfNull(teamTable);
+        ArgumentNullException.ThrowIfNull(individualTable);
+        if (teamTable.Count == 0 && individualTable.Count == 0)
+        {
+            return [];
+        }
+
+        Dictionary<string, ListCupEditionsResponse.TeamSummary> teams = teamTable
+            .ToDictionary(t => t.TeamKey, StringComparer.Ordinal);
+        Dictionary<string, ListCupEditionsResponse.ColorMedalRow> individuals = individualTable
+            .ToDictionary(t => t.TeamKey, StringComparer.Ordinal);
+        HashSet<string> keys = new(StringComparer.Ordinal);
+        foreach (string key in teams.Keys)
+        {
+            keys.Add(key);
+        }
+
+        foreach (string key in individuals.Keys)
+        {
+            keys.Add(key);
+        }
+
+        return keys
+            .Select(key =>
+            {
+                teams.TryGetValue(key, out ListCupEditionsResponse.TeamSummary? team);
+                individuals.TryGetValue(key, out ListCupEditionsResponse.ColorMedalRow? individual);
+                string name = team?.TeamName ?? individual!.TeamName;
+                int gold = (team?.Gold ?? 0) + (individual?.Gold ?? 0);
+                int silver = (team?.Silver ?? 0) + (individual?.Silver ?? 0);
+                int bronze = (team?.Bronze ?? 0) + (individual?.Bronze ?? 0);
+                return new ListCupEditionsResponse.ColorMedalRow(key, name, gold, silver, bronze);
             })
             .OrderByDescending(t => t.Gold)
             .ThenByDescending(t => t.Silver)
