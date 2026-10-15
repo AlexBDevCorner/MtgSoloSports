@@ -1,5 +1,6 @@
 using MtgSoloSports.Features.Cups.ListCupEditions;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
+using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Persistence.Saves;
 using Shouldly;
@@ -241,6 +242,59 @@ public sealed class ColorCupMedalTablesTests
             ListCupEditionsResponse response = await new ListCupEditionsHandler(store).HandleAsync(created.Detail.SaveId);
             response.ColorIndividualMedals.ShouldBeEmpty();
             response.ColorCombinedMedals.ShouldBeEmpty();
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task Handler_IndividualOnly_DoesNotCountTowardMedalTables()
+    {
+        var (store, root, saveId) = await PrepareColorCupAsync(9293UL, 3030UL);
+        try
+        {
+            // Lifecycle order is individual before team. After the individual
+            // event the standings are persisted, but the edition is still
+            // InProgress until the team event finishes.
+            await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
+            ListCupEditionsResponse pending = await new ListCupEditionsHandler(store).HandleAsync(saveId);
+            pending.Editions.Single().State.ShouldBe("InProgress");
+            pending.Editions.Single().IndividualChampion.ShouldNotBeNull();
+            pending.Editions.Single().Podium.ShouldBeEmpty();
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(context.ColorCupIndividualStandings))
+                    .ShouldBeGreaterThan(0);
+            }
+
+            // In-progress medals must not affect any of the three tables; the
+            // existing team aggregation stays at zero until the team event.
+            pending.ColorIndividualMedals.Sum(r => r.Gold + r.Silver + r.Bronze).ShouldBe(0);
+            pending.ColorIndividualMedals.ShouldAllBe(r => r.Gold == 0 && r.Silver == 0 && r.Bronze == 0);
+            pending.ColorTeams.Sum(t => t.Gold + t.Silver + t.Bronze).ShouldBe(0);
+            pending.ColorCombinedMedals.Sum(r => r.Gold + r.Silver + r.Bronze).ShouldBe(0);
+
+            // Once the team event finishes the edition is Completed and the
+            // same persisted individual medals count exactly once.
+            await new RunColorCupTeamHandler(store).HandleAsync(saveId);
+            ListCupEditionsResponse done = await new ListCupEditionsHandler(store).HandleAsync(saveId);
+            done.Editions.Single().State.ShouldBe("Completed");
+            done.ColorIndividualMedals.Sum(r => r.Gold + r.Silver + r.Bronze).ShouldBe(3);
+            Dictionary<string, ListCupEditionsResponse.TeamSummary> teams =
+                done.ColorTeams.ToDictionary(t => t.TeamKey, StringComparer.Ordinal);
+            Dictionary<string, ListCupEditionsResponse.ColorMedalRow> singles =
+                done.ColorIndividualMedals.ToDictionary(t => t.TeamKey, StringComparer.Ordinal);
+            foreach (var row in done.ColorCombinedMedals)
+            {
+                row.Gold.ShouldBe((teams.TryGetValue(row.TeamKey, out var team) ? team.Gold : 0)
+                    + (singles.TryGetValue(row.TeamKey, out var single) ? single.Gold : 0));
+                row.Silver.ShouldBe((teams.TryGetValue(row.TeamKey, out var teamSilver) ? teamSilver.Silver : 0)
+                    + (singles.TryGetValue(row.TeamKey, out var singleSilver) ? singleSilver.Silver : 0));
+                row.Bronze.ShouldBe((teams.TryGetValue(row.TeamKey, out var teamBronze) ? teamBronze.Bronze : 0)
+                    + (singles.TryGetValue(row.TeamKey, out var singleBronze) ? singleBronze.Bronze : 0));
+            }
         }
         finally
         {

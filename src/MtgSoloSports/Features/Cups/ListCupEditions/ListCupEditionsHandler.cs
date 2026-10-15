@@ -69,8 +69,21 @@ public sealed class ListCupEditionsHandler
             .. BuildEditions(CupTeamKeys.ColorCup, color.Appearances, color.Results, color.PlayedSeasons, color.Champions),
             .. BuildEditions(CupTeamKeys.TypeCup, type.Appearances, type.Results, type.PlayedSeasons, type.Champions),
         ];
+        // MSS-081 correction: the individual event resolves before the team
+        // event, so persisted individual standings can exist while the edition
+        // is still InProgress. Count only Completed Color Cup editions, using
+        // the same edition state as the Cups page; the existing team table and
+        // its aggregation stay unchanged.
+        HashSet<int> completedColorSeasons = editions
+            .Where(e => string.Equals(e.Cup, CupTeamKeys.ColorCup, StringComparison.Ordinal)
+                && string.Equals(e.State, CupEditionState.Completed, StringComparison.Ordinal))
+            .Select(e => e.SourceSeasonNumber)
+            .ToHashSet();
+        List<IndividualMedal> completedIndividualMedals = color.IndividualMedals
+            .Where(m => completedColorSeasons.Contains(m.SeasonNumber))
+            .ToList();
         List<ListCupEditionsResponse.TeamSummary> colorTeams = BuildTeams(color.Appearances, color.Results);
-        List<ListCupEditionsResponse.ColorMedalRow> colorIndividual = BuildIndividualMedals(color.Appearances, color.IndividualMedals);
+        List<ListCupEditionsResponse.ColorMedalRow> colorIndividual = BuildIndividualMedals(color.Appearances, completedIndividualMedals);
         List<ListCupEditionsResponse.ColorMedalRow> colorCombined = BuildCombinedMedals(colorTeams, colorIndividual);
         return new ListCupEditionsResponse(
             saveId,
@@ -253,9 +266,11 @@ public sealed class ListCupEditionsHandler
     /// medal counts once for the persisted representation color of that
     /// edition (never the athlete's current league/team). Every supported
     /// color is listed once a Color Cup exists, so colors without medals show
-    /// zeros; a save without Color Cups yields an empty table. In-progress or
-    /// unfinished Cups have no persisted individual standings and contribute
-    /// nothing. Sorting matches <see cref="BuildTeams"/>.
+    /// zeros; a save without Color Cups yields an empty table. Callers pass
+    /// only medals from <see cref="CupEditionState.Completed"/> editions: an
+    /// individual event can resolve while its edition is still InProgress
+    /// (team event pending), and those medals must not count yet. Sorting
+    /// matches <see cref="BuildTeams"/>.
     /// </summary>
     internal static List<ListCupEditionsResponse.ColorMedalRow> BuildIndividualMedals(
         List<Appearance> appearances,
