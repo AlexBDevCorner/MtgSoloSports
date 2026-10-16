@@ -93,6 +93,24 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-body\s*\{[^}]*overflow-y:\s*auto/);
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-body\s*\{[^}]*min-height:\s*0/);
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-head\s*\{[^}]*flex:\s*0 0 auto/);
+    // MSS-082 correction: desktop History needs a definite height so long
+    // careers scroll inside the panel instead of stretching the grid row.
+    // A percentage height against the auto-sized .athlete-top row resolves
+    // to content height (no cap); scope the check to the desktop rules
+    // before the narrow stacking media query.
+    const desktopCss = baseCss.split('@media (max-width: 980px)')[0];
+    assert.match(
+      desktopCss,
+      /\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
+    );
+    assert.match(
+      desktopCss,
+      /\.athlete-top > \.athlete-history\s*\{[^}]*max-height:\s*var\(--card-height\)/,
+    );
+    assert.ok(
+      !/\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*100%/.test(desktopCss),
+      'desktop History must not use an uncapped percentage height',
+    );
   });
 
   it('keeps the top History table readable without hiding columns', () => {

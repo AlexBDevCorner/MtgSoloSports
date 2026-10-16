@@ -410,9 +410,10 @@ a.rail-link:hover {
   min-width: 0;
   min-height: var(--card-height);
   max-width: 100%;
-  height: 100%;
+  height: var(--card-height);
+  max-height: var(--card-height);
   overflow: hidden;
-  align-self: stretch;
+  align-self: start;
 }
 
 .athlete-top > .athlete-history > .card-head {
