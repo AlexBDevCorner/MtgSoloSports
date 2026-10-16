@@ -111,6 +111,7 @@ export function AthleteProfilePage({
 
   return (
     <div className="dashboard">
+      <div className="athlete-top">
       <Card
         eyebrow="Athlete profile"
         title={card.name}
@@ -249,6 +250,71 @@ export function AthleteProfilePage({
           </Notice>
         ) : null}
       </Card>
+
+        <Card
+          eyebrow="History"
+          title={`Season-by-season — ${seasons.length} season(s)`}
+          className="span-wide athlete-history"
+          info={
+            <p>
+              Season summaries are transactional projections rebuilt from authoritative stage and
+              season standings; round-by-round replay stays in Live rounds.
+            </p>
+          }
+        >
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                    <th scope="col" className="numeric">Season</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" className="numeric">Finish</th>
+                    <th scope="col" className="numeric">Round W</th>
+                    <th scope="col" className="numeric">Stage W</th>
+                    <th scope="col" className="numeric">2nd/3rd</th>
+                    <th scope="col" className="numeric">Earned</th>
+                    <th scope="col" className="numeric">Champ pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {seasons.map((season) => (
+                  <tr key={season.seasonNumber}>
+                    <td className="numeric">{season.seasonNumber}</td>
+                    <td>
+                      {season.wasActive ? (
+                        <>
+                          {season.leagueName ?? 'Active'}
+                          {season.leagueLevel != null || season.feederDivision != null ? (
+                            <span className="card-sub">
+                              {' '}
+                              · {leagueLevelLabel(season.leagueLevel ?? null, season.feederDivision ?? null, null)}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        'Pool'
+                      )}
+                    </td>
+                    <td className="numeric">
+                      {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
+                      {season.isChampion ? ' · Champion' : ''}
+                    </td>
+                    <td className="numeric">{season.roundWins}</td>
+                    <td className="numeric">{season.stageWins}</td>
+                    <td className="numeric">
+                      {season.stageSeconds}/{season.stageThirds}
+                    </td>
+                    <td className="numeric">{formatBonus(season.earnedBonusThousandths)}</td>
+                    <td className="numeric">
+                      {formatPoints(season.totalChampionshipPointsThousandths)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
 
       <div className="page-grid page-grid--panels">
         <Card eyebrow="Career" title={`${career.seasonsActive} season(s) active`}>
@@ -486,70 +552,6 @@ export function AthleteProfilePage({
           {state.holdingsError ? (
             <p className="muted">Record holdings unavailable: {state.holdingsError}</p>
           ) : null}
-        </Card>
-
-        <Card
-          eyebrow="History"
-          title={`Season-by-season — ${seasons.length} season(s)`}
-          className="span-wide"
-          info={
-            <p>
-              Season summaries are transactional projections rebuilt from authoritative stage and
-              season standings; round-by-round replay stays in Live rounds.
-            </p>
-          }
-        >
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                    <th scope="col" className="numeric">Season</th>
-                    <th scope="col">Status</th>
-                    <th scope="col" className="numeric">Finish</th>
-                    <th scope="col" className="numeric">Round W</th>
-                    <th scope="col" className="numeric">Stage W</th>
-                    <th scope="col" className="numeric">2nd/3rd</th>
-                    <th scope="col" className="numeric">Earned</th>
-                    <th scope="col" className="numeric">Champ pts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {seasons.map((season) => (
-                  <tr key={season.seasonNumber}>
-                    <td className="numeric">{season.seasonNumber}</td>
-                    <td>
-                      {season.wasActive ? (
-                        <>
-                          {season.leagueName ?? 'Active'}
-                          {season.leagueLevel != null || season.feederDivision != null ? (
-                            <span className="card-sub">
-                              {' '}
-                              · {leagueLevelLabel(season.leagueLevel ?? null, season.feederDivision ?? null, null)}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        'Pool'
-                      )}
-                    </td>
-                    <td className="numeric">
-                      {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
-                      {season.isChampion ? ' · Champion' : ''}
-                    </td>
-                    <td className="numeric">{season.roundWins}</td>
-                    <td className="numeric">{season.stageWins}</td>
-                    <td className="numeric">
-                      {season.stageSeconds}/{season.stageThirds}
-                    </td>
-                    <td className="numeric">{formatBonus(season.earnedBonusThousandths)}</td>
-                    <td className="numeric">
-                      {formatPoints(season.totalChampionshipPointsThousandths)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </Card>
 
         <Card
