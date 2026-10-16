@@ -120,17 +120,21 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
   });
 
   it('stacks Profile above History on narrow viewports before the other panels', () => {
+    // The top region needs more room than the two-column panels grid: with
+    // the 200px rail visible until 1020px, viewports near 1021-1100px leave
+    // only ~77-103px for the profile summary beside its 120px artwork, so
+    // the top stacks at 1200px while panels keep their 980px breakpoint.
     assert.match(
       baseCss,
-      /@media \(max-width: 980px\)[\s\S]*?\.athlete-top\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
     assert.match(
       baseCss,
-      /@media \(max-width: 980px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*grid-column:\s*auto/,
+      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*grid-column:\s*auto/,
     );
     assert.match(
       baseCss,
-      /@media \(max-width: 980px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
+      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
     );
   });
 });

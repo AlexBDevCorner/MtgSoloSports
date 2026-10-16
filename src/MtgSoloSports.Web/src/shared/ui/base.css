@@ -1586,10 +1586,18 @@ code {
   .page-grid--panels > .span-wide {
     grid-column: auto;
   }
+}
 
-  /* MSS-082: stack Profile directly above History, then the remaining
-     panels, so History stays high-priority without cramped side-by-side
-     cards or page-level horizontal overflow. */
+/* MSS-082: stack Profile directly above History, then the remaining
+   panels, so History stays high-priority without cramped side-by-side
+   cards or page-level horizontal overflow. The top region uses three
+   equal columns (profile 1 + history 2), so it needs more room than the
+   two-column panels grid: with the 200px rail visible until 1020px, a
+   1021-1200px viewport leaves only ~77-137px for the profile summary
+   beside its 120px artwork. Stack at 1200px so side-by-side only runs
+   where the profile stays legible; 1440px/1920px desktops keep the
+   Profile-left/History-right top row. */
+@media (max-width: 1200px) {
   .athlete-top {
     grid-template-columns: minmax(0, 1fr);
   }
