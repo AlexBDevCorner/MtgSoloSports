@@ -93,49 +93,63 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-body\s*\{[^}]*overflow-y:\s*auto/);
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-body\s*\{[^}]*min-height:\s*0/);
     assert.match(baseCss, /\.athlete-top > \.athlete-history > \.card-head\s*\{[^}]*flex:\s*0 0 auto/);
-    // MSS-082 correction: desktop History needs a definite height so long
-    // careers scroll inside the panel instead of stretching the grid row.
-    // A percentage height against the auto-sized .athlete-top row resolves
-    // to content height (no cap); scope the check to the desktop rules
-    // before the narrow stacking media query.
+    assert.match(baseCss, /\.athlete-top > \.athlete-history\s*\{[^}]*align-self:\s*stretch/);
+    // MSS-082 correction: desktop History needs a responsive definite max so
+    // long careers scroll inside the panel instead of stretching the row,
+    // while short careers stretch to the Profile row instead of leaving a
+    // giant gap below. A fixed 360px History with a natural-height Profile
+    // leaves ~270-970px gaps; a percentage height against the auto-sized row
+    // resolves to content height (no cap). Scope the check to the desktop
+    // rules before the narrow stacking media query.
     const desktopCss = baseCss.split('@media (max-width: 980px)')[0];
     assert.match(
       desktopCss,
-      /\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
+      /\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*auto/,
     );
     assert.match(
       desktopCss,
-      /\.athlete-top > \.athlete-history\s*\{[^}]*max-height:\s*var\(--card-height\)/,
+      /\.athlete-top > \.athlete-history\s*\{[^}]*max-height:\s*880px/,
+    );
+    assert.match(
+      baseCss,
+      /@media \(min-width:\s*1701px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*max-height:\s*720px/,
     );
     assert.ok(
       !/\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*100%/.test(desktopCss),
       'desktop History must not use an uncapped percentage height',
     );
+    assert.ok(
+      !/\.athlete-top > \.athlete-history\s*\{[^}]*[;{]\s*height:\s*var\(--card-height\)/.test(desktopCss),
+      'desktop History must stretch to the Profile row, not stay fixed at 360px',
+    );
   });
 
-  it('bounds Profile to the same card height to avoid a giant gap below History', () => {
-    // Correction for the 1201-1440px gap: a natural-height Profile (~874px at
-    // 1440px, ~1119px at 1201px) sizes the shared auto row while History stays
-    // 360px, leaving ~530-775px of empty space below History. Both top cards
-    // share the bounded token with independently scrolling bodies, so the row
-    // stays one card high and remaining panels start immediately beneath.
-    assert.match(baseCss, /\.athlete-top > \.athlete-header\s*\{[^}]*min-height:\s*var\(--card-height\)/);
-    assert.match(baseCss, /\.athlete-top > \.athlete-header\s*\{[^}]*overflow:\s*hidden/);
-    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*overflow-y:\s*auto/);
-    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*min-height:\s*0/);
+  it('keeps Profile at natural height so the summary and bonus stay visible', () => {
+    // Correction for the 360px-Profile regression: capping the 1/3-width
+    // Profile at --card-height (360px) forces its ~850px body (1440px) behind
+    // an inner scroll, hiding Cups and the active bonus from the first
+    // viewport. Profile stays natural with no inner scroll; History stretches
+    // to the shared row with its responsive max, so neither a giant gap nor
+    // a second scroll area hides the at-a-glance summary.
+    assert.match(baseCss, /\.athlete-top > \.athlete-header\s*\{[^}]*overflow:\s*visible/);
+    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*overflow:\s*visible/);
     assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-head\s*\{[^}]*flex:\s*0 0 auto/);
     const desktopCss = baseCss.split('@media (max-width: 980px)')[0];
     assert.match(
       desktopCss,
-      /\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*var\(--card-height\)/,
+      /\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/,
     );
     assert.match(
       desktopCss,
-      /\.athlete-top > \.athlete-header\s*\{[^}]*max-height:\s*var\(--card-height\)/,
+      /\.athlete-top > \.athlete-header\s*\{[^}]*max-height:\s*none/,
     );
     assert.ok(
-      !/\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/.test(desktopCss),
-      'desktop Profile must not use natural height that stretches the shared row',
+      !/\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*var\(--card-height\)/.test(desktopCss),
+      'desktop Profile must not be capped at 360px with an inner scroll',
+    );
+    assert.ok(
+      !/\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*overflow-y:\s*auto/.test(desktopCss),
+      'desktop Profile body must not scroll independently',
     );
   });
 
@@ -147,26 +161,31 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
 
   it('stacks Profile above History on narrow viewports before the other panels', () => {
     // The top region needs more room than the two-column panels grid: with
-    // the 200px rail visible until 1020px, viewports near 1021-1100px leave
-    // only ~77-103px for the profile summary beside its 120px artwork, so
-    // the top stacks at 1200px while panels keep their 980px breakpoint.
-    // Stacked Profile returns to natural height (no inner scroll); stacked
-    // History keeps its bound with independent scrolling.
+    // the 200px rail visible until 1020px, viewports near 1021-1400px leave
+    // only ~77-200px for the profile summary beside its 120px artwork, so
+    // the top stacks at 1400px while panels keep their 980px breakpoint.
+    // Stacked Profile stays natural (no inner scroll); stacked History keeps
+    // its 360px bound with independent scrolling. Side-by-side only runs
+    // where the summary stays legible; 1440px/1920px keep Profile/History.
     assert.match(
       baseCss,
-      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+      /@media \(max-width: 1400px\)[\s\S]*?\.athlete-top\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
     assert.match(
       baseCss,
-      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*grid-column:\s*auto/,
+      /@media \(max-width: 1400px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*grid-column:\s*auto/,
     );
     assert.match(
       baseCss,
-      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
+      /@media \(max-width: 1400px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
     );
     assert.match(
       baseCss,
-      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/,
+      /@media \(max-width: 1400px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*max-height:\s*var\(--card-height\)/,
+    );
+    assert.match(
+      baseCss,
+      /@media \(max-width: 1400px\)[\s\S]*?\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/,
     );
   });
 });
