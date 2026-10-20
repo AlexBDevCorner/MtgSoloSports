@@ -113,6 +113,32 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
     );
   });
 
+  it('bounds Profile to the same card height to avoid a giant gap below History', () => {
+    // Correction for the 1201-1440px gap: a natural-height Profile (~874px at
+    // 1440px, ~1119px at 1201px) sizes the shared auto row while History stays
+    // 360px, leaving ~530-775px of empty space below History. Both top cards
+    // share the bounded token with independently scrolling bodies, so the row
+    // stays one card high and remaining panels start immediately beneath.
+    assert.match(baseCss, /\.athlete-top > \.athlete-header\s*\{[^}]*min-height:\s*var\(--card-height\)/);
+    assert.match(baseCss, /\.athlete-top > \.athlete-header\s*\{[^}]*overflow:\s*hidden/);
+    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*overflow-y:\s*auto/);
+    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-body\s*\{[^}]*min-height:\s*0/);
+    assert.match(baseCss, /\.athlete-top > \.athlete-header > \.card-head\s*\{[^}]*flex:\s*0 0 auto/);
+    const desktopCss = baseCss.split('@media (max-width: 980px)')[0];
+    assert.match(
+      desktopCss,
+      /\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*var\(--card-height\)/,
+    );
+    assert.match(
+      desktopCss,
+      /\.athlete-top > \.athlete-header\s*\{[^}]*max-height:\s*var\(--card-height\)/,
+    );
+    assert.ok(
+      !/\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/.test(desktopCss),
+      'desktop Profile must not use natural height that stretches the shared row',
+    );
+  });
+
   it('keeps the top History table readable without hiding columns', () => {
     assert.match(baseCss, /\.athlete-top > \.athlete-history \.data-table\s*\{[^}]*width:\s*100%/);
     assert.match(baseCss, /\.athlete-top > \.athlete-history \.data-table td\.numeric/);
@@ -124,6 +150,8 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
     // the 200px rail visible until 1020px, viewports near 1021-1100px leave
     // only ~77-103px for the profile summary beside its 120px artwork, so
     // the top stacks at 1200px while panels keep their 980px breakpoint.
+    // Stacked Profile returns to natural height (no inner scroll); stacked
+    // History keeps its bound with independent scrolling.
     assert.match(
       baseCss,
       /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
@@ -135,6 +163,10 @@ describe('MSS-082 athlete top region: Profile beside History', () => {
     assert.match(
       baseCss,
       /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-history\s*\{[^}]*height:\s*var\(--card-height\)/,
+    );
+    assert.match(
+      baseCss,
+      /@media \(max-width: 1200px\)[\s\S]*?\.athlete-top > \.athlete-header\s*\{[^}]*height:\s*auto/,
     );
   });
 });
