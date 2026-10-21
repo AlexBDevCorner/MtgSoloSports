@@ -3,6 +3,7 @@ import type {
   TypeCupTournament,
   TypeCupTournamentLeg,
   TypeCupTournamentQualificationGroup,
+  TypeCupTournamentWildcard,
 } from './typeCupTournamentApi';
 
 /**
@@ -109,6 +110,22 @@ export function isWildcardTournament(
   tournament: Pick<TypeCupTournament, 'qualificationPolicyVersion' | 'wildcardCount'>,
 ): boolean {
   return (tournament.qualificationPolicyVersion ?? 1) === 2 && (tournament.wildcardCount ?? 0) > 0;
+}
+
+/**
+ * Display the backend-provided wildcard adjustment, not an independently
+ * calculated qualifying rank. Exact comparisons and tie draws stay server-side.
+ * The index is a dimensionless ratio, not additional qualification points.
+ */
+export function formatWildcardAdjustedIndex(
+  wildcard: Pick<TypeCupTournamentWildcard, 'normalizedNumerator' | 'normalizedDenominator'>,
+): string {
+  if (!Number.isFinite(wildcard.normalizedNumerator)
+    || !Number.isFinite(wildcard.normalizedDenominator)
+    || wildcard.normalizedDenominator <= 0) {
+    return 'n/a';
+  }
+  return (wildcard.normalizedNumerator / wildcard.normalizedDenominator).toFixed(6);
 }
 
 /** Status badge text for a qualification team. */
