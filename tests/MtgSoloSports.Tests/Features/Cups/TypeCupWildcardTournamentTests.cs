@@ -76,6 +76,78 @@ public sealed class TypeCupWildcardTournamentTests
         }
     }
 
+    [Fact]
+    public void SeasonTwelve_EightyTwoTeams_WarlockAndElephantBeatSnakeOnAdjustedPoints()
+    {
+        // Season 12's final results remain untouched. Reconstruct just the
+        // completed group standings to verify the intended wildcard rule.
+        RulesV1 rules = RulesV1.CreateDefault();
+        IReadOnlyList<int> sizes = TypeCupTournamentFormat.BalancedQualificationGroupSizes(82, rules);
+        sizes.ShouldBe([28, 27, 27]);
+        TypeCupTournamentFormat.AllocateGuaranteedFinalPlaces(sizes, rules).ShouldBe([10, 10, 10]);
+        TypeCupTournamentFormat.WildcardCount(3, rules).ShouldBe(2);
+        TypeCupTournamentFormat.ExpectedBaseSumThousandths(28, rules).ShouldBe(683_000);
+        TypeCupTournamentFormat.ExpectedBaseSumThousandths(27, rules).ShouldBe(678_000);
+
+        static string TeamName(int group, int rank) => (group, rank) switch
+        {
+            (1, 11) => "Warlock",
+            (1, 12) => "Vampire",
+            (2, 11) => "Snake",
+            (3, 11) => "Elephant",
+            _ => $"Group{group}-Rank{rank}",
+        };
+
+        static int Score(int group, int rank) => (group, rank) switch
+        {
+            (1, 11) => 960_535,
+            (1, 12) => 960_510, // Just 0.025 behind Warlock within Group A.
+            (2, 11) => 968_600,
+            (3, 11) => 987_581,
+            _ when rank <= 10 => 1_500_000 - (rank * 10_000),
+            _ => 900_000 - (rank * 1_000),
+        };
+
+        List<TypeCupTournamentPlan.QualificationStage> stages = Enumerable.Range(1, 3)
+            .Select(group => new TypeCupTournamentPlan.QualificationStage(
+                group,
+                Enumerable.Range(1, sizes[group - 1]).Select(rank => TeamName(group, rank)).ToList(),
+                sizes[group - 1],
+                10))
+            .ToList();
+        TypeCupTournamentPlan.Plan plan = TypeCupTournamentPlan.BuildTournament(82, stages, rules);
+
+        Dictionary<int, TypeCupTournamentPlan.WildcardGroupStandings> standings = stages.ToDictionary(
+            stage => stage.QualificationGroup,
+            stage => new TypeCupTournamentPlan.WildcardGroupStandings(
+                stage.QualificationGroup,
+                stage.GroupSize,
+                Enumerable.Range(1, stage.GroupSize)
+                    .Select(rank => (
+                        Team: TeamName(stage.QualificationGroup, rank),
+                        Rank: rank,
+                        TeamScoreThousandths: Score(stage.QualificationGroup, rank),
+                        TeamBaseThousandths: 0))
+                    .ToList()));
+
+        Pcg32V1 rng = new(12UL, 42UL);
+        Pcg32State before = rng.Snapshot();
+        (TypeCupTournamentPlan.WildcardSelection selection, Pcg32State after) =
+            TypeCupTournamentPlan.SelectWildcardFinalists(plan, standings, rng, rules);
+
+        selection.Candidates.Select(candidate => candidate.Team)
+            .ShouldBe(["Warlock", "Snake", "Elephant"]);
+        selection.WildcardWinners.Select(candidate => candidate.Team)
+            .ShouldBe(["Warlock", "Elephant"]);
+        selection.Finalists.Count.ShouldBe(32);
+        selection.Finalists.ShouldContain("Warlock");
+        selection.Finalists.ShouldContain("Elephant");
+        selection.Finalists.ShouldNotContain("Snake");
+        selection.Finalists.ShouldNotContain("Vampire");
+        selection.TieDrawConsumed.ShouldBeFalse();
+        after.ShouldBe(before);
+    }
+
     [Theory]
     [InlineData(65)]
     [InlineData(83)]
