@@ -14,8 +14,11 @@ namespace MtgSoloSports.Features.Records.GetHallOfFame;
 /// of the competition. Type Cup team finishes use the authoritative Final
 /// (legacy phase 0 or Final phase 2) for finalists and a reduced qualification
 /// credit for eliminated qualifiers; an athlete with a Final leg never also
-/// counts qualification. Incomplete cups (standings absent) contribute
-/// nothing; corrupt references abort. No resimulation, no RNG, no clock.
+/// counts qualification. Qualification standings alone never complete the
+/// tournament: a staged edition with phase-1 rows but no persisted Final
+/// contributes nothing, so advancing teams never receive provisional credit.
+/// Incomplete cups (standings absent) contribute nothing; corrupt references
+/// abort. No resimulation, no RNG, no clock.
 /// </summary>
 internal static class CareerPerformanceLoader
 {
@@ -253,7 +256,23 @@ internal static class CareerPerformanceLoader
         }
 
         TypeFinals finals = ResolveFinals(seasonStandings);
+        if (finals.ByTeam.Count == 0)
+        {
+            // No authoritative Final (legacy phase 0 or staged phase 2) is
+            // persisted. Phase-1 qualification rows alone never complete the
+            // tournament, so award nothing rather than provisional credit to
+            // teams that may still advance.
+            return [];
+        }
+
         HashSet<int> finalists = CollectFinalists(seasonLegs, finals.HasStagedFinal);
+        if (!finals.HasStagedFinal)
+        {
+            // Legacy single-field edition: the Final is the only result.
+            // Never award qualification credit on the legacy path.
+            return ScoreTypeFinalists(seasonNumber, seasonLegs, finals.ByTeam, finalists);
+        }
+
         List<CareerPerformanceScorer.PlacementEvent> events = [];
         events.AddRange(ScoreTypeFinalists(seasonNumber, seasonLegs, finals.ByTeam, finalists));
         events.AddRange(ScoreTypeQualifiers(seasonNumber, seasonStandings, seasonLegs, finalists));

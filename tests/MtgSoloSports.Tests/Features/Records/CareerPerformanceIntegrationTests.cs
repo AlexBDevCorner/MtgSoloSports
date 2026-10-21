@@ -46,6 +46,86 @@ public sealed class CareerPerformanceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task StagedQualificationWithoutFinal_AwardsNothing()
+    {
+        // Regression for MSS-083 correction: phase-1 qualification rows
+        // persisted before the Final must not create provisional credit,
+        // not even reduced qualifier points for group winners.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-career-");
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync(
+                "Career Provisional", 4242UL, 777UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            List<int> ids = await TakeAthletesAsync(store, saveId, 6);
+            await SeedQualificationOnlyAsync(store, saveId, ids);
+
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                List<CareerPerformanceScorer.PlacementEvent> typeEvents =
+                    await CareerPerformanceLoader.LoadTypeTeamEventsAsync(
+                        context, null, null, CancellationToken.None);
+                typeEvents.ShouldBeEmpty();
+            }
+
+            GetHallOfFameHandler handler = new(store);
+            GetHallOfFameResponse response = await handler.HandleAsync(saveId, 100, 8, 8);
+            response.Leaders.ShouldBeEmpty();
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task SeedQualificationOnlyAsync(SaveStore store, Guid saveId, List<int> ids)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity season8 = new() { SeasonNumber = 8, HasSuperleague = true, IsComplete = true };
+        context.Seasons.Add(season8);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+
+        string[] teams = ["Alpha", "Beta", "Gamma", "Delta"];
+        for (int i = 0; i < 4; i++)
+        {
+            context.TypeCupTeamStandings.Add(new TypeCupTeamStandingEntity
+            {
+                SourceSeasonId = season8.Id,
+                SourceSeasonNumber = 8,
+                TournamentPhase = 1,
+                QualificationGroup = 1,
+                CreatureType = teams[i],
+                TeamRank = i + 1,
+                TeamScoreThousandths = 0,
+                TeamBaseThousandths = 0,
+                GroupWins = 0,
+                RoundWins = 0,
+                GroupPlaceCountsJson = "[]",
+                RoundPlaceCountsJson = "[]",
+                Medal = 0,
+            });
+            context.TypeCupTeamGroupStandings.Add(new TypeCupTeamGroupStandingEntity
+            {
+                SourceSeasonId = season8.Id,
+                SourceSeasonNumber = 8,
+                TournamentPhase = 1,
+                QualificationGroup = 1,
+                GroupNumber = 1,
+                SaveAthleteId = ids[i],
+                GroupRank = i + 1,
+                GroupScoreThousandths = 0,
+                BaseScoreThousandths = 0,
+                RoundWins = 0,
+                RoundPlaceCountsJson = "[]",
+                CreatureType = teams[i],
+                SelectionRank = 1,
+            });
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
     private static async Task AssertPeriodBehaviorAsync(SaveStore store, Guid saveId, List<int> ids)
     {
         GetHallOfFameHandler handler = new(store);
