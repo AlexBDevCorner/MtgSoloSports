@@ -16,6 +16,7 @@ import type {
 } from './typeCupTournamentApi';
 import {
   advancingLabel,
+  formatWildcardAdjustedIndex,
   isWildcardTournament,
   legsByRankGroup,
   orderedDrawMembers,
@@ -58,7 +59,7 @@ export function TypeCupTournamentSection({
           <p>
             Qualification points reset: the Final starts every team at zero and only Final ranks
             1–3 hold official medals and honours. Qualification group victories are not major
-            honours. {wildcard ? 'Each group has equal guaranteed places; remaining Final places are performance wildcards across groups.' : null}
+            honours. {wildcard ? 'Each group has equal guaranteed places. The next-ranked team in each group competes for the remaining Final places by group-size-adjusted qualification score, not raw points alone. Exact adjusted-score ties at the cutoff use a seeded draw.' : null}
           </p>
         }
       >
@@ -98,9 +99,16 @@ export function TypeCupTournamentSection({
             <code>{tournament.tournamentChecksum.slice(0, 12)}</code>
           </p>
         ) : null}
+        {wildcard ? (
+          <p className="muted small">
+            Wildcard comparison uses an adjusted index: team score × group size ÷ the expected base-point
+            sum for that group size. For equal-sized groups, the higher raw score wins.
+            Different-sized groups can rank differently from the raw scores shown below.
+          </p>
+        ) : null}
         {wildcard && tournament.wildcards && tournament.wildcards.length > 0 ? (
           <p className="muted small">
-            Wildcards: {tournament.wildcards.map((entry) => `${entry.creatureType} (Group ${qualificationGroupLetter(entry.qualificationGroup)}, rank ${entry.groupRank}, ${formatPoints(entry.teamScoreThousandths)} pts)`).join(' · ')}
+            Wildcards: {tournament.wildcards.map((entry) => `${entry.creatureType} (Group ${qualificationGroupLetter(entry.qualificationGroup)}, rank ${entry.groupRank}, ${formatPoints(entry.teamScoreThousandths)} raw pts, adjusted index ${formatWildcardAdjustedIndex(entry)})`).join(' · ')}
             {tournament.wildcards.some((entry) => entry.tieDraw) ? ' · decided by seeded draw after exactly tied adjusted scores' : ''}
           </p>
         ) : null}
@@ -237,7 +245,7 @@ function QualificationResultCard({
       title={title}
       info={
         <p>
-          Final table of {stage}. {hasWildcard ? `Top ${guaranteed} qualify directly; rank ${guaranteed + 1} competes for a global wildcard on team points${group.wildcardWinner ? ` — ${group.wildcardWinner} earned it` : ''}. ` : 'The cut line follows the last qualifying place; teams above it reached the Final, teams below it were eliminated. '}Points do not carry to the Final.
+          Final table of {stage}. {hasWildcard ? `Top ${guaranteed} qualify directly; rank ${guaranteed + 1} competes for a global wildcard on group-size-adjusted points${group.wildcardWinner ? ` — ${group.wildcardWinner} earned it` : ''}. ` : 'The cut line follows the last qualifying place; teams above it reached the Final, teams below it were eliminated. '}Points do not carry to the Final.
         </p>
       }
     >
@@ -250,7 +258,7 @@ function QualificationResultCard({
               </th>
               <th scope="col">Team</th>
               <th scope="col" className="numeric">
-                Score
+                Raw score
               </th>
               <th scope="col">Status</th>
             </tr>
@@ -344,7 +352,7 @@ function QualificationRow({
       {isBelowCut && team.qualified ? (
         <tr className="cut-line" aria-hidden="true">
           <td colSpan={4} className="cut-line-cell">
-            <span className="cut-line-label">Wildcard winner — rank {team.teamRank} earned a Final place on points</span>
+            <span className="cut-line-label">Wildcard winner — rank {team.teamRank} earned a Final place on adjusted points</span>
           </td>
         </tr>
       ) : null}
