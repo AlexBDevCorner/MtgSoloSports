@@ -142,6 +142,15 @@ describe('type cup tournament edition', () => {
     assert.ok(section.includes('Squad #'), 'data-driven rank-group labels');
   });
 
+  it('explains wildcard normalization separately from the displayed raw qualification score', () => {
+    const section = read('TypeCupTournamentSection.tsx');
+    assert.ok(section.includes('Raw score'), 'qualification table distinguishes raw scores');
+    assert.ok(section.includes('team score × group size ÷'), 'explains the cross-group adjustment');
+    assert.ok(section.includes('formatWildcardAdjustedIndex(entry)'), 'shows persisted adjusted index for winners');
+    assert.ok(section.includes('different') || section.includes('Different-sized groups'), 'warns raw-score rankings can differ');
+    assert.ok(!section.includes('earned a Final place on points'), 'no misleading raw-points explanation');
+  });
+
   it('bounds large tournaments with on-demand legs and squads', () => {
     const section = read('TypeCupTournamentSection.tsx');
     assert.ok(section.includes('Show group legs'), 'legs render on demand');
