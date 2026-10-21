@@ -58,6 +58,47 @@ public sealed class RecordsApiTests
     }
 
     [Fact]
+    public async Task HallOfFame_SupportsSeasonRange_PeriodPointsAndValidation()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+
+            HallOfFamePayload all = await FetchHallOfFameAsync(client, saveId);
+            all.Leaders.Count.ShouldBeGreaterThan(0);
+            all.WeightsVersion.ShouldNotBeNullOrWhiteSpace();
+            all.MinSeason.ShouldBeLessThanOrEqualTo(1);
+            all.MaxSeason.ShouldBeGreaterThanOrEqualTo(1);
+            // Points drive the table: every leader has a positive score.
+            all.Leaders.All(l => l.CareerPoints > 0).ShouldBeTrue();
+            for (int i = 1; i < all.Leaders.Count; i++)
+            {
+                all.Leaders[i - 1].CareerPoints.ShouldBeGreaterThanOrEqualTo(all.Leaders[i].CareerPoints);
+            }
+
+            HallOfFamePayload season = await FetchHallOfFameAsync(client, saveId, "fromSeason=1&toSeason=1");
+            season.FromSeason.ShouldBe(1);
+            season.ToSeason.ShouldBe(1);
+            // Only Season 1 is finalized, so the single-season window matches all time.
+            season.Leaders.Count.ShouldBe(all.Leaders.Count);
+            season.Leaders[0].AthleteId.ShouldBe(all.Leaders[0].AthleteId);
+
+            HallOfFamePayload empty = await FetchHallOfFameAsync(client, saveId, "fromSeason=50&toSeason=60");
+            empty.Leaders.ShouldBeEmpty();
+
+            using HttpResponseMessage invalid = await client.GetAsync($"/api/saves/{saveId:D}/hall-of-fame?fromSeason=8&toSeason=7");
+            invalid.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            factory.Dispose();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RecordsApi_Errors_UnknownSaveNotFound()
     {
         var (factory, root) = CreateFactory();
@@ -120,9 +161,10 @@ public sealed class RecordsApiTests
         return payload;
     }
 
-    private static async Task<HallOfFamePayload> FetchHallOfFameAsync(HttpClient client, Guid saveId)
+    private static async Task<HallOfFamePayload> FetchHallOfFameAsync(HttpClient client, Guid saveId, string? range = null)
     {
-        using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/hall-of-fame?take=20").ConfigureAwait(false);
+        string suffix = string.IsNullOrEmpty(range) ? "take=20" : $"take=20&{range}";
+        using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/hall-of-fame?{suffix}").ConfigureAwait(false);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         HallOfFamePayload? payload = await response.Content.ReadFromJsonAsync<HallOfFamePayload>().ConfigureAwait(false);
         payload.ShouldNotBeNull();
@@ -206,7 +248,12 @@ public sealed class RecordsApiTests
         Guid SaveId,
         int Take,
         int TotalAthletes,
-        IReadOnlyList<HallOfFameLeaderPayload> Leaders);
+        IReadOnlyList<HallOfFameLeaderPayload> Leaders,
+        int? FromSeason,
+        int? ToSeason,
+        int MinSeason,
+        int MaxSeason,
+        string WeightsVersion);
 
     private sealed record HallOfFameLeaderPayload(
         int Rank,
@@ -226,5 +273,15 @@ public sealed class RecordsApiTests
         int Relegations,
         int CurrentEffectiveBonusThousandths,
         int LongestTitleStreak,
-        int LongestStageWinStreak);
+        int LongestStageWinStreak,
+        int CareerPoints,
+        int SuperleaguePoints,
+        int Feeder1Points,
+        int Feeder2Points,
+        int Feeder3Points,
+        int ColorCupIndividualPoints,
+        int ColorCupTeamPoints,
+        int TypeCupTeamPoints,
+        int MajorWins,
+        int ScoredEvents);
 }
