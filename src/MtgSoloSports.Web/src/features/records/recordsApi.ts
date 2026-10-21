@@ -93,6 +93,16 @@ export interface HallOfFameLeader {
   currentEffectiveBonusThousandths: number;
   longestTitleStreak: number;
   longestStageWinStreak: number;
+  careerPoints: number;
+  superleaguePoints: number;
+  feeder1Points: number;
+  feeder2Points: number;
+  feeder3Points: number;
+  colorCupIndividualPoints: number;
+  colorCupTeamPoints: number;
+  typeCupTeamPoints: number;
+  majorWins: number;
+  scoredEvents: number;
 }
 
 export interface HallOfFame {
@@ -100,6 +110,11 @@ export interface HallOfFame {
   take: number;
   totalAthletes: number;
   leaders: HallOfFameLeader[];
+  fromSeason: number | null;
+  toSeason: number | null;
+  minSeason: number;
+  maxSeason: number;
+  weightsVersion: string;
 }
 
 export async function fetchHonours(
@@ -120,9 +135,19 @@ export async function fetchHallOfFame(
   saveId: string,
   take = 20,
   signal?: AbortSignal,
+  fromSeason?: number | null,
+  toSeason?: number | null,
 ): Promise<HallOfFame> {
+  const params = new URLSearchParams();
+  params.set('take', String(take));
+  if (fromSeason !== undefined && fromSeason !== null) {
+    params.set('fromSeason', String(fromSeason));
+  }
+  if (toSeason !== undefined && toSeason !== null) {
+    params.set('toSeason', String(toSeason));
+  }
   return fetchJson<HallOfFame>(
-    `/api/saves/${saveId}/hall-of-fame?take=${take}`,
+    `/api/saves/${saveId}/hall-of-fame?${params.toString()}`,
     { signal },
   );
 }
