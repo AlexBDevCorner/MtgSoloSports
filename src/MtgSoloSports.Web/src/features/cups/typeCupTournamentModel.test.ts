@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   drawHasGroups,
+  formatWildcardAdjustedIndex,
   hasQualificationStage,
   legsByRankGroup,
   orderedDrawMembers,
@@ -76,6 +77,25 @@ describe('type cup tournament model', () => {
 
   it('sorts draw members for stable display', () => {
     assert.deepEqual(orderedDrawMembers(['Goblin', 'Elf', 'Dragon']), ['Dragon', 'Elf', 'Goblin']);
+  });
+
+  it('shows the backend wildcard index for Season 12 rather than ranking raw scores', () => {
+    assert.equal(formatWildcardAdjustedIndex({
+      normalizedNumerator: 960_535 * 28,
+      normalizedDenominator: 683_000,
+    }), '39.377716'); // Warlock, Group A
+    assert.equal(formatWildcardAdjustedIndex({
+      normalizedNumerator: 987_581 * 27,
+      normalizedDenominator: 678_000,
+    }), '39.328447'); // Elephant, Group C
+    assert.equal(formatWildcardAdjustedIndex({
+      normalizedNumerator: 968_600 * 27,
+      normalizedDenominator: 678_000,
+    }), '38.572566'); // Snake, Group B
+    assert.equal(formatWildcardAdjustedIndex({
+      normalizedNumerator: 1,
+      normalizedDenominator: 0,
+    }), 'n/a');
   });
 
   it('labels direct-final versus qualification formats from persisted facts', () => {
