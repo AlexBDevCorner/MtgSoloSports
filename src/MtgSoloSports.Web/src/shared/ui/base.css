@@ -377,6 +377,124 @@ a.rail-link:hover {
   height: 168px;
 }
 
+/* Athlete top region (MSS-082): Profile left, History right on desktop.
+   A leading 3-column region where the compact profile spans one normal
+   column and History spans the remaining two, so season-by-season rows
+   are visible in the first viewport without scrolling past other panels.
+   DOM order matches visual reading order (Profile, then History); the
+   remaining panels flow beneath in the established page-grid--panels.
+   Profile keeps its natural height with no inner scroll so the at-a-glance
+   career summary and active bonus stay visible without a second scroll
+   area. History stretches to the shared row with a responsive definite
+   max (880px mid-desktop, 720px wide) and an independently scrolling body,
+   so long careers scroll inside the panel instead of stretching the row
+   and short careers fill the row instead of leaving a giant gap below.
+   When stacked narrow, Profile stays natural while History keeps its
+   360px bound. */
+.athlete-top {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.athlete-top > .athlete-header {
+  grid-column: span 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  align-self: start;
+}
+
+.athlete-top > .athlete-header > .card-head {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.athlete-top > .athlete-header > .card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.athlete-top > .athlete-history {
+  grid-column: span 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: var(--card-height);
+  max-width: 100%;
+  height: auto;
+  max-height: 880px;
+  overflow: hidden;
+  align-self: stretch;
+}
+
+.athlete-top > .athlete-history > .card-head {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.athlete-top > .athlete-history > .card-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.athlete-top > .athlete-history > .card-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.athlete-top > .athlete-history > .card-body::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+
+/* Wide-table readability in top History, mirroring the span-wide panel
+   treatment: numeric columns stay compact, descriptive text and secondary
+   metadata wrap instead of forcing page-level horizontal scrolling. */
+.athlete-top > .athlete-history .data-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+.athlete-top > .athlete-history .data-table th,
+.athlete-top > .athlete-history .data-table td {
+  min-width: 0;
+}
+
+.athlete-top > .athlete-history .data-table td {
+  overflow-wrap: break-word;
+}
+
+.athlete-top > .athlete-history .data-table td.numeric,
+.athlete-top > .athlete-history .data-table th.numeric {
+  white-space: nowrap;
+}
+
+.athlete-top > .athlete-history .card-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 11px;
+}
+
 /* Athlete profile at-a-glance summary (MSS-076): identity plus grouped
    career metric cells. Values use full-contrast text at readable sizes;
    labels stay small but legible. Grids reflow within the pane so no
@@ -1492,6 +1610,56 @@ code {
 
   .page-grid--panels > .span-wide {
     grid-column: auto;
+  }
+}
+
+/* MSS-082: wide desktops keep the two-column History readable without a
+   tall empty Profile gap. The 1/3-width Profile is only ~380px at 1440px
+   but ~550px at 1920px, so History caps lower where the Profile is
+   naturally shorter. */
+@media (min-width: 1701px) {
+  .athlete-top > .athlete-history {
+    max-height: 720px;
+  }
+}
+
+/* MSS-082: stack Profile directly above History, then the remaining
+   panels, so History stays high-priority without cramped side-by-side
+   cards or page-level horizontal overflow. The top region uses three
+   equal columns (profile 1 + history 2), so it needs more room than the
+   two-column panels grid: with the 200px rail visible until 1020px, a
+   1021-1400px viewport leaves only ~77-200px for the profile summary
+   beside its 120px artwork, sizing the shared row to ~930-1330px and
+   hiding the bonus behind an inner scroll or leaving a giant gap. Stack
+   at 1400px so side-by-side only runs where the profile stays legible;
+   1440px/1920px desktops keep the Profile-left/History-right top row. */
+@media (max-width: 1400px) {
+  .athlete-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .athlete-top > .athlete-header,
+  .athlete-top > .athlete-history {
+    grid-column: auto;
+  }
+
+  .athlete-top > .athlete-header {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    align-self: start;
+  }
+
+  .athlete-top > .athlete-header > .card-body {
+    overflow: visible;
+  }
+
+  .athlete-top > .athlete-history {
+    height: var(--card-height);
+    min-height: var(--card-height);
+    max-height: var(--card-height);
+    align-self: start;
   }
 }
 
