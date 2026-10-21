@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
@@ -8,11 +8,13 @@ import {
   fetchHonours,
   fetchRecords,
   type HallOfFame,
+  type HallOfFameLeader,
   type Honours,
   type Records,
   type ScoringRecord,
   type ScoringRecordHolder,
 } from './recordsApi';
+import { fetchHistorySeasons } from '../history/historyApi';
 import { formatScoringContext } from './scoringFormat';
 import {
   careerRecordLabel,
@@ -21,10 +23,109 @@ import {
   scoringScopeLabel,
 } from '../../shared/displayLabels';
 
-/** Display-only projection of a fixed-point bonus (no sporting math). */
-function formatBonus(thousandths: number): string {
-  const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
+type PeriodMode = 'all' | 'single' | 'range';
+
+interface PeriodSelection {
+  mode: PeriodMode;
+  season: number | null;
+  from: number | null;
+  to: number | null;
+}
+
+const DEFAULT_PERIOD: PeriodSelection = { mode: 'all', season: null, from: null, to: null };
+
+function periodStorageKey(saveId: string): string {
+  return `mtg-solo-sports:hall-of-fame-period:${saveId}`;
+}
+
+/**
+ * Selected Career Leaders window, preserved per universe in sessionStorage so
+ * Back navigation from an athlete profile restores the same ranking without
+ * putting period state in the shared route shape. A new universe (new saveId)
+ * starts at All time; out-of-range values reconcile to All time once seasons
+ * load.
+ */
+function loadStoredPeriod(saveId: string): PeriodSelection {
+  try {
+    const raw = sessionStorage.getItem(periodStorageKey(saveId));
+    if (!raw) {
+      return DEFAULT_PERIOD;
+    }
+    const parsed = JSON.parse(raw) as Partial<PeriodSelection>;
+    if (parsed.mode === 'single' && typeof parsed.season === 'number' && parsed.season >= 1) {
+      return { mode: 'single', season: Math.floor(parsed.season), from: null, to: null };
+    }
+    if (
+      parsed.mode === 'range' &&
+      typeof parsed.from === 'number' &&
+      typeof parsed.to === 'number' &&
+      parsed.from >= 1 &&
+      parsed.to >= parsed.from
+    ) {
+      return { mode: 'range', season: null, from: Math.floor(parsed.from), to: Math.floor(parsed.to) };
+    }
+  } catch {
+    // Corrupt stored state falls back to All time; never blocks the page.
+  }
+  return DEFAULT_PERIOD;
+}
+
+function periodLabel(period: PeriodSelection): string {
+  if (period.mode === 'single' && period.season !== null) {
+    return `Season ${period.season}`;
+  }
+  if (period.mode === 'range' && period.from !== null && period.to !== null) {
+    return period.from === period.to ? `Season ${period.from}` : `Seasons ${period.from}–${period.to}`;
+  }
+  return 'All time';
+}
+
+function periodQuery(period: PeriodSelection): { fromSeason: number | null; toSeason: number | null } {
+  if (period.mode === 'single' && period.season !== null) {
+    return { fromSeason: period.season, toSeason: period.season };
+  }
+  if (period.mode === 'range' && period.from !== null && period.to !== null) {
+    return { fromSeason: period.from, toSeason: period.to };
+  }
+  return { fromSeason: null, toSeason: null };
+}
+
+/** Compact auditable breakdown of one leader's points for the selected range. */
+function LeaderBreakdown({ row }: { row: HallOfFameLeader }) {
+  return (
+    <details>
+      <summary className="card-sub">Where points came from</summary>
+      <dl className="card-sub">
+        <div>
+          <dt>Superleague</dt> <dd>{row.superleaguePoints}</dd>
+        </div>
+        <div>
+          <dt>Feeder 1</dt> <dd>{row.feeder1Points}</dd>
+        </div>
+        <div>
+          <dt>Feeder 2</dt> <dd>{row.feeder2Points}</dd>
+        </div>
+        <div>
+          <dt>Feeder 3</dt> <dd>{row.feeder3Points}</dd>
+        </div>
+        <div>
+          <dt>Color Cup individual</dt> <dd>{row.colorCupIndividualPoints}</dd>
+        </div>
+        <div>
+          <dt>Color Cup team</dt> <dd>{row.colorCupTeamPoints}</dd>
+        </div>
+        <div>
+          <dt>Type Cup team</dt> <dd>{row.typeCupTeamPoints}</dd>
+        </div>
+        <div>
+          <dt>Major wins</dt> <dd>{row.majorWins}</dd>
+        </div>
+        <div>
+          <dt>Scored events</dt> <dd>{row.scoredEvents}</dd>
+        </div>
+      </dl>
+    </details>
+  );
 }
 
 function ScoringHolders({
@@ -140,22 +241,101 @@ export function RecordsPage({ saveId }: { saveId: string }) {
   const recordsState = useSaveData<Records>(saveId, (id, signal) =>
     fetchRecords(id, signal),
   );
-  const fameState = useSaveData<HallOfFame>(saveId, (id, signal) =>
-    fetchHallOfFame(id, 20, signal),
-  );
   const honoursState = useSaveData<Honours>(saveId, (id, signal) =>
     fetchHonours(id, signal),
   );
+  const [period, setPeriod] = useState<PeriodSelection>(() => loadStoredPeriod(saveId));
+  const [seasons, setSeasons] = useState<number[]>([]);
+  const [fame, setFame] = useState<HallOfFame | null>(null);
+  const [fameLoading, setFameLoading] = useState(false);
+  const [fameError, setFameError] = useState<string | null>(null);
+
+  // Changing universe resets to that universe's stored (or default) window.
+  useEffect(() => {
+    setPeriod(loadStoredPeriod(saveId));
+    setFame(null);
+    setFameError(null);
+  }, [saveId]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(periodStorageKey(saveId), JSON.stringify(period));
+    } catch {
+      // storage is best-effort; the ranking still works in memory
+    }
+  }, [saveId, period]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchHistorySeasons(saveId, controller.signal)
+      .then((loaded) => {
+        setSeasons(loaded.seasons.map((season) => season.seasonNumber).sort((a, b) => a - b));
+      })
+      .catch(() => {
+        setSeasons([]);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [saveId]);
+
+  const reconciled = useMemo((): PeriodSelection => {
+    if (seasons.length === 0) {
+      return period;
+    }
+    if (period.mode === 'single' && period.season !== null) {
+      return seasons.includes(period.season) ? period : DEFAULT_PERIOD;
+    }
+    if (period.mode === 'range' && period.from !== null && period.to !== null) {
+      return seasons.includes(period.from) && seasons.includes(period.to)
+        ? period
+        : DEFAULT_PERIOD;
+    }
+    return period;
+  }, [period, seasons]);
+
+  const query = periodQuery(reconciled);
+  const periodInvalid = query.fromSeason !== null && query.toSeason !== null && query.fromSeason > query.toSeason;
+
+  useEffect(() => {
+    if (periodInvalid) {
+      return;
+    }
+    const controller = new AbortController();
+    setFameLoading(true);
+    setFameError(null);
+    fetchHallOfFame(saveId, 20, controller.signal, query.fromSeason, query.toSeason)
+      .then((loaded) => {
+        setFame(loaded);
+        setFameLoading(false);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        if (failure instanceof ApiError && failure.status === 404) {
+          setFame(null);
+          setFameError(null);
+        } else {
+          setFameError(apiErrorMessage(failure));
+        }
+        setFameLoading(false);
+      });
+    return () => {
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveId, query.fromSeason, query.toSeason]);
 
   const loading =
     (recordsState.loading && !recordsState.data) ||
-    (fameState.loading && !fameState.data);
+    (fameLoading && !fame);
   if (loading) {
     return <Loading label="Loading records…" />;
   }
 
-  const error = recordsState.error ?? fameState.error ?? honoursState.error;
-  if (error && !recordsState.data && !fameState.data) {
+  const error = recordsState.error ?? fameError ?? honoursState.error;
+  if (error && !recordsState.data && !fame) {
     return (
       <Notice tone="error" title="Records unavailable">
         <p>{error}</p>
@@ -166,7 +346,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
   const records = recordsState.data?.records ?? [];
   const history = recordsState.data?.recentHistory ?? [];
   const scoring = recordsState.data?.scoringRecords ?? [];
-  const leaders = fameState.data?.leaders ?? [];
+  const leaders = fame?.leaders ?? [];
   const honours = honoursState.data?.honours ?? [];
   const leagueScoring = scoring.filter((r) => r.category === 'League');
   const individualScoring = scoring.filter((r) => r.category === 'Individual Cups');
@@ -176,23 +356,111 @@ export function RecordsPage({ saveId }: { saveId: string }) {
     <div className="page-grid">
       <Card
         eyebrow="Hall of Fame"
-        title={`Career leaders — ${leaders.length} shown`}
+        title={`Career leaders — ${periodLabel(reconciled)} · ${leaders.length} shown`}
         action={
-          fameState.loading ? (
+          fameLoading ? (
             <span className="muted small">Refreshing…</span>
           ) : undefined
         }
         info={
           <p>
-            Ordered by total titles, Superleague titles, stage wins, round wins, then name.
-            Computed from normalized titles and career projections without decompressing round
-            payloads.
+            Ordered by career performance points, then major-event wins, Superleague titles,
+            Superleague points, then name. Every finalized league and major-cup placement in
+            the selected seasons scores; active bonus is never part of the score.
           </p>
         }
       >
-        {leaders.length === 0 ? (
+        <div className="card-filters" role="group" aria-label="Career leaders period">
+          <label>
+            Window{' '}
+            <select
+              aria-label="Ranking window"
+              value={reconciled.mode}
+              onChange={(event) => {
+                const mode = event.target.value as PeriodMode;
+                if (mode === 'all') {
+                  setPeriod(DEFAULT_PERIOD);
+                } else if (mode === 'single') {
+                  const fallback = seasons[seasons.length - 1] ?? 1;
+                  setPeriod({ mode: 'single', season: reconciled.season ?? fallback, from: null, to: null });
+                } else {
+                  const fallback = seasons[seasons.length - 1] ?? 1;
+                  setPeriod({
+                    mode: 'range',
+                    season: null,
+                    from: reconciled.from ?? seasons[0] ?? 1,
+                    to: reconciled.to ?? fallback,
+                  });
+                }
+              }}
+            >
+              <option value="all">All time</option>
+              <option value="single">Single season</option>
+              <option value="range">Custom range</option>
+            </select>
+          </label>
+          {reconciled.mode === 'single' ? (
+            <label>
+              Season{' '}
+              <select
+                aria-label="Season"
+                value={reconciled.season ?? ''}
+                onChange={(event) => {
+                  setPeriod({ mode: 'single', season: Number(event.target.value), from: null, to: null });
+                }}
+              >
+                {seasons.map((season) => (
+                  <option key={season} value={season}>
+                    Season {season}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : undefined}
+          {reconciled.mode === 'range' ? (
+            <>
+              <label>
+                From{' '}
+                <select
+                  aria-label="From season"
+                  value={reconciled.from ?? ''}
+                  onChange={(event) => {
+                    setPeriod({ mode: 'range', season: null, from: Number(event.target.value), to: reconciled.to });
+                  }}
+                >
+                  {seasons.map((season) => (
+                    <option key={season} value={season}>
+                      Season {season}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                To{' '}
+                <select
+                  aria-label="To season"
+                  value={reconciled.to ?? ''}
+                  onChange={(event) => {
+                    setPeriod({ mode: 'range', season: null, from: reconciled.from, to: Number(event.target.value) });
+                  }}
+                >
+                  {seasons.map((season) => (
+                    <option key={season} value={season}>
+                      Season {season}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : undefined}
+        </div>
+        {periodInvalid ? (
+          <Notice tone="error" title="Invalid season range">
+            <p>From season must not exceed To season.</p>
+          </Notice>
+        ) : leaders.length === 0 ? (
           <p className="muted">
-            No leaders yet. Complete a season to persist official honours.
+            No leaders yet for this window. Complete a season to persist official results.
           </p>
         ) : (
           <div className="table-wrap">
@@ -201,11 +469,9 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                 <tr>
                     <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
+                    <th scope="col" className="numeric">Career points</th>
                     <th scope="col" className="numeric">Titles</th>
-                    <th scope="col" className="numeric">Stage W</th>
-                    <th scope="col" className="numeric">Round W</th>
-                    <th scope="col" className="numeric">Tenure</th>
-                    <th scope="col" className="numeric">Bonus</th>
+                    <th scope="col">Breakdown</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,14 +488,12 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                           : ''}
                       </span>
                     </td>
+                    <td className="numeric">{row.careerPoints}</td>
                     <td className="numeric">
                       {row.totalTitles} ({row.feederTitles}F · {row.superleagueTitles}S)
                     </td>
-                    <td className="numeric">{row.stageWins}</td>
-                    <td className="numeric">{row.roundWins}</td>
-                    <td className="numeric">{row.longestSuperleagueTenure}</td>
-                    <td className="numeric">
-                      {formatBonus(row.currentEffectiveBonusThousandths)}
+                    <td>
+                      <LeaderBreakdown row={row} />
                     </td>
                   </tr>
                 ))}

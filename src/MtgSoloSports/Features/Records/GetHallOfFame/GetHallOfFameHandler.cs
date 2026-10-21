@@ -6,10 +6,13 @@ namespace MtgSoloSports.Features.Records.GetHallOfFame;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Serves the Hall of Fame
-/// career leaderboard from the same normalized record inputs as
-/// <c>GetRecords</c> (no round payloads). Ordering is deterministic:
-/// total titles, Superleague titles, stage wins, round wins, athlete name,
-/// athlete id. Read-only: no lock, no RNG, no mutation.
+/// career leaderboard from the weighted MSS-083 performance score computed
+/// over officially finalized league and major-cup placements in the selected
+/// inclusive season range (all time by default). Ordering is deterministic:
+/// career points, major-event wins, Superleague titles, Superleague points,
+/// athlete name, athlete id. Read-only: no lock, no RNG, no mutation.
+/// Titles are period-scoped supporting statistics; legacy stage/round/tenure
+/// fields remain all-time career totals for compatibility.
 /// </summary>
 public sealed class GetHallOfFameHandler
 {
@@ -24,11 +27,33 @@ public sealed class GetHallOfFameHandler
         _store = store ?? throw new ArgumentNullException(nameof(store));
     }
 
-    public async Task<GetHallOfFameResponse> HandleAsync(Guid saveId, int take = DefaultTake, CancellationToken cancellationToken = default)
+    public async Task<GetHallOfFameResponse> HandleAsync(
+        Guid saveId,
+        int take = DefaultTake,
+        int? fromSeason = null,
+        int? toSeason = null,
+        CancellationToken cancellationToken = default)
     {
         if (saveId == Guid.Empty)
         {
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        if (fromSeason is <= 0)
+        {
+            throw new ArgumentException("From season must be positive.", nameof(fromSeason));
+        }
+
+        if (toSeason is <= 0)
+        {
+            throw new ArgumentException("To season must be positive.", nameof(toSeason));
+        }
+
+        int? effectiveFrom = fromSeason ?? toSeason;
+        int? effectiveTo = toSeason ?? fromSeason;
+        if (effectiveFrom is not null && effectiveTo is not null && effectiveFrom.Value > effectiveTo.Value)
+        {
+            throw new ArgumentException("From season must not exceed to season.", nameof(fromSeason));
         }
 
         int limited = Math.Clamp(take, 1, MaxTake);
@@ -36,7 +61,9 @@ public sealed class GetHallOfFameHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         RecordLoader.RecordInputs inputs = await RecordLoader.LoadAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> colors = await LoadColorsAsync(context, cancellationToken).ConfigureAwait(false);
-        return Map(saveId, inputs, colors, limited);
+        CareerPerformanceLoader.LoadResult performance = await CareerPerformanceLoader.LoadAsync(
+            context, effectiveFrom, effectiveTo, cancellationToken).ConfigureAwait(false);
+        return Map(saveId, inputs, colors, performance, limited, effectiveFrom, effectiveTo);
     }
 
     internal static async Task<Dictionary<int, int>> LoadColorsAsync(
@@ -53,7 +80,10 @@ public sealed class GetHallOfFameHandler
         Guid saveId,
         RecordLoader.RecordInputs inputs,
         Dictionary<int, int> colors,
-        int take)
+        CareerPerformanceLoader.LoadResult performance,
+        int take,
+        int? fromSeason,
+        int? toSeason)
     {
         RecordCalculator.AthleteScores scores = RecordCalculator.ComputeScores(
             inputs.SeasonStandings,
@@ -61,20 +91,31 @@ public sealed class GetHallOfFameHandler
             inputs.Memberships,
             inputs.Careers,
             inputs.Promotions);
-        List<HallOfFameEntry> ordered = BuildEntries(inputs, colors, scores);
+        Dictionary<int, CareerPerformanceScorer.AthleteCareerScore> career =
+            new(CareerPerformanceScorer.ComputeScores(performance.Events));
+        List<HallOfFameEntry> ordered = BuildEntries(inputs, colors, scores, career);
         List<HallOfFameEntry> ranked = RankEntries(ordered, take);
-        return new GetHallOfFameResponse(saveId, take, inputs.AthleteNames.Count, ranked);
+        return new GetHallOfFameResponse(
+            saveId, take, inputs.AthleteNames.Count, ranked,
+            fromSeason, toSeason, performance.MinSeasonNumber, performance.MaxSeasonNumber,
+            CareerPerformanceScorer.WeightsVersion);
     }
 
     internal static List<HallOfFameEntry> BuildEntries(
         RecordLoader.RecordInputs inputs,
         Dictionary<int, int> colors,
-        RecordCalculator.AthleteScores scores)
+        RecordCalculator.AthleteScores scores,
+        Dictionary<int, CareerPerformanceScorer.AthleteCareerScore> career)
     {
         List<HallOfFameEntry> ordered = new(inputs.AthleteNames.Count);
         foreach (int athleteId in inputs.AthleteNames.Keys)
         {
-            ordered.Add(BuildSingle(inputs, colors, scores, athleteId));
+            if (!career.ContainsKey(athleteId))
+            {
+                continue;
+            }
+
+            ordered.Add(BuildSingle(inputs, colors, scores, career, athleteId));
         }
 
         return ordered;
@@ -84,11 +125,13 @@ public sealed class GetHallOfFameHandler
         RecordLoader.RecordInputs inputs,
         Dictionary<int, int> colors,
         RecordCalculator.AthleteScores scores,
+        Dictionary<int, CareerPerformanceScorer.AthleteCareerScore> career,
         int athleteId)
     {
-        scores.FeederTitles.TryGetValue(athleteId, out int feeder);
-        scores.SuperleagueTitles.TryGetValue(athleteId, out int super);
-        scores.TotalTitles.TryGetValue(athleteId, out int total);
+        career.TryGetValue(athleteId, out CareerPerformanceScorer.AthleteCareerScore? performance);
+        int feederTitles = performance is null ? 0 : performance.LeagueTitles - performance.SuperleagueTitles;
+        int superTitles = performance?.SuperleagueTitles ?? 0;
+        int totalTitles = performance?.LeagueTitles ?? 0;
         scores.StageWins.TryGetValue(athleteId, out int stageWins);
         scores.RoundWins.TryGetValue(athleteId, out int roundWins);
         scores.SuperleagueAppearances.TryGetValue(athleteId, out int superApps);
@@ -110,9 +153,9 @@ public sealed class GetHallOfFameHandler
             name ?? $"Athlete {athleteId}",
             color,
             colorName,
-            feeder,
-            super,
-            total,
+            feederTitles,
+            superTitles,
+            totalTitles,
             stageWins,
             roundWins,
             superApps,
@@ -122,16 +165,26 @@ public sealed class GetHallOfFameHandler
             releg,
             bonus,
             titleStreak,
-            stageStreak);
+            stageStreak,
+            performance?.TotalPoints ?? 0,
+            performance?.SuperleaguePoints ?? 0,
+            performance?.Feeder1Points ?? 0,
+            performance?.Feeder2Points ?? 0,
+            performance?.Feeder3Points ?? 0,
+            performance?.ColorCupIndividualPoints ?? 0,
+            performance?.ColorCupTeamPoints ?? 0,
+            performance?.TypeCupTeamPoints ?? 0,
+            performance?.MajorWins ?? 0,
+            performance?.ScoredEvents ?? 0);
     }
 
     internal static List<HallOfFameEntry> RankEntries(List<HallOfFameEntry> ordered, int take)
     {
         return ordered
-            .OrderByDescending(e => e.TotalTitles)
+            .OrderByDescending(e => e.CareerPoints)
+            .ThenByDescending(e => e.MajorWins)
             .ThenByDescending(e => e.SuperleagueTitles)
-            .ThenByDescending(e => e.StageWins)
-            .ThenByDescending(e => e.RoundWins)
+            .ThenByDescending(e => e.SuperleaguePoints)
             .ThenBy(e => e.AthleteName, StringComparer.Ordinal)
             .ThenBy(e => e.AthleteId)
             .Take(take)

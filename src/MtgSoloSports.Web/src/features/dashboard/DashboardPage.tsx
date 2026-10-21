@@ -26,11 +26,6 @@ function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
 }
 
-function formatBonus(thousandths: number): string {
-  const sign = thousandths >= 0 ? '+' : '';
-  return `${sign}${(thousandths / 1000).toFixed(3)}%`;
-}
-
 export function DashboardPage({
   saveId,
   data,
@@ -591,7 +586,7 @@ export function DashboardPage({
 
         <Card eyebrow="Hall of Fame" title={`Career leaders — ${hallOfFame.length} shown`}>
           {hallOfFame.length === 0 ? (
-            <p className="muted">No leaders yet. Titles, stage wins and tenure build the table.</p>
+            <p className="muted">No leaders yet. Career points build the table.</p>
           ) : (
             <div className="table-wrap">
               <table className="data-table">
@@ -599,8 +594,8 @@ export function DashboardPage({
                   <tr>
                     <th scope="col" className="numeric">Rank</th>
                     <th scope="col">Card</th>
+                    <th scope="col" className="numeric">Career points</th>
                     <th scope="col" className="numeric">Titles</th>
-                    <th scope="col" className="numeric">Bonus</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -610,8 +605,8 @@ export function DashboardPage({
                       <td>
                         <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                       </td>
+                      <td className="numeric">{row.careerPoints}</td>
                       <td className="numeric">{row.totalTitles}</td>
-                      <td className="numeric">{formatBonus(row.currentEffectiveBonusThousandths)}</td>
                     </tr>
                   ))}
                 </tbody>
