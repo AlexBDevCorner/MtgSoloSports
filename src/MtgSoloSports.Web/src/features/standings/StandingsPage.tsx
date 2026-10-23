@@ -159,14 +159,21 @@ export function StandingsPage({
     setSeasonNumber(urlSeason);
   }, [urlSeason, saveId]);
   // MSS-084: preserve the selected league across seasons within the same save.
-  // A null league in the URL (season switch pushes no league) keeps the
-  // current selection so valid choices survive; only an explicit non-null
-  // league or a save change overwrites. Fresh mounts still fall back via
-  // the competitions effect below.
+  // Season switches keep the stable league id in the shareable URL so the
+  // visible standings and the URL agree; only an explicit non-null league
+  // or a save change overwrites. Fresh mounts still fall back via the
+  // competitions effect below.
   const saveIdRef = useRef(saveId);
+  // Tracks an in-app season switch that optimistically preserved the league
+  // id in the URL. When the preserved id is missing in the destination
+  // season, the correction effect below falls back to Superleague/first and
+  // rewrites the URL instead of showing the explicit invalid-league error
+  // (which stays reserved for directly entered/shared invalid URLs).
+  const pendingPreserveRef = useRef<{ season: number; league: number | null } | null>(null);
   useEffect(() => {
     if (saveIdRef.current !== saveId) {
       saveIdRef.current = saveId;
+      pendingPreserveRef.current = null;
       setLeagueId(urlLeagueId);
     } else if (urlLeagueId !== null) {
       setLeagueId(urlLeagueId);
@@ -232,6 +239,21 @@ export function StandingsPage({
     urlLeagueId !== null &&
     competitions.length > 0 &&
     !competitions.some((row) => row.leagueId === urlLeagueId);
+  // MSS-084 correction: an in-app season switch that preserved a league id
+  // which is absent in the destination season must fall back (with a URL
+  // rewrite), not show the explicit invalid-league error. Directly entered
+  // invalid URLs have no pending preservation and keep the error.
+  const pendingPreserve = pendingPreserveRef.current;
+  const isPendingPreserveMissing =
+    pendingPreserve !== null &&
+    pendingPreserve.league !== null &&
+    urlSeason !== null &&
+    urlLeagueId !== null &&
+    pendingPreserve.season === urlSeason &&
+    pendingPreserve.league === urlLeagueId &&
+    competitions.length > 0 &&
+    !competitions.some((row) => row.leagueId === urlLeagueId);
+  const showExplicitLeagueInvalid = explicitLeagueInvalid && !isPendingPreserveMissing;
 
   useEffect(() => {
     if (competitions.length === 0) {
@@ -251,6 +273,38 @@ export function StandingsPage({
       return defaultLeagueIdFor(competitions) ?? current ?? urlLeagueId;
     });
   }, [competitions, urlLeagueId]);
+
+  // MSS-084 correction: rewrite the URL when a preserved league is missing
+  // in the destination season so selector, standings and shareable URL agree.
+  // Runs only for the tracked in-app switch; direct invalid URLs keep error.
+  // The router applies the optimistic URL asynchronously, so keep the pending
+  // marker while the URL is still stale instead of clearing it early.
+  useEffect(() => {
+    const pending = pendingPreserveRef.current;
+    if (pending === null || pending.league === null) {
+      if (pending !== null && pending.league === null) {
+        pendingPreserveRef.current = null;
+      }
+      return;
+    }
+    if (urlSeason !== pending.season || urlLeagueId !== pending.league) {
+      return;
+    }
+    if (competitions.length === 0) {
+      return;
+    }
+    if (competitions.some((row) => row.leagueId === pending.league)) {
+      pendingPreserveRef.current = null;
+      return;
+    }
+    const fallback = defaultLeagueIdFor(competitions);
+    pendingPreserveRef.current = null;
+    if (fallback !== null) {
+      setLeagueId(fallback);
+      pushSelection({ league: fallback, season: urlSeason, view });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competitions, urlSeason, urlLeagueId]);
 
   const leagueKnown = leagueId !== null && competitions.some((row) => row.leagueId === leagueId);
   const seasonEntry = seasons.find((row) => row.seasonNumber === seasonNumber) ?? null;
@@ -507,7 +561,7 @@ export function StandingsPage({
     );
   }
 
-  if (explicitLeagueInvalid) {
+  if (showExplicitLeagueInvalid) {
     return (
       <Notice tone="error" title="League not part of this season">
         <p>
@@ -551,12 +605,19 @@ export function StandingsPage({
             onChange={(event) => {
               const next = Number.parseInt(event.target.value, 10);
               const season = Number.isNaN(next) ? null : next;
-              // MSS-084: keep the selected league by stable id; the
-              // competitions effect falls back only when it is missing.
-              // Push no league so a missing division falls back instead of
-              // hitting the explicit invalid-league error.
+              // MSS-084: keep the selected league by stable id in the
+              // shareable URL so standings and URL agree after the switch.
+              // When the preserved id is missing in the destination season,
+              // the correction effect falls back to Superleague/first and
+              // rewrites the URL instead of showing the invalid-league error.
+              const preserved = leagueId;
               setSeasonNumber(season);
-              pushSelection({ league: null, season, view });
+              if (season !== null) {
+                pendingPreserveRef.current = { season, league: preserved };
+              } else {
+                pendingPreserveRef.current = null;
+              }
+              pushSelection({ league: preserved, season, view });
             }}
           >
             {seasonOptions.map((row) => (

@@ -2,7 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { create, act } from 'react-test-renderer';
-import { StandingsPage, defaultLeagueIdFor } from './StandingsPage';
+import { StandingsPage, defaultLeagueIdFor, type StandingsSelection } from './StandingsPage';
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -387,7 +387,7 @@ function baseProps(): {
   urlLeagueId: number | null;
   urlSeason: number | null;
   urlView: 'season' | 'matrix' | null;
-  onStandingsChange: () => void;
+  onStandingsChange: (selection: StandingsSelection) => void;
 } {
   return {
     saveId: SAVE,
@@ -395,6 +395,24 @@ function baseProps(): {
     urlSeason: null,
     urlView: null,
     onStandingsChange: () => undefined,
+  };
+}
+
+function basePropsWithCapture(calls: StandingsSelection[]): {
+  saveId: string;
+  urlLeagueId: number | null;
+  urlSeason: number | null;
+  urlView: 'season' | 'matrix' | null;
+  onStandingsChange: (selection: StandingsSelection) => void;
+} {
+  return {
+    saveId: SAVE,
+    urlLeagueId: null,
+    urlSeason: null,
+    urlView: null,
+    onStandingsChange: (selection: StandingsSelection) => {
+      calls.push(selection);
+    },
   };
 }
 
@@ -656,5 +674,168 @@ describe('MSS-084 superleague default and preserved selection', () => {
     assert.ok(output.includes('Feeder Red'), 'standings match the final league');
     assert.ok(!output.includes('Season 1 · 32/32'), 'no stale season 1 progress heading');
     r.unmount();
+  });
+
+  it('season switch keeps the preserved league in the shareable URL', async () => {
+    installFetch('stable');
+    const calls: StandingsSelection[] = [];
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(StandingsPage, basePropsWithCapture(calls)));
+    });
+    assert.ok(renderer);
+    await flush();
+    const r = renderer as unknown as {
+      root: { findAllByType: (t: string) => Array<{ props: { value?: unknown; onChange?: (e: { target: { value: string } }) => void } }> };
+      toJSON: () => unknown;
+      unmount: () => void;
+      update: (element: React.ReactElement) => void;
+    };
+    // Pick Feeder Red (2) on the latest season.
+    await act(async () => {
+      selectsOf(r)[0]!.props.onChange!({ target: { value: '2' } });
+    });
+    await flush();
+    calls.length = 0;
+    // Switch season 2 -> 1: the URL selection must keep league 2, not null.
+    await act(async () => {
+      selectsOf(r)[1]!.props.onChange!({ target: { value: '1' } });
+    });
+    await flush();
+    assert.ok(calls.length >= 1, 'season switch notifies the router');
+    const last = calls[calls.length - 1]!;
+    assert.equal(last.season, 1, 'URL season follows the switch');
+    assert.equal(last.league, 2, 'URL league preserves the feeder instead of null');
+    // Simulate App.tsx applying the pushed URL back into props (shareable).
+    const sharedProps = {
+      saveId: SAVE,
+      urlLeagueId: last.league,
+      urlSeason: last.season,
+      urlView: null as 'season' | 'matrix' | null,
+      onStandingsChange: (selection: StandingsSelection) => {
+        calls.push(selection);
+      },
+    };
+    await act(async () => {
+      r.update(React.createElement(StandingsPage, sharedProps));
+    });
+    await flush();
+    assert.equal(selectsOf(r)[0]!.props.value, 2, 'reloaded URL keeps the feeder');
+    assert.equal(selectsOf(r)[1]!.props.value, 1, 'reloaded URL keeps the season');
+    const output = JSON.stringify(r.toJSON());
+    assert.ok(output.includes('Feeder Red'), 'reloaded standings match the preserved league');
+    assert.ok(output.includes('Season 1'), 'reloaded headings match the season');
+    r.unmount();
+  });
+
+  it('missing division falls back and rewrites the shareable URL', async () => {
+    installFetch('missing');
+    const calls: StandingsSelection[] = [];
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(StandingsPage, basePropsWithCapture(calls)));
+    });
+    assert.ok(renderer);
+    await flush();
+    const r = renderer as unknown as {
+      root: { findAllByType: (t: string) => Array<{ props: { value?: unknown; onChange?: (e: { target: { value: string } }) => void } }> };
+      toJSON: () => unknown;
+      unmount: () => void;
+      update: (element: React.ReactElement) => void;
+    };
+    // Go to season 1 and pick Feeder 2.
+    await act(async () => {
+      selectsOf(r)[1]!.props.onChange!({ target: { value: '1' } });
+    });
+    await flush();
+    await act(async () => {
+      selectsOf(r)[0]!.props.onChange!({ target: { value: '2' } });
+    });
+    await flush();
+    calls.length = 0;
+    // Apply the picked URL as the router would, so the next switch preserves it.
+    const pickedLeagueCall = calls.length > 0 ? null : null;
+    void pickedLeagueCall;
+    const seasonOneProps = {
+      saveId: SAVE,
+      urlLeagueId: 2,
+      urlSeason: 1,
+      urlView: null as 'season' | 'matrix' | null,
+      onStandingsChange: (selection: StandingsSelection) => {
+        calls.push(selection);
+      },
+    };
+    await act(async () => {
+      r.update(React.createElement(StandingsPage, seasonOneProps));
+    });
+    await flush();
+    calls.length = 0;
+    // Season 1 -> 2: Feeder 2 is absent, so the switch optimistically keeps 2
+    // and the correction effect must rewrite it to Superleague 1.
+    await act(async () => {
+      selectsOf(r)[1]!.props.onChange!({ target: { value: '2' } });
+    });
+    // The season switch must preserve the feeder in the URL immediately.
+    assert.ok(calls.length >= 1, 'season switch notifies the router');
+    const optimistic = calls[calls.length - 1]!;
+    assert.equal(optimistic.season, 2, 'optimistic URL keeps the destination season');
+    assert.equal(optimistic.league, 2, 'optimistic URL preserves the feeder');
+    // Simulate App.tsx applying the pushed URL, then let competitions load so
+    // the correction effect can rewrite the missing division.
+    const optimisticProps = {
+      saveId: SAVE,
+      urlLeagueId: optimistic.league,
+      urlSeason: optimistic.season,
+      urlView: null as 'season' | 'matrix' | null,
+      onStandingsChange: (selection: StandingsSelection) => {
+        calls.push(selection);
+      },
+    };
+    await act(async () => {
+      r.update(React.createElement(StandingsPage, optimisticProps));
+    });
+    await flush(15);
+    assert.ok(calls.length >= 2, 'missing division triggers a URL rewrite');
+    const fallbackCall = calls[calls.length - 1]!;
+    assert.equal(fallbackCall.season, 2, 'fallback keeps the destination season');
+    assert.equal(fallbackCall.league, 1, 'missing feeder falls back to Superleague in the URL');
+    // Reloading the rewritten URL must show Superleague, not the error page.
+    const fallbackProps = {
+      saveId: SAVE,
+      urlLeagueId: fallbackCall.league,
+      urlSeason: fallbackCall.season,
+      urlView: null as 'season' | 'matrix' | null,
+      onStandingsChange: () => undefined,
+    };
+    await act(async () => {
+      r.update(React.createElement(StandingsPage, fallbackProps));
+    });
+    await flush();
+    const output = JSON.stringify(r.toJSON());
+    assert.ok(output.includes('Superleague'), 'rewritten URL shows Superleague');
+    assert.ok(!output.includes('League not part of this season'), 'fallback never shows the invalid-league error');
+    r.unmount();
+  });
+
+  it('direct invalid league URL still shows the error, not a silent fallback', async () => {
+    installFetch('stable');
+    const directProps = {
+      saveId: SAVE,
+      urlLeagueId: 999,
+      urlSeason: 2,
+      urlView: null as 'season' | 'matrix' | null,
+      onStandingsChange: () => undefined,
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(StandingsPage, directProps));
+    });
+    assert.ok(renderer);
+    await flush();
+    const output = JSON.stringify(
+      (renderer as unknown as { toJSON: () => unknown }).toJSON(),
+    );
+    assert.ok(output.includes('League not part of this season'), 'direct invalid URL keeps the error contract');
+    (renderer as unknown as { unmount: () => void }).unmount();
   });
 });
