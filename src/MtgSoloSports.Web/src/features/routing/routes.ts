@@ -36,9 +36,11 @@
  *   shareable across tabs.
  * - Standings uses `league` (league id), `season` (season number) and
  *   `view` (`season` default or `matrix`). Absent league/season fall back to
- *   the first league and latest season; an explicit league id that is not
- *   part of the selected season is an error, never a silent substitution.
- *   Present values are authoritative and shareable.
+ *   Superleague (first league for legacy saves without one) and latest
+ *   season; switching seasons preserves the selected league by id and falls
+ *   back to Superleague/first only when it is missing. An explicit league id
+ *   that is not part of the selected season is an error, never a silent
+ *   substitution. Present values are authoritative and shareable.
  * - Athlete search (`/saves/:saveId/athletes`) keeps free-text query,
  *   sporting filters, sort and pagination in the query string
  *   (`?q=&colours=&types=&current=&minNonPool=&maxNonPool=&minHonours=&...&sort=&dir=&skip=&take=`).

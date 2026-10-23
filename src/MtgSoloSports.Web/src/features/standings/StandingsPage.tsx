@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -61,10 +61,18 @@ function useAsync<T>(
     setError(null);
     load(signal)
       .then((loaded) => {
+        // Ignore out-of-order resolves after a rapid key change; the cleanup
+        // aborts the previous request but an already-resolved fetch still runs.
+        if (signal.aborted) {
+          return;
+        }
         setData(loaded);
         setLoading(false);
       })
       .catch((failure: unknown) => {
+        if (signal.aborted) {
+          return;
+        }
         if (failure instanceof DOMException && failure.name === 'AbortError') {
           return;
         }
@@ -90,6 +98,30 @@ export interface StandingsSelection {
   league: number | null;
   season: number | null;
   view: StandingsView | null;
+}
+
+interface LeagueRef {
+  leagueId: number;
+  kind: string;
+  leagueLevel?: string | null;
+}
+
+/**
+ * MSS-084: deterministic default keeps Superleague first. Falls back to the
+ * smallest league id only when no Superleague exists (legacy single-feeder
+ * saves). Never parses names; kind/level are canonical backend identities.
+ */
+export function defaultLeagueIdFor(competitions: readonly LeagueRef[]): number | null {
+  if (competitions.length === 0) {
+    return null;
+  }
+  const superleague = competitions
+    .filter((row) => row.kind === 'Superleague' || row.leagueLevel === 'Superleague')
+    .sort((a, b) => a.leagueId - b.leagueId);
+  if (superleague.length > 0) {
+    return superleague[0]!.leagueId;
+  }
+  return [...competitions].sort((a, b) => a.leagueId - b.leagueId)[0]!.leagueId;
 }
 
 interface TotalsRow {
@@ -126,8 +158,19 @@ export function StandingsPage({
   useEffect(() => {
     setSeasonNumber(urlSeason);
   }, [urlSeason, saveId]);
+  // MSS-084: preserve the selected league across seasons within the same save.
+  // A null league in the URL (season switch pushes no league) keeps the
+  // current selection so valid choices survive; only an explicit non-null
+  // league or a save change overwrites. Fresh mounts still fall back via
+  // the competitions effect below.
+  const saveIdRef = useRef(saveId);
   useEffect(() => {
-    setLeagueId(urlLeagueId);
+    if (saveIdRef.current !== saveId) {
+      saveIdRef.current = saveId;
+      setLeagueId(urlLeagueId);
+    } else if (urlLeagueId !== null) {
+      setLeagueId(urlLeagueId);
+    }
   }, [urlLeagueId, saveId]);
   useEffect(() => {
     setView(urlView ?? 'season');
@@ -136,7 +179,14 @@ export function StandingsPage({
   const seasonsState = useAsync<HistorySeasons>(saveId, (signal) =>
     fetchHistorySeasons(saveId as string, signal),
   );
-  const seasons = seasonsState.data?.seasons ?? [];
+  // MSS-084: ignore stale seasons from the previous save while reloading.
+  const seasonsRaw = seasonsState.data?.seasons ?? [];
+  const seasons =
+    seasonsState.data !== null &&
+    seasonsState.data !== undefined &&
+    seasonsState.data.saveId === saveId
+      ? seasonsRaw
+      : [];
   const latestSeason = seasons.length > 0 ? seasons[seasons.length - 1]!.seasonNumber : null;
 
   const explicitSeasonInvalid =
@@ -167,7 +217,17 @@ export function StandingsPage({
   const competitionsState = useAsync<HistoryCompetitions>(competitionsKey, (signal) =>
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
-  const competitions = competitionsState.data?.competitions ?? [];
+  // MSS-084: ignore stale competitions from the previous season while the new
+  // season loads, so the league dropdown never shows the wrong season's options.
+  const competitionsRaw = competitionsState.data?.competitions ?? [];
+  const competitionsFresh =
+    competitionsState.data !== null &&
+    competitionsState.data !== undefined &&
+    seasonNumber !== null &&
+    competitionsState.data.seasonNumber === seasonNumber
+      ? competitionsRaw
+      : [];
+  const competitions = competitionsFresh;
   const explicitLeagueInvalid =
     urlLeagueId !== null &&
     competitions.length > 0 &&
@@ -187,7 +247,8 @@ export function StandingsPage({
       if (current !== null && competitions.some((row) => row.leagueId === current)) {
         return current;
       }
-      return [...competitions].sort((a, b) => a.leagueId - b.leagueId)[0]!.leagueId;
+      // MSS-084 default: Superleague first, smallest id only for legacy saves.
+      return defaultLeagueIdFor(competitions) ?? current ?? urlLeagueId;
     });
   }, [competitions, urlLeagueId]);
 
@@ -239,8 +300,29 @@ export function StandingsPage({
     onStandingsChange(next);
   }
 
-  const placements = placementsState.data;
-  const stages = stagesState.data?.stages ?? [];
+  // MSS-084: only use payloads that match the current season/league request.
+  // Stale payloads from the previous key stay in useAsync state while the new
+  // request loads; ignoring them prevents season/league mismatched headings.
+  const placementsRaw = placementsState.data;
+  const placements =
+    placementsRaw !== null &&
+    placementsRaw !== undefined &&
+    seasonNumber !== null &&
+    leagueId !== null &&
+    placementsRaw.seasonNumber === seasonNumber &&
+    placementsRaw.leagueId === leagueId
+      ? placementsRaw
+      : null;
+  const stagesRaw = stagesState.data;
+  const stages =
+    stagesRaw !== null &&
+    stagesRaw !== undefined &&
+    seasonNumber !== null &&
+    leagueId !== null &&
+    stagesRaw.seasonNumber === seasonNumber &&
+    stagesRaw.leagueId === leagueId
+      ? (stagesRaw.stages ?? [])
+      : [];
   const activeCompetition = competitions.find((row) => row.leagueId === leagueId) ?? null;
   const leagueKind =
     placements?.leagueKind ??
@@ -259,7 +341,12 @@ export function StandingsPage({
   const totalsRows: TotalsRow[] = useMemo(() => {
     if (useCurrentTotals) {
       const current = currentTotalsState.data;
-      if (!current || current.standings.length === 0) {
+      // MSS-084: drop stale current totals from the previous league while reloading.
+      if (
+        !current ||
+        current.standings.length === 0 ||
+        (leagueId !== null && current.leagueId !== leagueId)
+      ) {
         return [];
       }
       return current.standings.map((row) => ({
@@ -274,7 +361,13 @@ export function StandingsPage({
       }));
     }
     const table = historyTableState.data;
-    if (!table || table.standings.length === 0) {
+    // MSS-084: drop stale final tables from the previous season/league.
+    if (
+      !table ||
+      table.standings.length === 0 ||
+      (seasonNumber !== null && table.seasonNumber !== seasonNumber) ||
+      (leagueId !== null && table.leagueId !== leagueId)
+    ) {
       return [];
     }
     return table.standings.map((row) => ({
@@ -287,7 +380,7 @@ export function StandingsPage({
       stageWins: row.stageWins,
       isChampion: row.isChampion,
     }));
-  }, [useCurrentTotals, currentTotalsState.data, historyTableState.data]);
+  }, [useCurrentTotals, currentTotalsState.data, historyTableState.data, seasonNumber, leagueId]);
 
   const totalsByAthlete = useMemo(() => {
     const map = new Map<number, TotalsRow>();
@@ -458,8 +551,11 @@ export function StandingsPage({
             onChange={(event) => {
               const next = Number.parseInt(event.target.value, 10);
               const season = Number.isNaN(next) ? null : next;
+              // MSS-084: keep the selected league by stable id; the
+              // competitions effect falls back only when it is missing.
+              // Push no league so a missing division falls back instead of
+              // hitting the explicit invalid-league error.
               setSeasonNumber(season);
-              setLeagueId(null);
               pushSelection({ league: null, season, view });
             }}
           >
