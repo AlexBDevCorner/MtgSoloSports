@@ -826,6 +826,79 @@ describe('MSS-084 superleague default and preserved selection', () => {
     r.unmount();
   });
 
+  it('Back from a feeder URL to a league-less URL defaults to Superleague', async () => {
+    installFetch('stable');
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(StandingsPage, {
+          saveId: SAVE,
+          urlLeagueId: 2,
+          urlSeason: 1,
+          urlView: null,
+          onStandingsChange: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    const r = renderer as unknown as {
+      root: { findAllByType: (t: string) => Array<{ props: { value?: unknown; onChange?: (e: { target: { value: string } }) => void } }> };
+      toJSON: () => unknown;
+      unmount: () => void;
+      update: (element: React.ReactElement) => void;
+    };
+    assert.equal(selectsOf(r)[0]!.props.value, 2, 'direct feeder URL renders the feeder');
+    let output = JSON.stringify(r.toJSON());
+    assert.ok(output.includes('Feeder Red'), 'feeder standings render before Back');
+    // Simulate browser Back to the league-less URL for the same season/save.
+    // The same URL must render the same default before and after reload:
+    // Superleague, not the previously selected feeder.
+    await act(async () => {
+      r.update(
+        React.createElement(StandingsPage, {
+          saveId: SAVE,
+          urlLeagueId: null,
+          urlSeason: 1,
+          urlView: null,
+          onStandingsChange: () => undefined,
+        }),
+      );
+    });
+    await flush();
+    assert.equal(selectsOf(r)[0]!.props.value, 1, 'Back to league-less URL resets to Superleague');
+    output = JSON.stringify(r.toJSON());
+    assert.ok(output.includes('Superleague'), 'standings show Superleague after Back');
+    assert.ok(!output.includes('League not part of this season'), 'no invalid-league error on league-less URL');
+    // A fresh mount of the same league-less URL must agree with the Back result.
+    let fresh: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      fresh = create(
+        React.createElement(StandingsPage, {
+          saveId: SAVE,
+          urlLeagueId: null,
+          urlSeason: 1,
+          urlView: null,
+          onStandingsChange: () => undefined,
+        }),
+      );
+    });
+    assert.ok(fresh);
+    await flush();
+    const fr = fresh as unknown as {
+      root: { findAllByType: (t: string) => Array<{ props: { value?: unknown } }> };
+      toJSON: () => unknown;
+      unmount: () => void;
+    };
+    assert.equal(
+      (fr.root.findAllByType('select') as Array<{ props: { value?: unknown } }>)[0]!.props.value,
+      1,
+      'fresh league-less URL also defaults to Superleague',
+    );
+    (fresh as unknown as { unmount: () => void }).unmount();
+    r.unmount();
+  });
+
   it('direct invalid league URL still shows the error, not a silent fallback', async () => {
     installFetch('stable');
     const directProps = {

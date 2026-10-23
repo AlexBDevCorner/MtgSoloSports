@@ -158,11 +158,13 @@ export function StandingsPage({
   useEffect(() => {
     setSeasonNumber(urlSeason);
   }, [urlSeason, saveId]);
-  // MSS-084: preserve the selected league across seasons within the same save.
-  // Season switches keep the stable league id in the shareable URL so the
-  // visible standings and the URL agree; only an explicit non-null league
-  // or a save change overwrites. Fresh mounts still fall back via the
-  // competitions effect below.
+  // MSS-084: preserve the selected league across seasons via the shareable
+  // URL. Season switches push the stable league id so standings and URL
+  // agree. The URL stays authoritative: a league-less URL (fresh open or
+  // Back to `/standings?season=N`) always resets local state so the same URL
+  // renders the same default Superleague before and after reload. An in-app
+  // switch without a router update yet is tracked via pendingPreserveRef and
+  // handled in the competitions effect below.
   const saveIdRef = useRef(saveId);
   // Tracks an in-app season switch that optimistically preserved the league
   // id in the URL. When the preserved id is missing in the destination
@@ -174,10 +176,8 @@ export function StandingsPage({
     if (saveIdRef.current !== saveId) {
       saveIdRef.current = saveId;
       pendingPreserveRef.current = null;
-      setLeagueId(urlLeagueId);
-    } else if (urlLeagueId !== null) {
-      setLeagueId(urlLeagueId);
     }
+    setLeagueId(urlLeagueId);
   }, [urlLeagueId, saveId]);
   useEffect(() => {
     setView(urlView ?? 'season');
@@ -268,13 +268,24 @@ export function StandingsPage({
       if (urlLeagueId !== null) {
         return current;
       }
-      if (current !== null && competitions.some((row) => row.leagueId === current)) {
-        return current;
+      // MSS-084: a league-less URL is authoritative and defaults to
+      // Superleague/first. The only exception is an in-app season switch
+      // whose router URL has not applied yet (component-only updates keep
+      // url props stale): pendingPreserveRef carries the preserved league for
+      // the current season until the router echoes it back.
+      const pending = pendingPreserveRef.current;
+      if (
+        pending?.league != null &&
+        seasonNumber !== null &&
+        pending.season === seasonNumber &&
+        competitions.some((row) => row.leagueId === pending.league)
+      ) {
+        return pending.league;
       }
       // MSS-084 default: Superleague first, smallest id only for legacy saves.
       return defaultLeagueIdFor(competitions) ?? current ?? urlLeagueId;
     });
-  }, [competitions, urlLeagueId]);
+  }, [competitions, urlLeagueId, seasonNumber]);
 
   // MSS-084 correction: rewrite the URL when a preserved league is missing
   // in the destination season so selector, standings and shareable URL agree.
