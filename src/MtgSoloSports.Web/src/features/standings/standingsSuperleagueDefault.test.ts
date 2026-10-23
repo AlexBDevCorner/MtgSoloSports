@@ -398,20 +398,22 @@ function baseProps(): {
   };
 }
 
-function basePropsWithCapture(calls: StandingsSelection[]): {
+function basePropsWithCapture(
+  calls: Array<{ selection: StandingsSelection; replace?: boolean }>,
+): {
   saveId: string;
   urlLeagueId: number | null;
   urlSeason: number | null;
   urlView: 'season' | 'matrix' | null;
-  onStandingsChange: (selection: StandingsSelection) => void;
+  onStandingsChange: (selection: StandingsSelection, options?: { replace?: boolean }) => void;
 } {
   return {
     saveId: SAVE,
     urlLeagueId: null,
     urlSeason: null,
     urlView: null,
-    onStandingsChange: (selection: StandingsSelection) => {
-      calls.push(selection);
+    onStandingsChange: (selection: StandingsSelection, options?: { replace?: boolean }) => {
+      calls.push({ selection, replace: options?.replace });
     },
   };
 }
@@ -678,7 +680,7 @@ describe('MSS-084 superleague default and preserved selection', () => {
 
   it('season switch keeps the preserved league in the shareable URL', async () => {
     installFetch('stable');
-    const calls: StandingsSelection[] = [];
+    const calls: Array<{ selection: StandingsSelection; replace?: boolean }> = [];
     let renderer: ReturnType<typeof create> | null = null;
     await act(async () => {
       renderer = create(React.createElement(StandingsPage, basePropsWithCapture(calls)));
@@ -703,9 +705,10 @@ describe('MSS-084 superleague default and preserved selection', () => {
     });
     await flush();
     assert.ok(calls.length >= 1, 'season switch notifies the router');
-    const last = calls[calls.length - 1]!;
+    const last = calls[calls.length - 1]!.selection;
     assert.equal(last.season, 1, 'URL season follows the switch');
     assert.equal(last.league, 2, 'URL league preserves the feeder instead of null');
+    assert.equal(calls[calls.length - 1]!.replace, undefined, 'normal season switch pushes history');
     // Simulate App.tsx applying the pushed URL back into props (shareable).
     const sharedProps = {
       saveId: SAVE,
@@ -713,7 +716,7 @@ describe('MSS-084 superleague default and preserved selection', () => {
       urlSeason: last.season,
       urlView: null as 'season' | 'matrix' | null,
       onStandingsChange: (selection: StandingsSelection) => {
-        calls.push(selection);
+        calls.push({ selection });
       },
     };
     await act(async () => {
@@ -730,7 +733,7 @@ describe('MSS-084 superleague default and preserved selection', () => {
 
   it('missing division falls back and rewrites the shareable URL', async () => {
     installFetch('missing');
-    const calls: StandingsSelection[] = [];
+    const calls: Array<{ selection: StandingsSelection; replace?: boolean }> = [];
     let renderer: ReturnType<typeof create> | null = null;
     await act(async () => {
       renderer = create(React.createElement(StandingsPage, basePropsWithCapture(calls)));
@@ -761,8 +764,8 @@ describe('MSS-084 superleague default and preserved selection', () => {
       urlLeagueId: 2,
       urlSeason: 1,
       urlView: null as 'season' | 'matrix' | null,
-      onStandingsChange: (selection: StandingsSelection) => {
-        calls.push(selection);
+      onStandingsChange: (selection: StandingsSelection, options?: { replace?: boolean }) => {
+        calls.push({ selection, replace: options?.replace });
       },
     };
     await act(async () => {
@@ -777,9 +780,10 @@ describe('MSS-084 superleague default and preserved selection', () => {
     });
     // The season switch must preserve the feeder in the URL immediately.
     assert.ok(calls.length >= 1, 'season switch notifies the router');
-    const optimistic = calls[calls.length - 1]!;
+    const optimistic = calls[calls.length - 1]!.selection;
     assert.equal(optimistic.season, 2, 'optimistic URL keeps the destination season');
     assert.equal(optimistic.league, 2, 'optimistic URL preserves the feeder');
+    assert.equal(calls[calls.length - 1]!.replace, undefined, 'optimistic switch pushes history');
     // Simulate App.tsx applying the pushed URL, then let competitions load so
     // the correction effect can rewrite the missing division.
     const optimisticProps = {
@@ -787,8 +791,8 @@ describe('MSS-084 superleague default and preserved selection', () => {
       urlLeagueId: optimistic.league,
       urlSeason: optimistic.season,
       urlView: null as 'season' | 'matrix' | null,
-      onStandingsChange: (selection: StandingsSelection) => {
-        calls.push(selection);
+      onStandingsChange: (selection: StandingsSelection, options?: { replace?: boolean }) => {
+        calls.push({ selection, replace: options?.replace });
       },
     };
     await act(async () => {
@@ -796,9 +800,14 @@ describe('MSS-084 superleague default and preserved selection', () => {
     });
     await flush(15);
     assert.ok(calls.length >= 2, 'missing division triggers a URL rewrite');
-    const fallbackCall = calls[calls.length - 1]!;
+    const fallbackCall = calls[calls.length - 1]!.selection;
     assert.equal(fallbackCall.season, 2, 'fallback keeps the destination season');
     assert.equal(fallbackCall.league, 1, 'missing feeder falls back to Superleague in the URL');
+    assert.equal(
+      calls[calls.length - 1]!.replace,
+      true,
+      'fallback rewrite replaces the invalid provisional URL instead of pushing history',
+    );
     // Reloading the rewritten URL must show Superleague, not the error page.
     const fallbackProps = {
       saveId: SAVE,
@@ -837,5 +846,89 @@ describe('MSS-084 superleague default and preserved selection', () => {
     );
     assert.ok(output.includes('League not part of this season'), 'direct invalid URL keeps the error contract');
     (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('never renders stale standings from another save with matching numeric ids', async () => {
+    const OTHER = 'other-save';
+    const g = globalThis as unknown as Record<string, unknown>;
+    g['fetch'] = (input: unknown) => {
+      const url = String(input);
+      if (url === `/api/saves/${SAVE}/history/seasons`) {
+        return Promise.resolve(okJson(twoSeasons()));
+      }
+      if (url === `/api/saves/${OTHER}/history/seasons`) {
+        // Same numeric season ids, but a different save whose seasons payload
+        // is still loading from the network (hangs) while the old save data
+        // remains in useAsync state.
+        return new Promise(() => undefined);
+      }
+      if (url.startsWith(`/api/saves/${SAVE}/history/`)) {
+        const compMatch = /\/history\/seasons\/(\d+)\/competitions$/.exec(url);
+        if (compMatch) {
+          return Promise.resolve(okJson(competitionsFor(Number.parseInt(compMatch[1]!, 10), 'stable')));
+        }
+        const placementsMatch = /\/history\/seasons\/(\d+)\/competitions\/(\d+)\/placements$/.exec(url);
+        if (placementsMatch) {
+          const season = Number.parseInt(placementsMatch[1]!, 10);
+          const leagueId = Number.parseInt(placementsMatch[2]!, 10);
+          const { name, kind, level } = leagueNameFor(leagueId);
+          return Promise.resolve(okJson(placementsFor(season, leagueId, name, kind, level)));
+        }
+        const tableMatch = /\/history\/seasons\/(\d+)\/competitions\/(\d+)\/table$/.exec(url);
+        if (tableMatch) {
+          const season = Number.parseInt(tableMatch[1]!, 10);
+          const leagueId = Number.parseInt(tableMatch[2]!, 10);
+          const { name } = leagueNameFor(leagueId);
+          return Promise.resolve(okJson(tableFor(season, leagueId, name)));
+        }
+        const stagesMatch = /\/history\/seasons\/(\d+)\/competitions\/(\d+)\/stages$/.exec(url);
+        if (stagesMatch) {
+          const season = Number.parseInt(stagesMatch[1]!, 10);
+          const leagueId = Number.parseInt(stagesMatch[2]!, 10);
+          const { name } = leagueNameFor(leagueId);
+          return Promise.resolve(okJson(stagesFor(season, leagueId, name)));
+        }
+      }
+      return Promise.resolve(errJson(404, 'not found'));
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(StandingsPage, {
+          saveId: SAVE,
+          urlLeagueId: 2,
+          urlSeason: 2,
+          urlView: null,
+          onStandingsChange: () => undefined,
+        }),
+      );
+    });
+    assert.ok(renderer);
+    await flush();
+    const r = renderer as unknown as {
+      toJSON: () => unknown;
+      unmount: () => void;
+      update: (element: React.ReactElement) => void;
+    };
+    let output = JSON.stringify(r.toJSON());
+    assert.ok(output.includes('Feeder Red'), 'old save renders its feeder before navigation');
+    // SPA-navigate to another save with the same numeric season/league while
+    // its payloads are still pending: stale SAVE payloads must be gated by
+    // saveId instead of rendering under the new save URL.
+    await act(async () => {
+      r.update(
+        React.createElement(StandingsPage, {
+          saveId: OTHER,
+          urlLeagueId: 2,
+          urlSeason: 2,
+          urlView: null,
+          onStandingsChange: () => undefined,
+        }),
+      );
+    });
+    await flush(4);
+    output = JSON.stringify(r.toJSON());
+    assert.ok(!output.includes('Feeder Red'), 'stale standings from the previous save are hidden while loading');
+    r.unmount();
   });
 });

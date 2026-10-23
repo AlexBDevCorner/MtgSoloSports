@@ -146,7 +146,7 @@ export function StandingsPage({
   urlLeagueId: number | null;
   urlSeason: number | null;
   urlView: StandingsView | null;
-  onStandingsChange: (selection: StandingsSelection) => void;
+  onStandingsChange: (selection: StandingsSelection, options?: { replace?: boolean }) => void;
 }) {
   const [seasonNumber, setSeasonNumber] = useState<number | null>(urlSeason);
   const [leagueId, setLeagueId] = useState<number | null>(urlLeagueId);
@@ -224,13 +224,15 @@ export function StandingsPage({
   const competitionsState = useAsync<HistoryCompetitions>(competitionsKey, (signal) =>
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
-  // MSS-084: ignore stale competitions from the previous season while the new
-  // season loads, so the league dropdown never shows the wrong season's options.
+  // MSS-084: ignore stale competitions from the previous season/save while
+  // the new season loads, so the league dropdown never shows the wrong
+  // season's or the wrong save's options.
   const competitionsRaw = competitionsState.data?.competitions ?? [];
   const competitionsFresh =
     competitionsState.data !== null &&
     competitionsState.data !== undefined &&
     seasonNumber !== null &&
+    competitionsState.data.saveId === saveId &&
     competitionsState.data.seasonNumber === seasonNumber
       ? competitionsRaw
       : [];
@@ -279,6 +281,10 @@ export function StandingsPage({
   // Runs only for the tracked in-app switch; direct invalid URLs keep error.
   // The router applies the optimistic URL asynchronously, so keep the pending
   // marker while the URL is still stale instead of clearing it early.
+  // The provisional preserved-league URL was already pushed by the season
+  // switch, so the fallback correction uses replace to avoid leaving the
+  // invalid intermediate URL in browser history (Back must return to the
+  // previous season, not to the invalid URL).
   useEffect(() => {
     const pending = pendingPreserveRef.current;
     if (pending === null || pending.league === null) {
@@ -301,7 +307,7 @@ export function StandingsPage({
     pendingPreserveRef.current = null;
     if (fallback !== null) {
       setLeagueId(fallback);
-      pushSelection({ league: fallback, season: urlSeason, view });
+      pushSelection({ league: fallback, season: urlSeason, view }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [competitions, urlSeason, urlLeagueId]);
@@ -350,19 +356,22 @@ export function StandingsPage({
     fetchCurrentStandings(saveId as string, leagueId as number, signal),
   );
 
-  function pushSelection(next: StandingsSelection): void {
-    onStandingsChange(next);
+  function pushSelection(next: StandingsSelection, options?: { replace?: boolean }): void {
+    onStandingsChange(next, options);
   }
 
-  // MSS-084: only use payloads that match the current season/league request.
-  // Stale payloads from the previous key stay in useAsync state while the new
-  // request loads; ignoring them prevents season/league mismatched headings.
+  // MSS-084: only use payloads that match the current save/season/league
+  // request. Stale payloads from the previous key stay in useAsync state
+  // while the new request loads; ignoring them prevents season/league/save
+  // mismatched headings. Every guarded contract carries saveId, so a stale
+  // payload from another save with matching numeric ids is also dropped.
   const placementsRaw = placementsState.data;
   const placements =
     placementsRaw !== null &&
     placementsRaw !== undefined &&
     seasonNumber !== null &&
     leagueId !== null &&
+    placementsRaw.saveId === saveId &&
     placementsRaw.seasonNumber === seasonNumber &&
     placementsRaw.leagueId === leagueId
       ? placementsRaw
@@ -373,6 +382,7 @@ export function StandingsPage({
     stagesRaw !== undefined &&
     seasonNumber !== null &&
     leagueId !== null &&
+    stagesRaw.saveId === saveId &&
     stagesRaw.seasonNumber === seasonNumber &&
     stagesRaw.leagueId === leagueId
       ? (stagesRaw.stages ?? [])
@@ -395,10 +405,13 @@ export function StandingsPage({
   const totalsRows: TotalsRow[] = useMemo(() => {
     if (useCurrentTotals) {
       const current = currentTotalsState.data;
-      // MSS-084: drop stale current totals from the previous league while reloading.
+      // MSS-084: drop stale current totals from the previous league/save
+      // while reloading. The contract is save-scoped, so a matching league
+      // id from another save must not render under this save's URL.
       if (
         !current ||
         current.standings.length === 0 ||
+        current.saveId !== saveId ||
         (leagueId !== null && current.leagueId !== leagueId)
       ) {
         return [];
@@ -415,10 +428,11 @@ export function StandingsPage({
       }));
     }
     const table = historyTableState.data;
-    // MSS-084: drop stale final tables from the previous season/league.
+    // MSS-084: drop stale final tables from the previous season/league/save.
     if (
       !table ||
       table.standings.length === 0 ||
+      table.saveId !== saveId ||
       (seasonNumber !== null && table.seasonNumber !== seasonNumber) ||
       (leagueId !== null && table.leagueId !== leagueId)
     ) {
@@ -434,7 +448,7 @@ export function StandingsPage({
       stageWins: row.stageWins,
       isChampion: row.isChampion,
     }));
-  }, [useCurrentTotals, currentTotalsState.data, historyTableState.data, seasonNumber, leagueId]);
+  }, [useCurrentTotals, currentTotalsState.data, historyTableState.data, seasonNumber, leagueId, saveId]);
 
   const totalsByAthlete = useMemo(() => {
     const map = new Map<number, TotalsRow>();
