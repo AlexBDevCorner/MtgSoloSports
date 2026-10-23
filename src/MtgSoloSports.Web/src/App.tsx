@@ -374,7 +374,7 @@ export default function App() {
             urlLeagueId={route.leagueId}
             urlSeason={route.season}
             urlView={route.view}
-            onStandingsChange={(selection) => {
+            onStandingsChange={(selection, options) => {
               navigate(
                 selection.league !== null
                   ? standingsLeaguePath(saveId, selection.league, {
@@ -386,6 +386,7 @@ export default function App() {
                       season: selection.season,
                       view: selection.view,
                     }),
+                options?.replace ? { replace: true } : undefined,
               );
             }}
           />
