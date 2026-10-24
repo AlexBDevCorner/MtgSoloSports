@@ -1,0 +1,48 @@
+/**
+ * MSS-085 league styles. Presentation-only tokens (shared palette), card grid
+ * modeled on the Cups hub edition cards. Tables reuse the global data-table
+ * rules; the wrapper scrolls horizontally on narrow screens so pages never
+ * overflow.
+ */
+
+.league-cards {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.league-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  padding: 12px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.league-card:hover {
+  border-color: var(--accent);
+}
+
+.league-card-season {
+  font-weight: 600;
+}
+
+.league-card-state {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.league-card-champion {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
