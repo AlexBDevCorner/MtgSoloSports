@@ -6,6 +6,7 @@ import {
   cupsPath,
   dashboardPath,
   historyPath,
+  leaguesPath,
   livePath,
   qualifiersPath,
   recordsPath,
@@ -15,13 +16,14 @@ import {
 import { MenuButton } from './MenuButton';
 import { RAIL_ID, useRailDrawer } from './useRailDrawer';
 
-export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'qualifiers' | 'history' | 'records' | 'cups' | 'athletes' | 'athlete';
+export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'leagues' | 'qualifiers' | 'history' | 'records' | 'cups' | 'athletes' | 'athlete';
 
 const VIEW_TITLES: Record<View, string> = {
   saves: 'Saves',
   dashboard: 'Dashboard',
   live: 'Live',
   standings: 'Standings',
+  leagues: 'Leagues',
   qualifiers: 'Qualifiers',
   history: 'History',
   records: 'Records',
@@ -131,6 +133,13 @@ export function AppShell({
             title="Open league tables and stage placements"
           >
             Standings
+          </RailLink>
+          <RailLink
+            href={scoped(leaguesPath)}
+            current={view === 'leagues'}
+            title="Open league profiles and histories"
+          >
+            Leagues
           </RailLink>
           <RailLink
             href={scoped(qualifiersPath)}

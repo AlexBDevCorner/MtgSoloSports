@@ -13,6 +13,8 @@ import { DashboardPage } from './features/dashboard/DashboardPage';
 import { useDashboard } from './features/dashboard/useDashboard';
 import { selectionForAction } from './features/events/eventModel';
 import { HistoryPage } from './features/history/HistoryPage';
+import { LeagueProfilePage } from './features/leagues/LeagueProfilePage';
+import { LeaguesOverviewPage } from './features/leagues/LeaguesOverviewPage';
 import { LiveEventView } from './features/live/LiveEventView';
 import { LiveQualifierView } from './features/live/LiveQualifierView';
 import { LivePage } from './features/live/LivePage';
@@ -52,6 +54,8 @@ function viewForRoute(route: Route): View {
       return 'live';
     case 'standings':
       return 'standings';
+    case 'leagues':
+      return 'leagues';
     case 'qualifiers':
       return 'qualifiers';
     case 'history':
@@ -393,6 +397,11 @@ export default function App() {
         );
       case 'records':
         return <RecordsPage saveId={saveId} />;
+      case 'leagues':
+        if (route.leagueKey) {
+          return <LeagueProfilePage key={`${saveId}/${route.leagueKey}`} saveId={saveId} leagueKey={route.leagueKey} />;
+        }
+        return <LeaguesOverviewPage key={saveId} saveId={saveId} />;
       case 'qualifiers':
         if (route.boundary) {
           return (

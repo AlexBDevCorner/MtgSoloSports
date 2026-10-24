@@ -13,6 +13,8 @@
  * - `/saves/:saveId/live?transition=<movement|rebalance>&season=<fromSeason>` (MSS-053 transition reveal)
  * - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
  * - `/saves/:saveId/standings?league=<id>&season=<n>&view=season|matrix`
+ * - `/saves/:saveId/leagues` -> leagues overview (MSS-085)
+ * - `/saves/:saveId/leagues/:leagueKey` -> one league profile, stable cross-season key (MSS-085)
  * - `/saves/:saveId/leagues/:leagueId` (MSS-040 reservation, now a Standings alias)
  * - `/saves/:saveId/leagues/:leagueId/standings?season=<n>&view=season|matrix`
  * - `/saves/:saveId/qualifiers?season=<n>` -> qualifier overview (MSS-060)
@@ -131,6 +133,12 @@ export type Route =
       leagueId: number | null;
       season: number | null;
       view: StandingsView | null;
+    }
+  | {
+      name: 'leagues';
+      saveId: string;
+      /** Stable cross-season league key; null shows the overview. */
+      leagueKey: string | null;
     }
   | {
       name: 'qualifiers';
@@ -335,9 +343,24 @@ export function athletesPath(saveId: string, search?: string): string {
 }
 
 /**
+ * Leagues overview: every official league identity in the universe.
+ */
+export function leaguesPath(saveId: string): string {
+  return `/saves/${encodeURIComponent(saveId)}/leagues`;
+}
+
+/**
+ * One league profile by stable cross-season key (e.g. `superleague`,
+ * `feeder-1-white`), surviving refresh, Back/Forward and universe switches.
+ */
+export function leaguePath(saveId: string, leagueKey: string): string {
+  return `/saves/${encodeURIComponent(saveId)}/leagues/${encodeURIComponent(leagueKey)}`;
+}
+
+/**
  * MSS-040 reservation, now a first-class Standings alias (MSS-041).
  * Keep the exact `/saves/:saveId/leagues/:leagueId` shape for compatibility;
- * the parser maps it to the standings route with season/view from the query.
+ * the parser maps it to the standings route when the segment is numeric.
  */
 export function leagueStandingsPath(saveId: string, leagueId: number): string {
   return `/saves/${encodeURIComponent(saveId)}/leagues/${leagueId}`;
@@ -393,6 +416,7 @@ export function routeSaveId(route: Route): string | null {
     case 'live':
     case 'history':
     case 'standings':
+    case 'leagues':
     case 'qualifiers':
     case 'records':
     case 'cups':
@@ -663,10 +687,16 @@ export function parseRoute(pathname: string, search: string): Route {
       };
     }
     case 'leagues': {
-      // MSS-040 reservation `/saves/:saveId/leagues/:leagueId` plus the
-      // MSS-041 canonical `/saves/:saveId/leagues/:leagueId/standings`.
-      // Both map to the standings route; season/view come from the query.
-      // segments: ['saves', saveId, 'leagues', leagueId, ('standings'?)]
+      // MSS-085 league profiles share the `/leagues` prefix with the
+      // MSS-040/041 standings alias. Disambiguation is exact:
+      // - `/saves/:saveId/leagues` -> leagues overview
+      // - `/saves/:saveId/leagues/:leagueId/standings` -> standings detail
+      // - `/saves/:saveId/leagues/:numericId` -> standings alias (compat)
+      // - `/saves/:saveId/leagues/:stableKey` -> league profile
+      // segments: ['saves', saveId, 'leagues', key?, ('standings'?)]
+      if (segments.length === 3) {
+        return { name: 'leagues', saveId, leagueKey: null };
+      }
       if (segments.length === 5 && segments[4] === 'standings') {
         const leagueId = parsePositiveInt(segments[3] ?? '');
         if (leagueId === null) {
@@ -681,17 +711,22 @@ export function parseRoute(pathname: string, search: string): Route {
         };
       }
       if (segments.length === 4) {
-        const leagueId = parsePositiveInt(segments[3] ?? '');
-        if (leagueId === null) {
+        const raw = segments[3] ?? '';
+        const numeric = parsePositiveInt(raw);
+        if (numeric !== null) {
+          return {
+            name: 'standings',
+            saveId,
+            leagueId: numeric,
+            season: parseOptionalPositiveInt(params, 'season'),
+            view: parseStandingsView(params.get('view')),
+          };
+        }
+        const key = decodeURIComponentSafe(raw).trim().toLowerCase();
+        if (!key) {
           return { name: 'notFound', path: pathname + search };
         }
-        return {
-          name: 'standings',
-          saveId,
-          leagueId,
-          season: parseOptionalPositiveInt(params, 'season'),
-          view: parseStandingsView(params.get('view')),
-        };
+        return { name: 'leagues', saveId, leagueKey: key };
       }
       return { name: 'notFound', path: pathname + search };
     }

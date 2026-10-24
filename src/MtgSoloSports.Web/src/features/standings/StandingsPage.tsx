@@ -21,7 +21,8 @@ import {
   type HistoryStages,
 } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
-import { historyPath, livePath, savesPath, type StandingsView } from '../routing/routes';
+import { historyPath, leaguePath, livePath, savesPath, type StandingsView } from '../routing/routes';
+import { leagueKeyFor } from '../leagues/leagueKeys';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import {
   allStageColumns,
@@ -412,6 +413,16 @@ export function StandingsPage({
     activeCompetition?.feederDivision ??
     null;
   const tierLabel = leagueLevelLabel(leagueLevel, leagueDivision, leagueKind);
+  // MSS-085: deep link to the league's dedicated historical profile, derived
+  // from backend tier identity (never parsed names). Null until competitions
+  // load, so no fabricated URL ever renders.
+  const leagueProfileKey = activeCompetition
+    ? leagueKeyFor({
+        kind: activeCompetition.kind,
+        feederDivision: activeCompetition.feederDivision ?? null,
+        sportingColor: activeCompetition.sportingColor ?? null,
+      })
+    : null;
 
   const totalsRows: TotalsRow[] = useMemo(() => {
     if (useCurrentTotals) {
@@ -709,6 +720,11 @@ export function StandingsPage({
               <Link to={livePath(saveId, { league: leagueId })} className="ghost-button">
                 Live
               </Link>
+              {leagueProfileKey ? (
+                <Link to={leaguePath(saveId, leagueProfileKey)} className="ghost-button">
+                  League profile
+                </Link>
+              ) : null}
             </>
           ) : null}
           <InfoDisclosure>
