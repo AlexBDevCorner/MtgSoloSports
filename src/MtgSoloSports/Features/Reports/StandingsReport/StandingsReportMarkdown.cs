@@ -27,6 +27,7 @@ internal static class StandingsReportMarkdown
     private static void AppendHeader(StringBuilder sb, Guid saveId, SaveMetadataEntity metadata, SimulationKernel.Rules.RulesV1 rules, SeasonEntity season, LeagueEntity league, GetStandingsReportHandler.ReportData data)
     {
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
+        FeederDivision division = (FeederDivision)league.FeederDivision;
         string kind = ((LeagueKind)league.Kind).ToString();
         string colorName = Enum.IsDefined(typeof(SimulationKernel.Catalog.SportingColor), league.SportingColor)
             ? ((SimulationKernel.Catalog.SportingColor)league.SportingColor).ToString()
@@ -42,7 +43,7 @@ internal static class StandingsReportMarkdown
         string checksum = string.IsNullOrEmpty(data.SeasonChecksum) ? string.Empty : $" · Checksum `{data.SeasonChecksum}`";
         sb.AppendLine(CultureInfo.InvariantCulture, $"Status: {statusLabel} (isFinal={data.IsFinal.ToString().ToLowerInvariant()}){checksum}");
         string zoneNote = data.IsFinal ? " (authoritative final zones)." : " (provisional: zones omitted, not authoritative).";
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Zones: {ReportZones.ZoneSummary(level)}{zoneNote}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Zones: {ReportZones.ZoneSummary(level, division)}{zoneNote}");
         sb.AppendLine();
         sb.AppendLine("Units: championship points are official season totals in fixed-point thousandths (divide by 1000, e.g. 77000 = 77.000; 32-position table, no bonus multiplier). Stage/base scores are persisted display sums in the same thousandths. — means unavailable; 0 is an exact zero. Only rank 1 of a final table is the champion.");
         sb.AppendLine();

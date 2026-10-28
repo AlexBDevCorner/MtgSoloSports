@@ -34,10 +34,13 @@ Markdown carries the same scope/status/metadata with headings and tables; it nev
 - Standings report: exactly the requested season + league, rank order, all 32 rows when present,
   `status` (`final` | `provisional`), `isFinal`, `completedStages/totalStages/globalStage`,
   `seasonChecksum`, league identity/tier/colour, per-row zone only when final.
-- Zones (final only): Superleague `safe/qualifier/relegation`; Feeder 1
+- Zones (final only): Superleague `safe/qualifier/relegation`; tiered Feeder 1
   `champion/qualifier-up/safe/qualifier-hold/relegated`; Feeder 2
   `promoted/qualifier-up/qualifier-hold/relegated`; Feeder 3
-  `promoted/qualifier-up/safe`. Provisional rows omit zones.
+  `promoted/qualifier-up/safe`. Historical v1 single-feeder rows (division 0,
+  surfaced as Feeder 1) keep their original bands `champion/qualifier/safe`
+  (1 champion promoted, 2–4 qualifier challengers, 5–32 safe), matching the
+  Standings UI legacy mapping. Provisional rows omit zones.
 
 ## Files
 

@@ -19,6 +19,7 @@ internal static class StandingsReportJson
         GetStandingsReportHandler.ReportData data)
     {
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
+        FeederDivision division = (FeederDivision)league.FeederDivision;
         object envelope = new
         {
             schemaVersion = ReportContract.SchemaVersion,
@@ -34,7 +35,7 @@ internal static class StandingsReportJson
             snapshot = SnapshotPart(metadata, season, data),
             league = LeaguePart(league, level),
             units = UnitsPart(),
-            zones = ZonesPart(level, data),
+            zones = ZonesPart(level, division, data),
             standings = RowsPart(data),
         };
         return JsonSerializer.Serialize(envelope, new JsonSerializerOptions
@@ -102,12 +103,12 @@ internal static class StandingsReportJson
         };
     }
 
-    private static object ZonesPart(LeagueLevel level, GetStandingsReportHandler.ReportData data)
+    private static object ZonesPart(LeagueLevel level, FeederDivision division, GetStandingsReportHandler.ReportData data)
     {
         return new
         {
             authoritative = data.IsFinal,
-            summary = ReportZones.ZoneSummary(level),
+            summary = ReportZones.ZoneSummary(level, division),
             note = data.IsFinal
                 ? "Zones derive from final ranks and are authoritative for postseason movement."
                 : "Provisional table: zones are not authoritative and are omitted per row.",

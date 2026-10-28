@@ -142,7 +142,8 @@ public sealed class GetStandingsReportHandler
 
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
-        List<StandingsReportRow> standings = MapFinalRows(rows, names, level);
+        FeederDivision division = (FeederDivision)league.FeederDivision;
+        List<StandingsReportRow> standings = MapFinalRows(rows, names, level, division);
         string checksum = GetCurrentStandingsHandler.ComputePersistedChecksum(rows, names);
         GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
 
@@ -159,13 +160,14 @@ public sealed class GetStandingsReportHandler
     internal static List<StandingsReportRow> MapFinalRows(
         List<SeasonStandingEntity> rows,
         Dictionary<int, string> names,
-        LeagueLevel level)
+        LeagueLevel level,
+        FeederDivision division)
     {
         List<StandingsReportRow> standings = new(rows.Count);
         foreach (SeasonStandingEntity row in rows)
         {
             names.TryGetValue(row.SaveAthleteId, out string? name);
-            string? zone = ReportZones.ZoneForRank(level, row.SeasonRank, true);
+            string? zone = ReportZones.ZoneForRank(level, row.SeasonRank, true, division);
             standings.Add(new StandingsReportRow(
                 row.SeasonRank,
                 row.SaveAthleteId,
