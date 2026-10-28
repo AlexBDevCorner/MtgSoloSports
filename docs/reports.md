@@ -9,8 +9,11 @@ Human-readable exports for ChatGPT sourcing. Snapshots of persisted data, never 
 
 `format` defaults to `json`; `md` and `markdown` select Markdown. Anything else is `400`.
 Missing save is `404`; missing athlete or season/league is `404`; corrupt sporting state is `400`.
-Downloads are read-only: one `AsNoTracking` context, no `SaveChanges`, no RNG mutation. Provisional
+Downloads are read-only: one `AsNoTracking` context in one committed read transaction
+for a consistent snapshot across concurrent simulation commits, no `SaveChanges`, no RNG mutation. Provisional
 standings reuse the live-table kernel with a discarded RNG fork, exactly like `CurrentStandings`.
+Corrupt stage cursors abort via `GlobalStageGate` and surface as `400`; reports never
+substitute a synthetic stage value.
 
 ## Contract (v1)
 

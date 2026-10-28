@@ -20,7 +20,10 @@ namespace MtgSoloSports.Features.Reports.StandingsReport;
 /// persisted completed stages with the same kernel mathematics as the live
 /// table, breaking full ties with a discarded fork of the versioned save RNG
 /// (reads never mutate RNG). Never falls back to another season or league.
-/// Read-only: single AsNoTracking context, no mutation, no external services.
+/// Read-only: single AsNoTracking context in one committed read transaction
+/// for a consistent snapshot, no mutation, no external services. Corrupt stage
+/// cursors abort via GlobalStageGate and surface as HTTP 400; never repaired
+/// with a synthetic stage value.
 /// </summary>
 public sealed class GetStandingsReportHandler
 {
@@ -65,12 +68,14 @@ public sealed class GetStandingsReportHandler
 
         string normalized = ReportContract.NormalizeFormat(format);
         using SaveDbContext context = _store.OpenDbContext(saveId);
+        using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         SimulationKernel.Rules.RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         SeasonEntity season = await ListHistoryCompetitionsHandler.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         LeagueEntity league = await ListHistoryStagesHandler.LoadLeagueAsync(context, season, leagueId, cancellationToken).ConfigureAwait(false);
 
         ReportData data = await LoadReportDataAsync(context, rules, season, league, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.Equals(normalized, "md", StringComparison.Ordinal))
         {
@@ -139,7 +144,7 @@ public sealed class GetStandingsReportHandler
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
         List<StandingsReportRow> standings = MapFinalRows(rows, names, level);
         string checksum = GetCurrentStandingsHandler.ComputePersistedChecksum(rows, names);
-        GlobalStageGate.GlobalStageView global = await LoadGlobalStageBestEffortAsync(context, season, rules, true, cancellationToken).ConfigureAwait(false);
+        GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
 
         return new ReportData(
             true,
@@ -194,7 +199,7 @@ public sealed class GetStandingsReportHandler
             .ConfigureAwait(false);
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         int completedStages = stageRows.Select(r => r.StageNumber).Distinct().Count();
-        GlobalStageGate.GlobalStageView global = await LoadGlobalStageBestEffortAsync(context, season, rules, false, cancellationToken).ConfigureAwait(false);
+        GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
 
         if (completedStages == 0)
         {
@@ -235,25 +240,6 @@ public sealed class GetStandingsReportHandler
         }
 
         return standings;
-    }
-
-    internal static async Task<GlobalStageGate.GlobalStageView> LoadGlobalStageBestEffortAsync(
-        SaveDbContext context,
-        SeasonEntity season,
-        SimulationKernel.Rules.RulesV1 rules,
-        bool isFinal,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
-        }
-        catch (InvalidOperationException)
-        {
-            return isFinal
-                ? new GlobalStageGate.GlobalStageView(rules.StagesPerSeason + 1, true, [])
-                : new GlobalStageGate.GlobalStageView(1, false, []);
-        }
     }
 
     internal static string BuildJson(

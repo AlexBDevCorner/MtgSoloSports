@@ -11,9 +11,10 @@ namespace MtgSoloSports.Features.Reports.AthleteReport;
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Builds a versioned,
 /// human-readable athlete report from persisted profile projections plus the
-/// athlete's current record holdings. Read-only: single AsNoTracking context,
-/// no RNG access, no mutation, no round-payload decompression beyond what the
-/// profile slice already reads.
+/// athlete's current record holdings. Read-only: single AsNoTracking context
+/// in one committed read transaction for a consistent snapshot, no RNG access,
+/// no mutation, no round-payload decompression beyond what the profile slice
+/// already reads.
 /// </summary>
 public sealed class GetAthleteReportHandler
 {
@@ -40,6 +41,7 @@ public sealed class GetAthleteReportHandler
 
         string normalized = ReportContract.NormalizeFormat(format);
         using SaveDbContext context = _store.OpenDbContext(saveId);
+        using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         SimulationKernel.Rules.RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
 
@@ -51,6 +53,7 @@ public sealed class GetAthleteReportHandler
         GetAthleteRecordHoldingsResponse holdings = GetAthleteRecordHoldingsHandler.Map(saveId, athleteId, values, maxima);
 
         int seasonCount = await context.Seasons.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.Equals(normalized, "md", StringComparison.Ordinal))
         {
