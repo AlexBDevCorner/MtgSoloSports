@@ -80,7 +80,7 @@ internal static class UniverseAlmanacQueries
             superleagueBySeason.TryGetValue(season.Id, out LeagueEntity? superleague);
             champions.TryGetValue(season.Id, out SeasonStandingEntity? champion);
             cupStates.TryGetValue(season.SeasonNumber, out (string Color, string Type) states);
-            string championName = "(no Superleague in Season 1)";
+            string? championName;
             int? championId = null;
             if (champion is not null)
             {
@@ -88,16 +88,24 @@ internal static class UniverseAlmanacQueries
                 championName = name ?? $"Athlete {champion.SaveAthleteId}";
                 championId = champion.SaveAthleteId;
             }
-            else if (superleague is not null && season.IsComplete)
+            else if (superleague is null)
+            {
+                championName = null;
+            }
+            else if (season.IsComplete)
             {
                 championName = "— (final table missing; corrupted if final)";
+            }
+            else
+            {
+                championName = "pending — table not final; omitted, never inferred";
             }
 
             entries.Add(new AlmanacSeasonEntry(
                 season.SeasonNumber,
                 season.IsComplete,
                 superleague is not null,
-                superleague is null ? null : championName,
+                championName,
                 championId,
                 string.IsNullOrEmpty(states.Color) ? "NotHeld" : states.Color,
                 string.IsNullOrEmpty(states.Type) ? "NotHeld" : states.Type));

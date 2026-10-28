@@ -266,6 +266,51 @@ public sealed class SeasonDossierAlmanacCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task Almanac_IncompleteSuperleagueSeason_DoesNotClaimNoSuperleague()
+    {
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-almanac-pending-");
+        try
+        {
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                var season2 = new SeasonEntity { SeasonNumber = 2, IsComplete = false, HasSuperleague = true };
+                context.Seasons.Add(season2);
+                await context.SaveChangesAsync();
+                context.Leagues.Add(new LeagueEntity
+                {
+                    SeasonId = season2.Id,
+                    Kind = (int)LeagueKind.Superleague,
+                    Name = "Superleague",
+                    SportingColor = 0,
+                    FeederDivision = 0,
+                });
+                await context.SaveChangesAsync();
+            }
+
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                List<SeasonEntity> seasons = await UniverseAlmanacQueries.LoadSeasonsAsync(context, CancellationToken.None);
+                Dictionary<int, string> names = await UniverseAlmanacQueries.LoadNamesAsync(context, CancellationToken.None);
+                IReadOnlyList<AlmanacSeasonEntry> entries = await UniverseAlmanacQueries.LoadSeasonEntriesAsync(context, seasons, names, CancellationToken.None);
+                AlmanacSeasonEntry season1 = entries.Single(e => e.SeasonNumber == 1);
+                season1.HasSuperleague.ShouldBeFalse();
+                season1.SuperleagueChampionName.ShouldBeNull();
+                AlmanacSeasonEntry season2 = entries.Single(e => e.SeasonNumber == 2);
+                season2.HasSuperleague.ShouldBeTrue();
+                season2.IsComplete.ShouldBeFalse();
+                season2.SuperleagueChampionAthleteId.ShouldBeNull();
+                season2.SuperleagueChampionName.ShouldNotBeNull();
+                season2.SuperleagueChampionName.ShouldNotContain("no Superleague");
+                season2.SuperleagueChampionName.ShouldContain("pending");
+            }
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
     private static GetTypeCupTournamentResponse BuildPartialTournament()
     {
         List<TypeCupTournamentQualificationGroup> groups =
