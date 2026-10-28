@@ -178,8 +178,14 @@ internal static class CupEditionReportMarkdown
             return;
         }
 
-        sb.AppendLine(CultureInfo.InvariantCulture, $"Format: qualification + fresh 32-team Final · {tournament.TeamCount} teams · {tournament.QualificationGroupCount} groups · Policy v{tournament.QualificationPolicyVersion} · Wildcards {tournament.WildcardCount} · Checksum `{tournament.TournamentChecksum}`.");
+        string checksum = string.IsNullOrWhiteSpace(tournament.TournamentChecksum) ? "pending (Final not played)" : $"`{tournament.TournamentChecksum}`";
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Format: qualification + fresh 32-team Final · {tournament.TeamCount} teams · {tournament.QualificationGroupCount} groups · Policy v{tournament.QualificationPolicyVersion} · Wildcards {tournament.WildcardCount} · Checksum {checksum}.");
         sb.AppendLine();
+        if (tournament.Final is null && tournament.QualificationGroups.Count > 0 && tournament.QualificationGroups.Count < tournament.QualificationGroupCount)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Finished qualification groups: {tournament.QualificationGroups.Count}/{tournament.QualificationGroupCount}; remaining groups and the Final are pending and omitted.");
+            sb.AppendLine();
+        }
     }
 
     private static void AppendQualGroups(StringBuilder sb, GetTypeCupTournamentResponse tournament)
@@ -189,24 +195,31 @@ internal static class CupEditionReportMarkdown
             return;
         }
 
-        sb.AppendLine(CultureInfo.InvariantCulture, $"### Qualification groups ({tournament.QualificationGroups.Count}) — not titles");
+        bool partial = tournament.Final is null && tournament.QualificationGroups.Count < tournament.QualificationGroupCount;
+        string count = partial
+            ? $"{tournament.QualificationGroups.Count} finished of {tournament.QualificationGroupCount}"
+            : $"{tournament.QualificationGroups.Count}";
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Qualification groups ({count}) — not titles");
         sb.AppendLine();
+        bool finalPending = tournament.Final is null;
         foreach (TypeCupTournamentQualificationGroup group in tournament.QualificationGroups.OrderBy(g => g.QualificationGroup))
         {
-            AppendQualGroup(sb, group);
+            AppendQualGroup(sb, group, finalPending);
         }
     }
 
-    private static void AppendQualGroup(StringBuilder sb, TypeCupTournamentQualificationGroup group)
+    private static void AppendQualGroup(StringBuilder sb, TypeCupTournamentQualificationGroup group, bool finalPending)
     {
         string letter = CupTeamHistoryBuilder.GroupLetter(group.QualificationGroup);
         sb.AppendLine(CultureInfo.InvariantCulture, $"#### Group {letter} — {group.GroupSize} teams · {group.GuaranteedPlaces} guaranteed · Checksum `{group.Checksum}`");
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(group.WildcardCandidate))
         {
-            string fate = string.IsNullOrWhiteSpace(group.WildcardWinner)
-                ? "eliminated"
-                : $"wildcard → Final ({ReportMarkdown.Cell(group.WildcardWinner)})";
+            string fate = !string.IsNullOrWhiteSpace(group.WildcardWinner)
+                ? $"wildcard → Final ({ReportMarkdown.Cell(group.WildcardWinner)})"
+                : finalPending
+                    ? "pending — Final not played yet; competes for a wildcard once all groups complete"
+                    : "eliminated";
             sb.AppendLine(CultureInfo.InvariantCulture, $"Wildcard candidate: {ReportMarkdown.Cell(group.WildcardCandidate)} — {fate}.");
             sb.AppendLine();
         }
@@ -244,7 +257,15 @@ internal static class CupEditionReportMarkdown
     {
         if (tournament.Final is null)
         {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"Final: pending — no official Final standings yet.");
+            if (tournament.QualificationGroups.Count > 0)
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"Final: pending — no official Final standings yet. Finished qualification groups: {tournament.QualificationGroups.Count}/{tournament.QualificationGroupCount}; qualifier success is not a title.");
+            }
+            else
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"Final: pending — no official Final standings yet.");
+            }
+
             sb.AppendLine();
             return;
         }

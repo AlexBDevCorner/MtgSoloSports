@@ -70,7 +70,7 @@ internal static class CupEditionReportJson
             phase = metadata.Phase,
             colorIndividualComplete = data.ColorIndividual is not null,
             colorTeamComplete = data.ColorTeam is not null,
-            typeTournamentComplete = data.TypeTournament is not null,
+            typeTournamentComplete = data.TypeTournament?.Final is not null,
         };
     }
 

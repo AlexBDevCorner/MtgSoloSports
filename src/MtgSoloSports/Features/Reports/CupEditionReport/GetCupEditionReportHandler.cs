@@ -5,10 +5,12 @@ using MtgSoloSports.Features.Cups.CupHistory;
 using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.GetColorCupTeamResult;
 using MtgSoloSports.Features.Cups.GetTypeCupTournament;
+using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Reports.CupEditionReport;
 
@@ -316,18 +318,257 @@ public sealed class GetCupEditionReportHandler
         SeasonEntity source,
         CancellationToken cancellationToken)
     {
-        bool hasFinal = await context.TypeCupTeamStandings
+        bool hasFinalOrLegacy = await context.TypeCupTeamStandings
             .AsNoTracking()
             .AnyAsync(e => e.SourceSeasonId == source.Id
                 && (e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField
                     || e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final), cancellationToken)
             .ConfigureAwait(false);
-        if (!hasFinal)
+        if (hasFinalOrLegacy)
+        {
+            return await GetTypeCupTournamentHandler.BuildResponseAsync(context, saveId, source, cancellationToken).ConfigureAwait(false);
+        }
+
+        bool hasQualification = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .AnyAsync(e => e.SourceSeasonId == source.Id
+                && e.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification, cancellationToken)
+            .ConfigureAwait(false);
+        if (!hasQualification)
         {
             return null;
         }
 
-        return await GetTypeCupTournamentHandler.BuildResponseAsync(context, saveId, source, cancellationToken).ConfigureAwait(false);
+        return await BuildPartialTournamentAsync(context, saveId, source, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal sealed record PartialTournamentRows(
+        RulesV1 Rules,
+        List<TypeCupSelectionEntity> Selection,
+        List<TypeCupTournamentDrawEntity> Draws,
+        List<TypeCupTeamStandingEntity> Teams,
+        List<TypeCupTeamGroupStandingEntity> Legs);
+
+    internal static async Task<GetTypeCupTournamentResponse?> BuildPartialTournamentAsync(
+        SaveDbContext context,
+        Guid saveId,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        PartialTournamentRows rows = await LoadPartialRowsAsync(context, source, cancellationToken).ConfigureAwait(false);
+        if (rows.Teams.Count == 0)
+        {
+            return null;
+        }
+
+        EnsurePartialRowsOnly(rows);
+        TypeCupTournamentPlan.Plan plan = BuildPartialPlan(rows);
+        Dictionary<int, string> names = await LoadLegNamesAsync(context, rows.Legs, cancellationToken).ConfigureAwait(false);
+        List<TypeCupTournamentQualificationGroup> groups = CollectPartialGroups(plan, rows, names);
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        return CreatePartialResponse(saveId, source, rows, plan, groups);
+    }
+
+    internal static async Task<PartialTournamentRows> LoadPartialRowsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        List<TypeCupSelectionEntity> selection = await context.TypeCupSelections
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTournamentDrawEntity> draws = await context.TypeCupTournamentDraws
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamStandingEntity> teams = await context.TypeCupTeamStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<TypeCupTeamGroupStandingEntity> legs = await context.TypeCupTeamGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return new PartialTournamentRows(rules, selection, draws, teams, legs);
+    }
+
+    internal static void EnsurePartialRowsOnly(PartialTournamentRows rows)
+    {
+        // Any Final/Legacy row would have taken the full-tournament path above;
+        // seeing one here means concurrent persistence changed mid-read.
+        if (rows.Teams.Any(t => t.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification)
+            || rows.Legs.Any(l => l.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification))
+        {
+            throw new InvalidOperationException("Type Cup tournament gained Final standings during the report read.");
+        }
+    }
+
+    internal static TypeCupTournamentPlan.Plan BuildPartialPlan(PartialTournamentRows rows)
+    {
+        int teamCount = rows.Selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).Count();
+        List<string> selectedTypes = rows.Selection.Select(e => e.CreatureType).Distinct(StringComparer.Ordinal).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        TypeCupTournamentPlan.Plan plan = TypeCupTournamentPlan.BuildFromSelection(teamCount, selectedTypes, rows.Draws, rows.Rules);
+        if (plan.IsLegacy || plan.IsDirectFinal)
+        {
+            throw new InvalidOperationException("Type Cup qualification standings exist without a qualification tournament plan.");
+        }
+
+        return plan;
+    }
+
+    internal static List<TypeCupTournamentQualificationGroup> CollectPartialGroups(
+        TypeCupTournamentPlan.Plan plan,
+        PartialTournamentRows rows,
+        Dictionary<int, string> names)
+    {
+        int qualPhase = (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification;
+        List<TypeCupTournamentQualificationGroup> groups = new(plan.QualificationGroupCount);
+        foreach (TypeCupTournamentPlan.QualificationStage stage in plan.QualificationStages.OrderBy(s => s.QualificationGroup))
+        {
+            List<TypeCupTeamStandingEntity> stageTeams = rows.Teams.Where(t => t.TournamentPhase == qualPhase && t.QualificationGroup == stage.QualificationGroup).OrderBy(t => t.TeamRank).ToList();
+            if (stageTeams.Count == 0)
+            {
+                continue;
+            }
+
+            List<TypeCupTeamGroupStandingEntity> stageLegs = rows.Legs.Where(l => l.TournamentPhase == qualPhase && l.QualificationGroup == stage.QualificationGroup).ToList();
+            // Qualification stages persist atomically on stage completion; a
+            // short row count is corruption, not a reportable partial state.
+            if (stageTeams.Count != stage.GroupSize || stageLegs.Count != stage.GroupSize * rows.Rules.TypeCupMinTeamSize)
+            {
+                throw new InvalidOperationException($"Type Cup qualification group {stage.QualificationGroup} has corrupt partial standings.");
+            }
+
+            groups.Add(BuildPartialQualGroup(plan, stage, stageTeams, stageLegs, names));
+        }
+
+        return groups;
+    }
+
+    internal static GetTypeCupTournamentResponse CreatePartialResponse(
+        Guid saveId,
+        SeasonEntity source,
+        PartialTournamentRows rows,
+        TypeCupTournamentPlan.Plan plan,
+        List<TypeCupTournamentQualificationGroup> groups)
+    {
+        string drawChecksum = rows.Draws.Count > 0 ? rows.Draws.First().DrawChecksum : string.Empty;
+        return new GetTypeCupTournamentResponse(
+            saveId,
+            source.SeasonNumber,
+            source.Id,
+            false,
+            plan.TeamCount,
+            plan.QualificationGroupCount,
+            plan.QualificationStages.Select(s => s.GroupSize).ToList(),
+            plan.QualificationStages.Select(s => s.FinalPlaces).ToList(),
+            drawChecksum,
+            groups,
+            [],
+            null,
+            null,
+            string.Empty,
+            plan.QualificationPolicyVersion,
+            plan.WildcardCount,
+            plan.QualificationStages.Select(s => s.FinalPlaces).ToList(),
+            []);
+    }
+
+    internal static TypeCupTournamentQualificationGroup BuildPartialQualGroup(
+        TypeCupTournamentPlan.Plan plan,
+        TypeCupTournamentPlan.QualificationStage stage,
+        List<TypeCupTeamStandingEntity> stageTeams,
+        List<TypeCupTeamGroupStandingEntity> stageLegs,
+        Dictionary<int, string> names)
+    {
+        List<TypeCupTeamStandingEntity> ordered = stageTeams.OrderBy(t => t.TeamRank).ToList();
+        string checksum = RunTypeCupTeamHandler.ComputeChecksum(ToPartialRanked(ordered));
+        if (!plan.IsWildcardPolicy)
+        {
+            HashSet<string> qualified = ordered.Take(stage.FinalPlaces).Select(t => t.CreatureType).ToHashSet(StringComparer.Ordinal);
+            return new TypeCupTournamentQualificationGroup(
+                stage.QualificationGroup,
+                stage.GroupSize,
+                stage.FinalPlaces,
+                checksum,
+                ordered.Select(t => new TypeCupTournamentTeam(t.CreatureType, t.TeamRank, t.TeamScoreThousandths, t.TeamBaseThousandths, ((TypeCupMedal)t.Medal).ToString(), qualified.Contains(t.CreatureType), qualified.Contains(t.CreatureType) ? "Guaranteed" : "Eliminated")).ToList(),
+                stageLegs.Select(l => new TypeCupTournamentLeg(l.SaveAthleteId, names.GetValueOrDefault(l.SaveAthleteId, $"Athlete {l.SaveAthleteId}"), l.CreatureType, l.SelectionRank, l.GroupNumber, l.GroupRank, l.GroupScoreThousandths, l.BaseScoreThousandths, qualified.Contains(l.CreatureType))).ToList(),
+                qualified.OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                ordered.Select(t => t.CreatureType).Where(t => !qualified.Contains(t)).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                stage.FinalPlaces,
+                null,
+                null);
+        }
+
+        int guaranteed = stage.FinalPlaces;
+        HashSet<string> guaranteedNames = ordered.Take(guaranteed).Select(t => t.CreatureType).ToHashSet(StringComparer.Ordinal);
+        string? candidate = ordered.Count > guaranteed ? ordered[guaranteed].CreatureType : null;
+        List<TypeCupTournamentTeam> teamRows = new(ordered.Count);
+        foreach (TypeCupTeamStandingEntity team in ordered)
+        {
+            if (guaranteedNames.Contains(team.CreatureType))
+            {
+                teamRows.Add(new TypeCupTournamentTeam(team.CreatureType, team.TeamRank, team.TeamScoreThousandths, team.TeamBaseThousandths, ((TypeCupMedal)team.Medal).ToString(), true, "Guaranteed"));
+            }
+            else if (candidate is not null && string.Equals(team.CreatureType, candidate, StringComparison.Ordinal))
+            {
+                teamRows.Add(new TypeCupTournamentTeam(team.CreatureType, team.TeamRank, team.TeamScoreThousandths, team.TeamBaseThousandths, ((TypeCupMedal)team.Medal).ToString(), false, "WildcardCandidate"));
+            }
+            else
+            {
+                teamRows.Add(new TypeCupTournamentTeam(team.CreatureType, team.TeamRank, team.TeamScoreThousandths, team.TeamBaseThousandths, ((TypeCupMedal)team.Medal).ToString(), false, "Eliminated"));
+            }
+        }
+
+        List<string> qualifiedList = guaranteedNames.OrderBy(t => t, StringComparer.Ordinal).ToList();
+        List<string> eliminatedList = ordered.Select(t => t.CreatureType).Where(t => !guaranteedNames.Contains(t) && !string.Equals(t, candidate, StringComparison.Ordinal)).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        return new TypeCupTournamentQualificationGroup(
+            stage.QualificationGroup,
+            stage.GroupSize,
+            stage.FinalPlaces,
+            checksum,
+            teamRows,
+            stageLegs.Select(l => new TypeCupTournamentLeg(l.SaveAthleteId, names.GetValueOrDefault(l.SaveAthleteId, $"Athlete {l.SaveAthleteId}"), l.CreatureType, l.SelectionRank, l.GroupNumber, l.GroupRank, l.GroupScoreThousandths, l.BaseScoreThousandths, guaranteedNames.Contains(l.CreatureType))).ToList(),
+            qualifiedList,
+            eliminatedList,
+            guaranteed,
+            candidate,
+            null);
+    }
+
+    internal static async Task<Dictionary<int, string>> LoadLegNamesAsync(
+        SaveDbContext context,
+        List<TypeCupTeamGroupStandingEntity> legs,
+        CancellationToken cancellationToken)
+    {
+        List<int> ids = legs.Select(l => l.SaveAthleteId).Distinct().ToList();
+        return await context.SaveAthletes
+            .AsNoTracking()
+            .Where(e => ids.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static IReadOnlyList<SimulationKernel.Cups.TeamEvent.TeamRanked> ToPartialRanked(
+        List<TypeCupTeamStandingEntity> teams)
+    {
+        List<SimulationKernel.Cups.TeamEvent.TeamRanked> ranked = new(teams.Count);
+        foreach (TypeCupTeamStandingEntity team in teams.OrderBy(t => t.TeamRank))
+        {
+            ranked.Add(new SimulationKernel.Cups.TeamEvent.TeamRanked(0, team.CreatureType, team.TeamRank, team.TeamScoreThousandths, team.TeamBaseThousandths, team.GroupWins, team.RoundWins, [0], [0]));
+        }
+
+        return ranked;
     }
 
     internal static async Task<bool> AnyColorRoundsAsync(SaveDbContext context, int sourceSeasonId, CancellationToken cancellationToken)

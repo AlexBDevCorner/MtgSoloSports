@@ -84,6 +84,45 @@ public sealed class CupEditionWildcardReportTests
         }
     }
 
+    [Fact]
+    public async Task PartialQualification_EditionReportShowsFinishedGroupAndPendingFinal()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            Guid saveId = await SetupFieldAsync(store, 65, 92000UL, 92100UL);
+            await SelectAsync(store, saveId);
+            await DrawAsync(store, saveId);
+            await new MtgSoloSports.Features.Cups.FinishTypeCupTeamStage.FinishTypeCupTeamStageHandler(store)
+                .HandleAsync(saveId, 1, 1, sourceSeasonNumber: 2);
+
+            GetCupEditionReportHandler handler = new(store);
+            GetCupEditionReportHandler.ReportFile jsonFile = await handler.HandleAsync(saveId, "type", 2, "json");
+            string jsonBody = System.Text.Encoding.UTF8.GetString(jsonFile.Content);
+            using JsonDocument doc = JsonDocument.Parse(jsonBody);
+            doc.RootElement.GetProperty("snapshot").GetProperty("state").GetString().ShouldBe("InProgress");
+            doc.RootElement.GetProperty("snapshot").GetProperty("typeTournamentComplete").GetBoolean().ShouldBeFalse();
+            doc.RootElement.TryGetProperty("typeTournament", out JsonElement tournament).ShouldBeTrue();
+            tournament.ValueKind.ShouldNotBe(JsonValueKind.Null);
+            tournament.GetProperty("qualificationGroups").GetArrayLength().ShouldBe(1);
+            tournament.TryGetProperty("final", out JsonElement final).ShouldBeTrue();
+            final.ValueKind.ShouldBe(JsonValueKind.Null);
+            JsonElement group = tournament.GetProperty("qualificationGroups").EnumerateArray().First();
+            group.GetProperty("teams").GetArrayLength().ShouldBeGreaterThan(0);
+
+            GetCupEditionReportHandler.ReportFile mdFile = await handler.HandleAsync(saveId, "type", 2, "md");
+            string mdBody = System.Text.Encoding.UTF8.GetString(mdFile.Content);
+            mdBody.ShouldContain("Finished qualification groups: 1/");
+            mdBody.ShouldContain("Final: pending");
+            mdBody.ShouldContain("not titles");
+            mdBody.ShouldContain("Qualifier success is not a title");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static async Task<SelectTypeCupTeamsResponse> SelectAsync(SaveStore store, Guid saveId)
     {
         SelectTypeCupTeamsHandler select = new(store);
