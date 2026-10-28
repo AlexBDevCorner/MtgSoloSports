@@ -146,7 +146,7 @@ internal static class SeasonDossierCupQueries
     {
         if (tournament is null)
         {
-            return new TypeCupSummary(null, [], 0, 0, [], [], false);
+            return new TypeCupSummary(null, [], 0, 0, [], [], false, [], 1, 0, [], []);
         }
 
         List<CupPodiumEntry> finalTop = [];
@@ -178,7 +178,63 @@ internal static class SeasonDossierCupQueries
             tournament.QualificationGroupCount,
             qualified,
             roster,
-            tournament.IsDirectFinal);
+            tournament.IsDirectFinal,
+            MapQualificationGroups(tournament),
+            tournament.QualificationPolicyVersion,
+            tournament.WildcardCount,
+            tournament.GuaranteedPlacesPerGroup?.ToList() ?? tournament.FinalPlacesPerGroup.ToList(),
+            MapWildcards(tournament));
+    }
+
+    internal static IReadOnlyList<TypeCupQualificationGroupEntry> MapQualificationGroups(
+        GetTypeCupTournamentResponse tournament)
+    {
+        return tournament.QualificationGroups
+            .OrderBy(g => g.QualificationGroup)
+            .Select(g => new TypeCupQualificationGroupEntry(
+                g.QualificationGroup,
+                g.GroupSize,
+                g.FinalPlaces,
+                g.GuaranteedPlaces,
+                g.Checksum,
+                g.QualifiedTeams.ToList(),
+                g.EliminatedTeams.ToList(),
+                g.WildcardCandidate,
+                g.WildcardWinner,
+                g.Teams
+                    .OrderBy(t => t.TeamRank)
+                    .Select(t => new TypeCupQualificationTeamEntry(
+                        t.CreatureType,
+                        t.TeamRank,
+                        t.TeamScoreThousandths,
+                        t.TeamBaseThousandths,
+                        t.Medal,
+                        t.Qualified,
+                        t.QualificationStatus))
+                    .ToList()))
+            .ToList();
+    }
+
+    internal static IReadOnlyList<TypeCupWildcardEntry> MapWildcards(GetTypeCupTournamentResponse tournament)
+    {
+        if (tournament.Wildcards is null)
+        {
+            return [];
+        }
+
+        return tournament.Wildcards
+            .OrderBy(w => w.CreatureType, StringComparer.Ordinal)
+            .Select(w => new TypeCupWildcardEntry(
+                w.CreatureType,
+                w.QualificationGroup,
+                w.GroupRank,
+                w.TeamScoreThousandths,
+                w.TeamBaseThousandths,
+                w.GroupSize,
+                w.NormalizedNumerator,
+                w.NormalizedDenominator,
+                w.TieDraw))
+            .ToList();
     }
 
     internal static string BuildTypeNote(GetCupEditionReportHandler.ReportData data)

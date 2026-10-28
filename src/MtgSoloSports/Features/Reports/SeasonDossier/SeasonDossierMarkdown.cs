@@ -138,6 +138,53 @@ internal static class SeasonDossierMarkdown
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Rebalance: {ReportMarkdown.Cell(data.Postseason.RebalanceStatus)}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"- {ReportMarkdown.Cell(data.Postseason.Summary)}");
         sb.AppendLine();
+        AppendPostseasonMovements(sb, data.Postseason);
+        AppendPostseasonQualifiers(sb, data.Postseason);
+    }
+
+    private static void AppendPostseasonMovements(StringBuilder sb, PostseasonSection postseason)
+    {
+        if (postseason.Movements.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Movement details ({postseason.Movements.Count} rows, full table)");
+        sb.AppendLine();
+        sb.AppendLine("| Athlete | Kind | From → To | Source rank |");
+        sb.AppendLine("| --- | --- | --- | --- |");
+        foreach (PostseasonMovementEntry move in postseason.Movements.OrderBy(m => m.Kind, StringComparer.Ordinal).ThenBy(m => m.AthleteId))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {ReportMarkdown.Cell(move.AthleteName)} (id {move.AthleteId}) | {ReportMarkdown.Cell(move.Kind)} | {ReportMarkdown.Cell(move.FromLeagueName)} → {ReportMarkdown.Cell(move.ToLeagueName)} | {move.FromSeasonRank} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendPostseasonQualifiers(StringBuilder sb, PostseasonSection postseason)
+    {
+        if (postseason.Qualifiers.Count == 0)
+        {
+            if (string.Equals(postseason.QualifierStatus, "not-applicable", StringComparison.Ordinal))
+            {
+                sb.AppendLine("Qualifier: not-applicable — no qualifier is scheduled for this transition (e.g. Season 1 inaugural).");
+                sb.AppendLine();
+            }
+
+            return;
+        }
+
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Qualifier standings ({postseason.Qualifiers.Count} rows, full table)");
+        sb.AppendLine();
+        sb.AppendLine("| Rank | Card | Boundary | Role | Score | Qualified |");
+        sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
+        foreach (PostseasonQualifierEntry qualifier in postseason.Qualifiers.OrderBy(q => q.QualifierBoundary).ThenBy(q => q.QualifierSportingColor).ThenBy(q => q.QualifierRank))
+        {
+            string boundary = $"{ReportMarkdown.Cell(qualifier.QualifierBoundaryLabel)} ({qualifier.QualifierBoundary})";
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {qualifier.QualifierRank} | {ReportMarkdown.Cell(qualifier.AthleteName)} (id {qualifier.AthleteId}) | {boundary} | {ReportMarkdown.Cell(qualifier.Role)} | {ReportMarkdown.FormatPoints(qualifier.QualifierScoreThousandths)} | {(qualifier.IsQualified ? "yes" : "no")} |");
+        }
+
+        sb.AppendLine();
     }
 
     private static void AppendCups(StringBuilder sb, SeasonDossierData data)
@@ -228,6 +275,8 @@ internal static class SeasonDossierMarkdown
             sb.AppendLine(CultureInfo.InvariantCulture, $"- Qualified for Final: {string.Join(", ", tournament.QualifiedTeams.Select(ReportMarkdown.Cell))}");
         }
 
+        AppendTypeQualificationGroups(sb, tournament);
+
         if (tournament.ChampionTeamKey is null)
         {
             sb.AppendLine("Final: pending — no official Final standings yet; qualifier success is not a title.");
@@ -247,6 +296,46 @@ internal static class SeasonDossierMarkdown
         }
 
         sb.AppendLine();
+    }
+
+    private static void AppendTypeQualificationGroups(StringBuilder sb, TypeCupSummary tournament)
+    {
+        if (tournament.QualificationGroups.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Qualification groups ({tournament.QualificationGroups.Count} finished of {tournament.QualificationGroupCount}) — not titles; cutoff decides Final entry");
+        sb.AppendLine();
+        foreach (TypeCupQualificationGroupEntry group in tournament.QualificationGroups.OrderBy(g => g.QualificationGroup))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"#### Group {group.QualificationGroup} — {group.GroupSize} teams · {group.GuaranteedPlaces} guaranteed · Checksum `{group.Checksum}`");
+            sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(group.WildcardCandidate))
+            {
+                string fate = !string.IsNullOrWhiteSpace(group.WildcardWinner)
+                    ? $"wildcard → Final ({ReportMarkdown.Cell(group.WildcardWinner)})"
+                    : "pending — competes for a wildcard once all groups complete";
+                sb.AppendLine(CultureInfo.InvariantCulture, $"Wildcard candidate: {ReportMarkdown.Cell(group.WildcardCandidate)} — {fate}.");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("| Rank | Team | Score | Status |");
+            sb.AppendLine("| --- | --- | --- | --- |");
+            foreach (TypeCupQualificationTeamEntry row in group.Teams.OrderBy(t => t.TeamRank))
+            {
+                sb.AppendLine(CultureInfo.InvariantCulture, $"| {row.TeamRank} | {ReportMarkdown.Cell(row.CreatureType)} | {ReportMarkdown.FormatPoints(row.TeamScoreThousandths)} | {ReportMarkdown.Cell(row.QualificationStatus)} |");
+            }
+
+            sb.AppendLine();
+        }
+
+        if (tournament.Wildcards.Count > 0)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Wildcard places ({tournament.Wildcards.Count}, policy v{tournament.QualificationPolicyVersion}): {string.Join(", ", tournament.Wildcards.OrderBy(w => w.CreatureType, StringComparer.Ordinal).Select(w => ReportMarkdown.Cell(w.CreatureType)))}");
+            sb.AppendLine();
+        }
     }
 
     private static void AppendHistory(StringBuilder sb, SeasonDossierData data)

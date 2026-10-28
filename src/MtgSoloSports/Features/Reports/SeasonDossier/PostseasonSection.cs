@@ -4,4 +4,6 @@ internal sealed record PostseasonSection(
     string MovementStatus,
     string QualifierStatus,
     string RebalanceStatus,
-    string Summary);
+    string Summary,
+    IReadOnlyList<PostseasonMovementEntry> Movements,
+    IReadOnlyList<PostseasonQualifierEntry> Qualifiers);

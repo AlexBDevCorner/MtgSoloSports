@@ -225,31 +225,135 @@ internal static class SeasonDossierQueries
             .ConfigureAwait(false);
         if (!season.IsComplete)
         {
-            return new PostseasonSection("not-started", "not-started", "not-started", "Season in progress; postseason movement, qualifier and Cups are pending.");
+            return new PostseasonSection("not-started", "not-started", "not-started", "Season in progress; postseason movement, qualifier and Cups are pending.", [], []);
         }
 
         if (successor is null)
         {
-            return new PostseasonSection("pending", "pending", "pending", $"Season {season.SeasonNumber} final tables are persisted; movement, qualifier, rebalance and Cups for the next transition are pending.");
+            return new PostseasonSection("pending", "pending", "pending", $"Season {season.SeasonNumber} final tables are persisted; movement, qualifier, rebalance and Cups for the next transition are pending.", [], []);
         }
 
-        int movements = await context.Movements
+        List<MovementEntity> movements = await context.Movements
             .AsNoTracking()
-            .CountAsync(e => e.FromSeasonId == season.Id && e.ToSeasonId == successor.Id, cancellationToken)
+            .Where(e => e.FromSeasonId == season.Id && e.ToSeasonId == successor.Id)
+            .OrderBy(e => e.Kind)
+            .ThenBy(e => e.FromSeasonRank)
+            .ThenBy(e => e.SaveAthleteId)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        int qualifiers = await context.QualifierStandings
+        List<QualifierStandingEntity> qualifiers = await context.QualifierStandings
             .AsNoTracking()
-            .CountAsync(e => e.FromSeasonId == season.Id && e.ToSeasonId == successor.Id, cancellationToken)
+            .Where(e => e.FromSeasonId == season.Id && e.ToSeasonId == successor.Id)
+            .OrderBy(e => e.QualifierBoundary)
+            .ThenBy(e => e.QualifierSportingColor)
+            .ThenBy(e => e.QualifierRank)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        int rebalances = await context.Movements
+        bool isInaugural = season.SeasonNumber == 1 && !season.HasSuperleague;
+        if (isInaugural)
+        {
+            IReadOnlyList<PostseasonMovementEntry> inauguralMoves = await MapMovementsAsync(context, movements, cancellationToken).ConfigureAwait(false);
+            int inauguralRebalances = movements.Count(e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+                || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown);
+            string inauguralRebalance = inauguralRebalances > 0
+                ? $"resolved ({inauguralRebalances} rows)"
+                : movements.Count > 0 ? "none-required" : "pending";
+            return new PostseasonSection(
+                movements.Count > 0 ? $"resolved ({movements.Count} rows)" : "pending",
+                "not-applicable",
+                inauguralRebalance,
+                $"Season 1 inaugural transition to Season {successor.SeasonNumber}: {movements.Count} movement rows including inaugural promotions; no qualifier is scheduled for the inaugural transition; rebalance {inauguralRebalance}.",
+                inauguralMoves,
+                []);
+        }
+
+        int rebalances = movements.Count(e => e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
+            || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown);
+        string movement = movements.Count > 0 ? $"resolved ({movements.Count} rows)" : "pending";
+        string qualifier = qualifiers.Count > 0 ? $"played ({qualifiers.Count} standings rows)" : "pending";
+        string rebalance = rebalances > 0
+            ? $"resolved ({rebalances} rows)"
+            : movements.Count > 0 && qualifiers.Count > 0 ? "none-required" : "pending";
+        IReadOnlyList<PostseasonMovementEntry> mappedMovements = await MapMovementsAsync(context, movements, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<PostseasonQualifierEntry> mappedQualifiers = await MapQualifiersAsync(context, qualifiers, cancellationToken).ConfigureAwait(false);
+        return new PostseasonSection(movement, qualifier, rebalance, $"Transition to Season {successor.SeasonNumber}: movement {movement}; qualifier {qualifier}; rebalance {rebalance}.", mappedMovements, mappedQualifiers);
+    }
+
+    internal static async Task<IReadOnlyList<PostseasonMovementEntry>> MapMovementsAsync(
+        SaveDbContext context,
+        List<MovementEntity> movements,
+        CancellationToken cancellationToken)
+    {
+        if (movements.Count == 0)
+        {
+            return [];
+        }
+
+        List<int> athleteIds = movements.Select(m => m.SaveAthleteId).Distinct().ToList();
+        Dictionary<int, string> names = await context.SaveAthletes
             .AsNoTracking()
-            .CountAsync(e => e.FromSeasonId == season.Id && e.ToSeasonId == successor.Id
-                && (e.Kind == (int)MovementKind.RebalanceDraw || e.Kind == (int)MovementKind.RebalanceDisplacement
-                    || e.Kind == (int)MovementKind.RebalanceUp || e.Kind == (int)MovementKind.RebalanceDown), cancellationToken)
+            .Where(e => athleteIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
-        string movement = movements > 0 ? $"resolved ({movements} rows)" : "pending";
-        string qualifier = qualifiers > 0 ? $"played ({qualifiers} standings rows)" : "pending";
-        string rebalance = rebalances > 0 ? $"resolved ({rebalances} rows)" : "pending";
-        return new PostseasonSection(movement, qualifier, rebalance, $"Transition to Season {successor.SeasonNumber}: movement {movement}; qualifier {qualifier}; rebalance {rebalance}.");
+        Dictionary<int, string> leagues = await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        return movements
+            .OrderBy(m => m.Kind)
+            .ThenBy(m => m.FromSeasonRank)
+            .ThenBy(m => m.SaveAthleteId)
+            .Select(m => new PostseasonMovementEntry(
+                m.SaveAthleteId,
+                names.GetValueOrDefault(m.SaveAthleteId, $"Athlete {m.SaveAthleteId}"),
+                ((MovementKind)m.Kind).ToString(),
+                m.FromLeagueId,
+                leagues.GetValueOrDefault(m.FromLeagueId, m.FromLeagueId == 0 ? "Common pool" : $"League {m.FromLeagueId}"),
+                m.ToLeagueId,
+                leagues.GetValueOrDefault(m.ToLeagueId, m.ToLeagueId == 0 ? "Common pool" : $"League {m.ToLeagueId}"),
+                m.FromSeasonRank,
+                ((SimulationKernel.Catalog.SportingColor)m.SportingColor).ToString()))
+            .ToList();
+    }
+
+    internal static async Task<IReadOnlyList<PostseasonQualifierEntry>> MapQualifiersAsync(
+        SaveDbContext context,
+        List<QualifierStandingEntity> qualifiers,
+        CancellationToken cancellationToken)
+    {
+        if (qualifiers.Count == 0)
+        {
+            return [];
+        }
+
+        List<int> athleteIds = qualifiers.Select(q => q.SaveAthleteId).Distinct().ToList();
+        Dictionary<int, string> names = await context.SaveAthletes
+            .AsNoTracking()
+            .Where(e => athleteIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> leagues = await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        return qualifiers
+            .OrderBy(q => q.QualifierBoundary)
+            .ThenBy(q => q.QualifierSportingColor)
+            .ThenBy(q => q.QualifierRank)
+            .Select(q => new PostseasonQualifierEntry(
+                q.SaveAthleteId,
+                names.GetValueOrDefault(q.SaveAthleteId, $"Athlete {q.SaveAthleteId}"),
+                q.QualifierBoundary,
+                ((SimulationKernel.Leagues.QualifierBoundary)q.QualifierBoundary).ToString(),
+                q.QualifierSportingColor,
+                q.QualifierRank,
+                q.QualifierScoreThousandths,
+                q.BaseScoreThousandths,
+                q.IsQualified,
+                ((QualifierRole)q.Role).ToString(),
+                q.FromLeagueId,
+                leagues.GetValueOrDefault(q.FromLeagueId, $"League {q.FromLeagueId}"),
+                q.FromSeasonRank))
+            .ToList();
     }
 }

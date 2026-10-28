@@ -7,4 +7,9 @@ internal sealed record TypeCupSummary(
     int QualificationGroupCount,
     IReadOnlyList<string> QualifiedTeams,
     IReadOnlyList<CupRosterEntry> WinningRoster,
-    bool IsDirectFinal);
+    bool IsDirectFinal,
+    IReadOnlyList<TypeCupQualificationGroupEntry> QualificationGroups,
+    int QualificationPolicyVersion,
+    int WildcardCount,
+    IReadOnlyList<int> GuaranteedPlacesPerGroup,
+    IReadOnlyList<TypeCupWildcardEntry> Wildcards);
