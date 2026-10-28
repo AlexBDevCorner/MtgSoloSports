@@ -50,6 +50,8 @@ using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Features.Records.GetRecords;
 using MtgSoloSports.Features.Records.ListHonours;
+using MtgSoloSports.Features.Reports.AthleteReport;
+using MtgSoloSports.Features.Reports.StandingsReport;
 using MtgSoloSports.Features.Saves.CreateCheckpoint;
 using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
@@ -189,6 +191,8 @@ builder.Services.AddScoped<GetHallOfFameHandler>();
 builder.Services.AddScoped<GetLongRunChecksumHandler>();
 builder.Services.AddScoped<ValidateLongRunInvariantsHandler>();
 builder.Services.AddScoped<GetLongRunStatsHandler>();
+builder.Services.AddScoped<GetAthleteReportHandler>();
+builder.Services.AddScoped<GetStandingsReportHandler>();
 
 var app = builder.Build();
 
@@ -281,6 +285,8 @@ GetHistorySeasonTableEndpoint.Map(app);
 ListHonoursEndpoint.Map(app);
 GetRecordsEndpoint.Map(app);
 GetHallOfFameEndpoint.Map(app);
+GetAthleteReportEndpoint.Map(app);
+GetStandingsReportEndpoint.Map(app);
 GetLongRunChecksumEndpoint.Map(app);
 ValidateLongRunInvariantsEndpoint.Map(app);
 GetLongRunStatsEndpoint.Map(app);

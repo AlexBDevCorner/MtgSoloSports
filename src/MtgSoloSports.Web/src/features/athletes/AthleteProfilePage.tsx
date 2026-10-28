@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { apiErrorMessage } from '../../shared/api/http';
 import { leagueLevelLabel, movementKindLabel } from '../../shared/leagueTiers';
+import { athleteReportUrl, downloadReport } from '../reports/reportApi';
 import {
   careerRecordLabel,
   cupHistoryEventLabel,
@@ -44,6 +47,9 @@ export function AthleteProfilePage({
   rawAthleteId?: string;
   state: AthleteProfileState;
 }) {
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   if (athleteId === null) {
     return (
       <Notice tone="error" title="Invalid athlete link">
@@ -91,6 +97,24 @@ export function AthleteProfilePage({
     return <Loading label="Loading athlete profile…" />;
   }
 
+  async function handleDownload(format: 'json' | 'md'): Promise<void> {
+    if (downloading !== null || athleteId === null) {
+      return;
+    }
+    setDownloading(format);
+    setDownloadError(null);
+    try {
+      await downloadReport(
+        athleteReportUrl(saveId, athleteId, format),
+        `athlete-${athleteId}-report.${format}`,
+      );
+    } catch (failure) {
+      setDownloadError(apiErrorMessage(failure));
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   const { card, career, seasons, honours, movements, cupSelections } = profile;
   const cupHistory = profile.cupHistory ?? [];
   // At-a-glance career totals derived from the same persisted payload the
@@ -123,7 +147,23 @@ export function AthleteProfilePage({
             </Link>{' '}
             <Link to={dashboardPath(saveId)} className="ghost-button">
               Dashboard
-            </Link>
+            </Link>{' '}
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('md')}
+            >
+              {downloading === 'md' ? 'Preparing…' : 'Report .md'}
+            </button>{' '}
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('json')}
+            >
+              {downloading === 'json' ? 'Preparing…' : 'Report .json'}
+            </button>
           </span>
         }
         info={
@@ -247,6 +287,11 @@ export function AthleteProfilePage({
         {state.error ? (
           <Notice tone="warn" title="Showing last loaded state">
             <p>{state.error}</p>
+          </Notice>
+        ) : null}
+        {downloadError ? (
+          <Notice tone="error" title="Report download failed">
+            <p>{downloadError}</p>
           </Notice>
         ) : null}
       </Card>

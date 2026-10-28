@@ -24,6 +24,7 @@ import { AthleteLink, Link } from '../routing/router';
 import { historyPath, leaguePath, livePath, savesPath, type StandingsView } from '../routing/routes';
 import { leagueKeyFor } from '../leagues/leagueKeys';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
+import { downloadReport, standingsReportUrl } from '../reports/reportApi';
 import {
   allStageColumns,
   buildCellMap,
@@ -155,6 +156,8 @@ export function StandingsPage({
   const [sortKey, setSortKey] = useState<MatrixSortKey>('rank');
   const [showBonus, setShowBonus] = useState(false);
   const [stageWindow, setStageWindow] = useState<StageWindow>('all');
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     setSeasonNumber(urlSeason);
@@ -711,6 +714,54 @@ export function StandingsPage({
           ) : null}
           {leagueId !== null && seasonNumber !== null ? (
             <>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={downloading !== null || explicitSeasonInvalid || showExplicitLeagueInvalid}
+                onClick={() => {
+                  if (downloading !== null || leagueId === null || seasonNumber === null) {
+                    return;
+                  }
+                  setDownloading('md');
+                  setDownloadError(null);
+                  void downloadReport(
+                    standingsReportUrl(saveId, leagueId, seasonNumber, 'md'),
+                    `standings-season-${seasonNumber}-league-${leagueId}-report.md`,
+                  )
+                    .catch((failure: unknown) => {
+                      setDownloadError(apiErrorMessage(failure));
+                    })
+                    .finally(() => {
+                      setDownloading(null);
+                    });
+                }}
+              >
+                {downloading === 'md' ? 'Preparing…' : 'Report .md'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={downloading !== null || explicitSeasonInvalid || showExplicitLeagueInvalid}
+                onClick={() => {
+                  if (downloading !== null || leagueId === null || seasonNumber === null) {
+                    return;
+                  }
+                  setDownloading('json');
+                  setDownloadError(null);
+                  void downloadReport(
+                    standingsReportUrl(saveId, leagueId, seasonNumber, 'json'),
+                    `standings-season-${seasonNumber}-league-${leagueId}-report.json`,
+                  )
+                    .catch((failure: unknown) => {
+                      setDownloadError(apiErrorMessage(failure));
+                    })
+                    .finally(() => {
+                      setDownloading(null);
+                    });
+                }}
+              >
+                {downloading === 'json' ? 'Preparing…' : 'Report .json'}
+              </button>
               <Link
                 to={historyPath(saveId, { season: seasonNumber, competition: leagueId })}
                 className="ghost-button"
@@ -738,6 +789,11 @@ export function StandingsPage({
       </div>
       {competitionsState.error ? (
         <p className="muted small">Leagues: {competitionsState.error}</p>
+      ) : null}
+      {downloadError ? (
+        <Notice tone="error" title="Report download failed">
+          <p>{downloadError}</p>
+        </Notice>
       ) : null}
 
       <Card
