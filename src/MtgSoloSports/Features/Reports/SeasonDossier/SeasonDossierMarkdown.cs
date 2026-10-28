@@ -308,6 +308,7 @@ internal static class SeasonDossierMarkdown
         sb.AppendLine();
         sb.AppendLine(CultureInfo.InvariantCulture, $"### Qualification groups ({tournament.QualificationGroups.Count} finished of {tournament.QualificationGroupCount}) — not titles; cutoff decides Final entry");
         sb.AppendLine();
+        bool finalPending = tournament.ChampionTeamKey is null;
         foreach (TypeCupQualificationGroupEntry group in tournament.QualificationGroups.OrderBy(g => g.QualificationGroup))
         {
             sb.AppendLine(CultureInfo.InvariantCulture, $"#### Group {group.QualificationGroup} — {group.GroupSize} teams · {group.GuaranteedPlaces} guaranteed · Checksum `{group.Checksum}`");
@@ -316,7 +317,9 @@ internal static class SeasonDossierMarkdown
             {
                 string fate = !string.IsNullOrWhiteSpace(group.WildcardWinner)
                     ? $"wildcard → Final ({ReportMarkdown.Cell(group.WildcardWinner)})"
-                    : "pending — competes for a wildcard once all groups complete";
+                    : finalPending
+                        ? "pending — competes for a wildcard once all groups complete"
+                        : "eliminated";
                 sb.AppendLine(CultureInfo.InvariantCulture, $"Wildcard candidate: {ReportMarkdown.Cell(group.WildcardCandidate)} — {fate}.");
                 sb.AppendLine();
             }

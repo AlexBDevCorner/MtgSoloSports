@@ -142,6 +142,81 @@ public sealed class SeasonDossierAlmanacCorrectionTests
     }
 
     [Fact]
+    public void Dossier_WildcardCandidate_EliminatedWhenFinalPlayed_PendingOtherwise()
+    {
+        TypeCupQualificationGroupEntry losingGroup = new(
+            1,
+            3,
+            1,
+            1,
+            "checksum-1",
+            ["Elf"],
+            ["Goblin"],
+            "Dwarf",
+            null,
+            [
+                new TypeCupQualificationTeamEntry("Elf", 1, 90000, 85000, "None", true, "Guaranteed"),
+                new TypeCupQualificationTeamEntry("Dwarf", 2, 80000, 79000, "None", false, "Eliminated"),
+                new TypeCupQualificationTeamEntry("Goblin", 3, 70000, 69000, "None", false, "Eliminated"),
+            ]);
+
+        TypeCupSummary completed = new(
+            "Elf",
+            [],
+            1,
+            1,
+            ["Elf"],
+            [],
+            false,
+            [losingGroup],
+            2,
+            1,
+            [1],
+            []);
+        string completedMd = SeasonDossierMarkdown.Build(
+            Guid.NewGuid(),
+            new SaveMetadataEntity { SaveId = Guid.NewGuid(), Name = "Test", CreatedUtc = DateTimeOffset.UtcNow, SchemaVersion = 1, CurrentSeason = 1, Phase = "Done" },
+            MtgSoloSports.SimulationKernel.Rules.RulesV1.CreateDefault(),
+            1,
+            TestDossierData(completed));
+        completedMd.ShouldContain("Wildcard candidate: Dwarf — eliminated.");
+        completedMd.ShouldNotContain("competes for a wildcard");
+
+        TypeCupSummary pending = completed with { ChampionTeamKey = null };
+        string pendingMd = SeasonDossierMarkdown.Build(
+            Guid.NewGuid(),
+            new SaveMetadataEntity { SaveId = Guid.NewGuid(), Name = "Test", CreatedUtc = DateTimeOffset.UtcNow, SchemaVersion = 1, CurrentSeason = 1, Phase = "Done" },
+            MtgSoloSports.SimulationKernel.Rules.RulesV1.CreateDefault(),
+            1,
+            TestDossierData(pending));
+        pendingMd.ShouldContain("pending — competes for a wildcard once all groups complete");
+    }
+
+    private static SeasonDossierData TestDossierData(TypeCupSummary tournament)
+    {
+        var typeCup = new CupSummaryEntry("Type", "Completed", true, null, null, tournament, "note");
+        return new SeasonDossierData(
+            1,
+            1,
+            true,
+            "final",
+            true,
+            32,
+            32,
+            64,
+            "checksum",
+            1,
+            new SuperleagueSection(null, "Superleague", true, []),
+            [],
+            [],
+            new PostseasonSection("resolved", "not-applicable", "resolved", "summary", [], []),
+            null,
+            typeCup,
+            new HistorySection(null, null, null, [], [], []),
+            []);
+    }
+
+    [Fact]
     public async Task Dossier_LoadPostseason_Inaugural_HasIdentitiesAndNotApplicableQualifier()
     {
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-dossier-post-");
