@@ -10,13 +10,26 @@ import {
   livePath,
   qualifiersPath,
   recordsPath,
+  reportsPath,
   savesPath,
   standingsPath,
 } from '../routing/routes';
 import { MenuButton } from './MenuButton';
 import { RAIL_ID, useRailDrawer } from './useRailDrawer';
 
-export type View = 'saves' | 'dashboard' | 'live' | 'standings' | 'leagues' | 'qualifiers' | 'history' | 'records' | 'cups' | 'athletes' | 'athlete';
+export type View =
+  | 'saves'
+  | 'dashboard'
+  | 'live'
+  | 'standings'
+  | 'leagues'
+  | 'qualifiers'
+  | 'history'
+  | 'records'
+  | 'reports'
+  | 'cups'
+  | 'athletes'
+  | 'athlete';
 
 const VIEW_TITLES: Record<View, string> = {
   saves: 'Saves',
@@ -27,6 +40,7 @@ const VIEW_TITLES: Record<View, string> = {
   qualifiers: 'Qualifiers',
   history: 'History',
   records: 'Records',
+  reports: 'Reports',
   cups: 'Cups',
   athletes: 'Athletes',
   athlete: 'Athlete',
@@ -156,6 +170,9 @@ export function AppShell({
           </RailLink>
           <RailLink href={scoped(recordsPath)} current={view === 'records'} title="Browse records and Hall of Fame">
             Records
+          </RailLink>
+          <RailLink href={scoped(reportsPath)} current={view === 'reports'} title="Export ChatGPT reports">
+            Reports
           </RailLink>
           <RailLink href={scoped(cupsPath)} current={view === 'cups'} title="Browse cups">
             Cups

@@ -13,6 +13,7 @@ import {
   qualifierPath,
   qualifiersPath,
   recordsPath,
+  reportsPath,
   savesPath,
   standingsLeaguePath,
   standingsPath,
@@ -27,6 +28,7 @@ describe('MSS-040 route shapes', () => {
     assert.equal(livePath(SAVE), `/saves/${SAVE}/live`);
     assert.equal(historyPath(SAVE), `/saves/${SAVE}/history`);
     assert.equal(recordsPath(SAVE), `/saves/${SAVE}/records`);
+    assert.equal(reportsPath(SAVE), `/saves/${SAVE}/reports`);
     assert.equal(cupsPath(SAVE), `/saves/${SAVE}/cups`);
     assert.equal(athletePath(SAVE, 42), `/saves/${SAVE}/athletes/42`);
   });
@@ -51,6 +53,10 @@ describe('MSS-040 route shapes', () => {
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, ''), {
       name: 'records',
+      saveId: SAVE,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/reports`, ''), {
+      name: 'reports',
       saveId: SAVE,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/cups`, ''), {

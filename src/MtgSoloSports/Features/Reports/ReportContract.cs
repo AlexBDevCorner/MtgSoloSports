@@ -24,6 +24,10 @@ public static class ReportContract
 
     public const string LeagueProfileReportType = "league-profile";
 
+    public const string SeasonDossierReportType = "season-dossier";
+
+    public const string UniverseAlmanacReportType = "universe-almanac";
+
     public static string NormalizeCup(string? cup)
     {
         if (string.IsNullOrWhiteSpace(cup))

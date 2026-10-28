@@ -1,4 +1,4 @@
-# Reports (MSS-086)
+# Reports (MSS-086/MSS-087/MSS-088)
 
 Human-readable exports for ChatGPT sourcing. Snapshots of persisted data, never AI commentary and never DOM scraping.
 
@@ -6,6 +6,11 @@ Human-readable exports for ChatGPT sourcing. Snapshots of persisted data, never 
 
 - `GET /api/saves/{saveId}/athletes/{athleteId}/report?format=json|md`
 - `GET /api/saves/{saveId}/leagues/{leagueId}/seasons/{seasonNumber}/report?format=json|md`
+- `GET /api/saves/{saveId}/cups/{cup}/editions/{seasonNumber}/report?format=json|md` (`cup` = `color` | `type`)
+- `GET /api/saves/{saveId}/cups/{cup}/teams/{teamKey}/report?format=json|md`
+- `GET /api/saves/{saveId}/leagues/{leagueKey}/report?format=json|md`
+- `GET /api/saves/{saveId}/reports/season/{seasonNumber}?format=json|md` — season dossier (MSS-088)
+- `GET /api/saves/{saveId}/reports/almanac?format=json|md` — universe almanac (MSS-088)
 
 `format` defaults to `json`; `md` and `markdown` select Markdown. Anything else is `400`.
 Missing save is `404`; missing athlete or season/league is `404`; corrupt sporting state is `400`.
@@ -17,10 +22,20 @@ substitute a synthetic stage value.
 
 ## Contract (v1)
 
-JSON envelope: `schemaVersion: 1`, `reportType` (`athlete-profile` | `standings-table`), `saveId`,
+JSON envelope: `schemaVersion: 1`, `reportType` (`athlete-profile` | `standings-table` | `cup-edition` | `cup-team` | `league-profile` | `season-dossier` | `universe-almanac`), `saveId`,
 `generatedUtc`, `save { name, currentSeason, phase, schemaVersion, rulesVersion }`,
 scope ids, `snapshot` phase/season/stage info, typed `data`, plus a `units` block.
 Markdown carries the same scope/status/metadata with headings and tables; it never embeds JSON.
+
+MSS-088 packs reuse the same versioned contract. The season dossier covers exactly one
+season: full Superleague table, stage-by-stage winners, concise feeder summaries,
+movement/qualifier status, completed Cup summaries (Type qualification vs Final and
+Color individual vs team kept separate), defending-champion context, leader/Cup-performer
+career titles and official career records. The universe almanac is the all-time companion:
+season champions/podiums, Color/Type Cup medal history, official records, weighted Career
+Leaders plus official Superleague points leaders as a separate statistic, and
+consecutive-title streaks. Both carry an explicit snapshot/coverage header and a stale
+warning; incomplete or not-yet-held sections are omitted, never inferred.
 
 ## Fields and units
 
@@ -44,7 +59,17 @@ Markdown carries the same scope/status/metadata with headings and tables; it nev
 
 ## Files
 
-- `athlete-{id}-{slug}.md|json`, `standings-season-{season}-league-{leagueId}-{slug}.md|json`
+- `athlete-{id}-{slug}.md|json`, `standings-season-{season}-league-{leagueId}-{slug}.md|json`,
+  `cup-{cup}-season-{season}-edition.md|json`, `cup-{cup}-team-{slug}.md|json`,
+  `league-{key}-profile.md|json`, `season-{season}-dossier.md|json`,
+  `universe-almanac-{save-slug}.md|json`
   (ASCII slug; full UTF-8 names stay in the body).
 - `Content-Type: text/markdown; charset=utf-8` or `application/json; charset=utf-8`,
   `Content-Disposition: attachment`.
+
+## ChatGPT workflow (MSS-088)
+
+- Export the almanac occasionally as a stable history reference.
+- Export a fresh season dossier whenever new coverage is needed.
+- Attach both files to a ChatGPT Project or chat; replace the dossier as the save advances.
+- The app never syncs projects automatically; uploads become stale as simulation advances.

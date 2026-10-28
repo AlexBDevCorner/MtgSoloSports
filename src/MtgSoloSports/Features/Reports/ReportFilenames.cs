@@ -77,4 +77,18 @@ public static class ReportFilenames
         string ext = extension.TrimStart('.').ToLowerInvariant();
         return $"league-{Slug(leagueKey)}-profile.{ext}";
     }
+
+    public static string SeasonDossierFileName(int seasonNumber, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        return $"season-{seasonNumber}-dossier.{ext}";
+    }
+
+    public static string UniverseAlmanacFileName(string? saveName, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        return $"universe-almanac-{Slug(saveName)}.{ext}";
+    }
 }

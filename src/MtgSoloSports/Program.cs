@@ -54,7 +54,9 @@ using MtgSoloSports.Features.Reports.AthleteReport;
 using MtgSoloSports.Features.Reports.CupEditionReport;
 using MtgSoloSports.Features.Reports.CupTeamReport;
 using MtgSoloSports.Features.Reports.LeagueProfileReport;
+using MtgSoloSports.Features.Reports.SeasonDossier;
 using MtgSoloSports.Features.Reports.StandingsReport;
+using MtgSoloSports.Features.Reports.UniverseAlmanac;
 using MtgSoloSports.Features.Saves.CreateCheckpoint;
 using MtgSoloSports.Features.Saves.CreateSave;
 using MtgSoloSports.Features.Saves.DeleteSave;
@@ -199,6 +201,8 @@ builder.Services.AddScoped<GetStandingsReportHandler>();
 builder.Services.AddScoped<GetCupEditionReportHandler>();
 builder.Services.AddScoped<GetCupTeamReportHandler>();
 builder.Services.AddScoped<GetLeagueProfileReportHandler>();
+builder.Services.AddScoped<GetSeasonDossierHandler>();
+builder.Services.AddScoped<GetUniverseAlmanacHandler>();
 
 var app = builder.Build();
 
@@ -296,6 +300,8 @@ GetStandingsReportEndpoint.Map(app);
 GetCupEditionReportEndpoint.Map(app);
 GetCupTeamReportEndpoint.Map(app);
 GetLeagueProfileReportEndpoint.Map(app);
+GetSeasonDossierEndpoint.Map(app);
+GetUniverseAlmanacEndpoint.Map(app);
 GetLongRunChecksumEndpoint.Map(app);
 ValidateLongRunInvariantsEndpoint.Map(app);
 GetLongRunStatsEndpoint.Map(app);
