@@ -47,6 +47,9 @@ export function AthleteProfilePage({
   rawAthleteId?: string;
   state: AthleteProfileState;
 }) {
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   if (athleteId === null) {
     return (
       <Notice tone="error" title="Invalid athlete link">
@@ -90,8 +93,6 @@ export function AthleteProfilePage({
   }
 
   const profile = state.profile;
-  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   if (!profile) {
     return <Loading label="Loading athlete profile…" />;
   }
