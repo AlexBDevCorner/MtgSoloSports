@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { cupTeamReportUrl, downloadReport } from '../reports/reportApi';
 import { AthleteLink, Link } from '../routing/router';
 import { cupEditionPath, cupsPath, historyPath, type CupKind } from '../routing/routes';
 import {
@@ -33,6 +34,23 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
   const [history, setHistory] = useState<CupTeamHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload(format: 'json' | 'md'): Promise<void> {
+    if (downloading !== null) {
+      return;
+    }
+    setDownloading(format);
+    setDownloadError(null);
+    try {
+      await downloadReport(cupTeamReportUrl(saveId, cup, teamKey, format), `cup-${cup}-team-${teamKey}-report.${format}`);
+    } catch (failure) {
+      setDownloadError(apiErrorMessage(failure));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,7 +109,28 @@ export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: Cup
             <Link to={cupsPath(saveId)} className="ghost-button">
               All Cups
             </Link>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('md')}
+            >
+              {downloading === 'md' ? 'Preparing…' : 'Report .md'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('json')}
+            >
+              {downloading === 'json' ? 'Preparing…' : 'Report .json'}
+            </button>
           </nav>
+          {downloadError ? (
+            <p className="muted" role="alert">
+              Download failed: {downloadError}
+            </p>
+          ) : null}
         </div>
         <p className="muted">{cupTitle(cup)} team</p>
         <dl className="cup-facts">

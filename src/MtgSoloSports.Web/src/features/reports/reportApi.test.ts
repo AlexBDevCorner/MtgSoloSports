@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { athleteReportUrl, downloadReport, standingsReportUrl } from './reportApi';
+import {
+  athleteReportUrl,
+  cupEditionReportUrl,
+  cupTeamReportUrl,
+  downloadReport,
+  leagueProfileReportUrl,
+  standingsReportUrl,
+} from './reportApi';
 
 describe('MSS-086 report downloads', () => {
   it('builds athlete report URLs for both formats', () => {
@@ -16,6 +23,43 @@ describe('MSS-086 report downloads', () => {
     assert.equal(
       standingsReportUrl('save-1', 7, 3, 'md'),
       '/api/saves/save-1/leagues/7/seasons/3/report?format=md',
+    );
+  });
+
+  it('builds cup edition report URLs with exact cup and season scope', () => {
+    assert.equal(
+      cupEditionReportUrl('save-1', 'color', 2, 'json'),
+      '/api/saves/save-1/cups/color/editions/2/report?format=json',
+    );
+    assert.equal(
+      cupEditionReportUrl('save-1', 'type', 2, 'md'),
+      '/api/saves/save-1/cups/type/editions/2/report?format=md',
+    );
+  });
+
+  it('builds cup team report URLs with exact cup and team scope', () => {
+    assert.equal(
+      cupTeamReportUrl('save-1', 'color', 'white', 'json'),
+      '/api/saves/save-1/cups/color/teams/white/report?format=json',
+    );
+    assert.equal(
+      cupTeamReportUrl('save-1', 'type', 'Dragon', 'md'),
+      '/api/saves/save-1/cups/type/teams/Dragon/report?format=md',
+    );
+    assert.equal(
+      cupTeamReportUrl('save-1', 'type', 'Rat Creature', 'json'),
+      '/api/saves/save-1/cups/type/teams/Rat%20Creature/report?format=json',
+    );
+  });
+
+  it('builds league profile report URLs with exact league scope', () => {
+    assert.equal(
+      leagueProfileReportUrl('save-1', 'superleague', 'json'),
+      '/api/saves/save-1/leagues/superleague/report?format=json',
+    );
+    assert.equal(
+      leagueProfileReportUrl('save-1', 'feeder-1-white', 'md'),
+      '/api/saves/save-1/leagues/feeder-1-white/report?format=md',
     );
   });
 

@@ -18,6 +18,28 @@ public static class ReportContract
 
     public const string StandingsReportType = "standings-table";
 
+    public const string CupEditionReportType = "cup-edition";
+
+    public const string CupTeamReportType = "cup-team";
+
+    public const string LeagueProfileReportType = "league-profile";
+
+    public static string NormalizeCup(string? cup)
+    {
+        if (string.IsNullOrWhiteSpace(cup))
+        {
+            throw new ArgumentException("Cup must be 'color' or 'type'.", nameof(cup));
+        }
+
+        string normalized = cup.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "color" => "color",
+            "type" => "type",
+            _ => throw new ArgumentException($"Unsupported cup '{cup}'. Use 'color' or 'type'.", nameof(cup)),
+        };
+    }
+
     public const string JsonContentType = "application/json; charset=utf-8";
 
     public const string MarkdownContentType = "text/markdown; charset=utf-8";

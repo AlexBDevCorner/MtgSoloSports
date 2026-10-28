@@ -15,6 +15,30 @@ export function standingsReportUrl(
   return `/api/saves/${saveId}/leagues/${leagueId}/seasons/${seasonNumber}/report?format=${format}`;
 }
 
+export type CupReportKind = 'color' | 'type';
+
+export function cupEditionReportUrl(
+  saveId: string,
+  cup: CupReportKind,
+  seasonNumber: number,
+  format: ReportFormat,
+): string {
+  return `/api/saves/${saveId}/cups/${cup}/editions/${seasonNumber}/report?format=${format}`;
+}
+
+export function cupTeamReportUrl(
+  saveId: string,
+  cup: CupReportKind,
+  teamKey: string,
+  format: ReportFormat,
+): string {
+  return `/api/saves/${saveId}/cups/${cup}/teams/${encodeURIComponent(teamKey)}/report?format=${format}`;
+}
+
+export function leagueProfileReportUrl(saveId: string, leagueKey: string, format: ReportFormat): string {
+  return `/api/saves/${saveId}/leagues/${encodeURIComponent(leagueKey)}/report?format=${format}`;
+}
+
 function filenameFromDisposition(header: string | null, fallback: string): string {
   if (!header) {
     return fallback;
