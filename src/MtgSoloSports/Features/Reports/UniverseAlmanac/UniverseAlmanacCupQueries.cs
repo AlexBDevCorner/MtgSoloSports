@@ -20,7 +20,19 @@ internal static class UniverseAlmanacCupQueries
         IReadOnlyList<AlmanacCupEditionEntry> editions = BuildEditions(color, type);
         IReadOnlyList<ListCupEditionsResponse.TeamSummary> colorTeams = BuildTeamTable(color.Appearances, color.Results);
         IReadOnlyList<ListCupEditionsResponse.TeamSummary> typeTeams = BuildTeamTable(type.Appearances, type.Results);
-        IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> individual = BuildIndividualMedals(color.Appearances, color.IndividualMedals);
+        // Mirror ListCupEditionsHandler: individual medals count only once the
+        // edition is Completed (team and individual events both finished). An
+        // individual event resolves before its team event, so unfiltered
+        // persisted standings would prematurely award medals.
+        HashSet<int> completedColorSeasons = editions
+            .Where(e => string.Equals(e.Cup, "Color", StringComparison.Ordinal)
+                && string.Equals(e.State, CupEditionState.Completed, StringComparison.Ordinal))
+            .Select(e => e.SourceSeasonNumber)
+            .ToHashSet();
+        List<(int Season, string TeamKey, int Medal)> completedIndividualMedals = color.IndividualMedals
+            .Where(m => completedColorSeasons.Contains(m.Season))
+            .ToList();
+        IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> individual = BuildIndividualMedals(color.Appearances, completedIndividualMedals);
         IReadOnlyList<ListCupEditionsResponse.ColorMedalRow> combined = BuildCombinedMedals(colorTeams, individual);
         return new AlmanacCupTables(editions, colorTeams, individual, combined, typeTeams);
     }
@@ -164,16 +176,27 @@ internal static class UniverseAlmanacCupQueries
             return [];
         }
 
-        // Only completed Color editions count: an individual event can resolve
-        // while its team event is still pending. Mirror ListCupEditions: count
-        // individual medals only where the team event has finished.
-        HashSet<int> completedSeasons = medals.Select(m => m.Season).ToHashSet();
+        // Callers pass only medals from Completed Color editions (see
+        // LoadCupTablesAsync, mirroring ListCupEditionsHandler): an
+        // individual event can resolve while its team event is still pending
+        // and those InProgress medals must not count yet.
         return Enum.GetValues<SportingColor>()
             .Select(color =>
             {
                 string key = CupTeamKeys.ColorKey(color);
                 string name = CupTeamKeys.ColorName(color);
                 List<(int Season, string TeamKey, int Medal)> colorMedals = medals.Where(m => string.Equals(m.TeamKey, key, StringComparison.Ordinal)).ToList();
+                foreach ((int Season, string _, int Medal) in colorMedals)
+                {
+                    if (Medal != (int)ColorCupMedal.Gold
+                        && Medal != (int)ColorCupMedal.Silver
+                        && Medal != (int)ColorCupMedal.Bronze)
+                    {
+                        throw new InvalidOperationException(
+                            $"Color Cup individual medal for Season {Season} has unknown medal {Medal}.");
+                    }
+                }
+
                 return new ListCupEditionsResponse.ColorMedalRow(
                     key,
                     name,

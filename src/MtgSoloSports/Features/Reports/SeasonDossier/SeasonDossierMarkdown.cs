@@ -172,7 +172,10 @@ internal static class SeasonDossierMarkdown
             sb.AppendLine(CultureInfo.InvariantCulture, $"- Individual champion: {ReportMarkdown.Cell(color.Individual.ChampionName)} (id {color.Individual.ChampionAthleteId?.ToString(CultureInfo.InvariantCulture) ?? "—"})");
             foreach (CupPodiumEntry podium in color.Individual.TopThree)
             {
-                sb.AppendLine(CultureInfo.InvariantCulture, $"  - P{podium.Rank} {ReportMarkdown.Cell(podium.TeamName)} · {ReportMarkdown.FormatPoints(podium.ScoreThousandths)} · {ReportMarkdown.Cell(podium.Medal)}");
+                string athlete = podium.AthleteId.HasValue
+                    ? $"{ReportMarkdown.Cell(podium.AthleteName ?? $"Athlete {podium.AthleteId.Value}")} (id {podium.AthleteId.Value}) · {ReportMarkdown.Cell(podium.TeamName)}"
+                    : ReportMarkdown.Cell(podium.TeamName);
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  - P{podium.Rank} {athlete} · {ReportMarkdown.FormatPoints(podium.ScoreThousandths)} · {ReportMarkdown.Cell(podium.Medal)}");
             }
         }
 

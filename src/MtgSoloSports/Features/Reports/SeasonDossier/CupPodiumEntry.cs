@@ -5,4 +5,6 @@ internal sealed record CupPodiumEntry(
     string TeamKey,
     string TeamName,
     int ScoreThousandths,
-    string Medal);
+    string Medal,
+    int? AthleteId = null,
+    string? AthleteName = null);

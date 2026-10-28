@@ -56,16 +56,33 @@ internal static class UniverseAlmanacLeaderQueries
         SaveDbContext context,
         CancellationToken cancellationToken)
     {
+        (AlmanacCareerLeaders leaders, _, _) = await LoadLeadersAndStreaksAsync(context, cancellationToken).ConfigureAwait(false);
+        return leaders;
+    }
+
+    internal static async Task<(AlmanacCareerLeaders Leaders, IReadOnlyList<StreakEntry> TitleStreaks, IReadOnlyList<StreakEntry> StageStreaks)> LoadLeadersAndStreaksAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
         RecordLoader.RecordInputs inputs = await RecordLoader.LoadAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> colors = await LoadColorsAsync(context, cancellationToken).ConfigureAwait(false);
         CareerPerformanceLoader.LoadResult performance = await CareerPerformanceLoader.LoadAsync(context, null, null, cancellationToken).ConfigureAwait(false);
-        GetHallOfFameResponse mapped = GetHallOfFameHandler.Map(Guid.Empty, inputs, colors, performance, WeightedTake, null, null);
-        return new AlmanacCareerLeaders(
+        GetHallOfFameResponse display = GetHallOfFameHandler.Map(Guid.Empty, inputs, colors, performance, WeightedTake, null, null);
+        AlmanacCareerLeaders leaders = new(
             CareerPerformanceScorer.WeightsVersion,
-            mapped.TotalAthletes,
-            mapped.FromSeason,
-            mapped.ToSeason,
-            mapped.Leaders);
+            display.TotalAthletes,
+            display.FromSeason,
+            display.ToSeason,
+            display.Leaders);
+        // Streaks are all-time records and must consider every athlete, not
+        // just the top 20 by weighted career points. Reuse the same loaded
+        // inputs to rank the full field once for streak discovery.
+        int fullTake = Math.Max(inputs.AthleteNames.Count, 1);
+        GetHallOfFameResponse full = inputs.AthleteNames.Count == 0
+            ? display
+            : GetHallOfFameHandler.Map(Guid.Empty, inputs, colors, performance, fullTake, null, null);
+        (IReadOnlyList<StreakEntry> titles, IReadOnlyList<StreakEntry> stages) = BuildStreaks(full.Leaders);
+        return (leaders, titles, stages);
     }
 
     internal static async Task<Dictionary<int, int>> LoadColorsAsync(SaveDbContext context, CancellationToken cancellationToken)
@@ -131,7 +148,14 @@ internal static class UniverseAlmanacLeaderQueries
 
     internal static (IReadOnlyList<StreakEntry> TitleStreaks, IReadOnlyList<StreakEntry> StageStreaks) BuildStreaks(AlmanacCareerLeaders leaders)
     {
-        List<StreakEntry> titles = leaders.Leaders
+        ArgumentNullException.ThrowIfNull(leaders);
+        return BuildStreaks(leaders.Leaders);
+    }
+
+    internal static (IReadOnlyList<StreakEntry> TitleStreaks, IReadOnlyList<StreakEntry> StageStreaks) BuildStreaks(IReadOnlyList<HallOfFameEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        List<StreakEntry> titles = entries
             .Where(e => e.LongestTitleStreak > 1)
             .OrderByDescending(e => e.LongestTitleStreak)
             .ThenByDescending(e => e.SuperleagueTitles)
@@ -140,7 +164,7 @@ internal static class UniverseAlmanacLeaderQueries
             .Take(StreakTake)
             .Select(e => new StreakEntry(e.AthleteId, e.AthleteName, e.LongestTitleStreak))
             .ToList();
-        List<StreakEntry> stages = leaders.Leaders
+        List<StreakEntry> stages = entries
             .Where(e => e.LongestStageWinStreak > 1)
             .OrderByDescending(e => e.LongestStageWinStreak)
             .ThenByDescending(e => e.StageWins)

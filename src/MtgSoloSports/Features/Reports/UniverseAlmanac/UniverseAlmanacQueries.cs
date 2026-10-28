@@ -20,9 +20,8 @@ internal static class UniverseAlmanacQueries
         IReadOnlyList<FeederTitleEntry> feederTitles = await LoadFeederTitlesAsync(context, seasons, names, cancellationToken).ConfigureAwait(false);
         AlmanacCupTables cups = await UniverseAlmanacCupQueries.LoadCupTablesAsync(context, names, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<AlmanacCareerRecordEntry> records = await UniverseAlmanacLeaderQueries.LoadCareerRecordsAsync(context, cancellationToken).ConfigureAwait(false);
-        AlmanacCareerLeaders leaders = await UniverseAlmanacLeaderQueries.LoadWeightedLeadersAsync(context, cancellationToken).ConfigureAwait(false);
+        (AlmanacCareerLeaders leaders, IReadOnlyList<StreakEntry> titleStreaks, IReadOnlyList<StreakEntry> stageStreaks) = await UniverseAlmanacLeaderQueries.LoadLeadersAndStreaksAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<LeaguePointsLeaderEntry> pointsLeaders = await UniverseAlmanacLeaderQueries.LoadSuperleaguePointsLeadersAsync(context, names, cancellationToken).ConfigureAwait(false);
-        (IReadOnlyList<StreakEntry> titleStreaks, IReadOnlyList<StreakEntry> stageStreaks) = UniverseAlmanacLeaderQueries.BuildStreaks(leaders);
         int from = seasons.Count == 0 ? 0 : seasons.Min(s => s.SeasonNumber);
         int to = seasons.Count == 0 ? 0 : seasons.Max(s => s.SeasonNumber);
         return new UniverseAlmanacData(

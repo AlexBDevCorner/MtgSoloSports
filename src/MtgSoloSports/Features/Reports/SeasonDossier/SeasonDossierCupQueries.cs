@@ -56,7 +56,7 @@ internal static class SeasonDossierCupQueries
         List<CupPodiumEntry> top = individual.Standings
             .Where(r => r.CupRank is >= 1 and <= 3)
             .OrderBy(r => r.CupRank)
-            .Select(r => new CupPodiumEntry(r.CupRank, r.SportingColor, r.SportingColor, r.CupScoreThousandths, r.Medal))
+            .Select(r => new CupPodiumEntry(r.CupRank, r.SportingColor, r.SportingColor, r.CupScoreThousandths, r.Medal, r.AthleteId, r.Name))
             .ToList();
         return new IndividualCupSummary(individual.ChampionName, individual.ChampionAthleteId, top);
     }
