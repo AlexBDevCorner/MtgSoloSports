@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiErrorMessage, ApiError } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { downloadReport, leagueProfileReportUrl } from '../reports/reportApi';
 import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
 import { historyPath, leaguePath, leaguesPath, standingsLeaguePath } from '../routing/routes';
@@ -24,6 +25,23 @@ export function LeagueProfilePage({ saveId, leagueKey }: { saveId: string; leagu
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload(format: 'json' | 'md'): Promise<void> {
+    if (downloading !== null) {
+      return;
+    }
+    setDownloading(format);
+    setDownloadError(null);
+    try {
+      await downloadReport(leagueProfileReportUrl(saveId, leagueKey, format), `league-${leagueKey}-profile.${format}`);
+    } catch (failure) {
+      setDownloadError(apiErrorMessage(failure));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -163,7 +181,24 @@ export function LeagueProfilePage({ saveId, leagueKey }: { saveId: string; leagu
               </Link>
             </>
           ) : null}
+          {' · '}
+          <button type="button" className="ghost-button" disabled={downloading !== null} onClick={() => void handleDownload('md')}>
+            {downloading === 'md' ? 'Preparing…' : 'Report .md'}
+          </button>{' '}
+          <button
+            type="button"
+            className="ghost-button"
+            disabled={downloading !== null}
+            onClick={() => void handleDownload('json')}
+          >
+            {downloading === 'json' ? 'Preparing…' : 'Report .json'}
+          </button>
         </p>
+        {downloadError ? (
+          <p className="muted" role="alert">
+            Download failed: {downloadError}
+          </p>
+        ) : null}
       </Card>
 
       {profile.currentSeason ? (

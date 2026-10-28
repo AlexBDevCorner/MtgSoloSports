@@ -54,4 +54,27 @@ public static class ReportFilenames
         string ext = extension.TrimStart('.').ToLowerInvariant();
         return $"standings-season-{seasonNumber}-league-{leagueId}-{Slug(leagueName)}.{ext}";
     }
+
+    public static string CupEditionFileName(string cup, int seasonNumber, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        string cupSlug = Slug(cup);
+        return $"cup-{cupSlug}-season-{seasonNumber}-edition.{ext}";
+    }
+
+    public static string CupTeamFileName(string cup, string? teamKey, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        string cupSlug = Slug(cup);
+        return $"cup-{cupSlug}-team-{Slug(teamKey)}.{ext}";
+    }
+
+    public static string LeagueProfileFileName(string? leagueKey, string extension)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(extension);
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        return $"league-{Slug(leagueKey)}-profile.{ext}";
+    }
 }
