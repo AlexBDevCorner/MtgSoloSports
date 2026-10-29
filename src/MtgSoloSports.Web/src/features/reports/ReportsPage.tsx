@@ -14,6 +14,11 @@ import {
   type DriveVerifyResponse,
   type PublishDriveResponse,
 } from './drivePublishingApi';
+import {
+  pickerConfigFromStatus,
+  pickerDisabledHint,
+  showDrivePicker,
+} from './drivePicker';
 import type { HistorySeasons } from '../history/historyApi';
 
 const JOURNALIST_PROMPT = `You are a longtime MtgSoloSports columnist. Use only facts from the attached season dossier (current season) and universe almanac (history). Distinguish official points (season championship points) from weighted career points; Type Cup qualification never awards titles; Color individual and team events are separate titles; provisional tables are not final. Call out defending champions, streaks, upsets, qualification cut lines, and historical firsts with season numbers. If a fact is not in the sources, say it is unavailable rather than guessing.`;
@@ -399,6 +404,106 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 />
               </label>
             </div>
+            <div className="toolbar" role="group" aria-label="Drive Picker grant">
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  setDriveBusy('pick-folder');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'folder')
+                    .then((picked) => {
+                      if (picked) {
+                        setFolderId(picked.id);
+                        if (picked.name) {
+                          setFolderName(picked.name);
+                        }
+                        setDriveNotice(
+                          `Picked folder “${picked.name}” — press Save destination, then Verify access.`,
+                        );
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-folder' ? 'Opening Picker…' : 'Choose folder…'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  setDriveBusy('pick-dossier');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        setDossierFileId(picked.id);
+                        if (picked.name) {
+                          setDossierFileName(picked.name);
+                        }
+                        setDriveNotice(
+                          `Picked dossier “${picked.name}” — press Save destination, then Verify access.`,
+                        );
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-dossier' ? 'Opening Picker…' : 'Choose dossier…'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  setDriveBusy('pick-almanac');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        setAlmanacFileId(picked.id);
+                        if (picked.name) {
+                          setAlmanacFileName(picked.name);
+                        }
+                        setDriveNotice(
+                          `Picked almanac “${picked.name}” — press Save destination, then Verify access.`,
+                        );
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-almanac' ? 'Opening Picker…' : 'Choose almanac…'}
+              </button>
+            </div>
+            <p className="muted small">
+              {driveStatus.pickerEnabled
+                ? 'Choose from Drive grants drive.file access to that exact folder/file (same Google account), so publishing can update it in place.'
+                : pickerDisabledHint(driveStatus)}
+            </p>
             <p>
               <button
                 type="button"
@@ -426,10 +531,11 @@ export function ReportsPage({ saveId }: { saveId: string }) {
             </p>
             <p className="muted small">
               Pasting a Drive id alone does not grant access. With the least-privilege <code>drive.file</code>{' '}
-              scope the app can only use files it created or that you explicitly granted via Google Picker or
-              Drive&apos;s <em>Open with</em>. After pasting ids, use <em>Verify access</em> to check each grant;
-              each season keeps its own dossier file (<code>Seasons/season-N-dossier.md</code>) so a new season
-              never overwrites the prior season&apos;s file.
+              scope the app can only use files it created or that you explicitly granted with{' '}
+              <em>Choose from Drive</em> (Google Picker, same Google account). After picking or pasting ids, use{' '}
+              <em>Verify access</em> to check each grant; each season keeps its own dossier file (
+              <code>Seasons/season-N-dossier.md</code>) so a new season never overwrites the prior season&apos;s
+              file. Drive <em>Open with</em> needs a public HTTPS app URL and is not available for localhost.
             </p>
             <div className="toolbar" role="group" aria-label="Drive publish">
               <label className="field">

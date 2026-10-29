@@ -17,4 +17,7 @@ public sealed record DriveStatusResponse(
     int? LastSeasonNumber,
     string? LastPhase,
     int? LastGlobalStage,
-    string? LastError);
+    string? LastError,
+    string? PickerClientId,
+    string? PickerApiKey,
+    bool PickerEnabled);

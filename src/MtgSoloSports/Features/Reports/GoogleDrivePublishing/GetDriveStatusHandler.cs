@@ -47,15 +47,29 @@ public sealed class GetDriveStatusHandler
         DrivePublishingStore.DestinationDocument? destination =
             await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
 
+        return BuildResponse(detail, connection, destination);
+    }
+
+    private DriveStatusResponse BuildResponse(
+        SaveStore.SaveDetailRecord detail,
+        DrivePublishingStore.ConnectionDocument? connection,
+        DrivePublishingStore.DestinationDocument? destination)
+    {
         (string? dossierId, string? dossierName, string? dossierFingerprint, string? dossierModified) =
             DrivePublishingStore.CurrentDossierView(destination, detail.CurrentSeason);
 
+        // Picker credentials are public browser credentials (OAuth client id +
+        // Picker browser API key). The client secret and tokens are never
+        // returned. PickerEnabled gates the Choose-from-Drive grant flow.
+        DrivePublishingOptions options = _options.Value;
+        bool pickerEnabled = options.IsGoogleConfigured
+            && !string.IsNullOrWhiteSpace(options.GooglePickerApiKey);
         return new DriveStatusResponse(
             detail.SaveId,
             detail.Name,
             detail.CurrentSeason,
             detail.Phase,
-            _options.Value.IsGoogleConfigured,
+            options.IsGoogleConfigured,
             connection is not null && !string.IsNullOrWhiteSpace(connection.RefreshToken),
             connection?.Scopes,
             connection?.ConnectedUtc,
@@ -79,6 +93,9 @@ public sealed class GetDriveStatusHandler
             destination?.LastSeasonNumber,
             destination?.LastPhase,
             destination?.LastGlobalStage,
-            destination?.LastError);
+            destination?.LastError,
+            string.IsNullOrWhiteSpace(options.GoogleClientId) ? null : options.GoogleClientId,
+            string.IsNullOrWhiteSpace(options.GooglePickerApiKey) ? null : options.GooglePickerApiKey,
+            pickerEnabled);
     }
 }

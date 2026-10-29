@@ -27,6 +27,9 @@ export interface DriveStatus {
   lastPhase: string | null;
   lastGlobalStage: number | null;
   lastError: string | null;
+  pickerClientId: string | null;
+  pickerApiKey: string | null;
+  pickerEnabled: boolean;
 }
 
 export interface DriveDestination {

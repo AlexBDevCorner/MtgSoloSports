@@ -27,10 +27,11 @@ services:
       Saves__SavesRoot: /data/saves
       Catalog__CatalogPath: /data/catalog/catalog.db
       DrivePublishing__StorePath: /data/drive-publishing
-      # Google Drive publishing (MSS-089) is opt-in: set these two from your
+      # Google Drive publishing (MSS-089) is opt-in: set these from your
       # personal OAuth client (see docs/drive-publishing.md) and restart.
       # DrivePublishing__GoogleClientId: "your-client-id"
       # DrivePublishing__GoogleClientSecret: "your-client-secret"
+      # DrivePublishing__GooglePickerApiKey: "your-browser-key"
     volumes:
       - mtgsolosports-data:/data
     healthcheck:

@@ -542,6 +542,126 @@ public sealed class GoogleDrivePublishingTests
         }
     }
 
+    [Fact]
+    public async Task AdoptedMissingId_FailsClosedWithoutDuplicate()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            // Adopt ids that do not exist in Drive (deleted or never granted:
+            // drive.file hides ungranted files as 404). Publishing must fail
+            // closed, not create same-named replacements.
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"missing-dossier","dossierFileName":"season-1-dossier.md","almanacFileId":"missing-almanac","almanacFileName":"universe-almanac.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("failed");
+            published.Outcome("almanac").ShouldBe("failed");
+            published.Detail("dossier")!.ShouldContain("not found");
+            published.Detail("dossier")!.ShouldContain("did not create a duplicate");
+            published.Detail("almanac")!.ShouldContain("not found");
+            // No Markdown files may be created for the missing adopted ids;
+            // only the auto-resolved Seasons/ folder may exist.
+            drive.Files.Values
+                .Where(f => !string.Equals(f.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+                .ShouldBeEmpty();
+            drive.Files.ShouldNotContainKey("missing-dossier");
+            drive.Files.ShouldNotContainKey("missing-almanac");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task VerifyFolder_AccessibleFolderReportsOkDespiteDownloadForbidden()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            using HttpResponseMessage response = await client.PostAsync(
+                $"/api/saves/{saveId:D}/reports/drive/verify", null);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Dictionary<string, string> byReport = json.RootElement.GetProperty("checks").EnumerateArray()
+                .ToDictionary(
+                    e => e.GetProperty("report").GetString()!,
+                    e => e.GetProperty("status").GetString()!,
+                    StringComparer.Ordinal);
+            // The fake Drive now returns 403 fileNotDownloadable for folder
+            // media downloads (like real Drive). Verification must use a list
+            // operation, so a granted folder still reports ok.
+            byReport["mtshistory"].ShouldBe("ok");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Status_ExposesPickerConfigWithoutSecrets()
+    {
+        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "picker-test-key");
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/reports/drive/status");
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            JsonElement rootElement = json.RootElement;
+            rootElement.GetProperty("pickerEnabled").GetBoolean().ShouldBeTrue();
+            rootElement.GetProperty("pickerClientId").GetString().ShouldBe("test-client");
+            rootElement.GetProperty("pickerApiKey").GetString().ShouldBe("picker-test-key");
+            // Secrets and tokens must never be exposed to the frontend.
+            rootElement.TryGetProperty("googleClientSecret", out _).ShouldBeFalse();
+            rootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
+            rootElement.TryGetProperty("accessToken", out _).ShouldBeFalse();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Status_PickerDisabledWithoutApiKey()
+    {
+        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "");
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/reports/drive/status");
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("pickerEnabled").GetBoolean().ShouldBeFalse();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed record PublishResult(
         HttpStatusCode Status,
         string[] Outcomes,
@@ -714,7 +834,8 @@ public sealed class GoogleDrivePublishingTests
     }
 
     private static (WebApplicationFactory<Program> Factory, string Root, FakeOAuthClient OAuth, FakeDriveClient Drive) CreateFactory(
-        bool configured = true)
+        bool configured = true,
+        string pickerApiKey = "")
     {
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-drive-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -730,6 +851,7 @@ public sealed class GoogleDrivePublishingTests
                     o.StorePath = Path.Combine(root, "drive-publishing");
                     o.GoogleClientId = configured ? "test-client" : string.Empty;
                     o.GoogleClientSecret = configured ? "test-secret" : string.Empty;
+                    o.GooglePickerApiKey = pickerApiKey;
                 });
                 services.AddSingleton<IGoogleOAuthClient>(oauth);
                 services.AddSingleton<IGoogleDriveClient>(drive);
@@ -833,6 +955,15 @@ public sealed class GoogleDrivePublishingTests
             CheckToken(accessToken);
             CheckDenied(fileId);
             Files.TryGetValue(fileId, out FakeFile? file);
+            if (file is not null
+                && string.Equals(file.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+            {
+                // Mirror real Drive: folders are not downloadable media and
+                // return 403 fileNotDownloadable even when the folder itself is
+                // accessible. Folder verification must use list, not download.
+                throw new DriveApiException(HttpStatusCode.Forbidden, "Google Drive failed (403). fileNotDownloadable: Folders are not downloadable.");
+            }
+
             return Task.FromResult(file?.Content);
         }
 

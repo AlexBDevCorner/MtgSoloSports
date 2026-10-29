@@ -23,8 +23,10 @@ public sealed class VerifyDriveDestinationHandler
 
     private const string GrantGuidance =
         "With drive.file the app can only use files/folders it created or that were explicitly granted. " +
-        "In Google Drive, open the file/folder with this app (right-click Open with) or pick it via Google Picker " +
-        "using the same Google account, then Verify again. Alternatively clear the id to let the app create a new file.";
+        "In Reports use Choose from Drive (Google Picker) with the same Google account to select the folder/file, " +
+        "then Save destination and Verify again. Pasting an id alone does not grant access. " +
+        "(Drive Open-with requires a public HTTPS app URL and is not available for localhost.) " +
+        "Alternatively clear the id to let the app create a new file.";
 
     private readonly SaveStore _saves;
     private readonly DrivePublishingStore _publishing;
@@ -177,18 +179,21 @@ public sealed class VerifyDriveDestinationHandler
 
         try
         {
+            // Folders are not downloadable media: verify content access with a
+            // folder list operation. A 403 here means the drive.file grant is
+            // missing; other API quirks (e.g. fileNotDownloadable from a
+            // download probe) must not be mistaken for a missing grant.
             _ = await WithAuthAsync(
-                token => _drive.DownloadFileAsync(token, remote.Id, cancellationToken),
+                token => _drive.ListByNameInFolderAsync(token, remote.Id, "__drive_verify__", cancellationToken),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {
-            // Folders are not downloadable; a 403 here still signals missing grant for content listing.
-            return new DriveVerifyCheck(report, "needs-grant", remote.Id, remote.Name, $"Folder metadata is visible but content access was denied (403). {GrantGuidance}");
+            return new DriveVerifyCheck(report, "needs-grant", remote.Id, remote.Name, $"Folder metadata is visible but listing its content was denied (403). {GrantGuidance}");
         }
         catch (DriveApiException)
         {
-            // Non-grant API errors (e.g. cannot download a folder) are not grant failures.
+            // Non-grant API errors are not grant failures.
         }
 
         return new DriveVerifyCheck(report, "ok", remote.Id, remote.Name, "Folder id is accessible.");
@@ -261,7 +266,7 @@ public sealed class VerifyDriveDestinationHandler
 
         if (remote is null || remote.Trashed)
         {
-            return new DriveVerifyCheck(report, "not-found", fileId, desiredName, $"That {report} id was not found (or is trashed). Publishing will create '{desiredName}' in the destination.");
+            return new DriveVerifyCheck(report, "not-found", fileId, desiredName, $"That {report} id was not found (deleted, trashed, or never granted — drive.file hides ungranted files as missing). Publishing will fail closed without creating a duplicate. Clear the id to create '{desiredName}' in the destination, or re-pick a granted file with Choose from Drive.");
         }
 
         if (string.Equals(remote.MimeType, FolderMime, StringComparison.Ordinal))

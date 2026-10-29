@@ -406,7 +406,12 @@ public sealed class PublishDriveReportsHandler
 
         if (remote is null)
         {
-            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+            // Defensive fail-closed: an adopted id must never silently fall
+            // through to create. LoadRemoteFileAsync already returns a failed
+            // outcome for missing/trashed ids; this guards future paths.
+            return (Failed(report, storedFileId, desiredName,
+                $"The adopted {report} file id {storedFileId} is no longer visible in Drive (deleted, trashed, or never granted to this app — drive.file hides ungranted files as missing). Publishing did not create a duplicate. Clear the id to create a new '{desiredName}' in the destination, or re-adopt a granted file id, then retry. Nothing was changed.", newFingerprint),
+                destination);
         }
 
         // P1: never update a file outside the configured destination. An
@@ -422,7 +427,7 @@ public sealed class PublishDriveReportsHandler
         if (string.Equals(remoteFingerprint, "denied", StringComparison.Ordinal))
         {
             return (Failed(report, remote.Id, desiredName,
-                "Google denied access to read the adopted file (403). With drive.file the app needs an explicit Picker / 'Open with' grant for pre-existing files. Use Verify access, grant the file in Drive, or adopt a file it created. Nothing was changed.", newFingerprint),
+                "Google denied access to read the adopted file (403). With drive.file the app needs an explicit Choose from Drive (Google Picker) grant for pre-existing files. Use Verify access, re-pick the file with Choose from Drive, or adopt a file it created. Nothing was changed.", newFingerprint),
                 destination);
         }
 
@@ -480,9 +485,19 @@ public sealed class PublishDriveReportsHandler
             DriveFile? remote = await WithGetRetryAsync(
                 () => WithAuthAsync(token => _drive.GetFileAsync(token, storedFileId, cancellationToken), cancellationToken),
                 cancellationToken).ConfigureAwait(false);
-            if (remote is null || remote.Trashed)
+            if (remote is null)
             {
-                return (null, null);
+                // Fail closed: with drive.file an existing but ungranted file
+                // is hidden as 404, and listing may omit it too. Creating a
+                // replacement here would leave two competing reports.
+                return (null, Failed(report, storedFileId, desiredName,
+                    $"The adopted {report} file id {storedFileId} was not found in Drive (deleted, or never granted to this app — drive.file hides ungranted files as missing). Publishing did not create a duplicate. Clear the id to create a new '{desiredName}' in the destination, or re-adopt a granted file id (use Choose from Drive), then retry. Nothing was changed.", newFingerprint));
+            }
+
+            if (remote.Trashed)
+            {
+                return (null, Failed(report, storedFileId, desiredName,
+                    $"The adopted {report} file '{remote.Name}' (id {storedFileId}) is trashed in Drive. Publishing did not create a duplicate. Restore it in Drive, or clear the id to create a new '{desiredName}' in the destination, then retry. Nothing was changed.", newFingerprint));
             }
 
             return (remote, null);
@@ -490,7 +505,7 @@ public sealed class PublishDriveReportsHandler
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             DriveFileOutcome outcome = Failed(report, storedFileId, desiredName,
-                "Google denied access to the adopted file (403). With the least-privilege drive.file scope the app can only read files it created or that were explicitly granted via Google Picker / Drive 'Open with'. Use Verify access to check the grant, grant the file in Drive, or clear the id to create a new file instead. Nothing was changed.", newFingerprint);
+                "Google denied access to the adopted file (403). With the least-privilege drive.file scope the app can only read files it created or that were explicitly granted via Choose from Drive (Google Picker) with the same Google account. Use Verify access to check the grant, re-pick the file with Choose from Drive, or clear the id to create a new file instead. Nothing was changed.", newFingerprint);
             return (null, outcome);
         }
     }
@@ -550,7 +565,7 @@ public sealed class PublishDriveReportsHandler
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             return (Failed(report, remote.Id, desiredName,
-                "Google denied the update (403). The adopted file is not writable with the current Picker / 'Open with' grant. Use Verify access to check the grant. Nothing was changed.", newFingerprint),
+                "Google denied the update (403). The adopted file is not writable with the current Choose from Drive (Google Picker) grant. Use Verify access to check the grant. Nothing was changed.", newFingerprint),
                 destination);
         }
         catch (DriveApiException ex) when (ex.IsTransient)
@@ -608,7 +623,7 @@ public sealed class PublishDriveReportsHandler
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             return (Failed(report, null, desiredName,
-                "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created or that were explicitly granted via Picker / 'Open with'. Use Verify access to check the grant, then retry. Nothing was created.", newFingerprint),
+                "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created or that were explicitly granted via Choose from Drive (Google Picker). Use Verify access to check the grant, then retry. Nothing was created.", newFingerprint),
                 destination);
         }
 

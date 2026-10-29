@@ -28,6 +28,15 @@ public sealed class DrivePublishingOptions
     public string GoogleClientSecret { get; set; } = string.Empty;
 
     /// <summary>
+    /// Browser API key for the Google Picker API (public browser credential, not
+    /// a secret). Empty means the in-app Choose-from-Drive picker is disabled;
+    /// pasted ids still work for app-created files. Configure alongside the
+    /// OAuth client id: enable the Picker API, create a Browser key restricted
+    /// to localhost, and set <c>DrivePublishing__GooglePickerApiKey</c>.
+    /// </summary>
+    public string GooglePickerApiKey { get; set; } = string.Empty;
+
+    /// <summary>
     /// Public callback URL registered in the Google Cloud console. Defaults to
     /// the localhost Docker callback; override for host-run port differences.
     /// </summary>
