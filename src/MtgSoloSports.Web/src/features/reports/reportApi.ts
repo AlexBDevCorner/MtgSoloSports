@@ -39,6 +39,14 @@ export function leagueProfileReportUrl(saveId: string, leagueKey: string, format
   return `/api/saves/${saveId}/leagues/${encodeURIComponent(leagueKey)}/report?format=${format}`;
 }
 
+export function seasonDossierReportUrl(saveId: string, seasonNumber: number, format: ReportFormat): string {
+  return `/api/saves/${saveId}/reports/season/${seasonNumber}?format=${format}`;
+}
+
+export function universeAlmanacReportUrl(saveId: string, format: ReportFormat): string {
+  return `/api/saves/${saveId}/reports/almanac?format=${format}`;
+}
+
 function filenameFromDisposition(header: string | null, fallback: string): string {
   if (!header) {
     return fallback;

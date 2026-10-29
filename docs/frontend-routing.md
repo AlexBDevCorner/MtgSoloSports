@@ -13,6 +13,7 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves/:saveId/live?league=<id>&round=<n>`
 - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
 - `/saves/:saveId/records`
+- `/saves/:saveId/reports` — ChatGPT source packs (MSS-088): season dossier + universe almanac downloads.
 - `/saves/:saveId/cups`
 - `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type`).
 - `/saves/:saveId/cups/:cup/teams/:teamKey` — one Cup team's history.

@@ -6,7 +6,9 @@ import {
   cupTeamReportUrl,
   downloadReport,
   leagueProfileReportUrl,
+  seasonDossierReportUrl,
   standingsReportUrl,
+  universeAlmanacReportUrl,
 } from './reportApi';
 
 describe('MSS-086 report downloads', () => {
@@ -61,6 +63,16 @@ describe('MSS-086 report downloads', () => {
       leagueProfileReportUrl('save-1', 'feeder-1-white', 'md'),
       '/api/saves/save-1/leagues/feeder-1-white/report?format=md',
     );
+  });
+
+  it('builds season dossier URLs with exact season scope', () => {
+    assert.equal(seasonDossierReportUrl('save-1', 3, 'json'), '/api/saves/save-1/reports/season/3?format=json');
+    assert.equal(seasonDossierReportUrl('save-1', 3, 'md'), '/api/saves/save-1/reports/season/3?format=md');
+  });
+
+  it('builds universe almanac URLs', () => {
+    assert.equal(universeAlmanacReportUrl('save-1', 'json'), '/api/saves/save-1/reports/almanac?format=json');
+    assert.equal(universeAlmanacReportUrl('save-1', 'md'), '/api/saves/save-1/reports/almanac?format=md');
   });
 
   it('downloads a blob and honors the backend filename', async () => {

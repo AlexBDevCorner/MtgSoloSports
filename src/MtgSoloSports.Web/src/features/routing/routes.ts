@@ -151,6 +151,7 @@ export type Route =
       season: number | null;
     }
   | { name: 'records'; saveId: string }
+  | { name: 'reports'; saveId: string }
   | { name: 'cups'; saveId: string; view: CupsView }
   | { name: 'athletes'; saveId: string; search: string }
   | { name: 'athlete'; saveId: string; athleteId: number; rawAthleteId: string }
@@ -313,6 +314,10 @@ export function recordsPath(saveId: string): string {
   return `/saves/${encodeURIComponent(saveId)}/records`;
 }
 
+export function reportsPath(saveId: string): string {
+  return `/saves/${encodeURIComponent(saveId)}/reports`;
+}
+
 export function cupsPath(saveId: string): string {
   return `/saves/${encodeURIComponent(saveId)}/cups`;
 }
@@ -419,6 +424,7 @@ export function routeSaveId(route: Route): string | null {
     case 'leagues':
     case 'qualifiers':
     case 'records':
+    case 'reports':
     case 'cups':
     case 'athlete':
     case 'invalidAthlete':
@@ -621,6 +627,11 @@ export function parseRoute(pathname: string, search: string): Route {
         return { name: 'notFound', path: pathname + search };
       }
       return { name: 'records', saveId };
+    case 'reports':
+      if (segments.length !== 3) {
+        return { name: 'notFound', path: pathname + search };
+      }
+      return { name: 'reports', saveId };
     case 'qualifiers': {
       // MSS-060 qualifier overview plus per-event detail:
       // `/saves/:saveId/qualifiers?season=N`,

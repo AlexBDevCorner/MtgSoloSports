@@ -20,6 +20,7 @@ import { LiveQualifierView } from './features/live/LiveQualifierView';
 import { LivePage } from './features/live/LivePage';
 import { QualifierDetailPage, QualifiersPage } from './features/qualifiers/QualifiersPage';
 import { RecordsPage } from './features/records/RecordsPage';
+import { ReportsPage } from './features/reports/ReportsPage';
 import { StandingsPage } from './features/standings/StandingsPage';
 import { TransitionRevealView } from './features/transitions/TransitionRevealView';
 import {
@@ -62,6 +63,8 @@ function viewForRoute(route: Route): View {
       return 'history';
     case 'records':
       return 'records';
+    case 'reports':
+      return 'reports';
     case 'cups':
       return 'cups';
     case 'athletes':
@@ -397,6 +400,8 @@ export default function App() {
         );
       case 'records':
         return <RecordsPage saveId={saveId} />;
+      case 'reports':
+        return <ReportsPage key={saveId} saveId={saveId} />;
       case 'leagues':
         if (route.leagueKey) {
           return <LeagueProfilePage key={`${saveId}/${route.leagueKey}`} saveId={saveId} leagueKey={route.leagueKey} />;
