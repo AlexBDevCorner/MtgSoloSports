@@ -279,7 +279,13 @@ public sealed class PublishDriveReportsHandler
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        bool anySettled = outcomes.Any(o => !string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
+        // Both reports must settle to advance the shared checkpoint. Advancing
+        // on a partial success (dossier failed, almanac updated) would mark the
+        // requested checkpoint as caught up, suppress retries and report
+        // UpToDate for an unsuccessful upload. The successful file's
+        // fingerprint is still preserved via MergeFinished; only the shared
+        // Last* checkpoint waits for both files.
+        bool allSettled = outcomes.All(o => !string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
         string? firstError = outcomes
             .Where(o => string.Equals(o.Outcome, "failed", StringComparison.Ordinal))
             .Select(o => $"{o.Report}: {o.Detail}")
@@ -298,10 +304,10 @@ public sealed class PublishDriveReportsHandler
         DrivePublishingStore.DestinationDocument finished = merged with
         {
             SaveName = context.Detail.Name,
-            LastPublishedUtc = anySettled ? now : merged.LastPublishedUtc,
-            LastSeasonNumber = anySettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
-            LastPhase = anySettled ? context.Detail.Phase : merged.LastPhase,
-            LastGlobalStage = anySettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
+            LastPublishedUtc = allSettled ? now : merged.LastPublishedUtc,
+            LastSeasonNumber = allSettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
+            LastPhase = allSettled ? context.Detail.Phase : merged.LastPhase,
+            LastGlobalStage = allSettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
             LastDossierOutcome = outcomes[0].Outcome,
             LastAlmanacOutcome = outcomes[1].Outcome,
             LastError = firstError,

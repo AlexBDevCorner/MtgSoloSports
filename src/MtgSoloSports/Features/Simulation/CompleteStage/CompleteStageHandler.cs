@@ -66,8 +66,10 @@ public sealed class CompleteStageHandler
         // calls, never before the sporting transaction commits. A partial
         // league stage leaves the global stage unchanged and never notifies;
         // only the final league's completion (global advance or season
-        // finalization) enqueues an upload.
-        if (_autoPublish is not null && await CompletedGlobalStageAsync(saveId, response, cancellationToken).ConfigureAwait(false))
+        // finalization) enqueues an upload. The boundary read and the note use
+        // an unlinked token so an HTTP disconnect after the commit cannot lose
+        // a durable checkpoint.
+        if (_autoPublish is not null && await CompletedGlobalStageAsync(saveId, response, CancellationToken.None).ConfigureAwait(false))
         {
             await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
@@ -80,14 +82,19 @@ public sealed class CompleteStageHandler
         CompleteStageResponse response,
         CancellationToken cancellationToken)
     {
+        // Post-commit durability: ignore the caller's HTTP request token. The
+        // sporting transaction already committed, so this boundary read must
+        // survive client disconnect. Never throws due to request cancellation.
+        _ = cancellationToken;
+        CancellationToken detached = CancellationToken.None;
         try
         {
             using SaveDbContext context = _store.OpenDbContext(saveId);
-            SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
-            RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-            SeasonEntity season = await AdvanceRoundHandler.LoadSeasonAsync(context, metadata, cancellationToken).ConfigureAwait(false);
+            SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, detached).ConfigureAwait(false);
+            RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, detached).ConfigureAwait(false);
+            SeasonEntity season = await AdvanceRoundHandler.LoadSeasonAsync(context, metadata, detached).ConfigureAwait(false);
             GlobalStageGate.GlobalStageView global = await GlobalStageGate
-                .LoadGlobalStageAsync(context, season, rules, cancellationToken)
+                .LoadGlobalStageAsync(context, season, rules, detached)
                 .ConfigureAwait(false);
             return global.IsSeasonComplete || global.CurrentStage != response.StageNumber;
         }
