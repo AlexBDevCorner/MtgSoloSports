@@ -31,6 +31,27 @@ public sealed class PutDriveDestinationHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
+        // Serialize with in-flight publishes on the shared per-save gate.
+        // Publish holds this gate across its whole read/Drive-write/save
+        // sequence; without it a PUT landing mid-publish would be silently
+        // overwritten when FinishAsync saves its previously loaded document.
+        SemaphoreSlim gate = DriveSaveGates.ForSave(saveId);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await HandleLockedAsync(saveId, request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<DriveDestinationResponse> HandleLockedAsync(
+        Guid saveId,
+        PutDriveDestinationRequest request,
+        CancellationToken cancellationToken)
+    {
         SaveStore.SaveDetailRecord detail = await LoadSaveAsync(saveId, cancellationToken).ConfigureAwait(false);
         NormalizedDestination normalized = NormalizeRequest(request);
         RequireFolderForAdoption(normalized);

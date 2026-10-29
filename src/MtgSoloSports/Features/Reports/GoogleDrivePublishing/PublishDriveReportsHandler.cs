@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,14 +20,16 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// </summary>
 public sealed class PublishDriveReportsHandler
 {
-    // Per-save publish serialization. Drive list-then-create sequences (find
-    // Seasons/ then create it; list by name then create the Markdown file)
-    // are not atomic against the Drive API, so two parallel first publishes
-    // for the same save could both observe "missing" and create duplicates
-    // (twin Seasons/ folders, twin reports) with a lost file-id mapping.
-    // The store's SemaphoreSlim guards single JSON files only, not the whole
-    // publish. Serialize the whole publish per save id.
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> PublishGates = new();
+    // Per-save publish/destination serialization: Drive list-then-create
+    // sequences (find Seasons/ then create it; list by name then create the
+    // Markdown file) are not atomic against the Drive API, so two parallel
+    // first publishes for the same save could both observe "missing" and
+    // create duplicates (twin Seasons/ folders, twin reports) with a lost
+    // file-id mapping. The store's SemaphoreSlim guards single JSON files
+    // only, not the whole publish. Serialize the whole publish per save id
+    // on the shared destination gate so a concurrent destination PUT cannot
+    // interleave and be lost when FinishAsync saves the updated document.
+    private static SemaphoreSlim GateFor(Guid saveId) => DriveSaveGates.ForSave(saveId);
 
     private readonly SaveStore _saves;
     private readonly DrivePublishingStore _publishing;
@@ -87,7 +88,7 @@ public sealed class PublishDriveReportsHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        SemaphoreSlim gate = PublishGates.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
+        SemaphoreSlim gate = GateFor(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -284,13 +285,23 @@ public sealed class PublishDriveReportsHandler
             .Select(o => $"{o.Report}: {o.Detail}")
             .FirstOrDefault();
 
-        DrivePublishingStore.DestinationDocument finished = current with
+        // Reload under the shared per-save gate and merge: a destination PUT
+        // holds the same gate, so in the normal single-process case latest
+        // equals current. If a writer bypassed the gate (or cross-process),
+        // preserve its newer ids/names and only overlay this publish's
+        // fingerprint updates where the file id still matches.
+        DrivePublishingStore.DestinationDocument? latest =
+            await _publishing.GetDestinationAsync(context.Detail.SaveId, cancellationToken).ConfigureAwait(false);
+        DrivePublishingStore.DestinationDocument merged = MergeFinished(
+            context.Destination, current, latest ?? current, context.Detail.CurrentSeason);
+
+        DrivePublishingStore.DestinationDocument finished = merged with
         {
             SaveName = context.Detail.Name,
-            LastPublishedUtc = anySettled ? now : current.LastPublishedUtc,
-            LastSeasonNumber = anySettled ? context.Detail.CurrentSeason : current.LastSeasonNumber,
-            LastPhase = anySettled ? context.Detail.Phase : current.LastPhase,
-            LastGlobalStage = anySettled ? context.SeasonStatus.GlobalStage : current.LastGlobalStage,
+            LastPublishedUtc = anySettled ? now : merged.LastPublishedUtc,
+            LastSeasonNumber = anySettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
+            LastPhase = anySettled ? context.Detail.Phase : merged.LastPhase,
+            LastGlobalStage = anySettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
             LastDossierOutcome = outcomes[0].Outcome,
             LastAlmanacOutcome = outcomes[1].Outcome,
             LastError = firstError,
@@ -308,6 +319,167 @@ public sealed class PublishDriveReportsHandler
             context.SeasonStatus.GlobalStage,
             now,
             outcomes);
+    }
+
+    private static DrivePublishingStore.DestinationDocument MergeFinished(
+        DrivePublishingStore.DestinationDocument original,
+        DrivePublishingStore.DestinationDocument current,
+        DrivePublishingStore.DestinationDocument latest,
+        int currentSeason)
+    {
+        // Start from the freshest config so a concurrent PUT's ids/names win.
+        DrivePublishingStore.DestinationDocument merged = latest;
+
+        // Seasons folder: publish never changes an explicitly adopted folder
+        // except to infer/create it when the original had none. If the latest
+        // still matches the original (no concurrent change), take the
+        // publish's resolved value; otherwise keep the concurrent PUT's value.
+        if (string.Equals(latest.SeasonsFolderId, original.SeasonsFolderId, StringComparison.Ordinal))
+        {
+            merged = merged with { SeasonsFolderId = current.SeasonsFolderId };
+        }
+
+        // Mtshistory folder is never changed by publish; keep latest's.
+        // (current.Mtshistory* always equals original.Mtshistory*.)
+
+        merged = MergeDossierSlot(original, current, merged, currentSeason);
+        merged = MergeAlmanacSlot(original, current, merged);
+        return merged;
+    }
+
+    private static DrivePublishingStore.DestinationDocument MergeDossierSlot(
+        DrivePublishingStore.DestinationDocument original,
+        DrivePublishingStore.DestinationDocument current,
+        DrivePublishingStore.DestinationDocument baseDoc,
+        int currentSeason)
+    {
+        (string? origId, string? origName, _, _) = DrivePublishingStore.CurrentDossierView(original, currentSeason);
+        (string? curId, string? curName, string? curFp, string? curMod) =
+            DrivePublishingStore.CurrentDossierView(current, currentSeason);
+        (string? latestId, string? latestName, _, _) = DrivePublishingStore.CurrentDossierView(baseDoc, currentSeason);
+
+        // Publish failed for dossier (no slot change): keep latest.
+        if (string.Equals(curId, origId, StringComparison.Ordinal)
+            && string.Equals(curFp, DrivePublishingStore.CurrentDossierView(original, currentSeason).Fingerprint, StringComparison.Ordinal))
+        {
+            // No fingerprint change either; nothing to overlay.
+            // Still need to handle the case where publish created history map
+            // entries for prior seasons (WithDossierSlot migrates legacy).
+            // If base lacks the map entries current has for other seasons,
+            // preserve them without overwriting the current season.
+            return MergeDossierHistory(current, baseDoc, currentSeason);
+        }
+
+        // Publish changed or updated the current-season slot.
+        bool concurrentChange = !string.Equals(latestId, origId, StringComparison.Ordinal)
+            && !string.Equals(latestId, curId, StringComparison.Ordinal);
+        if (concurrentChange)
+        {
+            // Concurrent PUT adopted a different dossier id; keep it and only
+            // preserve history for other seasons.
+            return MergeDossierHistory(current, baseDoc, currentSeason);
+        }
+
+        if (curId is null)
+        {
+            return MergeDossierHistory(current, baseDoc, currentSeason);
+        }
+
+        // A concurrent PUT may have renamed the same file while publish was
+        // in flight (same id, different name). The PUT's name wins; the
+        // publish's fingerprint still applies to the same content.
+        string fileName;
+        if (string.Equals(latestId, curId, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(latestName)
+            && !string.Equals(latestName, origName, StringComparison.Ordinal)
+            && !string.Equals(latestName, curName, StringComparison.Ordinal))
+        {
+            fileName = latestName!;
+        }
+        else
+        {
+            fileName = curName ?? ReportFilenames.SeasonDossierFileName(currentSeason, "md");
+        }
+
+        DrivePublishingStore.DestinationDocument withSlot = DrivePublishingStore.WithDossierSlot(
+            baseDoc, currentSeason, curId, fileName, curFp, curMod);
+        return MergeDossierHistory(current, withSlot, currentSeason);
+    }
+
+    private static DrivePublishingStore.DestinationDocument MergeDossierHistory(
+        DrivePublishingStore.DestinationDocument current,
+        DrivePublishingStore.DestinationDocument baseDoc,
+        int currentSeason)
+    {
+        if (current.DossierBySeason is null)
+        {
+            return baseDoc;
+        }
+
+        Dictionary<int, DrivePublishingStore.DossierSlot> map = baseDoc.DossierBySeason is null
+            ? []
+            : new Dictionary<int, DrivePublishingStore.DossierSlot>(baseDoc.DossierBySeason);
+        foreach (KeyValuePair<int, DrivePublishingStore.DossierSlot> entry in current.DossierBySeason)
+        {
+            if (entry.Key == currentSeason)
+            {
+                continue;
+            }
+
+            if (!map.ContainsKey(entry.Key))
+            {
+                map[entry.Key] = entry.Value;
+            }
+        }
+
+        return map.Count == (baseDoc.DossierBySeason?.Count ?? 0)
+            ? baseDoc
+            : baseDoc with { DossierBySeason = map };
+    }
+
+    private static DrivePublishingStore.DestinationDocument MergeAlmanacSlot(
+        DrivePublishingStore.DestinationDocument original,
+        DrivePublishingStore.DestinationDocument current,
+        DrivePublishingStore.DestinationDocument baseDoc)
+    {
+        // Publish failed for almanac or made no change: keep latest.
+        if (string.Equals(current.AlmanacFileId, original.AlmanacFileId, StringComparison.Ordinal)
+            && string.Equals(current.AlmanacFingerprint, original.AlmanacFingerprint, StringComparison.Ordinal))
+        {
+            return baseDoc;
+        }
+
+        bool concurrentChange = !string.Equals(baseDoc.AlmanacFileId, original.AlmanacFileId, StringComparison.Ordinal)
+            && !string.Equals(baseDoc.AlmanacFileId, current.AlmanacFileId, StringComparison.Ordinal);
+        if (concurrentChange)
+        {
+            return baseDoc;
+        }
+
+        if (current.AlmanacFileId is null)
+        {
+            return baseDoc;
+        }
+
+        // A concurrent PUT may have renamed the same file while publish was
+        // in flight (same id, different name). The PUT's name wins; the
+        // publish's fingerprint still applies to the same content.
+        string? fileName = current.AlmanacFileName;
+        if (string.Equals(baseDoc.AlmanacFileId, current.AlmanacFileId, StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(baseDoc.AlmanacFileName)
+            && !string.Equals(baseDoc.AlmanacFileName, original.AlmanacFileName, StringComparison.Ordinal)
+            && !string.Equals(baseDoc.AlmanacFileName, current.AlmanacFileName, StringComparison.Ordinal))
+        {
+            fileName = baseDoc.AlmanacFileName;
+        }
+
+        return baseDoc with
+        {
+            AlmanacFileId = current.AlmanacFileId,
+            AlmanacFileName = fileName,
+            AlmanacFingerprint = current.AlmanacFingerprint,
+            AlmanacRemoteModifiedTime = current.AlmanacRemoteModifiedTime,
+        };
     }
 
     private async Task EnsureNoCrossSaveReuseAsync(
@@ -441,6 +613,17 @@ public sealed class PublishDriveReportsHandler
         {
             throw new DriveConflictException(
                 $"The configured Seasons/ folder id {cached.Id} is a file, not a folder. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve. Nothing was created.");
+        }
+
+        // Folder identity is name + location: any other mtshistory child
+        // (Color Cup/Cups, Type Cup/Teams Histories, ...) must not be
+        // accepted as Seasons/, otherwise an adopted dossier there would
+        // persist the wrong folder id and later dossiers would overwrite
+        // unrelated Markdown outside the required hierarchy.
+        if (!string.Equals(cached.Name, "Seasons", StringComparison.Ordinal))
+        {
+            throw new DriveConflictException(
+                $"The configured Seasons/ folder id {cached.Id} is folder '{cached.Name}', not the 'Seasons' folder inside mtshistory. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve. Nothing was created.");
         }
 
         if (!cached.Parents.Contains(destination.MtshistoryFolderId!, StringComparer.Ordinal))
@@ -579,6 +762,7 @@ public sealed class PublishDriveReportsHandler
         if (parent is null
             || parent.Trashed
             || !string.Equals(parent.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal)
+            || !string.Equals(parent.Name, "Seasons", StringComparison.Ordinal)
             || !parent.Parents.Contains(destination.MtshistoryFolderId!, StringComparer.Ordinal))
         {
             return null;

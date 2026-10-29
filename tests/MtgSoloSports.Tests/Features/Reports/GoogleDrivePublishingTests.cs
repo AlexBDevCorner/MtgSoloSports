@@ -1048,6 +1048,145 @@ public sealed class GoogleDrivePublishingTests
         DrivePublishingStore.IsCanonicalOAuthState("../" + new string('A', 40)).ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task AdoptedDossierInNonSeasonsChild_IsNotInferredAsSeasons()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            // Any other mtshistory child (e.g. a reserved Cup hierarchy folder)
+            // must never be inferred as the Seasons/ folder.
+            drive.SeedFolder("folder-cups", "folder-mtshistory", "Cups");
+            drive.SeedFile("dossier-wrong", "folder-cups", "season-1-dossier.md", "# unrelated cups report");
+            drive.SeedFile("almanac-ok", "folder-mtshistory", "universe-almanac.md", "# old almanac");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"dossier-wrong","dossierFileName":"season-1-dossier.md","almanacFileId":"almanac-ok","almanacFileName":"universe-almanac.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("failed");
+            published.Detail("dossier")!.ShouldContain("outside the configured destination");
+            // Unrelated file must not be overwritten.
+            drive.Files["dossier-wrong"].Content.ShouldBe("# unrelated cups report");
+            // No Seasons/ folder may be created and the wrong folder must not
+            // be persisted as the Seasons folder id.
+            drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? after =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.SeasonsFolderId.ShouldBeNull();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitSeasonsFolderWithWrongName_IsRejectedWithoutCreation()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-cups", "folder-mtshistory", "Cups");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","seasonsFolderId":"folder-cups"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            published.Status.ShouldBe(HttpStatusCode.Conflict);
+            published.Body.ShouldContain("not the 'Seasons' folder");
+            drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+            using HttpResponseMessage verify = await client.PostAsync(
+                $"/api/saves/{saveId:D}/reports/drive/verify", null);
+            verify.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await verify.Content.ReadAsStringAsync());
+            Dictionary<string, string> byReport = json.RootElement.GetProperty("checks").EnumerateArray()
+                .ToDictionary(
+                    e => e.GetProperty("report").GetString()!,
+                    e => e.GetProperty("status").GetString()!,
+                    StringComparer.Ordinal);
+            byReport["seasons"].ShouldBe("outside-destination");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentPublishAndDestinationPut_DoNotLosePut()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","seasonsFolderId":"folder-seasons"}""");
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            first.Status.ShouldBe(HttpStatusCode.OK);
+
+            // Advance sporting state so the next publish must update (not
+            // report unchanged, which would never hit UpdateContent).
+            using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
+            bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            // Second publish blocks inside UpdateContent; land a PUT
+            // mid-publish. The shared gate must serialize them so the PUT wins.
+            DrivePublishingStore storeBefore = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? before =
+                await storeBefore.GetDestinationAsync(saveId, CancellationToken.None);
+            before.ShouldNotBeNull();
+            before!.AlmanacFileId.ShouldNotBeNull();
+            string almanacId = before.AlmanacFileId!;
+            string dossierId = first.FileId("dossier")!;
+            string dossierName = drive.Files[dossierId].Name;
+            drive.BlockUpdates = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<PublishResult> publishTask = PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: true, allowCreateMissing: true);
+            // Wait until the publish is inside the Drive update.
+            await drive.EnteredUpdate.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // PUT runs while publish holds the gate: it must wait, then win.
+            // Run it in the background so this test does not deadlock: the
+            // PUT blocks on the shared gate until the publish unblocks.
+            // Include the adopted ids so the PUT renames without clearing.
+            string putJson = "{\"mtshistoryFolderId\":\"folder-mtshistory\",\"seasonsFolderId\":\"folder-seasons\",\"dossierFileId\":\"" + dossierId + "\",\"dossierFileName\":\"" + dossierName + "\",\"almanacFileId\":\"" + almanacId + "\",\"almanacFileName\":\"universe-almanac-renamed.md\"}";
+            Task<HttpResponseMessage> putTask = PutJsonAsync(client, $"/api/saves/{saveId:D}/reports/drive/destination", putJson);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            drive.BlockUpdates.TrySetResult(null);
+            using HttpResponseMessage put = await putTask;
+            put.StatusCode.ShouldBe(HttpStatusCode.OK);
+            PublishResult published = await publishTask;
+            published.Status.ShouldBe(HttpStatusCode.OK);
+
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? after =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AlmanacFileName.ShouldBe("universe-almanac-renamed.md");
+            after.AlmanacFileId.ShouldNotBeNull();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed record PublishResult(
         HttpStatusCode Status,
         string[] Outcomes,
@@ -1300,6 +1439,10 @@ public sealed class GoogleDrivePublishingTests
 
         public bool FailNextCreate { get; set; }
 
+        public TaskCompletionSource<object?>? BlockUpdates { get; set; }
+
+        public TaskCompletionSource<object?> EnteredUpdate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         private int _nextId;
 
         private static long _stamp;
@@ -1431,7 +1574,7 @@ public sealed class GoogleDrivePublishingTests
             return Task.FromResult(file.ToDriveFile());
         }
 
-        public Task<DriveFile> UpdateContentAsync(
+        public async Task<DriveFile> UpdateContentAsync(
             string accessToken,
             string fileId,
             string content,
@@ -1445,10 +1588,18 @@ public sealed class GoogleDrivePublishingTests
                 throw new DriveUpstreamException("simulated update failure");
             }
 
+            if (BlockUpdates is not null)
+            {
+                EnteredUpdate.TrySetResult(null);
+                await BlockUpdates.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                CheckToken(accessToken);
+                CheckDenied(fileId);
+            }
+
             FakeFile file = Files[fileId];
             FakeFile updated = file with { Content = content, Name = newName ?? file.Name, ModifiedTime = Stamp() };
             Files[fileId] = updated;
-            return Task.FromResult(updated.ToDriveFile());
+            return updated.ToDriveFile();
         }
 
         private void CheckToken(string accessToken)

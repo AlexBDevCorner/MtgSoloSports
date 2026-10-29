@@ -172,6 +172,12 @@ public sealed class VerifyDriveDestinationHandler
             return new DriveVerifyCheck(report, "is-folder", remote.Id, remote.Name, $"That id is a file ('{remote.Name}'), not a folder. Paste a folder id for {report}.");
         }
 
+        if (string.Equals(report, "seasons", StringComparison.Ordinal)
+            && !string.Equals(remote.Name, "Seasons", StringComparison.Ordinal))
+        {
+            return new DriveVerifyCheck(report, "outside-destination", remote.Id, remote.Name, $"That folder is '{remote.Name}', not the 'Seasons' folder inside mtshistory. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve.");
+        }
+
         if (expectedParent is not null && !remote.Parents.Contains(expectedParent, StringComparer.Ordinal))
         {
             return new DriveVerifyCheck(report, "outside-destination", remote.Id, remote.Name, "That Seasons/ folder is outside the configured mtshistory folder. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve.");
