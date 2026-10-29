@@ -16,7 +16,7 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// </summary>
 public sealed class DriveAutoPublishWorker : BackgroundService
 {
-    internal static readonly TimeSpan SignalPollInterval = TimeSpan.FromSeconds(5);
+    internal static TimeSpan SignalPollInterval = TimeSpan.FromSeconds(5);
     internal const int MaxAttempts = 8;
 
     private readonly IServiceScopeFactory _scopes;
@@ -59,17 +59,66 @@ public sealed class DriveAutoPublishWorker : BackgroundService
 
     private async Task PumpOnceAsync(CancellationToken stoppingToken)
     {
-        Task<Guid> readTask = _tracker.Reader.ReadAsync(stoppingToken).AsTask();
-        Task delayTask = Task.Delay(SignalPollInterval, stoppingToken);
-        Task completed = await Task.WhenAny(readTask, delayTask).ConfigureAwait(false);
-        if (ReferenceEquals(completed, readTask))
+        Guid? signaled = await WaitForSignalAsync(stoppingToken).ConfigureAwait(false);
+        if (signaled.HasValue)
         {
-            Guid saveId = await readTask.ConfigureAwait(false);
-            await ProcessSaveAsync(saveId, stoppingToken).ConfigureAwait(false);
+            // Coalesce bursts: drain every queued signal so dozens of rapid
+            // stages collapse to one publish per save of the newest durable
+            // state, never an older report overwriting a newer one.
+            HashSet<Guid> pending = new() { signaled.Value };
+            while (_tracker.Reader.TryRead(out Guid extra))
+            {
+                pending.Add(extra);
+            }
+
+            foreach (Guid saveId in pending)
+            {
+                stoppingToken.ThrowIfCancellationRequested();
+                await ProcessSaveAsync(saveId, stoppingToken).ConfigureAwait(false);
+            }
         }
         else
         {
             await ProcessDueRetriesAsync(stoppingToken).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task<Guid?> WaitForSignalAsync(CancellationToken stoppingToken)
+    {
+        if (_tracker.Reader.TryRead(out Guid immediate))
+        {
+            return immediate;
+        }
+
+        // Await the signal with a cancellable timeout. The timeout token is
+        // disposed here, so no waiter is left registered on the channel when
+        // the poll interval elapses. Never use Task.WhenAny over ReadAsync:
+        // the losing read would stay queued and steal the next signal.
+        using CancellationTokenSource timeoutCts =
+            CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        timeoutCts.CancelAfter(SignalPollInterval);
+        try
+        {
+            bool available = await _tracker.Reader.WaitToReadAsync(timeoutCts.Token).ConfigureAwait(false);
+            if (!available)
+            {
+                return null;
+            }
+
+            if (_tracker.Reader.TryRead(out Guid signaled))
+            {
+                return signaled;
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
         }
     }
 
@@ -104,17 +153,65 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         bool connected,
         CancellationToken cancellationToken)
     {
-        if (!destination.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(destination))
+        if (!destination.AutoPublishEnabled)
         {
             return;
         }
 
-        if (destination.AutoPausedForAuth && connected)
+        // Startup reconciliation: if a stage committed but the post-commit
+        // note never persisted (cancelled HTTP token or crash between commit
+        // and note), persist it now from the durable save state. The notifier
+        // is unlinked from cancellation and no-ops when disabled,
+        // unconfigured or already caught up.
+        await ReconcileDurableCheckpointAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
+
+        DrivePublishingStore.DestinationDocument? current;
+        try
         {
-            await UnpauseOneAsync(publishing, destination.SaveId, cancellationToken).ConfigureAwait(false);
+            current = await publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Drive auto-publish startup re-read failed for save {SaveId}.", destination.SaveId);
+            return;
         }
 
-        _tracker.Signal(destination.SaveId);
+        if (current is null || !current.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(current))
+        {
+            return;
+        }
+
+        if (current.AutoPausedForAuth && connected)
+        {
+            await UnpauseOneAsync(publishing, current.SaveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        _tracker.Signal(current.SaveId);
+    }
+
+    private async Task ReconcileDurableCheckpointAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            using IServiceScope scope = _scopes.CreateScope();
+            DriveAutoPublishNotifier? notifier =
+                scope.ServiceProvider.GetService<DriveAutoPublishNotifier>();
+            if (notifier is null)
+            {
+                return;
+            }
+
+            await notifier.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Drive auto-publish startup reconcile failed for save {SaveId}.", saveId);
+        }
     }
 
     private async Task UnpauseOneAsync(

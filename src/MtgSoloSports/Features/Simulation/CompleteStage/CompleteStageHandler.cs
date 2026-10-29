@@ -69,7 +69,7 @@ public sealed class CompleteStageHandler
         // finalization) enqueues an upload.
         if (_autoPublish is not null && await CompletedGlobalStageAsync(saveId, response, cancellationToken).ConfigureAwait(false))
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;

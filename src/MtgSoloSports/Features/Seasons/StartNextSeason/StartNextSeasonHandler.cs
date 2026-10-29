@@ -56,9 +56,10 @@ public sealed class StartNextSeasonHandler
 
         // New-season boundary: a fresh stable dossier filename starts while
         // prior seasons' Drive files are preserved by the per-season mapping.
+        // Uses an unlinked token so client disconnect cannot lose the note.
         if (_autoPublish is not null)
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;

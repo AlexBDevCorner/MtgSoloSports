@@ -63,9 +63,10 @@ public sealed class AdvanceToNextEventHandler
         // stage, movement, qualifier, rebalance, Cup steps, next-season
         // start). The checkpoint note collapses duplicates; completed rounds
         // never flow through this path so sub-stage progress cannot trigger.
+        // Uses an unlinked token so client disconnect cannot lose the note.
         if (_autoPublish is not null)
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;

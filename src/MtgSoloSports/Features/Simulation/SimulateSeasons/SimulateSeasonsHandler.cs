@@ -102,9 +102,10 @@ public sealed class SimulateSeasonsHandler
         // Bulk/fast simulation commits dozens of durable global stages.
         // One coalesced checkpoint note covers the whole run; the pump
         // publishes the latest stable snapshot, not each intermediate stage.
+        // Uses an unlinked token so client disconnect cannot lose the note.
         if (_autoPublish is not null)
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;

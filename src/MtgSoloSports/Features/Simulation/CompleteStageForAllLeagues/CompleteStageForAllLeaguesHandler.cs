@@ -52,7 +52,7 @@ public sealed class CompleteStageForAllLeaguesHandler
 
         if (_autoPublish is not null)
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;
@@ -70,9 +70,10 @@ public sealed class CompleteStageForAllLeaguesHandler
         // Durable global-stage boundary committed (one transaction per
         // league). Local checkpoint note only; bulk/fast callers that reuse
         // this operation collapse duplicate notifications to the latest state.
+        // Uses an unlinked token so client disconnect cannot lose the note.
         if (_autoPublish is not null)
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
 
         return response;

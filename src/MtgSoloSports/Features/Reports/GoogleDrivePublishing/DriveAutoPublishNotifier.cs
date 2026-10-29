@@ -51,11 +51,18 @@ public sealed class DriveAutoPublishNotifier
             return;
         }
 
+        // Post-commit durability: the sporting transaction already committed,
+        // so this local checkpoint note must survive HTTP client disconnect or
+        // cancellation. Intentionally ignore the caller's request token and use
+        // an unlinked token for the gate plus local file/DB reads/writes.
+        // Never throws (including OperationCanceledException) so publishing
+        // can never fail a sporting command.
+        _ = cancellationToken;
         try
         {
-            await NotifyLockedAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await NotifyLockedAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
             // Publishing is an optional side effect: sporting progression
             // must never fail because the checkpoint note could not be read.
