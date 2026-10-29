@@ -29,6 +29,7 @@ internal static class UniverseAlmanacMarkdown
         sb.AppendLine();
         sb.AppendLine(CultureInfo.InvariantCulture, $"Save: {metadata.Name} (`{saveId:D}`) · Seasons {data.FromSeasonNumber}–{data.ToSeasonNumber} ({data.SeasonCount} seasons) · Current Season {metadata.CurrentSeason} · Phase {metadata.Phase}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Scope: all-time curated reference as of this snapshot · Report: {ReportContract.UniverseAlmanacReportType} v{ReportContract.SchemaVersion} · Rules v{rules.Version} · Schema v{metadata.SchemaVersion}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Generated: {DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture)} (UTC; metadata only)");
         sb.AppendLine();
         sb.AppendLine("- Freshness: uploads become stale as simulation advances; re-export this almanac occasionally and a fresh season dossier for new coverage before quoting.");
         sb.AppendLine("- Units: weighted Hall of Fame career points measure all-time greatness (weights version labelled below); official Total league points are fixed-point thousandths (divide by 1000) summed from final season tables and never mixed with weighted points.");

@@ -171,6 +171,7 @@ public sealed class SeasonDossierAlmanacApiTests
         mdBody.ShouldContain("pending");
         mdBody.ShouldContain("no Superleague in Season 1");
         mdBody.ShouldContain("none (Season 1 has no defender)");
+        mdBody.ShouldContain("Generated:");
     }
 
     private static (string ChampionName, int ChampionPoints) AssertDossierSeason1Json(string jsonBody)
@@ -228,6 +229,7 @@ public sealed class SeasonDossierAlmanacApiTests
         mdBody.ShouldContain("## Historical perspective");
         mdBody.ShouldContain("## Official career records");
         mdBody.ShouldContain("stale");
+        mdBody.ShouldContain("Generated:");
     }
 
     private static async Task AssertAlmanacAsync(HttpClient client, Guid saveId, string jsonBody)
@@ -269,6 +271,7 @@ public sealed class SeasonDossierAlmanacApiTests
         mdBody.ShouldContain("## Superleague points leaders");
         mdBody.ShouldContain("different statistic");
         mdBody.ShouldContain("stale");
+        mdBody.ShouldContain("Generated:");
     }
 
     private static async Task<string> GetDossierJsonAsync(HttpClient client, Guid saveId, int seasonNumber)

@@ -34,6 +34,7 @@ internal static class SeasonDossierMarkdown
         sb.AppendLine(CultureInfo.InvariantCulture, $"Save: {metadata.Name} (`{saveId:D}`) · Season {data.SeasonNumber} (season id {data.SeasonId}) · {seasonCount} season(s) in save");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Scope: season {data.SeasonNumber} only · Snapshot: {statusLabel}, {data.CompletedStages}/{data.TotalStages} stages, global stage {data.GlobalStage}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Report: {ReportContract.SeasonDossierReportType} v{ReportContract.SchemaVersion} · Rules v{rules.Version} · Schema v{metadata.SchemaVersion}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Generated: {DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture)} (UTC; metadata only)");
         sb.AppendLine();
         string checksum = string.IsNullOrEmpty(data.SeasonChecksum) ? "pending (no completed stages)" : $"`{data.SeasonChecksum}`";
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Status: {data.Status} (isFinal={data.IsFinal.ToString().ToLowerInvariant()}) · Checksum {checksum}");
