@@ -50,6 +50,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [almanacFileName, setAlmanacFileName] = useState('');
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
+  const [allowCreateMissing, setAllowCreateMissing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishDriveResponse | null>(null);
   const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
 
@@ -602,6 +603,17 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   Overwrite independently edited Drive files
                 </span>
               </label>
+              <label className="field">
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={allowCreateMissing}
+                    disabled={driveBusy !== null}
+                    onChange={(event) => setAllowCreateMissing(event.target.checked)}
+                  />{' '}
+                  Allow creating missing folders/files
+                </span>
+              </label>
               <button
                 type="button"
                 className="ghost-button"
@@ -629,6 +641,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   void publishDriveReports(saveId, {
                     confirmCrossSave,
                     allowOverwriteEditedRemote: allowOverwrite,
+                    allowCreateMissing,
                   })
                     .then((result) => {
                       setPublishResult(result);

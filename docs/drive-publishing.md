@@ -89,8 +89,14 @@ API returns `503` with setup guidance instead of failing obscurely.
   HTTPS app URL and is not available for localhost, so it is not the supported
   path here.
 - Leave a file id empty to create a new file on the next publish, using the
-  stable names `season-<N>-dossier.md` (under an auto-created `Seasons/`
-  subfolder) and `universe-almanac-<save-slug>.md`.
+  stable names `season-<N>-dossier.md` (under `Seasons/`) and
+  `universe-almanac-<save-slug>.md`. With `drive.file`, an empty scoped
+  listing does **not** prove a name is free (an existing but ungranted
+  `Seasons/` folder or report is hidden as missing). Publishing therefore
+  fails closed without creating a duplicate unless **Allow creating missing
+  folders/files** is ticked for that Publish; Verify reports the same caveat.
+  Tick the box only when you know no hidden pre-existing folder/file with that
+  name exists, or adopt the existing object explicitly with Choose from Drive.
 - Each season keeps its own dossier mapping. Publishing season N+1 creates or
   updates `Seasons/season-(N+1)-dossier.md` while preserving the prior
   season's Drive file and mapping; it never overwrites the previous season's
@@ -117,6 +123,10 @@ API returns `503` with setup guidance instead of failing obscurely.
 - If a Drive file was edited independently since the last publish, publishing
   stops with a conflict instead of silently discarding edits. Tick **Overwrite
   independently edited Drive files** to replace them deliberately.
+- Missing `Seasons/` or report files are created only when **Allow creating
+  missing folders/files** is ticked; otherwise publishing stops with guidance
+  and creates nothing, because an empty `drive.file` listing does not prove the
+  name is free.
 - Per-file outcomes (`created`/`updated`/`unchanged`/`failed`) plus the last
   published season/stage/phase are shown in the UI and kept server-side.
 - Google or network failures return `502`/`401`/`409` diagnostics; simulation
@@ -126,7 +136,10 @@ Tokens and destinations live in `/data/drive-publishing` (owner-only files),
 separate from sports saves and backup ZIPs, and survive container restarts.
 The Compose port is localhost-bound (`127.0.0.1:8080:8080`): the publishing
 endpoints trust the local browser and hold Google refresh credentials
-server-side, so they must not be exposed to the LAN.
+server-side, so they must not be exposed to the LAN. Mutating Drive endpoints
+(`PUT destination`, `POST publish/verify/disconnect`) additionally reject
+cross-origin `Origin`/`Referer` hosts with `403` (requests without either
+header, e.g. curl, are allowed); use the local Reports page origin.
 **Disconnect** revokes the grant (best effort) and deletes local tokens;
 destinations are kept for the next connect. Expired/revoked consent is
 detected on the next publish and asks you to reconnect.

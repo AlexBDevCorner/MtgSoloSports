@@ -80,7 +80,7 @@ public sealed class PublishDriveReportsHandler
         PublishContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
         ReportSnapshots snapshots = await GenerateSnapshotsAsync(context, cancellationToken).ConfigureAwait(false);
         (List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current) published =
-            await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, cancellationToken).ConfigureAwait(false);
+            await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, request.AllowCreateMissing, cancellationToken).ConfigureAwait(false);
         return await FinishAsync(context, snapshots, published.Outcomes, published.Current, cancellationToken).ConfigureAwait(false);
     }
 
@@ -183,9 +183,10 @@ public sealed class PublishDriveReportsHandler
         PublishContext context,
         ReportSnapshots snapshots,
         bool allowOverwriteEditedRemote,
+        bool allowCreateMissing,
         CancellationToken cancellationToken)
     {
-        string seasonsFolderId = await EnsureSeasonsFolderAsync(context.Destination, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
+        string seasonsFolderId = await EnsureSeasonsFolderAsync(context.Destination, context.Detail.CurrentSeason, allowCreateMissing, cancellationToken).ConfigureAwait(false);
         DrivePublishingStore.DestinationDocument current =
             await _publishing.GetDestinationAsync(context.Detail.SaveId, cancellationToken).ConfigureAwait(false)
             ?? context.Destination;
@@ -212,14 +213,14 @@ public sealed class PublishDriveReportsHandler
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) dossierResult =
             await PublishOneAsync(current, "dossier", dossierFileId, effectiveDossierExplicit, stableDossierName,
                 seasonsFolderId, snapshots.DossierMarkdown, snapshots.DossierFingerprint,
-                dossierLast, allowOverwriteEditedRemote, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
+                dossierLast, allowOverwriteEditedRemote, allowCreateMissing, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
         outcomes.Add(dossierResult.Outcome);
         current = dossierResult.Updated;
 
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) almanacResult =
             await PublishOneAsync(current, "almanac", current.AlmanacFileId, effectiveAlmanacExplicit, stableAlmanacName,
                 current.MtshistoryFolderId!, snapshots.AlmanacMarkdown, snapshots.AlmanacFingerprint,
-                current.AlmanacFingerprint, allowOverwriteEditedRemote, null, cancellationToken).ConfigureAwait(false);
+                current.AlmanacFingerprint, allowOverwriteEditedRemote, allowCreateMissing, null, cancellationToken).ConfigureAwait(false);
         outcomes.Add(almanacResult.Outcome);
         current = almanacResult.Updated;
         return (outcomes, current);
@@ -371,6 +372,7 @@ public sealed class PublishDriveReportsHandler
     private async Task<string> EnsureSeasonsFolderAsync(
         DrivePublishingStore.DestinationDocument destination,
         int currentSeason,
+        bool allowCreateMissing,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(destination.SeasonsFolderId))
@@ -390,7 +392,7 @@ public sealed class PublishDriveReportsHandler
             return await ResolveAdoptedSeasonsAsync(destination, adoptedDossierId, cancellationToken).ConfigureAwait(false);
         }
 
-        return await FindOrCreateSeasonsAsync(destination, cancellationToken).ConfigureAwait(false);
+        return await FindOrCreateSeasonsAsync(destination, allowCreateMissing, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<string> VerifyExplicitSeasonsAsync(
@@ -465,6 +467,7 @@ public sealed class PublishDriveReportsHandler
 
     private async Task<string> FindOrCreateSeasonsAsync(
         DrivePublishingStore.DestinationDocument destination,
+        bool allowCreateMissing,
         CancellationToken cancellationToken)
     {
         DriveFile? existing = await WithAuthAsync(
@@ -474,6 +477,16 @@ public sealed class PublishDriveReportsHandler
         {
             await _publishing.SaveDestinationAsync(destination with { SeasonsFolderId = existing.Id }, cancellationToken).ConfigureAwait(false);
             return existing.Id;
+        }
+
+        // Fail closed: with drive.file an existing but ungranted Seasons/
+        // folder yields an empty listing. Empty does not prove the name is
+        // free, so creating here could leave two Seasons/ folders. Require
+        // explicit Seasons adoption or explicit creation confirmation.
+        if (!allowCreateMissing)
+        {
+            throw new DriveConflictException(
+                "Seasons/ was not found in the granted mtshistory folder. With drive.file an existing but ungranted Seasons/ folder is hidden as missing (empty listing does not prove the name is free). To avoid a duplicate folder, adopt the existing Seasons/ folder explicitly with Choose from Drive (then Save + Verify), or re-run Publish with creation of missing folders/files confirmed. Nothing was created.");
         }
 
         DriveFile created = await WithAuthAsync(
@@ -566,13 +579,14 @@ public sealed class PublishDriveReportsHandler
         string newFingerprint,
         string? lastFingerprint,
         bool allowOverwriteEditedRemote,
+        bool allowCreateMissing,
         int? dossierSeason,
         CancellationToken cancellationToken)
     {
         string desiredForCreate = string.IsNullOrWhiteSpace(explicitName) ? defaultName : explicitName!;
         if (storedFileId is null)
         {
-            return await CreateNewAsync(destination, report, desiredForCreate, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+            return await CreateNewAsync(destination, report, desiredForCreate, parentFolderId, markdown, newFingerprint, dossierSeason, allowCreateMissing, cancellationToken).ConfigureAwait(false);
         }
 
         (DriveFile? remote, DriveFileOutcome? denied) = await LoadRemoteFileAsync(report, storedFileId, desiredForCreate, newFingerprint, cancellationToken).ConfigureAwait(false);
@@ -793,6 +807,7 @@ public sealed class PublishDriveReportsHandler
         string markdown,
         string newFingerprint,
         int? dossierSeason,
+        bool allowCreateMissing,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<DriveFile>? matches;
@@ -818,6 +833,17 @@ public sealed class PublishDriveReportsHandler
         {
             return (Failed(report, null, desiredName,
                 $"Found {matches.Count} files named '{desiredName}' in the destination. Adopt exactly one file id explicitly; nothing was created.", newFingerprint),
+                destination);
+        }
+
+        // Fail closed: with drive.file an existing but ungranted report with
+        // the same name yields an empty listing. Empty does not prove the name
+        // is free, so creating here could leave two same-named reports.
+        // Require explicit adoption or explicit creation confirmation.
+        if (!allowCreateMissing)
+        {
+            return (Failed(report, null, desiredName,
+                $"No visible file named '{desiredName}' was found in the destination. With drive.file an existing but ungranted file with the same name is hidden (empty listing does not prove the name is free). To avoid a duplicate, adopt the existing file explicitly with Choose from Drive (then Save + Verify), or re-run Publish with creation of missing folders/files confirmed. Nothing was created.", newFingerprint),
                 destination);
         }
 

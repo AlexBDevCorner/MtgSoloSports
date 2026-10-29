@@ -10,9 +10,16 @@ public static class VerifyDriveDestinationEndpoint
         app.MapPost("/api/saves/{saveId:guid}/reports/drive/verify", async (
             Guid saveId,
             VerifyDriveDestinationHandler handler,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(handler);
+            ArgumentNullException.ThrowIfNull(httpContext);
+            IResult? blocked = DriveCsrfGuard.BlockIfUnsafe(httpContext.Request);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
             try
             {
                 VerifyDriveDestinationHandler.DriveVerifyResponse response = await handler.HandleAsync(saveId, cancellationToken).ConfigureAwait(false);

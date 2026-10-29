@@ -11,9 +11,16 @@ public static class PutDriveDestinationEndpoint
             Guid saveId,
             PutDriveDestinationRequest request,
             PutDriveDestinationHandler handler,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(handler);
+            ArgumentNullException.ThrowIfNull(httpContext);
+            IResult? blocked = DriveCsrfGuard.BlockIfUnsafe(httpContext.Request);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
             try
             {
                 ArgumentNullException.ThrowIfNull(request);

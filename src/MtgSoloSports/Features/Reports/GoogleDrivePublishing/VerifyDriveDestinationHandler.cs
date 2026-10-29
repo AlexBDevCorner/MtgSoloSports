@@ -131,7 +131,7 @@ public sealed class VerifyDriveDestinationHandler
                     return found.Id;
                 }
 
-                checks.Add(new DriveVerifyCheck("seasons", "not-found", null, "Seasons", "Seasons/ was not found; publishing will create it inside the granted mtshistory folder."));
+                checks.Add(new DriveVerifyCheck("seasons", "not-found", null, "Seasons", "Seasons/ was not found among visible folders. With drive.file an existing but ungranted Seasons/ folder is hidden (empty listing does not prove the name is free); publishing fails closed without creating a duplicate unless creation of missing folders/files is explicitly confirmed. Adopt the existing Seasons/ folder with Choose from Drive or confirm creation on Publish."));
                 return null;
             }
             catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -319,7 +319,7 @@ public sealed class VerifyDriveDestinationHandler
 
         return matches.Count switch
         {
-            0 => new DriveVerifyCheck(report, "ok", null, desiredName, $"No file named '{desiredName}' exists yet; publishing will create it."),
+            0 => new DriveVerifyCheck(report, "ok", null, desiredName, $"No visible file named '{desiredName}' was found. With drive.file an ungranted pre-existing file with the same name is hidden (empty listing does not prove the name is free); publishing fails closed without creating a duplicate unless creation of missing folders/files is explicitly confirmed, or adopt the existing file with Choose from Drive."),
             1 => new DriveVerifyCheck(report, "needs-adoption", matches[0].Id, desiredName, $"A file named '{desiredName}' already exists (id {matches[0].Id}). Adopt it explicitly to update in place instead of creating a duplicate."),
             _ => new DriveVerifyCheck(report, "duplicate", null, desiredName, $"Found {matches.Count} files named '{desiredName}'. Adopt exactly one file id explicitly."),
         };

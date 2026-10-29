@@ -10,9 +10,16 @@ public static class DisconnectDriveEndpoint
         app.MapPost("/api/saves/{saveId:guid}/reports/drive/disconnect", async (
             Guid saveId,
             DisconnectDriveHandler handler,
+            HttpContext httpContext,
             CancellationToken cancellationToken) =>
         {
             ArgumentNullException.ThrowIfNull(handler);
+            ArgumentNullException.ThrowIfNull(httpContext);
+            IResult? blocked = DriveCsrfGuard.BlockIfUnsafe(httpContext.Request);
+            if (blocked is not null)
+            {
+                return blocked;
+            }
             try
             {
                 await handler.HandleAsync(saveId, cancellationToken).ConfigureAwait(false);

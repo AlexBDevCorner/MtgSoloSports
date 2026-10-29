@@ -158,7 +158,7 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
 
 export function publishDriveReports(
   saveId: string,
-  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean },
+  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean; allowCreateMissing?: boolean },
 ): Promise<PublishDriveResponse> {
   return fetchJson<PublishDriveResponse>(drivePublishUrl(saveId), {
     method: 'POST',

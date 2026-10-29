@@ -53,8 +53,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
-            published.Status.ShouldBe(HttpStatusCode.OK);
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             published.Outcomes.ShouldBe(["dossier:created", "almanac:created"]);
             await AssertStoredMatchesDownloadAsync(client, saveId, drive);
         }
@@ -76,7 +75,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            _ = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            _ = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             int filesAfterFirst = drive.Files.Count;
             filesAfterFirst.ShouldBe(3);
             PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
@@ -101,7 +100,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
             bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
             PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
@@ -158,7 +157,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            _ = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            _ = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             int baseline = drive.Files.Count;
             // Plant two same-named candidates in the Seasons folder, then clear
             // the adopted dossier id so the next publish takes the create path.
@@ -190,7 +189,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             string dossierId = first.FileId("dossier")!;
             drive.Files[dossierId] = drive.Files[dossierId] with { Content = "# hand-edited by user\n" };
             PublishResult blocked = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
@@ -219,7 +218,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
             bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
             (long rng, long stream, _) = await ReadRngAndStandingsAsync(root, saveId);
@@ -332,7 +331,7 @@ public sealed class GoogleDrivePublishingTests
             await SeedConnectionAsync(factory, accessToken: "stale-access", expiresInSeconds: -60);
             drive.OnlyAcceptTokens.Add("access-1");
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             published.Status.ShouldBe(HttpStatusCode.OK);
             oauth.RefreshCalls.ShouldBeGreaterThanOrEqualTo(1);
         }
@@ -431,7 +430,7 @@ public sealed class GoogleDrivePublishingTests
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
-            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             first.Status.ShouldBe(HttpStatusCode.OK);
             string dossierIdA = first.FileId("dossier")!;
             string contentA = drive.Files[dossierIdA].Content;
@@ -456,7 +455,7 @@ public sealed class GoogleDrivePublishingTests
             };
             await store.SaveDestinationAsync(stale, CancellationToken.None);
 
-            PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
             second.Status.ShouldBe(HttpStatusCode.OK);
             second.Outcome("dossier").ShouldBe("created");
             string dossierIdB = second.FileId("dossier")!;
@@ -663,6 +662,107 @@ public sealed class GoogleDrivePublishingTests
             published.Status.ShouldBe(HttpStatusCode.Conflict);
             // No Seasons/ folder may be created inside the destination.
             drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MissingSeasonsWithoutCreateConfirmation_FailsClosedWithoutDuplicate()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            // No Seasons folder, no adopted dossier, no creation confirmation:
+            // with drive.file an empty listing does not prove the name is free,
+            // so publishing must fail closed instead of creating a duplicate.
+            PublishResult blocked = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: false);
+            blocked.Status.ShouldBe(HttpStatusCode.Conflict);
+            blocked.Body.ShouldContain("does not prove the name is free");
+            drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+            // Explicit creation confirmation allows the first publish.
+            PublishResult created = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            created.Status.ShouldBe(HttpStatusCode.OK);
+            created.Outcome("dossier").ShouldBe("created");
+            drive.FoldersFor("folder-mtshistory", "Seasons").Count.ShouldBe(1);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MissingFilesWithoutCreateConfirmation_FailClosedWithoutDuplicate()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","seasonsFolderId":"folder-seasons"}""");
+            PublishResult blocked = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: false);
+            blocked.Status.ShouldBe(HttpStatusCode.OK);
+            blocked.Outcome("dossier").ShouldBe("failed");
+            blocked.Outcome("almanac").ShouldBe("failed");
+            blocked.Detail("dossier")!.ShouldContain("does not prove the name is free");
+            blocked.Detail("almanac")!.ShouldContain("does not prove the name is free");
+            drive.Files.Values
+                .Where(f => !string.Equals(f.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+                .ShouldBeEmpty();
+            PublishResult created = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            created.Outcomes.ShouldBe(["dossier:created", "almanac:created"]);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CrossOriginDriveRequests_AreBlocked()
+    {
+        var (factory, root, _, _) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            using HttpRequestMessage evilPublish = new(HttpMethod.Post, $"/api/saves/{saveId:D}/reports/drive/publish");
+            evilPublish.Headers.Add("Origin", "https://evil.example");
+            evilPublish.Content = new StringContent("""{"confirmCrossSave":false,"allowOverwriteEditedRemote":false,"allowCreateMissing":true}""", Encoding.UTF8, "application/json");
+            using HttpResponseMessage blockedPublish = await client.SendAsync(evilPublish);
+            blockedPublish.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            using HttpRequestMessage evilDisconnect = new(HttpMethod.Post, $"/api/saves/{saveId:D}/reports/drive/disconnect");
+            evilDisconnect.Headers.Add("Origin", "https://evil.example");
+            using HttpResponseMessage blockedDisconnect = await client.SendAsync(evilDisconnect);
+            blockedDisconnect.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            using HttpRequestMessage evilDestination = new(HttpMethod.Put, $"/api/saves/{saveId:D}/reports/drive/destination");
+            evilDestination.Headers.Add("Origin", "https://evil.example");
+            evilDestination.Content = new StringContent("""{"mtshistoryFolderId":"folder-mtshistory"}""", Encoding.UTF8, "application/json");
+            using HttpResponseMessage blockedDestination = await client.SendAsync(evilDestination);
+            blockedDestination.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            // Same-origin (no Origin header, like curl/tests) still works.
+            using HttpResponseMessage ok = await client.PostAsync($"/api/saves/{saveId:D}/reports/drive/verify", null);
+            ok.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
         finally
         {
@@ -997,9 +1097,10 @@ public sealed class GoogleDrivePublishingTests
         HttpClient client,
         Guid saveId,
         bool confirmCrossSave,
-        bool allowOverwrite)
+        bool allowOverwrite,
+        bool allowCreateMissing = false)
     {
-        string body = JsonSerializer.Serialize(new { confirmCrossSave, allowOverwriteEditedRemote = allowOverwrite });
+        string body = JsonSerializer.Serialize(new { confirmCrossSave, allowOverwriteEditedRemote = allowOverwrite, allowCreateMissing });
         using HttpResponseMessage response = await client.PostAsync(
             $"/api/saves/{saveId:D}/reports/drive/publish",
             new StringContent(body, Encoding.UTF8, "application/json")).ConfigureAwait(false);
