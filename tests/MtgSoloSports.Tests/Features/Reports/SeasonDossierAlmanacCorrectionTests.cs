@@ -311,6 +311,46 @@ public sealed class SeasonDossierAlmanacCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task Dossier_History_Season1FeederChampionIsNotSuperleagueDefender()
+    {
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-dossier-superdef-");
+        try
+        {
+            using SaveDbContext context = store.OpenDbContext(saveId);
+            SeasonEntity season2 = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 2);
+            List<SeasonEntity> window = await SeasonDossierHistoryQueries.LoadWindowAsync(context, season2, CancellationToken.None);
+            window.Select(s => s.SeasonNumber).ShouldBe([1, 2]);
+            Dictionary<int, string> names = await UniverseAlmanacQueries.LoadNamesAsync(context, CancellationToken.None);
+            IReadOnlyList<ChampionSeasonEntry> champions = await SeasonDossierHistoryQueries.LoadChampionsAsync(context, window, names, CancellationToken.None);
+            ChampionSeasonEntry seasonOne = champions.Single(e => e.SeasonNumber == 1);
+            seasonOne.HasSuperleague.ShouldBeFalse();
+            seasonOne.Champion.ShouldBeNull();
+            (PodiumEntry? previous, PodiumEntry? defending) = SeasonDossierHistoryQueries.PickPreviousAndDefending(window, champions);
+            previous.ShouldBeNull();
+            defending.ShouldBeNull();
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public void Dossier_PickSuperleagueBySeason_IgnoresFeederFallback()
+    {
+        var season1 = new SeasonEntity { Id = 1, SeasonNumber = 1, IsComplete = true, HasSuperleague = false };
+        var season2 = new SeasonEntity { Id = 2, SeasonNumber = 2, IsComplete = false, HasSuperleague = true };
+        List<LeagueEntity> leagues =
+        [
+            new() { Id = 10, SeasonId = 1, Kind = (int)LeagueKind.Feeder, Name = "White League", SportingColor = 0 },
+            new() { Id = 20, SeasonId = 2, Kind = (int)LeagueKind.Superleague, Name = "Superleague", SportingColor = 0 },
+        ];
+        Dictionary<int, int> picked = SeasonDossierHistoryQueries.PickSuperleagueBySeason([season1, season2], leagues);
+        picked.ContainsKey(1).ShouldBeFalse();
+        picked[2].ShouldBe(20);
+    }
+
     private static GetTypeCupTournamentResponse BuildPartialTournament()
     {
         List<TypeCupTournamentQualificationGroup> groups =

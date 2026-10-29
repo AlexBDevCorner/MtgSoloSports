@@ -55,34 +55,12 @@ public sealed class SeasonDossierAlmanacApiTests
             await CompleteOneStageAsync(client, saveId);
             string jsonBody = await GetDossierJsonAsync(client, saveId, 2);
             using JsonDocument json = JsonDocument.Parse(jsonBody);
-            json.RootElement.GetProperty("schemaVersion").GetInt32().ShouldBe(1);
-            json.RootElement.GetProperty("reportType").GetString().ShouldBe("season-dossier");
-            json.RootElement.GetProperty("scope").GetProperty("seasonNumber").GetInt32().ShouldBe(2);
-            json.RootElement.GetProperty("snapshot").GetProperty("status").GetString().ShouldBe("provisional");
-            json.RootElement.GetProperty("snapshot").GetProperty("isFinal").GetBoolean().ShouldBeFalse();
-            json.RootElement.GetProperty("snapshot").GetProperty("completedStages").GetInt32().ShouldBe(1);
-            JsonElement table = json.RootElement.GetProperty("superleague").GetProperty("table");
-            table.GetArrayLength().ShouldBe(32);
-            var ranks = table.EnumerateArray().Select(r => r.GetProperty("rank").GetInt32()).ToList();
-            ranks.ShouldBe(Enumerable.Range(1, 32).ToList());
-            foreach (JsonElement row in table.EnumerateArray())
-            {
-                row.GetProperty("zone").ValueKind.ShouldBe(JsonValueKind.Null);
-            }
-
-            json.RootElement.GetProperty("colorCup").GetProperty("state").GetString().ShouldBe("NotHeld");
-            json.RootElement.GetProperty("typeCup").GetProperty("state").GetString().ShouldBe("NotHeld");
-            json.RootElement.GetProperty("history").GetProperty("previousSeasonNumber").GetInt32().ShouldBe(1);
-            JsonElement previous = json.RootElement.GetProperty("history").GetProperty("previousChampion");
-            previous.ValueKind.ShouldNotBe(JsonValueKind.Null);
-            previous.GetProperty("athleteId").GetInt32().ShouldBeGreaterThan(0);
+            AssertSeason2Snapshot(json);
+            AssertSeason2HistoryNoSuperleagueDefender(json);
             using HttpResponseMessage md = await client.GetAsync($"/api/saves/{saveId:D}/reports/season/2?format=md");
             md.StatusCode.ShouldBe(HttpStatusCode.OK);
             string mdBody = await md.Content.ReadAsStringAsync();
-            mdBody.ShouldContain("# Season dossier — Season 2");
-            mdBody.ShouldContain("provisional");
-            mdBody.ShouldContain("pending");
-            mdBody.ShouldContain(previous.GetProperty("athleteName").GetString()!);
+            AssertSeason2Markdown(mdBody);
         }
         finally
         {
@@ -152,6 +130,47 @@ public sealed class SeasonDossierAlmanacApiTests
     {
         (string championName, int championPoints) = AssertDossierSeason1Json(jsonBody);
         await AssertDossierSeason1MarkdownAsync(client, saveId, championName, championPoints).ConfigureAwait(false);
+    }
+
+    private static void AssertSeason2Snapshot(JsonDocument json)
+    {
+        json.RootElement.GetProperty("schemaVersion").GetInt32().ShouldBe(1);
+        json.RootElement.GetProperty("reportType").GetString().ShouldBe("season-dossier");
+        json.RootElement.GetProperty("scope").GetProperty("seasonNumber").GetInt32().ShouldBe(2);
+        json.RootElement.GetProperty("snapshot").GetProperty("status").GetString().ShouldBe("provisional");
+        json.RootElement.GetProperty("snapshot").GetProperty("isFinal").GetBoolean().ShouldBeFalse();
+        json.RootElement.GetProperty("snapshot").GetProperty("completedStages").GetInt32().ShouldBe(1);
+        JsonElement table = json.RootElement.GetProperty("superleague").GetProperty("table");
+        table.GetArrayLength().ShouldBe(32);
+        var ranks = table.EnumerateArray().Select(r => r.GetProperty("rank").GetInt32()).ToList();
+        ranks.ShouldBe(Enumerable.Range(1, 32).ToList());
+        foreach (JsonElement row in table.EnumerateArray())
+        {
+            row.GetProperty("zone").ValueKind.ShouldBe(JsonValueKind.Null);
+        }
+
+        json.RootElement.GetProperty("colorCup").GetProperty("state").GetString().ShouldBe("NotHeld");
+        json.RootElement.GetProperty("typeCup").GetProperty("state").GetString().ShouldBe("NotHeld");
+    }
+
+    private static void AssertSeason2HistoryNoSuperleagueDefender(JsonDocument json)
+    {
+        json.RootElement.GetProperty("history").GetProperty("previousSeasonNumber").GetInt32().ShouldBe(1);
+        json.RootElement.GetProperty("history").GetProperty("previousChampion").ValueKind.ShouldBe(JsonValueKind.Null);
+        json.RootElement.GetProperty("history").GetProperty("defendingChampion").ValueKind.ShouldBe(JsonValueKind.Null);
+        JsonElement lastFive = json.RootElement.GetProperty("history").GetProperty("championsLastFive");
+        JsonElement seasonOne = lastFive.EnumerateArray().Single(e => e.GetProperty("seasonNumber").GetInt32() == 1);
+        seasonOne.GetProperty("champion").ValueKind.ShouldBe(JsonValueKind.Null);
+        seasonOne.GetProperty("hasSuperleague").GetBoolean().ShouldBeFalse();
+    }
+
+    private static void AssertSeason2Markdown(string mdBody)
+    {
+        mdBody.ShouldContain("# Season dossier — Season 2");
+        mdBody.ShouldContain("provisional");
+        mdBody.ShouldContain("pending");
+        mdBody.ShouldContain("no Superleague in Season 1");
+        mdBody.ShouldContain("none (Season 1 has no defender)");
     }
 
     private static (string ChampionName, int ChampionPoints) AssertDossierSeason1Json(string jsonBody)

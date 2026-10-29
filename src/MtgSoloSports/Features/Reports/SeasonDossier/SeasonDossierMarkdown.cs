@@ -361,7 +361,9 @@ internal static class SeasonDossierMarkdown
         foreach (ChampionSeasonEntry entry in data.History.ChampionsLastFive)
         {
             string champion = entry.Champion is null
-                ? (entry.IsComplete ? "— (no persisted champion; corrupted if final)" : "pending (season in progress)")
+                ? (!entry.HasSuperleague
+                    ? $"— (no Superleague in Season {entry.SeasonNumber})"
+                    : entry.IsComplete ? "— (no persisted champion; corrupted if final)" : "pending (season in progress)")
                 : $"{ReportMarkdown.Cell(entry.Champion.AthleteName)} (id {entry.Champion.AthleteId}) · {ReportMarkdown.FormatPoints(entry.Champion.PointsThousandths)}";
             sb.AppendLine(CultureInfo.InvariantCulture, $"- Season {entry.SeasonNumber} {(entry.IsComplete ? "final" : "provisional")}: {champion}");
         }

@@ -70,14 +70,15 @@ internal static class SeasonDossierHistoryQueries
         foreach (SeasonEntity season in window.OrderBy(s => s.SeasonNumber))
         {
             PodiumEntry? podium = null;
-            if (superleagueBySeason.TryGetValue(season.Id, out int leagueId)
+            bool hasSuperleague = superleagueBySeason.TryGetValue(season.Id, out int leagueId);
+            if (hasSuperleague
                 && byKey.TryGetValue((season.Id, leagueId), out SeasonStandingEntity? row))
             {
                 names.TryGetValue(row.SaveAthleteId, out string? name);
                 podium = new PodiumEntry(row.SaveAthleteId, name ?? $"Athlete {row.SaveAthleteId}", row.TotalChampionshipPointsThousandths);
             }
 
-            entries.Add(new ChampionSeasonEntry(season.SeasonNumber, podium, season.IsComplete));
+            entries.Add(new ChampionSeasonEntry(season.SeasonNumber, podium, season.IsComplete, hasSuperleague));
         }
 
         return entries;
@@ -88,13 +89,15 @@ internal static class SeasonDossierHistoryQueries
         Dictionary<int, int> picked = new();
         foreach (SeasonEntity season in window)
         {
-            List<LeagueEntity> seasonLeagues = leagues.Where(l => l.SeasonId == season.Id).OrderBy(l => l.Id).ToList();
-            if (seasonLeagues.Count == 0)
+            LeagueEntity? official = leagues
+                .Where(l => l.SeasonId == season.Id && l.Kind == (int)LeagueKind.Superleague)
+                .OrderBy(l => l.Id)
+                .FirstOrDefault();
+            if (official is null)
             {
                 continue;
             }
 
-            LeagueEntity official = seasonLeagues.FirstOrDefault(l => l.Kind == (int)LeagueKind.Superleague) ?? seasonLeagues[0];
             picked[season.Id] = official.Id;
         }
 
