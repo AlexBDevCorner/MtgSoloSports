@@ -28,7 +28,7 @@ services:
     # to every container interface so the published 5173 port is reachable.
     command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     environment:
       # Container-to-container API target (service DNS). Browsers still use
       # localhost:5173; the Vite process forwards /api to the app service.

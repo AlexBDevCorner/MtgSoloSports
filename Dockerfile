@@ -70,7 +70,7 @@ COPY --from=dotnet-build /app/publish ./
 # (per-save files + shared catalog) lives under /data, which Compose mounts
 # as a named volume. Created at build time so `USER app` can write without
 # privileged startup.
-RUN mkdir -p /data/saves /data/catalog && chown -R app:app /data
+RUN mkdir -p /data/saves /data/catalog /data/drive-publishing && chown -R app:app /data
 
 # Bind Kestrel to every container interface on 8080 and point file-backed
 # stores at the persistent volume. These are local-development defaults, not
