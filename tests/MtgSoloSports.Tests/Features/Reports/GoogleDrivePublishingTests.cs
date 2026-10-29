@@ -773,6 +773,68 @@ public sealed class GoogleDrivePublishingTests
     }
 
     [Fact]
+    public async Task CrossOriginDifferentLoopbackPort_IsBlocked()
+    {
+        var (factory, root, _, _) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            // Both ends are loopback literals, but different ports are
+            // different origins and must be rejected.
+            using HttpRequestMessage crossPort = new(HttpMethod.Post, $"/api/saves/{saveId:D}/reports/drive/publish");
+            string host = client.BaseAddress?.Host ?? "localhost";
+            crossPort.Headers.Add("Origin", $"http://{host}:5174");
+            crossPort.Content = new StringContent("""{"confirmCrossSave":false,"allowOverwriteEditedRemote":false,"allowCreateMissing":true}""", Encoding.UTF8, "application/json");
+            using HttpResponseMessage blocked = await client.SendAsync(crossPort);
+            blocked.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentFirstPublishes_DoNotDuplicateHierarchy()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            // Two parallel first publishes race the same list-then-create
+            // sequences. The per-save publish lock must serialize them so
+            // only one Seasons/ folder and one file per report exist.
+            Task<PublishResult> first = PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            Task<PublishResult> second = PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            PublishResult[] results = await Task.WhenAll(first, second);
+            results[0].Status.ShouldBe(HttpStatusCode.OK);
+            results[1].Status.ShouldBe(HttpStatusCode.OK);
+            drive.FoldersFor("folder-mtshistory", "Seasons").Count.ShouldBe(1);
+            string seasonsId = drive.FoldersFor("folder-mtshistory", "Seasons").Single();
+            drive.FileIn(seasonsId, null).Count.ShouldBe(1);
+            drive.FileIn("folder-mtshistory", null)
+                .Where(id => !string.Equals(drive.Files[id].MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+                .Count()
+                .ShouldBe(1);
+            drive.Files.Count.ShouldBe(3);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AdoptedIdWithoutExplicitName_PreservesRemoteName()
     {
         var (factory, root, _, drive) = CreateFactory();

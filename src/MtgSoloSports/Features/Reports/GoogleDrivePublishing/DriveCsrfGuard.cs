@@ -5,8 +5,10 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// refresh credentials server-side with no per-user auth, so a cross-origin page
 /// posting to localhost could otherwise disconnect or publish. Binding the Docker
 /// port to 127.0.0.1 stops LAN access but not same-machine cross-origin posts,
-/// so reject non-local Origins/Referers with 403. Requests without either header
-/// (curl, tests, same-origin navigations) are allowed.
+/// so require an exact same-origin (scheme, loopback host literal and port)
+/// for Origin/Referer with 403 otherwise, and fail closed when the request
+/// authority itself is not loopback (DNS rebinding). Requests without either
+/// header (curl, tests) are allowed only when the Host is loopback.
 /// </summary>
 public static class DriveCsrfGuard
 {
@@ -20,18 +22,28 @@ public static class DriveCsrfGuard
         ArgumentNullException.ThrowIfNull(request);
         string? origin = request.Headers.Origin;
         string? referer = request.Headers.Referer;
+
+        // Fail closed on DNS rebinding / LAN exposure: the publishing
+        // endpoints trust the local browser and hold Google refresh tokens,
+        // so the request authority itself must be a loopback origin. An
+        // attacker-controlled hostname (e.g. evil.example rebound to
+        // 127.0.0.1) must never be accepted even when Origin matches Host.
+        if (!IsLoopbackHost(request.Host.Host))
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(origin) && string.IsNullOrWhiteSpace(referer))
         {
             return true;
         }
 
-        string requestHost = request.Host.Host;
-        if (!string.IsNullOrWhiteSpace(origin) && !IsAllowedOrigin(origin, requestHost))
+        if (!string.IsNullOrWhiteSpace(origin) && !IsAllowedOrigin(origin, request))
         {
             return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(referer) && !IsAllowedOrigin(referer, requestHost))
+        if (!string.IsNullOrWhiteSpace(referer) && !IsAllowedOrigin(referer, request))
         {
             return false;
         }
@@ -39,21 +51,38 @@ public static class DriveCsrfGuard
         return true;
     }
 
-    private static bool IsAllowedOrigin(string value, string requestHost)
+    private static bool IsAllowedOrigin(string value, HttpRequest request)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
         {
             return false;
         }
 
-        string host = uri.Host;
-        if (IsLoopbackHost(host))
+        // Both ends must be loopback literals; a non-loopback Origin (or a
+        // non-loopback Host) is never same-origin with this localhost-only
+        // service, even when the two hostnames happen to be equal.
+        if (!IsLoopbackHost(uri.Host) || !IsLoopbackHost(request.Host.Host))
         {
-            return true;
+            return false;
         }
 
-        return string.Equals(host, requestHost, StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(uri.Scheme, request.Scheme, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Host, request.Host.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        int originPort = uri.IsDefaultPort ? DefaultPortForScheme(uri.Scheme) : uri.Port;
+        int requestPort = request.Host.Port ?? DefaultPortForScheme(request.Scheme);
+        return originPort == requestPort;
     }
+
+    private static int DefaultPortForScheme(string scheme) =>
+        string.Equals(scheme, "https", StringComparison.OrdinalIgnoreCase) ? 443 : 80;
 
     private static bool IsLoopbackHost(string host) =>
         string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -20,6 +21,15 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// </summary>
 public sealed class PublishDriveReportsHandler
 {
+    // Per-save publish serialization. Drive list-then-create sequences (find
+    // Seasons/ then create it; list by name then create the Markdown file)
+    // are not atomic against the Drive API, so two parallel first publishes
+    // for the same save could both observe "missing" and create duplicates
+    // (twin Seasons/ folders, twin reports) with a lost file-id mapping.
+    // The store's SemaphoreSlim guards single JSON files only, not the whole
+    // publish. Serialize the whole publish per save id.
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> PublishGates = new();
+
     private readonly SaveStore _saves;
     private readonly DrivePublishingStore _publishing;
     private readonly IGoogleOAuthClient _oauth;
@@ -77,11 +87,20 @@ public sealed class PublishDriveReportsHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        PublishContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
-        ReportSnapshots snapshots = await GenerateSnapshotsAsync(context, cancellationToken).ConfigureAwait(false);
-        (List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current) published =
-            await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, request.AllowCreateMissing, cancellationToken).ConfigureAwait(false);
-        return await FinishAsync(context, snapshots, published.Outcomes, published.Current, cancellationToken).ConfigureAwait(false);
+        SemaphoreSlim gate = PublishGates.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            PublishContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
+            ReportSnapshots snapshots = await GenerateSnapshotsAsync(context, cancellationToken).ConfigureAwait(false);
+            (List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current) published =
+                await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, request.AllowCreateMissing, cancellationToken).ConfigureAwait(false);
+            return await FinishAsync(context, snapshots, published.Outcomes, published.Current, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private async Task<PublishContext> LoadContextAsync(Guid saveId, bool confirmCrossSave, CancellationToken cancellationToken)

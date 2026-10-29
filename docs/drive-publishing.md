@@ -137,9 +137,13 @@ separate from sports saves and backup ZIPs, and survive container restarts.
 The Compose port is localhost-bound (`127.0.0.1:8080:8080`): the publishing
 endpoints trust the local browser and hold Google refresh credentials
 server-side, so they must not be exposed to the LAN. Mutating Drive endpoints
-(`PUT destination`, `POST publish/verify/disconnect`) additionally reject
-cross-origin `Origin`/`Referer` hosts with `403` (requests without either
-header, e.g. curl, are allowed); use the local Reports page origin.
+(`PUT destination`, `POST publish/verify/disconnect`) require an exact
+same-origin (`scheme` + loopback host literal + port) for any `Origin`/
+`Referer` header and fail closed with `403` otherwise; a non-loopback request
+authority (DNS rebinding) is rejected even without headers, while headerless
+loopback requests (e.g. curl) are allowed — use the local Reports page origin.
+Parallel publishes for the same save are serialized per save so concurrent
+first publishes cannot create duplicate `Seasons/` folders or reports.
 **Disconnect** revokes the grant (best effort) and deletes local tokens;
 destinations are kept for the next connect. Expired/revoked consent is
 detected on the next publish and asks you to reconnect.
