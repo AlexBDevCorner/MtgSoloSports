@@ -1014,8 +1014,22 @@ public sealed class PublishDriveReportsHandler
             DriveFile? meta = await WithGetRetryAsync(
                 () => WithAuthAsync(token => _drive.GetFileAsync(token, fileId, cancellationToken), cancellationToken),
                 cancellationToken).ConfigureAwait(false);
-            return (new DriveFileOutcome(report, "updated", fileId, desiredName, newFingerprint, meta?.WebViewLink, "Update confirmed on re-check after a timeout."),
-                WithSlot(destination, report, fileId, desiredName, newFingerprint, meta?.ModifiedTime, dossierSeason));
+            if (meta is not null
+                && !meta.Trashed
+                && string.Equals(meta.Name, desiredName, StringComparison.Ordinal))
+            {
+                return (new DriveFileOutcome(report, "updated", fileId, desiredName, newFingerprint, meta.WebViewLink, "Update confirmed on re-check after a timeout."),
+                    WithSlot(destination, report, fileId, desiredName, newFingerprint, meta.ModifiedTime, dossierSeason));
+            }
+
+            // Content already matched before the timed-out request (e.g. a
+            // rename-only update), so a matching fingerprint alone cannot
+            // prove the rename landed. Require the remote name to match too;
+            // otherwise fail closed without persisting the unperformed name.
+            string actualName = meta?.Name ?? "unknown";
+            return (Failed(report, fileId, desiredName,
+                $"Upload timed out and the rename to '{desiredName}' could not be confirmed (remote is still named '{actualName}'). Re-run Publish now to retry; nothing was persisted as renamed.", newFingerprint),
+                destination);
         }
 
         return (Failed(report, fileId, desiredName,

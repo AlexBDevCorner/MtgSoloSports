@@ -923,6 +923,59 @@ public sealed class GoogleDrivePublishingTests
     }
 
     [Fact]
+    public async Task RenameWithUnchangedContent_TimeoutWithoutRename_FailsClosed()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            first.Outcomes.ShouldBe(["dossier:created", "almanac:created"]);
+            string dossierId = first.FileId("dossier")!;
+            string almanacId = first.FileId("almanac")!;
+            string originalDossierName = drive.Files[dossierId].Name;
+            string originalAlmanacName = drive.Files[almanacId].Name;
+
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? before =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            before.ShouldNotBeNull();
+            string seasonsId = before!.SeasonsFolderId!;
+            string putJson = "{\"mtshistoryFolderId\":\"folder-mtshistory\",\"seasonsFolderId\":\"" + seasonsId
+                + "\",\"dossierFileId\":\"" + dossierId + "\",\"dossierFileName\":\"season-1-renamed.md\""
+                + ",\"almanacFileId\":\"" + almanacId + "\",\"almanacFileName\":\"universe-almanac-renamed.md\"}";
+            await PutDestinationAsync(client, saveId, putJson);
+
+            // Simulate a timeout where the rename never lands: content still
+            // matches, but the remote name is unchanged. This must fail
+            // closed, not report updated with an unperformed name.
+            drive.FailUpdatesFor.Add(dossierId);
+            drive.FailUpdatesFor.Add(almanacId);
+            PublishResult third = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            third.Outcomes.ShouldBe(["dossier:failed", "almanac:failed"]);
+            third.Detail("dossier")!.ShouldContain("could not be confirmed");
+            drive.Files[dossierId].Name.ShouldBe(originalDossierName);
+            drive.Files[almanacId].Name.ShouldBe(originalAlmanacName);
+
+            // Retry after the transient failure renames in place.
+            drive.FailUpdatesFor.Clear();
+            PublishResult fourth = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            fourth.Outcomes.ShouldBe(["dossier:updated", "almanac:updated"]);
+            drive.Files[dossierId].Name.ShouldBe("season-1-renamed.md");
+            drive.Files[almanacId].Name.ShouldBe("universe-almanac-renamed.md");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task VerifyFolder_AccessibleFolderReportsOkDespiteDownloadForbidden()
     {
         var (factory, root, _, drive) = CreateFactory();
