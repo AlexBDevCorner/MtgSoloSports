@@ -832,7 +832,7 @@ public sealed class PublishDriveReportsHandler
 
         if (string.Equals(newFingerprint, remoteFingerprint, StringComparison.Ordinal))
         {
-            return (Unchanged(report, remote, effectiveName, newFingerprint), WithSlot(destination, report, remote.Id, effectiveName, newFingerprint, remote.ModifiedTime, dossierSeason));
+            return await PublishMatchingContentAsync(destination, report, remote, effectiveName, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
 
         if (IsStaleRemoteEdit(lastFingerprint, remoteFingerprint, newFingerprint) && !allowOverwriteEditedRemote)
@@ -843,6 +843,27 @@ public sealed class PublishDriveReportsHandler
         }
 
         return await UpdateRemoteAsync(destination, report, remote, effectiveName, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<(DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated)> PublishMatchingContentAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string report,
+        DriveFile remote,
+        string effectiveName,
+        string markdown,
+        string newFingerprint,
+        int? dossierSeason,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(remote.Name, effectiveName, StringComparison.Ordinal))
+        {
+            return Task.FromResult((Unchanged(report, remote, effectiveName, newFingerprint), WithSlot(destination, report, remote.Id, effectiveName, newFingerprint, remote.ModifiedTime, dossierSeason)));
+        }
+
+        // Content already matches but the explicitly configured filename
+        // differs from the remote name: rename in place instead of
+        // reporting unchanged with an unperformed name.
+        return UpdateRemoteAsync(destination, report, remote, effectiveName, markdown, newFingerprint, dossierSeason, cancellationToken);
     }
 
     private static DriveFileOutcome? ValidateRemoteLocation(

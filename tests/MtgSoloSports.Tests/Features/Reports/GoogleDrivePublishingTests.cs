@@ -873,6 +873,56 @@ public sealed class GoogleDrivePublishingTests
     }
 
     [Fact]
+    public async Task RenameWithUnchangedContent_RenamesInPlaceWithSameIds()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false, allowCreateMissing: true);
+            first.Outcomes.ShouldBe(["dossier:created", "almanac:created"]);
+            string dossierId = first.FileId("dossier")!;
+            string almanacId = first.FileId("almanac")!;
+            PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            second.Outcomes.ShouldBe(["dossier:unchanged", "almanac:unchanged"]);
+
+            // User explicitly renames both adopted reports without any
+            // sporting change: the next publish must rename in place with
+            // the same file ids instead of reporting unchanged.
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? before =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            before.ShouldNotBeNull();
+            string seasonsId = before!.SeasonsFolderId!;
+            string putJson = "{\"mtshistoryFolderId\":\"folder-mtshistory\",\"seasonsFolderId\":\"" + seasonsId
+                + "\",\"dossierFileId\":\"" + dossierId + "\",\"dossierFileName\":\"season-1-renamed.md\""
+                + ",\"almanacFileId\":\"" + almanacId + "\",\"almanacFileName\":\"universe-almanac-renamed.md\"}";
+            await PutDestinationAsync(client, saveId, putJson);
+
+            PublishResult third = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            third.Outcome("dossier").ShouldBe("updated");
+            third.Outcome("almanac").ShouldBe("updated");
+            third.FileId("dossier").ShouldBe(dossierId);
+            third.FileId("almanac").ShouldBe(almanacId);
+            drive.Files[dossierId].Name.ShouldBe("season-1-renamed.md");
+            drive.Files[almanacId].Name.ShouldBe("universe-almanac-renamed.md");
+            drive.Files.Count.ShouldBe(3);
+
+            PublishResult fourth = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            fourth.Outcomes.ShouldBe(["dossier:unchanged", "almanac:unchanged"]);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task VerifyFolder_AccessibleFolderReportsOkDespiteDownloadForbidden()
     {
         var (factory, root, _, drive) = CreateFactory();
