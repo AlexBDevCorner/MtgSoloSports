@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Simulation.GlobalStage;
@@ -37,10 +38,12 @@ namespace MtgSoloSports.Features.Simulation.CompleteSeason;
 public sealed class CompleteSeasonHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public CompleteSeasonHandler(SaveStore store)
+    public CompleteSeasonHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<CompleteSeasonResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -52,14 +55,22 @@ public sealed class CompleteSeasonHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CompleteSeasonResponse response;
         try
         {
-            return await CompleteSeasonUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            response = await CompleteSeasonUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<CompleteSeasonResponse> CompleteSeasonUnderLockAsync(

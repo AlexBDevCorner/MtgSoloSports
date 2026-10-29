@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.GlobalStage;
@@ -22,10 +23,12 @@ namespace MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 public sealed class CompleteStageForAllLeaguesHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public CompleteStageForAllLeaguesHandler(SaveStore store)
+    public CompleteStageForAllLeaguesHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<CompleteStageForAllLeaguesResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -37,14 +40,22 @@ public sealed class CompleteStageForAllLeaguesHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CompleteStageForAllLeaguesResponse response;
         try
         {
-            return await CompleteGlobalStageUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            response = await CompleteGlobalStageUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<CompleteStageForAllLeaguesResponse> CompleteGlobalStageUnderLockAsync(
@@ -54,7 +65,17 @@ public sealed class CompleteStageForAllLeaguesHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         GlobalPlan plan = await LoadPlanAsync(saveId, cancellationToken).ConfigureAwait(false);
         List<BulkLeagueStageResult> results = await CompletePendingAsync(saveId, plan, cancellationToken).ConfigureAwait(false);
-        return await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
+        CompleteStageForAllLeaguesResponse response =
+            await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
+        // Durable global-stage boundary committed (one transaction per
+        // league). Local checkpoint note only; bulk/fast callers that reuse
+        // this operation collapse duplicate notifications to the latest state.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal sealed record GlobalPlan(

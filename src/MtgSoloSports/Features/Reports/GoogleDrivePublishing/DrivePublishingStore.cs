@@ -70,7 +70,16 @@ public sealed class DrivePublishingStore
         string? LastDossierOutcome,
         string? LastAlmanacOutcome,
         string? LastError,
-        IReadOnlyDictionary<int, DossierSlot>? DossierBySeason = null);
+        IReadOnlyDictionary<int, DossierSlot>? DossierBySeason = null,
+        bool AutoPublishEnabled = false,
+        int? AutoRequestedSeason = null,
+        int? AutoRequestedGlobalStage = null,
+        string? AutoRequestedPhase = null,
+        DateTimeOffset? AutoRequestedUtc = null,
+        int AutoAttemptCount = 0,
+        DateTimeOffset? AutoNextRetryUtc = null,
+        string? AutoLastError = null,
+        bool AutoPausedForAuth = false);
 
     public sealed record PendingAuthDocument(
         string State,

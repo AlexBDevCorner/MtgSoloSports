@@ -5,6 +5,7 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Qualifiers;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -61,10 +62,12 @@ public sealed class SimulateSeasonsHandler
     public const int MaxSeasonsPerRequest = 500;
 
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public SimulateSeasonsHandler(SaveStore store)
+    public SimulateSeasonsHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<SimulateSeasonsResponse> HandleAsync(
@@ -86,14 +89,25 @@ public sealed class SimulateSeasonsHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SimulateSeasonsResponse response;
         try
         {
-            return await SimulateUnderLockAsync(saveId, request.Seasons, cancellationToken).ConfigureAwait(false);
+            response = await SimulateUnderLockAsync(saveId, request.Seasons, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // Bulk/fast simulation commits dozens of durable global stages.
+        // One coalesced checkpoint note covers the whole run; the pump
+        // publishes the latest stable snapshot, not each intermediate stage.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     public static void ValidateSeasons(int seasons)

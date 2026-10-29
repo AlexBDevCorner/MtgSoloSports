@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -31,10 +32,12 @@ namespace MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 public sealed class AdvanceToNextEventHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public AdvanceToNextEventHandler(SaveStore store)
+    public AdvanceToNextEventHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<AdvanceToNextEventResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -46,14 +49,26 @@ public sealed class AdvanceToNextEventHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        AdvanceToNextEventResponse response;
         try
         {
-            return await AdvanceUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            response = await AdvanceUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // Every Next Event step is a durable finalized boundary (global
+        // stage, movement, qualifier, rebalance, Cup steps, next-season
+        // start). The checkpoint note collapses duplicates; completed rounds
+        // never flow through this path so sub-stage progress cannot trigger.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<AdvanceToNextEventResponse> AdvanceUnderLockAsync(

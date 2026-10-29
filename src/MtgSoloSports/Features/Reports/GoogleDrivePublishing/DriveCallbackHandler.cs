@@ -15,17 +15,20 @@ public sealed class DriveCallbackHandler
     private readonly IGoogleOAuthClient _oauth;
     private readonly IOptions<DrivePublishingOptions> _options;
     private readonly TimeProvider _timeProvider;
+    private readonly DriveAutoPublishTracker _tracker;
 
     public DriveCallbackHandler(
         DrivePublishingStore publishing,
         IGoogleOAuthClient oauth,
         IOptions<DrivePublishingOptions> options,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        DriveAutoPublishTracker tracker)
     {
         _publishing = publishing ?? throw new ArgumentNullException(nameof(publishing));
         _oauth = oauth ?? throw new ArgumentNullException(nameof(oauth));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
     }
 
     public sealed record CallbackResult(bool Success, Guid SaveId, string RedirectTo);
@@ -67,12 +70,26 @@ public sealed class DriveCallbackHandler
                 "Google Drive publishing is not configured on the server. Set the DrivePublishing Google client id/secret, then reconnect.");
         }
 
+        OAuthTokenResponse tokens = await ExchangeCodeAsync(options, code, pending.CodeVerifier, cancellationToken).ConfigureAwait(false);
+        await SaveConnectionAsync(tokens, cancellationToken).ConfigureAwait(false);
+
+        await UnpauseAutoPublishingAsync(cancellationToken).ConfigureAwait(false);
+
+        return new CallbackResult(true, pending.SaveId, $"/saves/{pending.SaveId:D}/reports?drive=connected");
+    }
+
+    private async Task<OAuthTokenResponse> ExchangeCodeAsync(
+        DrivePublishingOptions options,
+        string code,
+        string codeVerifier,
+        CancellationToken cancellationToken)
+    {
         OAuthTokenResponse tokens = await _oauth.ExchangeCodeAsync(
             options.GoogleClientId,
             options.GoogleClientSecret,
             options.GoogleRedirectUri,
             code,
-            pending.CodeVerifier,
+            codeVerifier,
             cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(tokens.RefreshToken))
@@ -83,18 +100,28 @@ public sealed class DriveCallbackHandler
                 "Google did not return a refresh token. Disconnect and reconnect with Connect Google Drive (approval prompt) so publishing survives restarts.");
         }
 
+        return tokens;
+    }
+
+    private async Task SaveConnectionAsync(OAuthTokenResponse tokens, CancellationToken cancellationToken)
+    {
+        string refreshToken = tokens.RefreshToken ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            throw new DriveNotConnectedException(
+                "Google did not return a refresh token. Disconnect and reconnect with Connect Google Drive (approval prompt) so publishing survives restarts.");
+        }
+
         DateTimeOffset now = _timeProvider.GetUtcNow();
         await _publishing.SaveConnectionAsync(
             new DrivePublishingStore.ConnectionDocument(
-                tokens.RefreshToken,
+                refreshToken,
                 Email: null,
                 Scopes: string.IsNullOrWhiteSpace(tokens.Scope) ? DriveScopes.DriveFile : tokens.Scope,
                 ConnectedUtc: now,
                 AccessToken: tokens.AccessToken,
                 AccessTokenExpiresUtc: now.AddSeconds(Math.Max(60, tokens.ExpiresInSeconds - 60))),
             cancellationToken).ConfigureAwait(false);
-
-        return new CallbackResult(true, pending.SaveId, $"/saves/{pending.SaveId:D}/reports?drive=connected");
     }
 
     public static string ErrorRedirect(Guid saveId, string message)
@@ -106,5 +133,68 @@ public sealed class DriveCallbackHandler
         }
 
         return $"/saves/{saveId:D}/reports?drive=error&message={Uri.EscapeDataString(trimmed)}";
+    }
+
+    /// <summary>
+    /// Reconnect catch-up: a restored connection unpauses automatic publishing
+    /// for every enabled save with an unpublished committed checkpoint and
+    /// signals the pump. No Google calls; the worker performs the uploads.
+    /// </summary>
+    private async Task UnpauseAutoPublishingAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<DrivePublishingStore.DestinationDocument> all;
+        try
+        {
+            all = await _publishing.ListDestinationsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        foreach (DrivePublishingStore.DestinationDocument destination in all)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!destination.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(destination))
+            {
+                continue;
+            }
+
+            if (!destination.AutoPausedForAuth && destination.AutoNextRetryUtc.HasValue && destination.AutoNextRetryUtc.Value > now)
+            {
+                _tracker.Signal(destination.SaveId);
+                continue;
+            }
+
+            SemaphoreSlim gate = DriveSaveGates.ForSave(destination.SaveId);
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                DrivePublishingStore.DestinationDocument? current =
+                    await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
+                if (current is null || !current.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(current))
+                {
+                    continue;
+                }
+
+                await _publishing.SaveDestinationAsync(current with
+                {
+                    AutoPausedForAuth = false,
+                    AutoLastError = null,
+                    AutoNextRetryUtc = now,
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+            finally
+            {
+                gate.Release();
+            }
+
+            _tracker.Signal(destination.SaveId);
+        }
     }
 }

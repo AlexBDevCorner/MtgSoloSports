@@ -16,4 +16,9 @@ public sealed record DriveDestinationResponse(
     int? LastSeasonNumber,
     string? LastPhase,
     int? LastGlobalStage,
-    string? LastError);
+    string? LastError,
+    bool AutoPublishEnabled,
+    string AutoPublishStatus,
+    int? AutoRequestedSeason,
+    int? AutoRequestedGlobalStage,
+    string? AutoRequestedPhase);

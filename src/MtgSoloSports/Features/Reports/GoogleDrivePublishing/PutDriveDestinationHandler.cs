@@ -13,11 +13,13 @@ public sealed class PutDriveDestinationHandler
 {
     private readonly SaveStore _saves;
     private readonly DrivePublishingStore _publishing;
+    private readonly DriveAutoPublishTracker _tracker;
 
-    public PutDriveDestinationHandler(SaveStore saves, DrivePublishingStore publishing)
+    public PutDriveDestinationHandler(SaveStore saves, DrivePublishingStore publishing, DriveAutoPublishTracker? tracker = null)
     {
         _saves = saves ?? throw new ArgumentNullException(nameof(saves));
         _publishing = publishing ?? throw new ArgumentNullException(nameof(publishing));
+        _tracker = tracker ?? new DriveAutoPublishTracker();
     }
 
     public async Task<DriveDestinationResponse> HandleAsync(
@@ -63,7 +65,7 @@ public sealed class PutDriveDestinationHandler
         DrivePublishingStore.DestinationDocument updated = BuildUpdated(detail, existing, normalized);
         await _publishing.SaveDestinationAsync(updated, cancellationToken).ConfigureAwait(false);
 
-        return ToResponse(updated);
+        return await ToResponseAsync(updated, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<SaveStore.SaveDetailRecord> LoadSaveAsync(Guid saveId, CancellationToken cancellationToken)
@@ -147,7 +149,16 @@ public sealed class PutDriveDestinationHandler
             existing?.LastDossierOutcome,
             existing?.LastAlmanacOutcome,
             existing?.LastError,
-            map);
+            map,
+            existing?.AutoPublishEnabled ?? false,
+            existing?.AutoRequestedSeason,
+            existing?.AutoRequestedGlobalStage,
+            existing?.AutoRequestedPhase,
+            existing?.AutoRequestedUtc,
+            existing?.AutoAttemptCount ?? 0,
+            existing?.AutoNextRetryUtc,
+            existing?.AutoLastError,
+            existing?.AutoPausedForAuth ?? false);
     }
 
     private static Dictionary<int, DrivePublishingStore.DossierSlot> BuildDossierMap(
@@ -207,7 +218,21 @@ public sealed class PutDriveDestinationHandler
         }
     }
 
-    private static DriveDestinationResponse ToResponse(DrivePublishingStore.DestinationDocument updated)
+    private async Task<DriveDestinationResponse> ToResponseAsync(
+        DrivePublishingStore.DestinationDocument updated,
+        CancellationToken cancellationToken)
+    {
+        DrivePublishingStore.ConnectionDocument? connection =
+            await _publishing.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        bool connected = connection is not null && !string.IsNullOrWhiteSpace(connection.RefreshToken);
+        return ToResponse(
+            updated,
+            DriveAutoPublishStatus.Compute(updated, connected, _tracker.IsPublishing(updated.SaveId)));
+    }
+
+    private static DriveDestinationResponse ToResponse(
+        DrivePublishingStore.DestinationDocument updated,
+        string autoStatus)
     {
         return new DriveDestinationResponse(
             updated.SaveId,
@@ -225,7 +250,12 @@ public sealed class PutDriveDestinationHandler
             updated.LastSeasonNumber,
             updated.LastPhase,
             updated.LastGlobalStage,
-            updated.LastError);
+            updated.LastError,
+            updated.AutoPublishEnabled,
+            autoStatus,
+            updated.AutoRequestedSeason,
+            updated.AutoRequestedGlobalStage,
+            updated.AutoRequestedPhase);
     }
 
     private async Task EnsureNoCrossSaveReuseAsync(
