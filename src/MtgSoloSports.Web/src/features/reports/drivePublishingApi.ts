@@ -32,6 +32,16 @@ export interface DriveStatus {
   pickerApiKey: string | null;
   pickerAppId: string | null;
   pickerEnabled: boolean;
+  autoPublishEnabled: boolean;
+  autoPublishStatus: string;
+  autoRequestedSeason: number | null;
+  autoRequestedGlobalStage: number | null;
+  autoRequestedPhase: string | null;
+  autoRequestedUtc: string | null;
+  autoAttemptCount: number;
+  autoNextRetryUtc: string | null;
+  autoLastError: string | null;
+  autoPausedForAuth: boolean;
 }
 
 export interface DriveDestination {
@@ -51,6 +61,11 @@ export interface DriveDestination {
   lastPhase: string | null;
   lastGlobalStage: number | null;
   lastError: string | null;
+  autoPublishEnabled: boolean;
+  autoPublishStatus: string;
+  autoRequestedSeason: number | null;
+  autoRequestedGlobalStage: number | null;
+  autoRequestedPhase: string | null;
 }
 
 export interface DriveDestinationInput {
@@ -122,6 +137,14 @@ export function driveVerifyUrl(saveId: string): string {
   return `/api/saves/${saveId}/reports/drive/verify`;
 }
 
+export function driveAutoPublishUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/auto-publish`;
+}
+
+export function driveAutoPublishRetryUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/auto-publish/retry`;
+}
+
 export function getDriveStatus(saveId: string, signal?: AbortSignal): Promise<DriveStatus> {
   return fetchJson<DriveStatus>(driveStatusUrl(saveId), { signal });
 }
@@ -170,4 +193,35 @@ export function verifyDriveDestination(saveId: string): Promise<DriveVerifyRespo
   return fetchJson<DriveVerifyResponse>(driveVerifyUrl(saveId), {
     method: 'POST',
   });
+}
+
+export function setDriveAutoPublish(saveId: string, enabled: boolean): Promise<DriveDestination> {
+  return fetchJson<DriveDestination>(driveAutoPublishUrl(saveId), {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function retryDriveAutoPublish(saveId: string): Promise<DriveDestination> {
+  return fetchJson<DriveDestination>(driveAutoPublishRetryUrl(saveId), {
+    method: 'POST',
+  });
+}
+
+export function describeAutoPublishStatus(status: string): string {
+  switch (status) {
+    case 'UpToDate':
+      return 'Up to date';
+    case 'Publishing':
+      return 'Publishing';
+    case 'Pending':
+      return 'Pending';
+    case 'Failed':
+      return 'Failed';
+    case 'Disconnected':
+      return 'Disconnected';
+    case 'Disabled':
+    default:
+      return 'Disabled';
+  }
 }
