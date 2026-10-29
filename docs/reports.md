@@ -1,6 +1,8 @@
-# Reports (MSS-086/MSS-087/MSS-088)
+# Reports (MSS-086/MSS-087/MSS-088/MSS-089)
 
 Human-readable exports for ChatGPT sourcing. Snapshots of persisted data, never AI commentary and never DOM scraping.
+
+One-click Drive publishing (MSS-089) updates the current dossier + almanac in place; see [drive-publishing.md](drive-publishing.md).
 
 ## Endpoints
 

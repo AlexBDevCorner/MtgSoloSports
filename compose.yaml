@@ -26,6 +26,11 @@ services:
       ASPNETCORE_HTTP_PORTS: "8080"
       Saves__SavesRoot: /data/saves
       Catalog__CatalogPath: /data/catalog/catalog.db
+      DrivePublishing__StorePath: /data/drive-publishing
+      # Google Drive publishing (MSS-089) is opt-in: set these two from your
+      # personal OAuth client (see docs/drive-publishing.md) and restart.
+      # DrivePublishing__GoogleClientId: "your-client-id"
+      # DrivePublishing__GoogleClientSecret: "your-client-secret"
     volumes:
       - mtgsolosports-data:/data
     healthcheck:
