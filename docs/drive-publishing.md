@@ -50,25 +50,34 @@ API returns `503` with setup guidance instead of failing obscurely.
 
 ## Destination configuration
 
-- Prefer **Choose folder… / Choose dossier… / Choose almanac…** (Google Picker,
-  same Google account) to select the `mtshistory` folder and the two report
-  files. Picker is the supported `drive.file` grant: files you pick become
-  accessible to this Cloud project, so the backend can adopt and update them in
-  place. The Picker token is minted in the browser via Google Identity Services
+- Prefer **Choose folder… / Choose Seasons… / Choose dossier… / Choose almanac…** (Google Picker,
+  same Google account) to select the `mtshistory` folder, the existing `Seasons/`
+  subfolder, and the two report files. Picker is the supported `drive.file` grant:
+  files you pick become accessible to this Cloud project, so the backend can adopt
+  and update them in place. The Picker token is minted in the browser via Google Identity Services
   with the public client id — server refresh/access tokens are never exposed.
   After picking, press **Save destination**, then **Verify access**.
+  With `drive.file`, picking `mtshistory` alone does not grant its pre-existing
+  `Seasons/` child: explicitly pick the `Seasons/` folder (or let publishing infer
+  it from an already-granted adopted dossier) so no duplicate `Seasons/` folder is
+  created. When an adopted dossier exists, publishing never auto-creates `Seasons/`;
+  it reuses the inferred or explicitly configured folder and otherwise stops with
+  guidance.
 - You may also paste the `mtshistory` **folder id** (from the Drive URL:
-  `…/folders/<id>`) and the two report **file ids** (from `…/file/d/<id>/…`).
+  `…/folders/<id>`), the optional `Seasons/` **folder id**, and the two report
+  **file ids** (from `…/file/d/<id>/…`).
   Manually named files such as `universe-almanac-newtest.md` keep their remote
   ids and custom names — they are never guessed, renamed, moved or deleted.
+  An adopted id saved without an explicit file name keeps its current remote name;
+  publishing never renames it to the generated default.
   Adopted ids are validated on publish: a dossier id must point to a Markdown
   file directly under the `Seasons/` subfolder, and an almanac id must point to
   a Markdown file directly under `mtshistory`. Ids outside the destination,
   folder ids, trashed files, or ids that are not visible (deleted or never
   granted — `drive.file` hides ungranted files as missing) stop with a
   recoverable conflict instead of overwriting unrelated Drive content or
-  creating a `(1)` duplicate. Renames to the configured `season-N-dossier.md`
-  name only happen for files already inside the destination.
+  creating a `(1)` duplicate. Renames to an explicitly configured file name
+  only happen for files already inside the destination.
 - Pasting an id alone does **not** grant `drive.file` access to a pre-existing
   file or folder. The app can only read/write files it created or that you
   explicitly granted with **Choose from Drive**. After pasting ids, press
@@ -115,6 +124,9 @@ API returns `503` with setup guidance instead of failing obscurely.
 
 Tokens and destinations live in `/data/drive-publishing` (owner-only files),
 separate from sports saves and backup ZIPs, and survive container restarts.
+The Compose port is localhost-bound (`127.0.0.1:8080:8080`): the publishing
+endpoints trust the local browser and hold Google refresh credentials
+server-side, so they must not be exposed to the LAN.
 **Disconnect** revokes the grant (best effort) and deletes local tokens;
 destinations are kept for the next connect. Expired/revoked consent is
 detected on the next publish and asks you to reconnect.

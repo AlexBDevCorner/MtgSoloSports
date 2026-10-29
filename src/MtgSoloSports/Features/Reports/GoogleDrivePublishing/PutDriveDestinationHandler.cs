@@ -61,6 +61,7 @@ public sealed class PutDriveDestinationHandler
     private sealed record NormalizedDestination(
         string? FolderId,
         string? FolderName,
+        string? SeasonsFolderId,
         string? DossierId,
         string? DossierName,
         string? AlmanacId,
@@ -71,6 +72,7 @@ public sealed class PutDriveDestinationHandler
         return new NormalizedDestination(
             NormalizeId(request.MtshistoryFolderId, "mtshistory folder id"),
             NormalizeOptionalName(request.MtshistoryFolderName, "mtshistory folder name", allowWithoutExtension: true),
+            NormalizeId(request.SeasonsFolderId, "seasons folder id"),
             NormalizeId(request.DossierFileId, "dossier file id"),
             NormalizeReportName(request.DossierFileName, "dossier file name"),
             NormalizeId(request.AlmanacFileId, "almanac file id"),
@@ -79,7 +81,7 @@ public sealed class PutDriveDestinationHandler
 
     private static void RequireFolderForAdoption(NormalizedDestination normalized)
     {
-        if (normalized.FolderId is null && (normalized.DossierId is not null || normalized.AlmanacId is not null))
+        if (normalized.FolderId is null && (normalized.SeasonsFolderId is not null || normalized.DossierId is not null || normalized.AlmanacId is not null))
         {
             throw new DriveConflictException(
                 "A destination mtshistory folder id is required when adopting report files. Paste the mtshistory folder id first, then the file ids.");
@@ -108,7 +110,7 @@ public sealed class PutDriveDestinationHandler
             detail.Name,
             normalized.FolderId,
             normalized.FolderName,
-            existing?.SeasonsFolderId,
+            normalized.SeasonsFolderId,
             normalized.DossierId,
             normalized.DossierName,
             normalized.AlmanacId,
@@ -244,6 +246,11 @@ public sealed class PutDriveDestinationHandler
         NormalizedDestination normalized)
     {
         if (normalized.FolderId is not null && string.Equals(other.MtshistoryFolderId, normalized.FolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (normalized.SeasonsFolderId is not null && string.Equals(other.SeasonsFolderId, normalized.SeasonsFolderId, StringComparison.Ordinal))
         {
             return true;
         }

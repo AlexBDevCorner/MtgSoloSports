@@ -22,6 +22,7 @@ export interface DriveStatus {
   almanac: DriveReportSlot;
   mtshistoryFolderId: string | null;
   mtshistoryFolderName: string | null;
+  seasonsFolderId: string | null;
   lastPublishedUtc: string | null;
   lastSeasonNumber: number | null;
   lastPhase: string | null;
@@ -55,6 +56,7 @@ export interface DriveDestination {
 export interface DriveDestinationInput {
   mtshistoryFolderId: string;
   mtshistoryFolderName: string;
+  seasonsFolderId: string;
   dossierFileId: string;
   dossierFileName: string;
   almanacFileId: string;
@@ -141,6 +143,7 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
   const body = {
     mtshistoryFolderId: input.mtshistoryFolderId.trim() === '' ? null : input.mtshistoryFolderId.trim(),
     mtshistoryFolderName: input.mtshistoryFolderName.trim() === '' ? null : input.mtshistoryFolderName.trim(),
+    seasonsFolderId: input.seasonsFolderId.trim() === '' ? null : input.seasonsFolderId.trim(),
     dossierFileId: input.dossierFileId.trim() === '' ? null : input.dossierFileId.trim(),
     dossierFileName: input.dossierFileName.trim() === '' ? null : input.dossierFileName.trim(),
     almanacFileId: input.almanacFileId.trim() === '' ? null : input.almanacFileId.trim(),

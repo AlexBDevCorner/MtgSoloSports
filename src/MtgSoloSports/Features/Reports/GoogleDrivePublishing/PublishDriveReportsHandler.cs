@@ -64,9 +64,7 @@ public sealed class PublishDriveReportsHandler
         string DossierMarkdown,
         string AlmanacMarkdown,
         string DossierFingerprint,
-        string AlmanacFingerprint,
-        string DossierName,
-        string AlmanacName);
+        string AlmanacFingerprint);
 
     public async Task<PublishDriveReportsResponse> HandleAsync(
         Guid saveId,
@@ -148,21 +146,37 @@ public sealed class PublishDriveReportsHandler
 
         string dossierMarkdown = Encoding.UTF8.GetString(dossierFile.Content);
         string almanacMarkdown = Encoding.UTF8.GetString(almanacFile.Content);
-        string stableDossierName = ReportFilenames.SeasonDossierFileName(context.Detail.CurrentSeason, "md");
-        (_, string dossierName) = DrivePublishingStore.ResolveDossierForSeason(
-            context.Destination,
-            context.Detail.CurrentSeason,
-            stableDossierName);
-        string almanacName = string.IsNullOrWhiteSpace(context.Destination.AlmanacFileName)
-            ? ReportFilenames.UniverseAlmanacFileName(context.Detail.Name, "md")
-            : context.Destination.AlmanacFileName;
         return new ReportSnapshots(
             dossierMarkdown,
             almanacMarkdown,
             DrivePublishingFingerprint.ComputeHex(dossierMarkdown),
-            DrivePublishingFingerprint.ComputeHex(almanacMarkdown),
-            dossierName,
-            almanacName);
+            DrivePublishingFingerprint.ComputeHex(almanacMarkdown));
+    }
+
+    private static string? ExplicitDossierName(DrivePublishingStore.DestinationDocument destination, int currentSeason)
+    {
+        if (destination.DossierBySeason is not null && destination.DossierBySeason.Count > 0)
+        {
+            if (destination.DossierBySeason.TryGetValue(currentSeason, out DrivePublishingStore.DossierSlot? slot))
+            {
+                return string.IsNullOrWhiteSpace(slot.FileName) ? null : slot.FileName;
+            }
+
+            // History exists but nothing for this season yet: no explicit name;
+            // the default stable name will be used for creation.
+            return null;
+        }
+
+        // No history map: legacy single slot. A legacy name tied to a different
+        // last-published season is stale and must not be reused.
+        if (destination.DossierFileId is not null
+            && destination.LastSeasonNumber.HasValue
+            && destination.LastSeasonNumber.Value != currentSeason)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(destination.DossierFileName) ? null : destination.DossierFileName;
     }
 
     private async Task<(List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current)> PublishBothAsync(
@@ -171,7 +185,7 @@ public sealed class PublishDriveReportsHandler
         bool allowOverwriteEditedRemote,
         CancellationToken cancellationToken)
     {
-        string seasonsFolderId = await EnsureSeasonsFolderAsync(context.Destination, cancellationToken).ConfigureAwait(false);
+        string seasonsFolderId = await EnsureSeasonsFolderAsync(context.Destination, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
         DrivePublishingStore.DestinationDocument current =
             await _publishing.GetDestinationAsync(context.Detail.SaveId, cancellationToken).ConfigureAwait(false)
             ?? context.Destination;
@@ -181,28 +195,29 @@ public sealed class PublishDriveReportsHandler
         // data) so season N+1 creates Seasons/season-N+1-dossier.md while the
         // prior season's Drive file and mapping are preserved.
         string stableDossierName = ReportFilenames.SeasonDossierFileName(context.Detail.CurrentSeason, "md");
-        (string? dossierFileId, string dossierName) = DrivePublishingStore.ResolveDossierForSeason(
+        (string? dossierFileId, _) = DrivePublishingStore.ResolveDossierForSeason(
             current,
             context.Detail.CurrentSeason,
             stableDossierName);
-        // Snapshots were generated from the load-time destination; if the
-        // destination changed concurrently, prefer the freshly loaded mapping
-        // but keep the already-generated Markdown payload.
-        string effectiveDossierName = string.Equals(snapshots.DossierName, dossierName, StringComparison.Ordinal)
-            ? snapshots.DossierName
-            : dossierName;
+        // Snapshots carry the load-time Markdown; names always come from the
+        // freshly loaded destination so a concurrent destination edit wins.
+        string? effectiveDossierExplicit = ExplicitDossierName(current, context.Detail.CurrentSeason);
+
+        string stableAlmanacName = ReportFilenames.UniverseAlmanacFileName(context.Detail.Name, "md");
+        string? effectiveAlmanacExplicit = string.IsNullOrWhiteSpace(current.AlmanacFileName) ? null : current.AlmanacFileName;
+
         (string? dossierFingerprint, string? dossierLast) = ResolveDossierFingerprints(current, context.Detail.CurrentSeason);
 
         List<DriveFileOutcome> outcomes = [];
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) dossierResult =
-            await PublishOneAsync(current, "dossier", dossierFileId, effectiveDossierName,
+            await PublishOneAsync(current, "dossier", dossierFileId, effectiveDossierExplicit, stableDossierName,
                 seasonsFolderId, snapshots.DossierMarkdown, snapshots.DossierFingerprint,
                 dossierLast, allowOverwriteEditedRemote, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
         outcomes.Add(dossierResult.Outcome);
         current = dossierResult.Updated;
 
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) almanacResult =
-            await PublishOneAsync(current, "almanac", current.AlmanacFileId, snapshots.AlmanacName,
+            await PublishOneAsync(current, "almanac", current.AlmanacFileId, effectiveAlmanacExplicit, stableAlmanacName,
                 current.MtshistoryFolderId!, snapshots.AlmanacMarkdown, snapshots.AlmanacFingerprint,
                 current.AlmanacFingerprint, allowOverwriteEditedRemote, null, cancellationToken).ConfigureAwait(false);
         outcomes.Add(almanacResult.Outcome);
@@ -308,6 +323,12 @@ public sealed class PublishDriveReportsHandler
             return true;
         }
 
+        if (destination.SeasonsFolderId is not null
+            && string.Equals(other.SeasonsFolderId, destination.SeasonsFolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         if (destination.AlmanacFileId is not null
             && string.Equals(other.AlmanacFileId, destination.AlmanacFileId, StringComparison.Ordinal))
         {
@@ -349,21 +370,103 @@ public sealed class PublishDriveReportsHandler
 
     private async Task<string> EnsureSeasonsFolderAsync(
         DrivePublishingStore.DestinationDocument destination,
+        int currentSeason,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(destination.SeasonsFolderId))
         {
-            DriveFile? cached = await WithAuthAsync(
-                token => _drive.GetFileAsync(token, destination.SeasonsFolderId!, cancellationToken),
-                cancellationToken).ConfigureAwait(false);
-            if (cached is not null
-                && !cached.Trashed
-                && cached.Parents.Contains(destination.MtshistoryFolderId!, StringComparer.Ordinal))
-            {
-                return cached.Id;
-            }
+            return await VerifyExplicitSeasonsAsync(destination, cancellationToken).ConfigureAwait(false);
         }
 
+        // When a dossier file is adopted for the current season, never
+        // auto-create a Seasons/ folder: with drive.file the pre-existing
+        // Seasons/ child can be invisible to files.list while the adopted
+        // dossier itself is granted. Creating here would duplicate Seasons/
+        // and then reject the adopted dossier against the new folder.
+        string stableForLookup = ReportFilenames.SeasonDossierFileName(currentSeason, "md");
+        (string? adoptedDossierId, _) = DrivePublishingStore.ResolveDossierForSeason(destination, currentSeason, stableForLookup);
+        if (adoptedDossierId is not null)
+        {
+            return await ResolveAdoptedSeasonsAsync(destination, adoptedDossierId, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await FindOrCreateSeasonsAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string> VerifyExplicitSeasonsAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        CancellationToken cancellationToken)
+    {
+        DriveFile? cached;
+        try
+        {
+            cached = await WithAuthAsync(
+                token => _drive.GetFileAsync(token, destination.SeasonsFolderId!, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            throw new DriveConflictException(
+                "The configured Seasons/ folder id is not accessible (403). With drive.file the app can only use folders it created or that were explicitly granted via Choose from Drive. Re-pick the Seasons/ folder with Choose from Drive, verify access, then retry. Nothing was created.");
+        }
+
+        if (cached is null || cached.Trashed)
+        {
+            throw new DriveConflictException(
+                "The configured Seasons/ folder id was not found (deleted or trashed). Re-pick the Seasons/ folder with Choose from Drive or clear it to auto-resolve, then retry. Nothing was created.");
+        }
+
+        if (!string.Equals(cached.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+        {
+            throw new DriveConflictException(
+                $"The configured Seasons/ folder id {cached.Id} is a file, not a folder. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve. Nothing was created.");
+        }
+
+        if (!cached.Parents.Contains(destination.MtshistoryFolderId!, StringComparer.Ordinal))
+        {
+            throw new DriveConflictException(
+                "That Seasons/ folder is outside the configured mtshistory folder. Adopt the Seasons/ folder inside mtshistory or clear it to auto-resolve. Nothing was created.");
+        }
+
+        try
+        {
+            _ = await WithAuthAsync(
+                token => _drive.ListByNameInFolderAsync(token, cached.Id, "__drive_verify__", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            throw new DriveConflictException(
+                "The configured Seasons/ folder is visible but listing was denied (403). Grant access with Choose from Drive, then retry. Nothing was created.");
+        }
+
+        return cached.Id;
+    }
+
+    private async Task<string> ResolveAdoptedSeasonsAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string adoptedDossierId,
+        CancellationToken cancellationToken)
+    {
+        DriveFile? found = await TryFindSeasonsAsync(destination, cancellationToken).ConfigureAwait(false);
+        string? inferred = await TryInferSeasonsFromDossierAsync(destination, adoptedDossierId, cancellationToken).ConfigureAwait(false);
+        if (inferred is not null)
+        {
+            await _publishing.SaveDestinationAsync(destination with { SeasonsFolderId = inferred }, cancellationToken).ConfigureAwait(false);
+            return inferred;
+        }
+
+        // Fail closed without creating: let PublishOne report the adopted
+        // file as missing/grant/outside per-file. The synthetic id never
+        // matches a real parent so outside-destination is still detected;
+        // missing ids return before any parent check.
+        return found?.Id ?? "__unresolved-seasons__";
+    }
+
+    private async Task<string> FindOrCreateSeasonsAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        CancellationToken cancellationToken)
+    {
         DriveFile? existing = await WithAuthAsync(
             token => _drive.FindFolderAsync(token, destination.MtshistoryFolderId!, "Seasons", cancellationToken),
             cancellationToken).ConfigureAwait(false);
@@ -380,11 +483,84 @@ public sealed class PublishDriveReportsHandler
         return created.Id;
     }
 
+    private async Task<DriveFile?> TryFindSeasonsAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await WithAuthAsync(
+                token => _drive.FindFolderAsync(token, destination.MtshistoryFolderId!, "Seasons", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> TryInferSeasonsFromDossierAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string dossierFileId,
+        CancellationToken cancellationToken)
+    {
+        DriveFile? dossier;
+        try
+        {
+            dossier = await WithAuthAsync(
+                token => _drive.GetFileAsync(token, dossierFileId, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+
+        if (dossier is null || dossier.Trashed)
+        {
+            return null;
+        }
+
+        if (string.Equals(dossier.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string? parentId = dossier.Parents.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(parentId))
+        {
+            return null;
+        }
+
+        DriveFile? parent;
+        try
+        {
+            parent = await WithAuthAsync(
+                token => _drive.GetFileAsync(token, parentId!, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return null;
+        }
+
+        if (parent is null
+            || parent.Trashed
+            || !string.Equals(parent.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal)
+            || !parent.Parents.Contains(destination.MtshistoryFolderId!, StringComparer.Ordinal))
+        {
+            return null;
+        }
+
+        return parent.Id;
+    }
+
     private async Task<(DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated)> PublishOneAsync(
         DrivePublishingStore.DestinationDocument destination,
         string report,
         string? storedFileId,
-        string desiredName,
+        string? explicitName,
+        string defaultName,
         string parentFolderId,
         string markdown,
         string newFingerprint,
@@ -393,12 +569,13 @@ public sealed class PublishDriveReportsHandler
         int? dossierSeason,
         CancellationToken cancellationToken)
     {
+        string desiredForCreate = string.IsNullOrWhiteSpace(explicitName) ? defaultName : explicitName!;
         if (storedFileId is null)
         {
-            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+            return await CreateNewAsync(destination, report, desiredForCreate, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
 
-        (DriveFile? remote, DriveFileOutcome? denied) = await LoadRemoteFileAsync(report, storedFileId, desiredName, newFingerprint, cancellationToken).ConfigureAwait(false);
+        (DriveFile? remote, DriveFileOutcome? denied) = await LoadRemoteFileAsync(report, storedFileId, desiredForCreate, newFingerprint, cancellationToken).ConfigureAwait(false);
         if (denied is not null)
         {
             return (denied, destination);
@@ -409,15 +586,20 @@ public sealed class PublishDriveReportsHandler
             // Defensive fail-closed: an adopted id must never silently fall
             // through to create. LoadRemoteFileAsync already returns a failed
             // outcome for missing/trashed ids; this guards future paths.
-            return (Failed(report, storedFileId, desiredName,
-                $"The adopted {report} file id {storedFileId} is no longer visible in Drive (deleted, trashed, or never granted to this app — drive.file hides ungranted files as missing). Publishing did not create a duplicate. Clear the id to create a new '{desiredName}' in the destination, or re-adopt a granted file id, then retry. Nothing was changed.", newFingerprint),
+            return (Failed(report, storedFileId, desiredForCreate,
+                $"The adopted {report} file id {storedFileId} is no longer visible in Drive (deleted, trashed, or never granted to this app — drive.file hides ungranted files as missing). Publishing did not create a duplicate. Clear the id to create a new '{desiredForCreate}' in the destination, or re-adopt a granted file id, then retry. Nothing was changed.", newFingerprint),
                 destination);
         }
+
+        // An adopted id with no explicit filename keeps its remote name: never
+        // silently rename a manually named file (e.g. universe-almanac-newtest.md)
+        // to the generated default.
+        string effectiveName = string.IsNullOrWhiteSpace(explicitName) ? remote.Name : explicitName!;
 
         // P1: never update a file outside the configured destination. An
         // adopted id is opaque; without a parent/MIME check a pasted id could
         // overwrite (and rename) unrelated Drive content.
-        DriveFileOutcome? locationDenied = ValidateRemoteLocation(report, remote, desiredName, parentFolderId, newFingerprint);
+        DriveFileOutcome? locationDenied = ValidateRemoteLocation(report, remote, effectiveName, parentFolderId, newFingerprint);
         if (locationDenied is not null)
         {
             return (locationDenied, destination);
@@ -426,24 +608,24 @@ public sealed class PublishDriveReportsHandler
         string? remoteFingerprint = await LoadRemoteFingerprintAsync(remote, cancellationToken).ConfigureAwait(false);
         if (string.Equals(remoteFingerprint, "denied", StringComparison.Ordinal))
         {
-            return (Failed(report, remote.Id, desiredName,
+            return (Failed(report, remote.Id, effectiveName,
                 "Google denied access to read the adopted file (403). With drive.file the app needs an explicit Choose from Drive (Google Picker) grant for pre-existing files. Use Verify access, re-pick the file with Choose from Drive, or adopt a file it created. Nothing was changed.", newFingerprint),
                 destination);
         }
 
         if (string.Equals(newFingerprint, remoteFingerprint, StringComparison.Ordinal))
         {
-            return (Unchanged(report, remote, desiredName, newFingerprint), WithSlot(destination, report, remote.Id, desiredName, newFingerprint, remote.ModifiedTime, dossierSeason));
+            return (Unchanged(report, remote, effectiveName, newFingerprint), WithSlot(destination, report, remote.Id, effectiveName, newFingerprint, remote.ModifiedTime, dossierSeason));
         }
 
         if (IsStaleRemoteEdit(lastFingerprint, remoteFingerprint, newFingerprint) && !allowOverwriteEditedRemote)
         {
-            return (Failed(report, remote.Id, desiredName,
+            return (Failed(report, remote.Id, effectiveName,
                 "The Drive file was edited independently since the last publish. Re-run with overwrite confirmation to replace those edits, or adopt a different file. Nothing was changed.", newFingerprint),
                 destination);
         }
 
-        return await UpdateRemoteAsync(destination, report, remote, desiredName, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+        return await UpdateRemoteAsync(destination, report, remote, effectiveName, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
     }
 
     private static DriveFileOutcome? ValidateRemoteLocation(

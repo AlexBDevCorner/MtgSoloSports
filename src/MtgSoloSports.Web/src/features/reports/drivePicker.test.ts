@@ -37,6 +37,7 @@ function statusWith(overrides: Partial<DriveStatus>): DriveStatus {
     },
     mtshistoryFolderId: null,
     mtshistoryFolderName: null,
+    seasonsFolderId: null,
     lastPublishedUtc: null,
     lastSeasonNumber: null,
     lastPhase: null,

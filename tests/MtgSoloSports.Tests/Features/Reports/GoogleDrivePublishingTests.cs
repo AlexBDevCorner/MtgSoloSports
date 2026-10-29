@@ -581,6 +581,136 @@ public sealed class GoogleDrivePublishingTests
     }
 
     [Fact]
+    public async Task AdoptedDossier_InfersOriginalSeasonsWithoutDuplicate()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons-orig", "folder-mtshistory", "Seasons");
+            drive.SeedFile("dossier-orig", "folder-seasons-orig", "season-1-dossier.md", "# old dossier");
+            drive.SeedFile("almanac-orig", "folder-mtshistory", "universe-almanac-newtest.md", "# old almanac");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            // No explicit Seasons folder id: publishing must infer the adopted
+            // dossier's parent instead of creating a duplicate Seasons/ folder.
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"dossier-orig","dossierFileName":"season-1-dossier.md","almanacFileId":"almanac-orig","almanacFileName":"universe-almanac-newtest.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("updated");
+            published.FileId("dossier").ShouldBe("dossier-orig");
+            // Exactly one Seasons/ folder under mtshistory: no duplicate.
+            drive.FoldersFor("folder-mtshistory", "Seasons").Count.ShouldBe(1);
+            drive.FoldersFor("folder-mtshistory", "Seasons").Single().ShouldBe("folder-seasons-orig");
+            // The inferred Seasons folder is persisted for later publishes.
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? after =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.SeasonsFolderId.ShouldBe("folder-seasons-orig");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AdoptedMissingId_DoesNotCreateSeasonsFolder()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"missing-dossier","dossierFileName":"season-1-dossier.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("failed");
+            // Fail closed without creating a duplicate Seasons/ folder.
+            drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ExplicitSeasonsFolderOutsideDestination_IsRejectedWithoutCreation()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-elsewhere", "root", "other");
+            drive.SeedFolder("folder-seasons-wrong", "folder-elsewhere", "Seasons");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","seasonsFolderId":"folder-seasons-wrong"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.Conflict);
+            // No Seasons/ folder may be created inside the destination.
+            drive.FoldersFor("folder-mtshistory", "Seasons").ShouldBeEmpty();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AdoptedIdWithoutExplicitName_PreservesRemoteName()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
+            drive.SeedFile("dossier-adopted", "folder-seasons", "season-1-dossier.md", "# old dossier");
+            drive.SeedFile("almanac-adopted", "folder-mtshistory", "universe-almanac-newtest.md", "# old almanac");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            // Adopt by id with no explicit file names: publishing must keep
+            // the remote custom names instead of renaming to defaults.
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"dossier-adopted","almanacFileId":"almanac-adopted"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("updated");
+            published.Outcome("almanac").ShouldBe("updated");
+            published.FileId("dossier").ShouldBe("dossier-adopted");
+            published.FileId("almanac").ShouldBe("almanac-adopted");
+            drive.Files["dossier-adopted"].Name.ShouldBe("season-1-dossier.md");
+            drive.Files["almanac-adopted"].Name.ShouldBe("universe-almanac-newtest.md");
+            drive.Files["almanac-adopted"].Content.ShouldContain("# Universe almanac");
+            // Second publish with no sporting change is idempotent.
+            PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            second.Outcomes.ShouldBe(["dossier:unchanged", "almanac:unchanged"]);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task VerifyFolder_AccessibleFolderReportsOkDespiteDownloadForbidden()
     {
         var (factory, root, _, drive) = CreateFactory();

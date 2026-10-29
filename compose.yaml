@@ -21,7 +21,10 @@ services:
     image: mtgsolosports:latest
     ports:
       # Single published port: React UI, static assets and /api together.
-      - "8080:8080"
+      # Localhost-bound: the Drive publishing endpoints trust the local
+      # browser (no auth) and hold Google refresh credentials server-side,
+      # so the port must not be exposed to the LAN.
+      - "127.0.0.1:8080:8080"
     environment:
       ASPNETCORE_HTTP_PORTS: "8080"
       Saves__SavesRoot: /data/saves

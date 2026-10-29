@@ -13,6 +13,7 @@ public sealed record DriveStatusResponse(
     DriveReportSlotDto Almanac,
     string? MtshistoryFolderId,
     string? MtshistoryFolderName,
+    string? SeasonsFolderId,
     DateTimeOffset? LastPublishedUtc,
     int? LastSeasonNumber,
     string? LastPhase,

@@ -92,6 +92,7 @@ public sealed class GetDriveStatusHandler
                 null),
             destination?.MtshistoryFolderId,
             destination?.MtshistoryFolderName,
+            destination?.SeasonsFolderId,
             destination?.LastPublishedUtc,
             destination?.LastSeasonNumber,
             destination?.LastPhase,

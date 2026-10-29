@@ -43,6 +43,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [driveNotice, setDriveNotice] = useState<string | null>(null);
   const [folderId, setFolderId] = useState('');
   const [folderName, setFolderName] = useState('');
+  const [seasonsFolderId, setSeasonsFolderId] = useState('');
   const [dossierFileId, setDossierFileId] = useState('');
   const [dossierFileName, setDossierFileName] = useState('');
   const [almanacFileId, setAlmanacFileId] = useState('');
@@ -106,6 +107,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         setDriveStatus(status.saveId === saveId ? status : null);
         setFolderId(status.mtshistoryFolderId ?? '');
         setFolderName(status.mtshistoryFolderName ?? '');
+        setSeasonsFolderId(status.seasonsFolderId ?? '');
         setDossierFileId(status.dossier.fileId ?? '');
         setDossierFileName(status.dossier.fileName ?? '');
         setAlmanacFileId(status.almanac.fileId ?? '');
@@ -131,6 +133,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       setDriveStatus(status);
       setFolderId(status.mtshistoryFolderId ?? '');
       setFolderName(status.mtshistoryFolderName ?? '');
+      setSeasonsFolderId(status.seasonsFolderId ?? '');
       setDossierFileId(status.dossier.fileId ?? '');
       setDossierFileName(status.dossier.fileName ?? '');
       setAlmanacFileId(status.almanac.fileId ?? '');
@@ -364,6 +367,16 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 />
               </label>
               <label className="field">
+                <span>Seasons folder id (optional)</span>
+                <input
+                  type="text"
+                  value={seasonsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Seasons/"
+                  onChange={(event) => setSeasonsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
                 <span>Dossier file id (Seasons/)</span>
                 <input
                   type="text"
@@ -447,6 +460,34 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     setDriveError(pickerDisabledHint(driveStatus));
                     return;
                   }
+                  setDriveBusy('pick-seasons');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'folder')
+                    .then((picked) => {
+                      if (picked) {
+                        setSeasonsFolderId(picked.id);
+                        setDriveNotice(
+                          `Picked Seasons folder “${picked.name}” — press Save destination, then Verify access.`,
+                        );
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-seasons' ? 'Opening Picker…' : 'Choose Seasons…'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
                   setDriveBusy('pick-dossier');
                   setDriveError(null);
                   void showDrivePicker(config, 'markdown')
@@ -515,6 +556,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   void saveDriveDestination(saveId, {
                     mtshistoryFolderId: folderId,
                     mtshistoryFolderName: folderName,
+                    seasonsFolderId,
                     dossierFileId,
                     dossierFileName,
                     almanacFileId,
