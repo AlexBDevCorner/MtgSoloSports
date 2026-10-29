@@ -47,6 +47,9 @@ public sealed class GetDriveStatusHandler
         DrivePublishingStore.DestinationDocument? destination =
             await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
 
+        (string? dossierId, string? dossierName, string? dossierFingerprint, string? dossierModified) =
+            DrivePublishingStore.CurrentDossierView(destination, detail.CurrentSeason);
+
         return new DriveStatusResponse(
             detail.SaveId,
             detail.Name,
@@ -57,10 +60,10 @@ public sealed class GetDriveStatusHandler
             connection?.Scopes,
             connection?.ConnectedUtc,
             new DriveReportSlotDto(
-                destination?.DossierFileId,
-                destination?.DossierFileName,
-                destination?.DossierFingerprint,
-                destination?.DossierRemoteModifiedTime,
+                dossierId,
+                dossierName,
+                dossierFingerprint,
+                dossierModified,
                 destination?.LastDossierOutcome,
                 null),
             new DriveReportSlotDto(

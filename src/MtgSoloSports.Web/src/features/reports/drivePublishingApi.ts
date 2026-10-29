@@ -58,6 +58,21 @@ export interface DriveDestinationInput {
   confirmCrossSave: boolean;
 }
 
+export interface DriveVerifyCheck {
+  report: string;
+  status: string;
+  fileId: string | null;
+  fileName: string | null;
+  detail: string | null;
+}
+
+export interface DriveVerifyResponse {
+  saveId: string;
+  saveName: string;
+  currentSeason: number;
+  checks: DriveVerifyCheck[];
+}
+
 export interface DriveFileOutcome {
   report: string;
   outcome: 'created' | 'updated' | 'unchanged' | 'failed';
@@ -95,6 +110,10 @@ export function driveDestinationUrl(saveId: string): string {
 
 export function drivePublishUrl(saveId: string): string {
   return `/api/saves/${saveId}/reports/drive/publish`;
+}
+
+export function driveVerifyUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/verify`;
 }
 
 export function getDriveStatus(saveId: string, signal?: AbortSignal): Promise<DriveStatus> {
@@ -137,5 +156,11 @@ export function publishDriveReports(
   return fetchJson<PublishDriveResponse>(drivePublishUrl(saveId), {
     method: 'POST',
     body: JSON.stringify(options),
+  });
+}
+
+export function verifyDriveDestination(saveId: string): Promise<DriveVerifyResponse> {
+  return fetchJson<DriveVerifyResponse>(driveVerifyUrl(saveId), {
+    method: 'POST',
   });
 }

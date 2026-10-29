@@ -43,6 +43,12 @@ public sealed class DrivePublishingStore
         string? AccessToken,
         DateTimeOffset? AccessTokenExpiresUtc);
 
+    public sealed record DossierSlot(
+        string? FileId,
+        string? FileName,
+        string? Fingerprint,
+        string? RemoteModifiedTime);
+
     public sealed record DestinationDocument(
         Guid SaveId,
         string SaveName,
@@ -63,7 +69,8 @@ public sealed class DrivePublishingStore
         int? LastGlobalStage,
         string? LastDossierOutcome,
         string? LastAlmanacOutcome,
-        string? LastError);
+        string? LastError,
+        IReadOnlyDictionary<int, DossierSlot>? DossierBySeason = null);
 
     public sealed record PendingAuthDocument(
         string State,
@@ -71,6 +78,128 @@ public sealed class DrivePublishingStore
         string CodeVerifier,
         DateTimeOffset CreatedUtc,
         DateTimeOffset ExpiresUtc);
+
+    /// <summary>
+    /// Per-season dossier resolution. The dossier's semantic identity includes
+    /// the season number, so each season keeps its own file id/name in
+    /// <c>DossierBySeason</c>. Legacy destinations (single DossierFileId without
+    /// a map) are interpreted as the last-published season's slot and migrated
+    /// forward; a stale legacy id is never reused for a different season.
+    /// </summary>
+    public static (string? FileId, string FileName) ResolveDossierForSeason(
+        DestinationDocument destination,
+        int currentSeason,
+        string stableFileName)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stableFileName);
+        if (destination.DossierBySeason is not null
+            && destination.DossierBySeason.TryGetValue(currentSeason, out DossierSlot? slot))
+        {
+            string name = string.IsNullOrWhiteSpace(slot.FileName) ? stableFileName : slot.FileName;
+            return (slot.FileId, name);
+        }
+
+        if (destination.DossierBySeason is not null && destination.DossierBySeason.Count > 0)
+        {
+            // History exists but nothing for this season yet: start a fresh
+            // stable file so the prior season's Drive file is preserved.
+            return (null, stableFileName);
+        }
+
+        // No history map: legacy single slot. A legacy id tied to a different
+        // last-published season is stale and must not be reused.
+        if (destination.DossierFileId is not null
+            && destination.LastSeasonNumber.HasValue
+            && destination.LastSeasonNumber.Value != currentSeason)
+        {
+            return (null, stableFileName);
+        }
+
+        string legacyName = string.IsNullOrWhiteSpace(destination.DossierFileName)
+            ? stableFileName
+            : destination.DossierFileName;
+        return (destination.DossierFileId, legacyName);
+    }
+
+    public static DestinationDocument WithDossierSlot(
+        DestinationDocument destination,
+        int season,
+        string? fileId,
+        string fileName,
+        string? fingerprint,
+        string? remoteModifiedTime)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        Dictionary<int, DossierSlot> map = destination.DossierBySeason is null
+            ? []
+            : new Dictionary<int, DossierSlot>(destination.DossierBySeason);
+        // Preserve a stale legacy slot under its original season before it is
+        // superseded, so season history is never silently dropped.
+        if (map.Count == 0
+            && destination.DossierFileId is not null
+            && destination.LastSeasonNumber.HasValue
+            && destination.LastSeasonNumber.Value != season)
+        {
+            map[destination.LastSeasonNumber.Value] = new DossierSlot(
+                destination.DossierFileId,
+                destination.DossierFileName,
+                destination.DossierFingerprint,
+                destination.DossierRemoteModifiedTime);
+        }
+
+        if (fileId is null && string.IsNullOrWhiteSpace(fileName))
+        {
+            map.Remove(season);
+        }
+        else
+        {
+            map[season] = new DossierSlot(fileId, fileName, fingerprint, remoteModifiedTime);
+        }
+
+        return destination with
+        {
+            DossierFileId = fileId,
+            DossierFileName = fileName,
+            DossierFingerprint = fingerprint,
+            DossierRemoteModifiedTime = remoteModifiedTime,
+            DossierBySeason = map,
+        };
+    }
+
+    public static (string? FileId, string? FileName, string? Fingerprint, string? RemoteModifiedTime)
+        CurrentDossierView(DestinationDocument? destination, int currentSeason)
+    {
+        if (destination is null)
+        {
+            return (null, null, null, null);
+        }
+
+        if (destination.DossierBySeason is not null
+            && destination.DossierBySeason.TryGetValue(currentSeason, out DossierSlot? slot))
+        {
+            return (slot.FileId, slot.FileName, slot.Fingerprint, slot.RemoteModifiedTime);
+        }
+
+        if (destination.DossierBySeason is not null && destination.DossierBySeason.Count > 0)
+        {
+            return (null, null, null, null);
+        }
+
+        if (destination.DossierFileId is not null
+            && destination.LastSeasonNumber.HasValue
+            && destination.LastSeasonNumber.Value != currentSeason)
+        {
+            return (null, null, null, null);
+        }
+
+        return (
+            destination.DossierFileId,
+            destination.DossierFileName,
+            destination.DossierFingerprint,
+            destination.DossierRemoteModifiedTime);
+    }
 
     public string GetStoreRoot() => _options.Value.ResolveStoreRoot(_environment);
 

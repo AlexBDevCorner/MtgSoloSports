@@ -214,6 +214,7 @@ builder.Services.AddScoped<DriveCallbackHandler>();
 builder.Services.AddScoped<DisconnectDriveHandler>();
 builder.Services.AddScoped<GetDriveDestinationHandler>();
 builder.Services.AddScoped<PutDriveDestinationHandler>();
+builder.Services.AddScoped<VerifyDriveDestinationHandler>();
 builder.Services.AddScoped<PublishDriveReportsHandler>();
 
 var app = builder.Build();
@@ -320,6 +321,7 @@ DriveCallbackEndpoint.Map(app);
 DisconnectDriveEndpoint.Map(app);
 GetDriveDestinationEndpoint.Map(app);
 PutDriveDestinationEndpoint.Map(app);
+VerifyDriveDestinationEndpoint.Map(app);
 PublishDriveReportsEndpoint.Map(app);
 GetLongRunChecksumEndpoint.Map(app);
 ValidateLongRunInvariantsEndpoint.Map(app);

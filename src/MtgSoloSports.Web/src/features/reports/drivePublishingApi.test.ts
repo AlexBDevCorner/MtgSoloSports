@@ -6,6 +6,7 @@ import {
   driveDisconnectUrl,
   drivePublishUrl,
   driveStatusUrl,
+  driveVerifyUrl,
 } from './drivePublishingApi';
 
 describe('MSS-089 Drive publishing URLs', () => {
@@ -15,5 +16,6 @@ describe('MSS-089 Drive publishing URLs', () => {
     assert.equal(driveDisconnectUrl('save-1'), '/api/saves/save-1/reports/drive/disconnect');
     assert.equal(driveDestinationUrl('save-1'), '/api/saves/save-1/reports/drive/destination');
     assert.equal(drivePublishUrl('save-1'), '/api/saves/save-1/reports/drive/publish');
+    assert.equal(driveVerifyUrl('save-1'), '/api/saves/save-1/reports/drive/verify');
   });
 });

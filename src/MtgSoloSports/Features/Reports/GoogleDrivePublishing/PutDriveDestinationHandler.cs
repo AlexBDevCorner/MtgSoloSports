@@ -93,8 +93,16 @@ public sealed class PutDriveDestinationHandler
     {
         // Changing a file id resets its baseline: the next publish adopts the
         // remote content deliberately instead of treating edits as conflicts.
-        bool sameDossier = string.Equals(existing?.DossierFileId, normalized.DossierId, StringComparison.Ordinal);
+        (string? currentId, _, string? currentFingerprint, string? currentModified) =
+            DrivePublishingStore.CurrentDossierView(existing, detail.CurrentSeason);
+        bool sameDossier = string.Equals(currentId, normalized.DossierId, StringComparison.Ordinal);
         bool sameAlmanac = string.Equals(existing?.AlmanacFileId, normalized.AlmanacId, StringComparison.Ordinal);
+
+        string? dossierFingerprint = sameDossier ? currentFingerprint : null;
+        string? dossierModified = sameDossier ? currentModified : null;
+        Dictionary<int, DrivePublishingStore.DossierSlot> map =
+            BuildDossierMap(existing, detail.CurrentSeason, normalized, dossierFingerprint, dossierModified, currentId);
+
         return new DrivePublishingStore.DestinationDocument(
             detail.SaveId,
             detail.Name,
@@ -105,9 +113,9 @@ public sealed class PutDriveDestinationHandler
             normalized.DossierName,
             normalized.AlmanacId,
             normalized.AlmanacName,
-            sameDossier ? existing?.DossierFingerprint : null,
+            dossierFingerprint,
             sameAlmanac ? existing?.AlmanacFingerprint : null,
-            sameDossier ? existing?.DossierRemoteModifiedTime : null,
+            dossierModified,
             sameAlmanac ? existing?.AlmanacRemoteModifiedTime : null,
             existing?.LastPublishedUtc,
             existing?.LastSeasonNumber,
@@ -115,7 +123,65 @@ public sealed class PutDriveDestinationHandler
             existing?.LastGlobalStage,
             existing?.LastDossierOutcome,
             existing?.LastAlmanacOutcome,
-            existing?.LastError);
+            existing?.LastError,
+            map);
+    }
+
+    private static Dictionary<int, DrivePublishingStore.DossierSlot> BuildDossierMap(
+        DrivePublishingStore.DestinationDocument? existing,
+        int currentSeason,
+        NormalizedDestination normalized,
+        string? dossierFingerprint,
+        string? dossierModified,
+        string? currentId)
+    {
+        Dictionary<int, DrivePublishingStore.DossierSlot> map = existing?.DossierBySeason is null
+            ? []
+            : new Dictionary<int, DrivePublishingStore.DossierSlot>(existing.DossierBySeason);
+        MigrateLegacySlot(existing, currentSeason, currentId, map);
+        if (normalized.DossierId is null && normalized.DossierName is null)
+        {
+            map.Remove(currentSeason);
+        }
+        else
+        {
+            map[currentSeason] = new DrivePublishingStore.DossierSlot(
+                normalized.DossierId,
+                normalized.DossierName,
+                dossierFingerprint,
+                dossierModified);
+        }
+
+        return map;
+    }
+
+    private static void MigrateLegacySlot(
+        DrivePublishingStore.DestinationDocument? existing,
+        int currentSeason,
+        string? currentId,
+        Dictionary<int, DrivePublishingStore.DossierSlot> map)
+    {
+        if (map.Count != 0 || existing?.DossierFileId is null)
+        {
+            return;
+        }
+
+        if (existing.LastSeasonNumber.HasValue && existing.LastSeasonNumber.Value != currentSeason)
+        {
+            map[existing.LastSeasonNumber.Value] = new DrivePublishingStore.DossierSlot(
+                existing.DossierFileId,
+                existing.DossierFileName,
+                existing.DossierFingerprint,
+                existing.DossierRemoteModifiedTime);
+        }
+        else if (currentId is not null)
+        {
+            map[currentSeason] = new DrivePublishingStore.DossierSlot(
+                existing.DossierFileId,
+                existing.DossierFileName,
+                existing.DossierFingerprint,
+                existing.DossierRemoteModifiedTime);
+        }
     }
 
     private static DriveDestinationResponse ToResponse(DrivePublishingStore.DestinationDocument updated)
@@ -177,9 +243,25 @@ public sealed class PutDriveDestinationHandler
         DrivePublishingStore.DestinationDocument other,
         NormalizedDestination normalized)
     {
-        return (normalized.FolderId is not null && string.Equals(other.MtshistoryFolderId, normalized.FolderId, StringComparison.Ordinal))
-            || (normalized.DossierId is not null && string.Equals(other.DossierFileId, normalized.DossierId, StringComparison.Ordinal))
-            || (normalized.AlmanacId is not null && string.Equals(other.AlmanacFileId, normalized.AlmanacId, StringComparison.Ordinal));
+        if (normalized.FolderId is not null && string.Equals(other.MtshistoryFolderId, normalized.FolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (normalized.AlmanacId is not null && string.Equals(other.AlmanacFileId, normalized.AlmanacId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (normalized.DossierId is not null
+            && (string.Equals(other.DossierFileId, normalized.DossierId, StringComparison.Ordinal)
+                || (other.DossierBySeason is not null
+                    && other.DossierBySeason.Values.Any(s => string.Equals(s.FileId, normalized.DossierId, StringComparison.Ordinal)))))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static string? NormalizeId(string? value, string label)

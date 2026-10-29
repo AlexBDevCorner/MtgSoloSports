@@ -126,6 +126,7 @@ public sealed class GoogleDrivePublishingTests
         try
         {
             Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
             drive.SeedFile("dossier-adopted", "folder-seasons", "season-old.md", "# old dossier");
             drive.SeedFile("almanac-adopted", "folder-mtshistory", "universe-almanac-newtest.md", "# old almanac");
             using HttpClient client = factory.CreateClient();
@@ -343,6 +344,204 @@ public sealed class GoogleDrivePublishingTests
         }
     }
 
+    [Fact]
+    public async Task AdoptedFileOutsideDestination_IsRejectedWithoutOverwrite()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFile("outside-1", "other-folder", "season-99-dossier.md", "# unrelated");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"outside-1","dossierFileName":"season-99-dossier.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Status.ShouldBe(HttpStatusCode.OK);
+            published.Outcome("dossier").ShouldBe("failed");
+            published.Detail("dossier")!.ShouldContain("outside the configured destination");
+            // Unrelated file must not be overwritten or renamed.
+            drive.Files["outside-1"].Content.ShouldBe("# unrelated");
+            drive.Files["outside-1"].Name.ShouldBe("season-99-dossier.md");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AdoptedFolderId_IsRejectedWithoutOverwrite()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-as-file", "folder-mtshistory", "not-a-file");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"folder-as-file","dossierFileName":"season-1-dossier.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Outcome("dossier").ShouldBe("failed");
+            published.Detail("dossier")!.ShouldContain("is a Drive folder");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeniedGrant_PublishFailsWithGrantGuidance()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFile("granted-no", "folder-seasons", "season-x-dossier.md", "# old");
+            drive.DeniedIds.Add("granted-no");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"granted-no","dossierFileName":"season-x-dossier.md"}""");
+            PublishResult published = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            published.Outcome("dossier").ShouldBe("failed");
+            published.Detail("dossier")!.ShouldContain("403");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task StaleLegacyDossier_CreatesNewFilePreservingPrior()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            PublishResult first = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            first.Status.ShouldBe(HttpStatusCode.OK);
+            string dossierIdA = first.FileId("dossier")!;
+            string contentA = drive.Files[dossierIdA].Content;
+            int currentSeason = await ReadCurrentSeasonAsync(client, saveId);
+
+            // Simulate a prior-season legacy mapping: the stored id belongs to
+            // season N-1 while the save is at season N. Rename the Drive file
+            // to the old stable name so the next publish must create a fresh
+            // stable file and preserve the old Drive file.
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? loaded =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            loaded.ShouldNotBeNull();
+            string oldName = $"season-{currentSeason - 1}-dossier.md";
+            drive.Files[dossierIdA] = drive.Files[dossierIdA] with { Name = oldName };
+            DrivePublishingStore.DestinationDocument stale = loaded! with
+            {
+                DossierFileId = dossierIdA,
+                DossierFileName = oldName,
+                LastSeasonNumber = currentSeason - 1,
+                DossierBySeason = null,
+            };
+            await store.SaveDestinationAsync(stale, CancellationToken.None);
+
+            PublishResult second = await PostPublishAsync(client, saveId, confirmCrossSave: false, allowOverwrite: false);
+            second.Status.ShouldBe(HttpStatusCode.OK);
+            second.Outcome("dossier").ShouldBe("created");
+            string dossierIdB = second.FileId("dossier")!;
+            dossierIdB.Equals(dossierIdA, StringComparison.Ordinal).ShouldBeFalse();
+            // Prior season file is preserved byte-for-byte.
+            drive.Files[dossierIdA].Content.ShouldBe(contentA);
+            drive.Files.ShouldContainKey(dossierIdB);
+            DrivePublishingStore.DestinationDocument? after =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.DossierBySeason.ShouldNotBeNull();
+            after.DossierBySeason!.ShouldContainKey(currentSeason - 1);
+            after.DossierBySeason.ShouldContainKey(currentSeason);
+            after.DossierBySeason[currentSeason - 1].FileId.ShouldBe(dossierIdA);
+            after.DossierBySeason[currentSeason].FileId.ShouldBe(dossierIdB);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void DossierHistory_ResolvesPerSeasonWithoutReuse()
+    {
+        Guid saveId = Guid.NewGuid();
+        var existing = new DrivePublishingStore.DestinationDocument(
+            saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+            "old-id", "season-1-dossier.md", null, null, "fp-old", null, "t-old", null,
+            DateTimeOffset.UtcNow, 1, "Phase", 0, "updated", null, null,
+            new Dictionary<int, DrivePublishingStore.DossierSlot>
+            {
+                [1] = new DrivePublishingStore.DossierSlot("old-id", "season-1-dossier.md", "fp-old", "t-old"),
+            });
+        (string? id, string name) = DrivePublishingStore.ResolveDossierForSeason(existing, 2, "season-2-dossier.md");
+        id.ShouldBeNull();
+        name.ShouldBe("season-2-dossier.md");
+
+        (string? curId, string? curName, _, _) = DrivePublishingStore.CurrentDossierView(existing, 2);
+        curId.ShouldBeNull();
+        curName.ShouldBeNull();
+
+        (string? curId1, string? curName1, _, _) = DrivePublishingStore.CurrentDossierView(existing, 1);
+        curId1.ShouldBe("old-id");
+        curName1.ShouldBe("season-1-dossier.md");
+    }
+
+    [Fact]
+    public async Task VerifyEndpoint_ReportsGrantAndLocation()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
+            drive.SeedFile("outside-v", "other-folder", "odd.md", "# odd");
+            drive.SeedFile("denied-v", "folder-mtshistory", "denied.md", "# denied");
+            drive.DeniedIds.Add("denied-v");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"outside-v","dossierFileName":"odd.md","almanacFileId":"denied-v","almanacFileName":"denied.md"}""");
+            using HttpResponseMessage response = await client.PostAsync(
+                $"/api/saves/{saveId:D}/reports/drive/verify", null);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Dictionary<string, string> byReport = json.RootElement.GetProperty("checks").EnumerateArray()
+                .ToDictionary(
+                    e => e.GetProperty("report").GetString()!,
+                    e => e.GetProperty("status").GetString()!,
+                    StringComparer.Ordinal);
+            byReport["dossier"].ShouldBe("outside-destination");
+            byReport["almanac"].ShouldBe("needs-grant");
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private sealed record PublishResult(
         HttpStatusCode Status,
         string[] Outcomes,
@@ -437,6 +636,14 @@ public sealed class GoogleDrivePublishingTests
     {
         using HttpResponseMessage response = await PutJsonAsync(client, $"/api/saves/{saveId:D}/reports/drive/destination", json).ConfigureAwait(false);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task<int> ReadCurrentSeasonAsync(HttpClient client, Guid saveId)
+    {
+        using HttpResponseMessage status = await client.GetAsync($"/api/saves/{saveId:D}/reports/drive/status").ConfigureAwait(false);
+        status.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using JsonDocument json = JsonDocument.Parse(await status.Content.ReadAsStringAsync().ConfigureAwait(false));
+        return json.RootElement.GetProperty("currentSeason").GetInt32();
     }
 
     private static Task<HttpResponseMessage> PutJsonAsync(HttpClient client, string url, string json) =>
@@ -578,6 +785,8 @@ public sealed class GoogleDrivePublishingTests
 
         public readonly HashSet<string> OnlyAcceptTokens = new(StringComparer.Ordinal);
 
+        public readonly HashSet<string> DeniedIds = new(StringComparer.Ordinal);
+
         public bool FailNextCreate { get; set; }
 
         private int _nextId;
@@ -587,6 +796,11 @@ public sealed class GoogleDrivePublishingTests
         public void SeedFile(string id, string parentId, string name, string content)
         {
             Files[id] = new FakeFile(id, name, "text/markdown", [parentId], content, Stamp(), false, $"https://drive.test/file/{id}");
+        }
+
+        public void SeedFolder(string id, string parentId, string name)
+        {
+            Files[id] = new FakeFile(id, name, "application/vnd.google-apps.folder", [parentId], string.Empty, Stamp(), false, $"https://drive.test/file/{id}");
         }
 
         public IReadOnlyList<string> FoldersFor(string parentId, string name) =>
@@ -609,6 +823,7 @@ public sealed class GoogleDrivePublishingTests
         public Task<DriveFile?> GetFileAsync(string accessToken, string fileId, CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(fileId);
             Files.TryGetValue(fileId, out FakeFile? file);
             return Task.FromResult<DriveFile?>(file?.ToDriveFile());
         }
@@ -616,6 +831,7 @@ public sealed class GoogleDrivePublishingTests
         public Task<string?> DownloadFileAsync(string accessToken, string fileId, CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(fileId);
             Files.TryGetValue(fileId, out FakeFile? file);
             return Task.FromResult(file?.Content);
         }
@@ -627,6 +843,7 @@ public sealed class GoogleDrivePublishingTests
             CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(folderId);
             IReadOnlyList<DriveFile> matches = Files.Values
                 .Where(f => !f.Trashed
                     && f.Parents.Contains(folderId, StringComparer.Ordinal)
@@ -643,6 +860,7 @@ public sealed class GoogleDrivePublishingTests
             CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(parentFolderId);
             List<DriveFile> folders = Files.Values
                 .Where(f => !f.Trashed
                     && string.Equals(f.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal)
@@ -665,6 +883,7 @@ public sealed class GoogleDrivePublishingTests
             CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(parentFolderId);
             string id = $"folder-{++_nextId}";
             FakeFile file = new(id, name, "application/vnd.google-apps.folder", [parentFolderId], string.Empty, Stamp(), false, $"https://drive.test/file/{id}");
             Files[id] = file;
@@ -679,6 +898,7 @@ public sealed class GoogleDrivePublishingTests
             CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(folderId);
             string id = $"file-{++_nextId}";
             FakeFile file = new(id, name, "text/markdown", [folderId], content, Stamp(), false, $"https://drive.test/file/{id}");
             Files[id] = file;
@@ -699,6 +919,7 @@ public sealed class GoogleDrivePublishingTests
             CancellationToken cancellationToken = default)
         {
             CheckToken(accessToken);
+            CheckDenied(fileId);
             if (FailUpdatesFor.Contains(fileId))
             {
                 throw new DriveUpstreamException("simulated update failure");
@@ -715,6 +936,14 @@ public sealed class GoogleDrivePublishingTests
             if (OnlyAcceptTokens.Count > 0 && !OnlyAcceptTokens.Contains(accessToken))
             {
                 throw new DriveApiException(HttpStatusCode.Unauthorized, "stale token");
+            }
+        }
+
+        private void CheckDenied(string id)
+        {
+            if (DeniedIds.Contains(id))
+            {
+                throw new DriveApiException(HttpStatusCode.Forbidden, "simulated 403 grant missing");
             }
         }
 

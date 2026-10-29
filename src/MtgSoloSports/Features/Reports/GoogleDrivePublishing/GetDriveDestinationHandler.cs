@@ -38,17 +38,20 @@ public sealed class GetDriveDestinationHandler
         DrivePublishingStore.DestinationDocument? destination =
             await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
 
+        (string? dossierId, string? dossierName, string? dossierFingerprint, _) =
+            DrivePublishingStore.CurrentDossierView(destination, detail.CurrentSeason);
+
         return new DriveDestinationResponse(
             detail.SaveId,
             detail.Name,
             destination?.MtshistoryFolderId,
             destination?.MtshistoryFolderName,
             destination?.SeasonsFolderId,
-            destination?.DossierFileId,
-            destination?.DossierFileName,
+            dossierId,
+            dossierName,
             destination?.AlmanacFileId,
             destination?.AlmanacFileName,
-            destination?.DossierFingerprint,
+            dossierFingerprint,
             destination?.AlmanacFingerprint,
             destination?.LastPublishedUtc,
             destination?.LastSeasonNumber,

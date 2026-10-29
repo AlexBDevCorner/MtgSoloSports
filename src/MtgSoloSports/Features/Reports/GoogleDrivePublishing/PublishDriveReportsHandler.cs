@@ -148,9 +148,11 @@ public sealed class PublishDriveReportsHandler
 
         string dossierMarkdown = Encoding.UTF8.GetString(dossierFile.Content);
         string almanacMarkdown = Encoding.UTF8.GetString(almanacFile.Content);
-        string dossierName = string.IsNullOrWhiteSpace(context.Destination.DossierFileName)
-            ? ReportFilenames.SeasonDossierFileName(context.Detail.CurrentSeason, "md")
-            : context.Destination.DossierFileName;
+        string stableDossierName = ReportFilenames.SeasonDossierFileName(context.Detail.CurrentSeason, "md");
+        (_, string dossierName) = DrivePublishingStore.ResolveDossierForSeason(
+            context.Destination,
+            context.Detail.CurrentSeason,
+            stableDossierName);
         string almanacName = string.IsNullOrWhiteSpace(context.Destination.AlmanacFileName)
             ? ReportFilenames.UniverseAlmanacFileName(context.Detail.Name, "md")
             : context.Destination.AlmanacFileName;
@@ -174,21 +176,63 @@ public sealed class PublishDriveReportsHandler
             await _publishing.GetDestinationAsync(context.Detail.SaveId, cancellationToken).ConfigureAwait(false)
             ?? context.Destination;
 
+        // Per-season dossier identity: never reuse a prior season's file id for
+        // a new season. Resolve the current season's slot (migrating legacy
+        // data) so season N+1 creates Seasons/season-N+1-dossier.md while the
+        // prior season's Drive file and mapping are preserved.
+        string stableDossierName = ReportFilenames.SeasonDossierFileName(context.Detail.CurrentSeason, "md");
+        (string? dossierFileId, string dossierName) = DrivePublishingStore.ResolveDossierForSeason(
+            current,
+            context.Detail.CurrentSeason,
+            stableDossierName);
+        // Snapshots were generated from the load-time destination; if the
+        // destination changed concurrently, prefer the freshly loaded mapping
+        // but keep the already-generated Markdown payload.
+        string effectiveDossierName = string.Equals(snapshots.DossierName, dossierName, StringComparison.Ordinal)
+            ? snapshots.DossierName
+            : dossierName;
+        (string? dossierFingerprint, string? dossierLast) = ResolveDossierFingerprints(current, context.Detail.CurrentSeason);
+
         List<DriveFileOutcome> outcomes = [];
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) dossierResult =
-            await PublishOneAsync(current, "dossier", current.DossierFileId, snapshots.DossierName,
+            await PublishOneAsync(current, "dossier", dossierFileId, effectiveDossierName,
                 seasonsFolderId, snapshots.DossierMarkdown, snapshots.DossierFingerprint,
-                current.DossierFingerprint, allowOverwriteEditedRemote, cancellationToken).ConfigureAwait(false);
+                dossierLast, allowOverwriteEditedRemote, context.Detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
         outcomes.Add(dossierResult.Outcome);
         current = dossierResult.Updated;
 
         (DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated) almanacResult =
             await PublishOneAsync(current, "almanac", current.AlmanacFileId, snapshots.AlmanacName,
                 current.MtshistoryFolderId!, snapshots.AlmanacMarkdown, snapshots.AlmanacFingerprint,
-                current.AlmanacFingerprint, allowOverwriteEditedRemote, cancellationToken).ConfigureAwait(false);
+                current.AlmanacFingerprint, allowOverwriteEditedRemote, null, cancellationToken).ConfigureAwait(false);
         outcomes.Add(almanacResult.Outcome);
         current = almanacResult.Updated;
         return (outcomes, current);
+    }
+
+    private static (string? Fingerprint, string? Last) ResolveDossierFingerprints(
+        DrivePublishingStore.DestinationDocument destination,
+        int currentSeason)
+    {
+        if (destination.DossierBySeason is not null
+            && destination.DossierBySeason.TryGetValue(currentSeason, out DrivePublishingStore.DossierSlot? slot))
+        {
+            return (slot.Fingerprint, slot.Fingerprint);
+        }
+
+        if (destination.DossierBySeason is not null && destination.DossierBySeason.Count > 0)
+        {
+            return (null, null);
+        }
+
+        if (destination.DossierFileId is not null
+            && destination.LastSeasonNumber.HasValue
+            && destination.LastSeasonNumber.Value != currentSeason)
+        {
+            return (null, null);
+        }
+
+        return (destination.DossierFingerprint, destination.DossierFingerprint);
     }
 
     private async Task<PublishDriveReportsResponse> FinishAsync(
@@ -208,8 +252,6 @@ public sealed class PublishDriveReportsHandler
         DrivePublishingStore.DestinationDocument finished = current with
         {
             SaveName = context.Detail.Name,
-            DossierFileName = snapshots.DossierName,
-            AlmanacFileName = snapshots.AlmanacName,
             LastPublishedUtc = anySettled ? now : current.LastPublishedUtc,
             LastSeasonNumber = anySettled ? context.Detail.CurrentSeason : current.LastSeasonNumber,
             LastPhase = anySettled ? context.Detail.Phase : current.LastPhase,
@@ -218,6 +260,10 @@ public sealed class PublishDriveReportsHandler
             LastAlmanacOutcome = outcomes[1].Outcome,
             LastError = firstError,
         };
+        // Preserve per-season dossier history: file ids/names are maintained by
+        // WithSlot only for settled outcomes. Do not overwrite the current
+        // season's legacy name with an attempted name when the publish failed,
+        // otherwise a stale id could be paired with a new-season name.
         await _publishing.SaveDestinationAsync(finished, cancellationToken).ConfigureAwait(false);
 
         return new PublishDriveReportsResponse(
@@ -256,12 +302,49 @@ public sealed class PublishDriveReportsHandler
         DrivePublishingStore.DestinationDocument other,
         DrivePublishingStore.DestinationDocument destination)
     {
-        return (destination.MtshistoryFolderId is not null
-                && string.Equals(other.MtshistoryFolderId, destination.MtshistoryFolderId, StringComparison.Ordinal))
-            || (destination.DossierFileId is not null
-                && string.Equals(other.DossierFileId, destination.DossierFileId, StringComparison.Ordinal))
-            || (destination.AlmanacFileId is not null
-                && string.Equals(other.AlmanacFileId, destination.AlmanacFileId, StringComparison.Ordinal));
+        if (destination.MtshistoryFolderId is not null
+            && string.Equals(other.MtshistoryFolderId, destination.MtshistoryFolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (destination.AlmanacFileId is not null
+            && string.Equals(other.AlmanacFileId, destination.AlmanacFileId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (destination.DossierFileId is not null
+            && (string.Equals(other.DossierFileId, destination.DossierFileId, StringComparison.Ordinal)
+                || (other.DossierBySeason is not null
+                    && other.DossierBySeason.Values.Any(s => string.Equals(s.FileId, destination.DossierFileId, StringComparison.Ordinal)))))
+        {
+            return true;
+        }
+
+        if (destination.DossierBySeason is not null)
+        {
+            foreach (DrivePublishingStore.DossierSlot slot in destination.DossierBySeason.Values)
+            {
+                if (slot.FileId is null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(other.DossierFileId, slot.FileId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+
+                if (other.DossierBySeason is not null
+                    && other.DossierBySeason.Values.Any(s => string.Equals(s.FileId, slot.FileId, StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private async Task<string> EnsureSeasonsFolderAsync(
@@ -307,11 +390,12 @@ public sealed class PublishDriveReportsHandler
         string newFingerprint,
         string? lastFingerprint,
         bool allowOverwriteEditedRemote,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         if (storedFileId is null)
         {
-            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, cancellationToken).ConfigureAwait(false);
+            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
 
         (DriveFile? remote, DriveFileOutcome? denied) = await LoadRemoteFileAsync(report, storedFileId, desiredName, newFingerprint, cancellationToken).ConfigureAwait(false);
@@ -322,20 +406,29 @@ public sealed class PublishDriveReportsHandler
 
         if (remote is null)
         {
-            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, cancellationToken).ConfigureAwait(false);
+            return await CreateNewAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+        }
+
+        // P1: never update a file outside the configured destination. An
+        // adopted id is opaque; without a parent/MIME check a pasted id could
+        // overwrite (and rename) unrelated Drive content.
+        DriveFileOutcome? locationDenied = ValidateRemoteLocation(report, remote, desiredName, parentFolderId, newFingerprint);
+        if (locationDenied is not null)
+        {
+            return (locationDenied, destination);
         }
 
         string? remoteFingerprint = await LoadRemoteFingerprintAsync(remote, cancellationToken).ConfigureAwait(false);
         if (string.Equals(remoteFingerprint, "denied", StringComparison.Ordinal))
         {
             return (Failed(report, remote.Id, desiredName,
-                "Google denied access to read the adopted file (403). Grant this app access to the file or adopt a file it created. Nothing was changed.", newFingerprint),
+                "Google denied access to read the adopted file (403). With drive.file the app needs an explicit Picker / 'Open with' grant for pre-existing files. Use Verify access, grant the file in Drive, or adopt a file it created. Nothing was changed.", newFingerprint),
                 destination);
         }
 
         if (string.Equals(newFingerprint, remoteFingerprint, StringComparison.Ordinal))
         {
-            return (Unchanged(report, remote, desiredName, newFingerprint), WithSlot(destination, report, remote.Id, desiredName, newFingerprint, remote.ModifiedTime));
+            return (Unchanged(report, remote, desiredName, newFingerprint), WithSlot(destination, report, remote.Id, desiredName, newFingerprint, remote.ModifiedTime, dossierSeason));
         }
 
         if (IsStaleRemoteEdit(lastFingerprint, remoteFingerprint, newFingerprint) && !allowOverwriteEditedRemote)
@@ -345,7 +438,34 @@ public sealed class PublishDriveReportsHandler
                 destination);
         }
 
-        return await UpdateRemoteAsync(destination, report, remote, desiredName, markdown, newFingerprint, cancellationToken).ConfigureAwait(false);
+        return await UpdateRemoteAsync(destination, report, remote, desiredName, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static DriveFileOutcome? ValidateRemoteLocation(
+        string report,
+        DriveFile remote,
+        string desiredName,
+        string parentFolderId,
+        string newFingerprint)
+    {
+        if (string.Equals(remote.MimeType, "application/vnd.google-apps.folder", StringComparison.Ordinal))
+        {
+            return Failed(report, remote.Id, desiredName,
+                $"The adopted {report} id {remote.Id} is a Drive folder, not a Markdown file. Adopt a Markdown file id inside the configured destination, or clear the id to create a new file. Nothing was changed.",
+                newFingerprint);
+        }
+
+        if (!remote.Parents.Contains(parentFolderId, StringComparer.Ordinal))
+        {
+            string expected = string.Equals(report, "dossier", StringComparison.Ordinal)
+                ? "the Seasons/ subfolder of the configured mtshistory folder"
+                : "the configured mtshistory folder";
+            return Failed(report, remote.Id, desiredName,
+                $"The adopted {report} file '{remote.Name}' (id {remote.Id}) is outside the configured destination; expected it directly under {expected}. Adopt a file inside the destination or clear the id to create a new one. Nothing was changed.",
+                newFingerprint);
+        }
+
+        return null;
     }
 
     private async Task<(DriveFile? Remote, DriveFileOutcome? Denied)> LoadRemoteFileAsync(
@@ -370,7 +490,7 @@ public sealed class PublishDriveReportsHandler
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             DriveFileOutcome outcome = Failed(report, storedFileId, desiredName,
-                "Google denied access to the adopted file (403). With the least-privilege drive.file scope, pre-existing files need an explicit per-file grant: open the file with this app's consent flow or create a new file instead. Nothing was changed.", newFingerprint);
+                "Google denied access to the adopted file (403). With the least-privilege drive.file scope the app can only read files it created or that were explicitly granted via Google Picker / Drive 'Open with'. Use Verify access to check the grant, grant the file in Drive, or clear the id to create a new file instead. Nothing was changed.", newFingerprint);
             return (null, outcome);
         }
     }
@@ -409,6 +529,7 @@ public sealed class PublishDriveReportsHandler
         string desiredName,
         string markdown,
         string newFingerprint,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         string? rename = string.Equals(remote.Name, desiredName, StringComparison.Ordinal) ? null : desiredName;
@@ -418,18 +539,18 @@ public sealed class PublishDriveReportsHandler
                 token => _drive.UpdateContentAsync(token, remote.Id, markdown, rename, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             return (new DriveFileOutcome(report, "updated", updated.Id, desiredName, newFingerprint, updated.WebViewLink, $"Updated in place (file id {updated.Id})."),
-                WithSlot(destination, report, updated.Id, desiredName, newFingerprint, updated.ModifiedTime));
+                WithSlot(destination, report, updated.Id, desiredName, newFingerprint, updated.ModifiedTime, dossierSeason));
         }
         catch (DriveUpstreamException ex)
         {
             // Retry-safe: the update may have applied before the timeout.
             _logger.LogWarning(ex, "Drive update for {Report} timed out; re-checking remote content.", report);
-            return await ConfirmUpdateAfterTimeoutAsync(destination, report, remote.Id, desiredName, newFingerprint, ex, cancellationToken).ConfigureAwait(false);
+            return await ConfirmUpdateAfterTimeoutAsync(destination, report, remote.Id, desiredName, newFingerprint, ex, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             return (Failed(report, remote.Id, desiredName,
-                "Google denied the update (403). The adopted file is not writable with the current grant. Nothing was changed.", newFingerprint),
+                "Google denied the update (403). The adopted file is not writable with the current Picker / 'Open with' grant. Use Verify access to check the grant. Nothing was changed.", newFingerprint),
                 destination);
         }
         catch (DriveApiException ex) when (ex.IsTransient)
@@ -447,6 +568,7 @@ public sealed class PublishDriveReportsHandler
         string desiredName,
         string newFingerprint,
         DriveUpstreamException ex,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         string? rechecked = await WithGetRetryAsync(
@@ -458,7 +580,7 @@ public sealed class PublishDriveReportsHandler
                 () => WithAuthAsync(token => _drive.GetFileAsync(token, fileId, cancellationToken), cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             return (new DriveFileOutcome(report, "updated", fileId, desiredName, newFingerprint, meta?.WebViewLink, "Update confirmed on re-check after a timeout."),
-                WithSlot(destination, report, fileId, desiredName, newFingerprint, meta?.ModifiedTime));
+                WithSlot(destination, report, fileId, desiredName, newFingerprint, meta?.ModifiedTime, dossierSeason));
         }
 
         return (Failed(report, fileId, desiredName,
@@ -473,6 +595,7 @@ public sealed class PublishDriveReportsHandler
         string parentFolderId,
         string markdown,
         string newFingerprint,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<DriveFile>? matches;
@@ -485,13 +608,13 @@ public sealed class PublishDriveReportsHandler
         catch (DriveApiException ex) when (IsForbidden(ex))
         {
             return (Failed(report, null, desiredName,
-                "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created or that were explicitly granted. Adopt the folder, then retry. Nothing was created.", newFingerprint),
+                "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created or that were explicitly granted via Picker / 'Open with'. Use Verify access to check the grant, then retry. Nothing was created.", newFingerprint),
                 destination);
         }
 
         if (matches.Count == 1)
         {
-            return await HandleExistingNameAsync(destination, report, matches[0], desiredName, newFingerprint, cancellationToken).ConfigureAwait(false);
+            return await HandleExistingNameAsync(destination, report, matches[0], desiredName, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
 
         if (matches.Count > 1)
@@ -501,7 +624,7 @@ public sealed class PublishDriveReportsHandler
                 destination);
         }
 
-        return await DoCreateAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, cancellationToken).ConfigureAwait(false);
+        return await DoCreateAsync(destination, report, desiredName, parentFolderId, markdown, newFingerprint, dossierSeason, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(DriveFileOutcome Outcome, DrivePublishingStore.DestinationDocument Updated)> HandleExistingNameAsync(
@@ -510,6 +633,7 @@ public sealed class PublishDriveReportsHandler
         DriveFile only,
         string desiredName,
         string newFingerprint,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         string? content = await TryDownloadAsync(only.Id, cancellationToken).ConfigureAwait(false);
@@ -517,7 +641,7 @@ public sealed class PublishDriveReportsHandler
         {
             // A timed-out earlier create already landed: adopt it, no duplicate.
             return (new DriveFileOutcome(report, "updated", only.Id, desiredName, newFingerprint, only.WebViewLink, "A previous timed-out create had already landed; adopted the existing file instead of duplicating."),
-                WithSlot(destination, report, only.Id, desiredName, newFingerprint, only.ModifiedTime));
+                WithSlot(destination, report, only.Id, desiredName, newFingerprint, only.ModifiedTime, dossierSeason));
         }
 
         return (Failed(report, null, desiredName,
@@ -546,6 +670,7 @@ public sealed class PublishDriveReportsHandler
         string parentFolderId,
         string markdown,
         string newFingerprint,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         try
@@ -554,12 +679,12 @@ public sealed class PublishDriveReportsHandler
                 token => _drive.CreateMarkdownAsync(token, parentFolderId, desiredName, markdown, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             return (new DriveFileOutcome(report, "created", created.Id, desiredName, newFingerprint, created.WebViewLink, $"Created {desiredName} (file id {created.Id})."),
-                WithSlot(destination, report, created.Id, desiredName, newFingerprint, created.ModifiedTime));
+                WithSlot(destination, report, created.Id, desiredName, newFingerprint, created.ModifiedTime, dossierSeason));
         }
         catch (DriveUpstreamException ex)
         {
             _logger.LogWarning(ex, "Drive create for {Report} timed out; re-checking for duplicates.", report);
-            return await ConfirmCreateAfterTimeoutAsync(destination, report, desiredName, parentFolderId, newFingerprint, ex, cancellationToken).ConfigureAwait(false);
+            return await ConfirmCreateAfterTimeoutAsync(destination, report, desiredName, parentFolderId, newFingerprint, ex, dossierSeason, cancellationToken).ConfigureAwait(false);
         }
         catch (DriveApiException ex) when (ex.IsTransient)
         {
@@ -576,6 +701,7 @@ public sealed class PublishDriveReportsHandler
         string parentFolderId,
         string newFingerprint,
         DriveUpstreamException ex,
+        int? dossierSeason,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<DriveFile> rechecked = await WithGetRetryAsync(
@@ -587,7 +713,7 @@ public sealed class PublishDriveReportsHandler
             if (content is not null && string.Equals(DrivePublishingFingerprint.ComputeHex(content), newFingerprint, StringComparison.Ordinal))
             {
                 return (new DriveFileOutcome(report, "created", rechecked[0].Id, desiredName, newFingerprint, rechecked[0].WebViewLink, "Create confirmed on re-check after a timeout; no duplicate was made."),
-                    WithSlot(destination, report, rechecked[0].Id, desiredName, newFingerprint, rechecked[0].ModifiedTime));
+                    WithSlot(destination, report, rechecked[0].Id, desiredName, newFingerprint, rechecked[0].ModifiedTime, dossierSeason));
             }
         }
 
@@ -602,8 +728,15 @@ public sealed class PublishDriveReportsHandler
         string fileId,
         string fileName,
         string fingerprint,
-        string? modifiedTime)
+        string? modifiedTime,
+        int? dossierSeason)
     {
+        if (string.Equals(report, "dossier", StringComparison.Ordinal) && dossierSeason.HasValue)
+        {
+            return DrivePublishingStore.WithDossierSlot(
+                destination, dossierSeason.Value, fileId, fileName, fingerprint, modifiedTime);
+        }
+
         return string.Equals(report, "dossier", StringComparison.Ordinal)
             ? destination with
             {

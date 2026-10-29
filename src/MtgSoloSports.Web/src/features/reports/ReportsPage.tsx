@@ -9,7 +9,9 @@ import {
   publishDriveReports,
   saveDriveDestination,
   startDriveConnect,
+  verifyDriveDestination,
   type DriveStatus,
+  type DriveVerifyResponse,
   type PublishDriveResponse,
 } from './drivePublishingApi';
 import type { HistorySeasons } from '../history/historyApi';
@@ -43,6 +45,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishDriveResponse | null>(null);
+  const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -421,6 +424,13 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 {driveBusy === 'save' ? 'Saving…' : 'Save destination'}
               </button>
             </p>
+            <p className="muted small">
+              Pasting a Drive id alone does not grant access. With the least-privilege <code>drive.file</code>{' '}
+              scope the app can only use files it created or that you explicitly granted via Google Picker or
+              Drive&apos;s <em>Open with</em>. After pasting ids, use <em>Verify access</em> to check each grant;
+              each season keeps its own dossier file (<code>Seasons/season-N-dossier.md</code>) so a new season
+              never overwrites the prior season&apos;s file.
+            </p>
             <div className="toolbar" role="group" aria-label="Drive publish">
               <label className="field">
                 <span>
@@ -444,6 +454,22 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   Overwrite independently edited Drive files
                 </span>
               </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('verify');
+                  setDriveError(null);
+                  setVerifyResult(null);
+                  void verifyDriveDestination(saveId)
+                    .then((result) => setVerifyResult(result))
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'verify' ? 'Verifying…' : 'Verify access'}
+              </button>
               <button
                 type="button"
                 className="ghost-button"
@@ -486,6 +512,18 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     {file.report}: {file.outcome}
                     {file.fileName ? ` — ${file.fileName}` : ''}
                     {file.detail ? ` — ${file.detail}` : ''}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {verifyResult ? (
+              <ul className="muted small">
+                <li>Verify: season {verifyResult.currentSeason}</li>
+                {verifyResult.checks.map((check) => (
+                  <li key={check.report}>
+                    {check.report}: {check.status}
+                    {check.fileName ? ` — ${check.fileName}` : ''}
+                    {check.detail ? ` — ${check.detail}` : ''}
                   </li>
                 ))}
               </ul>

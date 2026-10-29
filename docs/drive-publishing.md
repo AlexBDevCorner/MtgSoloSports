@@ -45,10 +45,29 @@ API returns `503` with setup guidance instead of failing obscurely.
 - Explicitly **adopt** the two report files by pasting their **file ids**
   (from `…/file/d/<id>/…`). Manually named files such as
   `universe-almanac-newtest.md` keep their remote ids and custom names — they
-  are never guessed, renamed, moved or deleted.
+  are never guessed, renamed, moved or deleted. Adopted ids are validated on
+  publish: a dossier id must point to a Markdown file directly under the
+  `Seasons/` subfolder, and an almanac id must point to a Markdown file
+  directly under `mtshistory`. Ids outside the destination, folder ids, or
+  trashed files stop with a recoverable conflict instead of overwriting
+  unrelated Drive content. Renames to the configured `season-N-dossier.md`
+  name only happen for files already inside the destination.
+- Pasting an id alone does **not** grant `drive.file` access to a
+  pre-existing file or folder. The app can only read/write files it created
+  or that you explicitly granted via Google Picker / Drive **Open with**
+  (right-click the file/folder in Drive, open it with this app using the same
+  Google account, or pick it in Picker). After pasting ids, press **Verify
+  access**: it reports per file/folder whether the grant is present (`ok`),
+  missing (`needs-grant`), outside the destination, a folder, or needs
+  explicit adoption — without creating anything. Grant the flagged items in
+  Drive, then Verify again before publishing.
 - Leave a file id empty to create a new file on the next publish, using the
   stable names `season-<N>-dossier.md` (under an auto-created `Seasons/`
   subfolder) and `universe-almanac-<save-slug>.md`.
+- Each season keeps its own dossier mapping. Publishing season N+1 creates or
+  updates `Seasons/season-(N+1)-dossier.md` while preserving the prior
+  season's Drive file and mapping; it never overwrites the previous season's
+  dossier under the old name.
 - If a name already exists at create time, publishing stops with the existing
   id and asks you to adopt it — no `(1)` duplicates.
 - Each save has its own destination. Reusing another save's folder/file ids
@@ -61,9 +80,10 @@ API returns `503` with setup guidance instead of failing obscurely.
   selected save only, then uploads both Markdown files.
 - Unchanged reports compare the meaningful Markdown content (the volatile
   `Generated:` timestamp is ignored) and report `unchanged` — no Drive writes.
-- Previously adopted/created reports update **in place** (same file id/link).
-  Timeouts are retry-safe: publishing re-checks identity and content before
-  creating, so retries never duplicate.
+- Previously adopted/created reports update **in place** (same file id/link)
+  only after the parent-folder and MIME checks pass. Timeouts are retry-safe:
+  publishing re-checks identity and content before creating, so retries never
+  duplicate.
 - If a Drive file was edited independently since the last publish, publishing
   stops with a conflict instead of silently discarding edits. Tick **Overwrite
   independently edited Drive files** to replace them deliberately.
@@ -95,9 +115,12 @@ detected on the next publish and asks you to reconnect.
 
 1. `docker compose up --build` with OAuth env vars set; open Reports.
 2. Connect the account; adopt the existing season/almanac Markdown files.
-3. Publish: both files update in place (same ids), outcomes `created`/`updated`.
-4. Advance a stage; publish again: same ids, changed content, outcomes `updated`.
-5. Publish with no sporting change: both `unchanged`.
-6. Disconnect (or revoke in the Google account); publish: recoverable `401`.
-7. Remove server credentials; connect: recoverable `503`.
-8. Simulate a transient failure; publish: recoverable `failed` outcome, retry clean.
+3. Verify access: all adopted ids report `ok` (grant via Picker / Open with if `needs-grant`).
+4. Publish: both files update in place (same ids), outcomes `created`/`updated`.
+5. Advance a stage; publish again: same ids, changed content, outcomes `updated`.
+6. Start the next season; publish: a new `Seasons/season-N-dossier.md` is created/updated while the prior season's file keeps its id and content; almanac keeps its id.
+7. Publish with no sporting change: both `unchanged`.
+8. Adopt an id outside the destination; publish/verify: recoverable `outside-destination`/`is-folder` with no overwrite.
+9. Disconnect (or revoke in the Google account); publish: recoverable `401`.
+10. Remove server credentials; connect: recoverable `503`.
+11. Simulate a transient failure; publish: recoverable `failed` outcome, retry clean.
