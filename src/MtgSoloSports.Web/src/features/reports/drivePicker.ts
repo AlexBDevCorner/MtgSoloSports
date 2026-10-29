@@ -9,6 +9,7 @@ export interface DrivePickerSelection {
 export interface DrivePickerConfig {
   clientId: string;
   apiKey: string;
+  appId: string;
 }
 
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -22,10 +23,11 @@ export function pickerConfigFromStatus(status: DriveStatus | null): DrivePickerC
   }
   const clientId = (status.pickerClientId ?? '').trim();
   const apiKey = (status.pickerApiKey ?? '').trim();
-  if (clientId === '' || apiKey === '') {
+  const appId = (status.pickerAppId ?? '').trim();
+  if (clientId === '' || apiKey === '' || appId === '') {
     return null;
   }
-  return { clientId, apiKey };
+  return { clientId, apiKey, appId };
 }
 
 /** Pure helper: human-readable hint for why the picker is unavailable. */
@@ -40,7 +42,7 @@ export function pickerDisabledHint(status: DriveStatus | null): string {
     return 'Connect Google Drive first, then choose from Drive.';
   }
   if (!status.pickerEnabled) {
-    return 'Picker needs a Browser API key: set DrivePublishing__GooglePickerApiKey on the server (see docs/drive-publishing.md). You can still paste ids for app-created files.';
+    return 'Picker needs a Browser API key and Cloud project number: set DrivePublishing__GooglePickerApiKey and DrivePublishing__GooglePickerAppId on the server (see docs/drive-publishing.md). You can still paste ids for app-created files.';
   }
   return '';
 }
@@ -94,17 +96,47 @@ type GapiWindow = Window & {
         setSelectFolderEnabled: (enabled: boolean) => unknown;
         setMimeTypes: (types: string) => unknown;
       };
-      PickerBuilder?: new () => {
-        addView: (view: unknown) => unknown;
-        setOAuthToken: (token: string) => unknown;
-        setDeveloperKey: (key: string) => unknown;
-        setCallback: (callback: (data: { action?: string; docs?: unknown[] }) => void) => unknown;
-        build: () => { setVisible: (visible: boolean) => void };
-      };
+      PickerBuilder?: new () => PickerBuilderLike;
       Action?: { PICKED?: string; CANCEL?: string };
     };
   };
-};
+}
+
+export interface PickerBuilderLike {
+  addView: (view: unknown) => unknown;
+  setOAuthToken: (token: string) => unknown;
+  setDeveloperKey: (key: string) => unknown;
+  setAppId: (appId: string) => unknown;
+  setCallback: (callback: (data: { action?: string; docs?: unknown[] }) => void) => unknown;
+  build: () => { setVisible: (visible: boolean) => void };
+}
+
+export type PickerCallback = (data: { action?: string; docs?: unknown[] }) => void;
+
+/**
+ * Pure builder wiring: applies the Drive Picker configuration in the
+ * documented order (view, OAuth token, API key, Cloud project number via
+ * setAppId, callback) and builds the picker. setAppId is required for the
+ * drive.file scope so picked files become accessible to this Cloud project.
+ * Extracted for unit testing without loading Google scripts.
+ */
+export function configurePickerBuilder(
+  builder: PickerBuilderLike,
+  view: unknown,
+  config: DrivePickerConfig,
+  token: string,
+  callback: PickerCallback,
+): { setVisible: (visible: boolean) => void } {
+  builder.addView(view);
+  builder.setOAuthToken(token);
+  builder.setDeveloperKey(config.apiKey);
+  // Required for drive.file: the Cloud project number lets the picked
+  // files be granted to this app. Omitting it leaves existing-file adoption
+  // unreliable (Picker selections return ids the backend cannot read).
+  builder.setAppId(config.appId);
+  builder.setCallback(callback);
+  return builder.build();
+}
 
 async function ensurePickerApi(): Promise<void> {
   await loadScriptOnce(GAPI_SRC);
@@ -199,25 +231,13 @@ export async function showDrivePicker(
 
   return new Promise((resolve, reject) => {
     try {
-      const builder = new picker.PickerBuilder!();
-      (
-        builder.addView(view) as {
-          setOAuthToken: (token: string) => unknown;
-        }
-      );
-      const withToken = builder as unknown as {
-        setOAuthToken: (token: string) => { setDeveloperKey: (key: string) => unknown };
-      };
-      const withKey = withToken.setOAuthToken(token) as unknown as {
-        setDeveloperKey: (key: string) => {
-          setCallback: (
-            callback: (data: { action?: string; docs?: unknown[] }) => void,
-          ) => { build: () => { setVisible: (visible: boolean) => void } };
-        };
-      };
-      const withCallback = withKey
-        .setDeveloperKey(config.apiKey)
-        .setCallback((data) => {
+      const builder = new picker.PickerBuilder!() as PickerBuilderLike;
+      const built = configurePickerBuilder(
+        builder,
+        view,
+        config,
+        token,
+        (data) => {
           const pickedAction = picker.Action?.PICKED;
           const cancelAction = picker.Action?.CANCEL;
           if (data.action === pickedAction && Array.isArray(data.docs) && data.docs.length > 0) {
@@ -226,8 +246,9 @@ export async function showDrivePicker(
           } else if (data.action === cancelAction) {
             resolve(null);
           }
-        });
-      withCallback.build().setVisible(true);
+        },
+      );
+      built.setVisible(true);
     } catch (failure) {
       reject(failure instanceof Error ? failure : new Error('Could not open Google Picker.'));
     }

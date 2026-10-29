@@ -37,6 +37,15 @@ public sealed class DrivePublishingOptions
     public string GooglePickerApiKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Google Cloud project number for <c>PickerBuilder.setAppId</c>. Required
+    /// for the <c>drive.file</c> scope so files picked in the browser become
+    /// accessible to this Cloud project. Public identifier, not a secret.
+    /// Configure as <c>DrivePublishing__GooglePickerAppId</c>; empty disables
+    /// the in-app Choose-from-Drive picker.
+    /// </summary>
+    public string GooglePickerAppId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Public callback URL registered in the Google Cloud console. Defaults to
     /// the localhost Docker callback; override for host-run port differences.
     /// </summary>

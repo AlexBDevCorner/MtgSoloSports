@@ -20,4 +20,5 @@ public sealed record DriveStatusResponse(
     string? LastError,
     string? PickerClientId,
     string? PickerApiKey,
+    string? PickerAppId,
     bool PickerEnabled);

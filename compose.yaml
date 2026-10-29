@@ -32,6 +32,7 @@ services:
       # DrivePublishing__GoogleClientId: "your-client-id"
       # DrivePublishing__GoogleClientSecret: "your-client-secret"
       # DrivePublishing__GooglePickerApiKey: "your-browser-key"
+      # DrivePublishing__GooglePickerAppId: "your-cloud-project-number"
     volumes:
       - mtgsolosports-data:/data
     healthcheck:

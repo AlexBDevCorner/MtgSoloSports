@@ -29,6 +29,7 @@ export interface DriveStatus {
   lastError: string | null;
   pickerClientId: string | null;
   pickerApiKey: string | null;
+  pickerAppId: string | null;
   pickerEnabled: boolean;
 }
 

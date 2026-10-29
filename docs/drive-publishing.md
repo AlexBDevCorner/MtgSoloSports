@@ -31,12 +31,15 @@ connector cannot be reused as application credentials.
     `DrivePublishing__GoogleClientId`, `DrivePublishing__GoogleClientSecret`,
     and optionally `DrivePublishing__GoogleRedirectUri` if you run on a
     different host port. Restart the container after setting them.
- 5. Enable the **Google Picker API** in the same Cloud project, create a
-    **Browser API key** (HTTP referrers restricted to `http://localhost:8080/*`),
-    and pass it as `DrivePublishing__GooglePickerApiKey` (public browser key,
-    not a secret). Without it the in-app **Choose from Drive** grant buttons
-    stay disabled; pasted ids still work for app-created files. Restart after
-    setting it.
+  5. Enable the **Google Picker API** in the same Cloud project, create a
+     **Browser API key** (HTTP referrers restricted to `http://localhost:8080/*`),
+     and pass it as `DrivePublishing__GooglePickerApiKey` (public browser key,
+     not a secret). Find the Cloud **project number** on the Cloud console
+     dashboard and pass it as `DrivePublishing__GooglePickerAppId` (public
+     identifier for `PickerBuilder.setAppId`, required for the `drive.file`
+     scope so picked files become accessible to this project). Without both
+     values the in-app **Choose from Drive** grant buttons stay disabled;
+     pasted ids still work for app-created files. Restart after setting them.
  6. Open Reports, press **Connect Google Drive**, and approve the
    least-privilege `drive.file` consent. `drive.file` lets the app manage only
    files it created or that were explicitly granted — it cannot see or edit

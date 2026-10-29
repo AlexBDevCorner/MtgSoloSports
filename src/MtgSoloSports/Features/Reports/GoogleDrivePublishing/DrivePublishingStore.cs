@@ -335,12 +335,25 @@ public sealed class DrivePublishingStore
     public async Task<PendingAuthDocument?> TakePendingAsync(string state, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(state);
-        string path = Path.Combine(GetStoreRoot(), "pending", state + ".json");
+        if (!IsCanonicalOAuthState(state))
+        {
+            return null;
+        }
+
+        string pendingDirectory = Path.Combine(GetStoreRoot(), "pending");
+        string combined = Path.Combine(pendingDirectory, state + ".json");
+        string fullPath = Path.GetFullPath(combined);
+        string pendingRoot = Path.GetFullPath(pendingDirectory) + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(pendingRoot, StringComparison.Ordinal)
+            || !string.Equals(Path.GetFileName(fullPath), state + ".json", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PendingAuthDocument? pending = await ReadJsonAsync<PendingAuthDocument>(path, cancellationToken).ConfigureAwait(false);
-            DeleteFileBestEffort(path);
+            PendingAuthDocument? pending = await ReadJsonAsync<PendingAuthDocument>(fullPath, cancellationToken).ConfigureAwait(false);
             if (pending is null)
             {
                 return null;
@@ -351,6 +364,10 @@ public sealed class DrivePublishingStore
                 return null;
             }
 
+            // Delete only the verified matching pending record. Unmatched or
+            // missing files are never deleted, so a crafted state cannot cause
+            // removal of unrelated store files via path traversal.
+            DeleteFileBestEffort(fullPath);
             if (pending.ExpiresUtc <= _timeProvider.GetUtcNow())
             {
                 return null;
@@ -362,6 +379,34 @@ public sealed class DrivePublishingStore
         {
             _gate.Release();
         }
+    }
+
+    public static bool IsCanonicalOAuthState(string state)
+    {
+        // GooglePkce.GenerateState emits 32 random bytes as unpadded base64url
+        // (43 chars from [A-Za-z0-9-_]). Reject anything else before it can
+        // reach a filesystem path, including slash/dot sequences used for
+        // traversal. Length is pinned to the generator to fail closed.
+        if (state.Length != 43)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < state.Length; i++)
+        {
+            char c = state[i];
+            bool ok = (c >= 'A' && c <= 'Z')
+                || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9')
+                || c == '-'
+                || c == '_';
+            if (!ok)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private string DestinationPath(Guid saveId) =>

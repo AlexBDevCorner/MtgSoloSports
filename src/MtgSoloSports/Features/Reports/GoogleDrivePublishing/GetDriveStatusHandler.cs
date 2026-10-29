@@ -58,12 +58,15 @@ public sealed class GetDriveStatusHandler
         (string? dossierId, string? dossierName, string? dossierFingerprint, string? dossierModified) =
             DrivePublishingStore.CurrentDossierView(destination, detail.CurrentSeason);
 
-        // Picker credentials are public browser credentials (OAuth client id +
-        // Picker browser API key). The client secret and tokens are never
-        // returned. PickerEnabled gates the Choose-from-Drive grant flow.
+        // Picker credentials are public browser credentials (OAuth client id,
+        // Picker browser API key, Cloud project number for setAppId). The
+        // client secret and tokens are never returned. PickerEnabled gates the
+        // Choose-from-Drive grant flow; setAppId is required for drive.file so
+        // both the API key and the project number must be configured.
         DrivePublishingOptions options = _options.Value;
         bool pickerEnabled = options.IsGoogleConfigured
-            && !string.IsNullOrWhiteSpace(options.GooglePickerApiKey);
+            && !string.IsNullOrWhiteSpace(options.GooglePickerApiKey)
+            && !string.IsNullOrWhiteSpace(options.GooglePickerAppId);
         return new DriveStatusResponse(
             detail.SaveId,
             detail.Name,
@@ -96,6 +99,7 @@ public sealed class GetDriveStatusHandler
             destination?.LastError,
             string.IsNullOrWhiteSpace(options.GoogleClientId) ? null : options.GoogleClientId,
             string.IsNullOrWhiteSpace(options.GooglePickerApiKey) ? null : options.GooglePickerApiKey,
+            string.IsNullOrWhiteSpace(options.GooglePickerAppId) ? null : options.GooglePickerAppId,
             pickerEnabled);
     }
 }

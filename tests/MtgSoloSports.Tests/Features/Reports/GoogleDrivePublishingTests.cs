@@ -616,7 +616,7 @@ public sealed class GoogleDrivePublishingTests
     [Fact]
     public async Task Status_ExposesPickerConfigWithoutSecrets()
     {
-        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "picker-test-key");
+        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "picker-test-key", pickerAppId: "1234567890");
         try
         {
             Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
@@ -628,6 +628,7 @@ public sealed class GoogleDrivePublishingTests
             rootElement.GetProperty("pickerEnabled").GetBoolean().ShouldBeTrue();
             rootElement.GetProperty("pickerClientId").GetString().ShouldBe("test-client");
             rootElement.GetProperty("pickerApiKey").GetString().ShouldBe("picker-test-key");
+            rootElement.GetProperty("pickerAppId").GetString().ShouldBe("1234567890");
             // Secrets and tokens must never be exposed to the frontend.
             rootElement.TryGetProperty("googleClientSecret", out _).ShouldBeFalse();
             rootElement.TryGetProperty("refreshToken", out _).ShouldBeFalse();
@@ -644,7 +645,7 @@ public sealed class GoogleDrivePublishingTests
     [Fact]
     public async Task Status_PickerDisabledWithoutApiKey()
     {
-        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "");
+        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "", pickerAppId: "1234567890");
         try
         {
             Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
@@ -660,6 +661,99 @@ public sealed class GoogleDrivePublishingTests
             SqliteConnection.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Status_PickerDisabledWithoutAppId()
+    {
+        var (factory, root, _, _) = CreateFactory(configured: true, pickerApiKey: "picker-test-key", pickerAppId: "");
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/reports/drive/status");
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            json.RootElement.GetProperty("pickerEnabled").GetBoolean().ShouldBeFalse();
+            // App id must not leak as empty string; missing config is null.
+            json.RootElement.GetProperty("pickerAppId").ValueKind.ShouldBe(JsonValueKind.Null);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PendingState_TraversalIsRejectedWithoutDeletingPending()
+    {
+        var (factory, root, _, _) = CreateFactory();
+        try
+        {
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            string validState = new('A', 43);
+            Guid saveId = Guid.NewGuid();
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            await store.SavePendingAsync(
+                new DrivePublishingStore.PendingAuthDocument(validState, saveId, "verifier", now, now.AddMinutes(10)),
+                CancellationToken.None);
+
+            // Attacker-controlled callback states must fail closed before any
+            // filesystem path is touched and must not delete the real pending.
+            // Blank states throw (fail closed with 400); non-canonical states
+            // return null (invalid/expired with 400) without touching disk.
+            await Should.ThrowAsync<ArgumentException>(store.TakePendingAsync("", CancellationToken.None));
+            await Should.ThrowAsync<ArgumentException>(store.TakePendingAsync("   ", CancellationToken.None));
+            string[] traversalStates =
+            [
+                "../connection",
+                "..%2Fconnection",
+                "../../destinations/abc",
+                "a/b",
+                "a\\b",
+                "short",
+                new string('B', 42),
+                new string('C', 44),
+                "../" + validState,
+                validState + "/x",
+            ];
+            foreach (string bad in traversalStates)
+            {
+                DrivePublishingStore.PendingAuthDocument? rejected =
+                    await store.TakePendingAsync(bad, CancellationToken.None);
+                rejected.ShouldBeNull($"state '{bad}' must be rejected");
+            }
+
+            // The legitimate pending must still be consumable exactly once.
+            DrivePublishingStore.PendingAuthDocument? pending =
+                await store.TakePendingAsync(validState, CancellationToken.None);
+            pending.ShouldNotBeNull();
+            pending!.State.ShouldBe(validState);
+            (await store.TakePendingAsync(validState, CancellationToken.None)).ShouldBeNull();
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PendingState_CanonicalShapeIsEnforced()
+    {
+        DrivePublishingStore.IsCanonicalOAuthState(new string('a', 43)).ShouldBeTrue();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('Z', 43)).ShouldBeTrue();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('0', 43)).ShouldBeTrue();
+        DrivePublishingStore.IsCanonicalOAuthState("AB-_ab09" + new string('x', 35)).ShouldBeTrue();
+        DrivePublishingStore.IsCanonicalOAuthState("short").ShouldBeFalse();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('A', 42)).ShouldBeFalse();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('A', 44)).ShouldBeFalse();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('A', 42) + "/").ShouldBeFalse();
+        DrivePublishingStore.IsCanonicalOAuthState(new string('A', 42) + ".").ShouldBeFalse();
+        DrivePublishingStore.IsCanonicalOAuthState("../" + new string('A', 40)).ShouldBeFalse();
     }
 
     private sealed record PublishResult(
@@ -835,7 +929,8 @@ public sealed class GoogleDrivePublishingTests
 
     private static (WebApplicationFactory<Program> Factory, string Root, FakeOAuthClient OAuth, FakeDriveClient Drive) CreateFactory(
         bool configured = true,
-        string pickerApiKey = "")
+        string pickerApiKey = "",
+        string pickerAppId = "")
     {
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-drive-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -852,6 +947,7 @@ public sealed class GoogleDrivePublishingTests
                     o.GoogleClientId = configured ? "test-client" : string.Empty;
                     o.GoogleClientSecret = configured ? "test-secret" : string.Empty;
                     o.GooglePickerApiKey = pickerApiKey;
+                    o.GooglePickerAppId = pickerAppId;
                 });
                 services.AddSingleton<IGoogleOAuthClient>(oauth);
                 services.AddSingleton<IGoogleDriveClient>(drive);
