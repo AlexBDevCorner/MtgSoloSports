@@ -1,4 +1,5 @@
 using MtgSoloSports.Features.Records.GetHallOfFame;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Leagues;
 using Shouldly;
 using Xunit;

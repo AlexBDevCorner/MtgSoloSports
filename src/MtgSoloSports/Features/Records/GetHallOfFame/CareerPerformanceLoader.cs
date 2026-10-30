@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Leagues;
 
 namespace MtgSoloSports.Features.Records.GetHallOfFame;

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
