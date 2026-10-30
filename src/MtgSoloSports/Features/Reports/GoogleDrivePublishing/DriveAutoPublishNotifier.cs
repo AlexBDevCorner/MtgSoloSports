@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using MtgSoloSports.Features.Saves;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Persistence.Saves;
 
@@ -128,7 +129,14 @@ public sealed class DriveAutoPublishNotifier
             return null;
         }
 
-        if (IsDuplicate(current, status))
+        // Monotonic guard: checkpoint notes sample the durable sporting state
+        // before taking the store file gate, so a delayed note for stage N can
+        // arrive after a newer note for stage N+1. The read-modify-write is
+        // atomic but cannot order the independently sampled snapshots, so
+        // compare against the persisted requested checkpoint here and reject
+        // duplicates and stale (older-or-equal) snapshots. Only a strictly
+        // newer (season, stage, phase) checkpoint advances the request.
+        if (CompareCheckpoint(current, status) <= 0)
         {
             return null;
         }
@@ -156,13 +164,56 @@ public sealed class DriveAutoPublishNotifier
         }
     }
 
-    private static bool IsDuplicate(
-        DrivePublishingStore.DestinationDocument destination,
+    /// <summary>
+    /// Total ordering for requested checkpoints: season dominates stage, stage
+    /// dominates phase. Phase order follows <see cref="SavePhase"/> numeric
+    /// order, which matches the lifecycle progression (SeasonInProgress through
+    /// CupComplete). Returns &lt;0 when the incoming snapshot is older than the
+    /// persisted request, 0 when equal, &gt;0 when strictly newer.
+    /// </summary>
+    internal static int CompareCheckpoint(
+        DrivePublishingStore.DestinationDocument current,
         GetSeasonStatusResponse status)
     {
-        return destination.AutoRequestedSeason == status.CurrentSeasonNumber
-            && destination.AutoRequestedGlobalStage == status.GlobalStage
-            && string.Equals(destination.AutoRequestedPhase, status.ComputedPhase, StringComparison.Ordinal);
+        if (!current.AutoRequestedSeason.HasValue)
+        {
+            return 1;
+        }
+
+        int seasonCmp = status.CurrentSeasonNumber.CompareTo(current.AutoRequestedSeason.Value);
+        if (seasonCmp != 0)
+        {
+            return seasonCmp;
+        }
+
+        int currentStage = current.AutoRequestedGlobalStage ?? int.MinValue;
+        int stageCmp = status.GlobalStage.CompareTo(currentStage);
+        if (stageCmp != 0)
+        {
+            return stageCmp;
+        }
+
+        string? currentPhase = current.AutoRequestedPhase;
+        if (string.IsNullOrEmpty(currentPhase))
+        {
+            return 1;
+        }
+
+        if (string.Equals(currentPhase, status.ComputedPhase, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        bool incomingOk = Enum.TryParse<SavePhase>(status.ComputedPhase, ignoreCase: false, out SavePhase incoming)
+            && Enum.IsDefined(incoming);
+        bool currentOk = Enum.TryParse<SavePhase>(currentPhase, ignoreCase: false, out SavePhase persisted)
+            && Enum.IsDefined(persisted);
+        if (incomingOk && currentOk)
+        {
+            return ((int)incoming).CompareTo((int)persisted);
+        }
+
+        return string.Compare(status.ComputedPhase, currentPhase, StringComparison.Ordinal);
     }
 
     private async Task<string?> LoadSaveNameAsync(Guid saveId, CancellationToken cancellationToken)

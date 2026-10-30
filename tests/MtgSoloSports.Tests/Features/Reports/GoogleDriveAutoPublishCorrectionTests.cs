@@ -1079,6 +1079,95 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
     }
 
+    [Fact]
+    public void CompareCheckpoint_RejectsStaleAndAcceptsNewer()
+    {
+        // P1: delayed stage-N notes must not overwrite newer stage-N+1 notes.
+        // Ordering is (season, stage, SavePhase numeric order).
+        Guid saveId = Guid.NewGuid();
+        DrivePublishingStore.DestinationDocument Requested(int season, int stage, string phase) => new(
+            saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true,
+            AutoRequestedSeason: season,
+            AutoRequestedGlobalStage: stage,
+            AutoRequestedPhase: phase,
+            AutoRequestedUtc: DateTimeOffset.UtcNow);
+
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 5, "SeasonInProgress"), StatusFor(1, 4, "SeasonInProgress")).ShouldBeLessThan(0);
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 5, "SeasonInProgress"), StatusFor(1, 5, "SeasonInProgress")).ShouldBe(0);
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 5, "SeasonInProgress"), StatusFor(1, 6, "SeasonInProgress")).ShouldBeGreaterThan(0);
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 5, "SeasonInProgress"), StatusFor(2, 1, "SeasonInProgress")).ShouldBeGreaterThan(0);
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(2, 1, "SeasonInProgress"), StatusFor(1, 9, "SeasonInProgress")).ShouldBeLessThan(0);
+
+        // Same season+stage: lifecycle phase order decides (SeasonInProgress < Rebalanced).
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 9, "SeasonInProgress"), StatusFor(1, 9, "Rebalanced")).ShouldBeGreaterThan(0);
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(1, 9, "Rebalanced"), StatusFor(1, 9, "SeasonInProgress")).ShouldBeLessThan(0);
+
+        // New season resets stage/phase numbers but still dominates.
+        DriveAutoPublishNotifier.CompareCheckpoint(Requested(2, 1, "SeasonInProgress"), StatusFor(2, 1, "SeasonInProgress")).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task StaleCheckpointNote_DoesNotOverwriteNewerRequest()
+    {
+        // P1 integration: seed a newer requested checkpoint, then deliver a
+        // delayed note for the older durable state. The persisted request must
+        // stay at the newer checkpoint so the worker does not republish stale
+        // state or loop forever (Last=newer vs Requested=downgraded).
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-stale-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-stale-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None);
+            DateTimeOffset requestedUtc = DateTimeOffset.UtcNow.AddMinutes(-5);
+            DrivePublishingStore.DestinationDocument newer = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null,
+                DateTimeOffset.UtcNow, live.CurrentSeasonNumber, live.ComputedPhase, live.GlobalStage,
+                "updated", "updated", null, null,
+                AutoPublishEnabled: true,
+                AutoRequestedSeason: live.CurrentSeasonNumber,
+                AutoRequestedGlobalStage: live.GlobalStage + 5,
+                AutoRequestedPhase: live.ComputedPhase,
+                AutoRequestedUtc: requestedUtc,
+                AutoNextRetryUtc: requestedUtc);
+            await publishing.SaveDestinationAsync(newer, CancellationToken.None);
+            while (tracker.Reader.TryRead(out _)) { }
+
+            // Live durable state is older than the seeded request: the note
+            // must be ignored, preserving the newer checkpoint and timestamp.
+            await notifier.NotifyStageCheckpointAsync(saveId, CancellationToken.None);
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoRequestedSeason.ShouldBe(live.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage + 5);
+            after.AutoRequestedPhase.ShouldBe(live.ComputedPhase);
+            after.AutoRequestedUtc.ShouldBe(requestedUtc);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static GetSeasonStatusResponse StatusFor(int season, int stage, string phase) => new(
+        Guid.NewGuid(), season, phase, phase, null, null, false, stage,
+        false, false, false, false, false, false, false, false, false, false,
+        "none", [], string.Empty, null, null);
+
     private static async Task<(MtgSoloSports.Persistence.Saves.SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteIsolatedAsync(string prefix)
     {
         var (store, root) = TestSaveStores.CreateStore(prefix);
