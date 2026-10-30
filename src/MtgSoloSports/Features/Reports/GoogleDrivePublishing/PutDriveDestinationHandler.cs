@@ -13,11 +13,19 @@ public sealed class PutDriveDestinationHandler
 {
     private readonly SaveStore _saves;
     private readonly DrivePublishingStore _publishing;
+    private readonly DriveAutoPublishTracker _tracker;
+    private readonly TimeProvider _timeProvider;
 
-    public PutDriveDestinationHandler(SaveStore saves, DrivePublishingStore publishing)
+    public PutDriveDestinationHandler(
+        SaveStore saves,
+        DrivePublishingStore publishing,
+        DriveAutoPublishTracker? tracker = null,
+        TimeProvider? timeProvider = null)
     {
         _saves = saves ?? throw new ArgumentNullException(nameof(saves));
         _publishing = publishing ?? throw new ArgumentNullException(nameof(publishing));
+        _tracker = tracker ?? new DriveAutoPublishTracker();
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<DriveDestinationResponse> HandleAsync(
@@ -60,10 +68,27 @@ public sealed class PutDriveDestinationHandler
 
         DrivePublishingStore.DestinationDocument? existing =
             await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
-        DrivePublishingStore.DestinationDocument updated = BuildUpdated(detail, existing, normalized);
-        await _publishing.SaveDestinationAsync(updated, cancellationToken).ConfigureAwait(false);
+        bool destinationChanged = IsDestinationIdentityChanged(existing, normalized, detail.CurrentSeason);
+        DrivePublishingStore.DestinationDocument updated = BuildUpdated(detail, existing, normalized, destinationChanged);
+        if (destinationChanged && updated.AutoPublishEnabled)
+        {
+            // A new folder/file id has never been published: the old success
+            // baseline must not imply UpToDate for the new destination.
+            // Make the pending request due immediately so both the signal
+            // path and the periodic retry scan can pick it up. Reconfiguration
+            // is the explicit recovery for a permanent 403 pause, so this
+            // runs even when the previous destination was paused (BuildUpdated
+            // already cleared the pause above).
+            updated = updated with { AutoNextRetryUtc = _timeProvider.GetUtcNow() };
+        }
 
-        return ToResponse(updated);
+        await _publishing.SaveDestinationAsync(updated, cancellationToken).ConfigureAwait(false);
+        if (destinationChanged && updated.AutoPublishEnabled && DriveAutoPublishStatus.HasPendingRequest(updated))
+        {
+            _tracker.Signal(saveId);
+        }
+
+        return await ToResponseAsync(updated, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<SaveStore.SaveDetailRecord> LoadSaveAsync(Guid saveId, CancellationToken cancellationToken)
@@ -109,10 +134,56 @@ public sealed class PutDriveDestinationHandler
         }
     }
 
+    private static bool IsDestinationIdentityChanged(
+        DrivePublishingStore.DestinationDocument? existing,
+        NormalizedDestination normalized,
+        int currentSeason)
+    {
+        if (existing is null)
+        {
+            return false;
+        }
+
+        if (!string.Equals(existing.MtshistoryFolderId, normalized.FolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.Equals(existing.SeasonsFolderId, normalized.SeasonsFolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        (string? currentId, string? currentName, _, _) =
+            DrivePublishingStore.CurrentDossierView(existing, currentSeason);
+        if (!string.Equals(currentId, normalized.DossierId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.Equals(currentName, normalized.DossierName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.Equals(existing.AlmanacFileId, normalized.AlmanacId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.Equals(existing.AlmanacFileName, normalized.AlmanacName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static DrivePublishingStore.DestinationDocument BuildUpdated(
         SaveStore.SaveDetailRecord detail,
         DrivePublishingStore.DestinationDocument? existing,
-        NormalizedDestination normalized)
+        NormalizedDestination normalized,
+        bool destinationChanged)
     {
         // Changing a file id resets its baseline: the next publish adopts the
         // remote content deliberately instead of treating edits as conflicts.
@@ -126,6 +197,15 @@ public sealed class PutDriveDestinationHandler
         Dictionary<int, DrivePublishingStore.DossierSlot> map =
             BuildDossierMap(existing, detail.CurrentSeason, normalized, dossierFingerprint, dossierModified, currentId);
 
+        // A new folder/file id has never been published: the old success
+        // baseline (Last* checkpoint) must not imply UpToDate for the new
+        // destination. Clear it so HasPendingRequest stays true until the
+        // new destination is actually uploaded. Keep the requested checkpoint
+        // so the worker knows what durable state to publish. A reconfigured
+        // destination is the explicit recovery for a permanent permission
+        // pause (e.g. HTTP 403): clear the pause so the new destination is
+        // tried once instead of staying stuck Disconnected.
+        bool invalidateBaseline = destinationChanged;
         return new DrivePublishingStore.DestinationDocument(
             detail.SaveId,
             detail.Name,
@@ -140,14 +220,23 @@ public sealed class PutDriveDestinationHandler
             sameAlmanac ? existing?.AlmanacFingerprint : null,
             dossierModified,
             sameAlmanac ? existing?.AlmanacRemoteModifiedTime : null,
-            existing?.LastPublishedUtc,
-            existing?.LastSeasonNumber,
-            existing?.LastPhase,
-            existing?.LastGlobalStage,
-            existing?.LastDossierOutcome,
-            existing?.LastAlmanacOutcome,
-            existing?.LastError,
-            map);
+            invalidateBaseline ? null : existing?.LastPublishedUtc,
+            invalidateBaseline ? null : existing?.LastSeasonNumber,
+            invalidateBaseline ? null : existing?.LastPhase,
+            invalidateBaseline ? null : existing?.LastGlobalStage,
+            invalidateBaseline ? null : existing?.LastDossierOutcome,
+            invalidateBaseline ? null : existing?.LastAlmanacOutcome,
+            invalidateBaseline ? null : existing?.LastError,
+            map,
+            existing?.AutoPublishEnabled ?? false,
+            existing?.AutoRequestedSeason,
+            existing?.AutoRequestedGlobalStage,
+            existing?.AutoRequestedPhase,
+            existing?.AutoRequestedUtc,
+            invalidateBaseline ? 0 : existing?.AutoAttemptCount ?? 0,
+            existing?.AutoNextRetryUtc,
+            invalidateBaseline ? null : existing?.AutoLastError,
+            invalidateBaseline ? false : (existing?.AutoPausedForAuth ?? false));
     }
 
     private static Dictionary<int, DrivePublishingStore.DossierSlot> BuildDossierMap(
@@ -207,7 +296,21 @@ public sealed class PutDriveDestinationHandler
         }
     }
 
-    private static DriveDestinationResponse ToResponse(DrivePublishingStore.DestinationDocument updated)
+    private async Task<DriveDestinationResponse> ToResponseAsync(
+        DrivePublishingStore.DestinationDocument updated,
+        CancellationToken cancellationToken)
+    {
+        DrivePublishingStore.ConnectionDocument? connection =
+            await _publishing.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+        bool connected = connection is not null && !string.IsNullOrWhiteSpace(connection.RefreshToken);
+        return ToResponse(
+            updated,
+            DriveAutoPublishStatus.Compute(updated, connected, _tracker.IsPublishing(updated.SaveId)));
+    }
+
+    private static DriveDestinationResponse ToResponse(
+        DrivePublishingStore.DestinationDocument updated,
+        string autoStatus)
     {
         return new DriveDestinationResponse(
             updated.SaveId,
@@ -225,7 +328,12 @@ public sealed class PutDriveDestinationHandler
             updated.LastSeasonNumber,
             updated.LastPhase,
             updated.LastGlobalStage,
-            updated.LastError);
+            updated.LastError,
+            updated.AutoPublishEnabled,
+            autoStatus,
+            updated.AutoRequestedSeason,
+            updated.AutoRequestedGlobalStage,
+            updated.AutoRequestedPhase);
     }
 
     private async Task EnsureNoCrossSaveReuseAsync(

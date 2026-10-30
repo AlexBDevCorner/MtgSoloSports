@@ -92,16 +92,62 @@ public sealed class PublishDriveReportsHandler
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PublishContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
-            ReportSnapshots snapshots = await GenerateSnapshotsAsync(context, cancellationToken).ConfigureAwait(false);
-            (List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current) published =
-                await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, request.AllowCreateMissing, cancellationToken).ConfigureAwait(false);
-            return await FinishAsync(context, snapshots, published.Outcomes, published.Current, cancellationToken).ConfigureAwait(false);
+            return await ExecuteLockedAsync(saveId, request, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Automatic-publish entry point. Holds the same per-save gate as manual
+    /// publishing and the destination toggle, and re-checks
+    /// <c>AutoPublishEnabled</c> atomically under that gate before any Drive
+    /// work. A toggle to disabled that wins the gate returns null with no
+    /// Drive calls; a publish that already holds the gate completes and the
+    /// toggle waits. Never throws for the disabled case.
+    /// </summary>
+    public async Task<PublishDriveReportsResponse?> HandleAutoAsync(
+        Guid saveId,
+        PublishDriveReportsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        SemaphoreSlim gate = GateFor(saveId);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DrivePublishingStore.DestinationDocument? current =
+                await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
+            if (current is null || !current.AutoPublishEnabled)
+            {
+                return null;
+            }
+
+            return await ExecuteLockedAsync(saveId, request, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<PublishDriveReportsResponse> ExecuteLockedAsync(
+        Guid saveId,
+        PublishDriveReportsRequest request,
+        CancellationToken cancellationToken)
+    {
+        PublishContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
+        ReportSnapshots snapshots = await GenerateSnapshotsAsync(context, cancellationToken).ConfigureAwait(false);
+        (List<DriveFileOutcome> Outcomes, DrivePublishingStore.DestinationDocument Current) published =
+            await PublishBothAsync(context, snapshots, request.AllowOverwriteEditedRemote, request.AllowCreateMissing, cancellationToken).ConfigureAwait(false);
+        return await FinishAsync(context, snapshots, published.Outcomes, published.Current, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<PublishContext> LoadContextAsync(Guid saveId, bool confirmCrossSave, CancellationToken cancellationToken)
@@ -279,7 +325,13 @@ public sealed class PublishDriveReportsHandler
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        bool anySettled = outcomes.Any(o => !string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
+        // Both reports must settle to advance the shared checkpoint. Advancing
+        // on a partial success (dossier failed, almanac updated) would mark the
+        // requested checkpoint as caught up, suppress retries and report
+        // UpToDate for an unsuccessful upload. The successful file's
+        // fingerprint is still preserved via MergeFinished; only the shared
+        // Last* checkpoint waits for both files.
+        bool allSettled = outcomes.All(o => !string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
         string? firstError = outcomes
             .Where(o => string.Equals(o.Outcome, "failed", StringComparison.Ordinal))
             .Select(o => $"{o.Report}: {o.Detail}")
@@ -298,10 +350,10 @@ public sealed class PublishDriveReportsHandler
         DrivePublishingStore.DestinationDocument finished = merged with
         {
             SaveName = context.Detail.Name,
-            LastPublishedUtc = anySettled ? now : merged.LastPublishedUtc,
-            LastSeasonNumber = anySettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
-            LastPhase = anySettled ? context.Detail.Phase : merged.LastPhase,
-            LastGlobalStage = anySettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
+            LastPublishedUtc = allSettled ? now : merged.LastPublishedUtc,
+            LastSeasonNumber = allSettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
+            LastPhase = allSettled ? context.Detail.Phase : merged.LastPhase,
+            LastGlobalStage = allSettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
             LastDossierOutcome = outcomes[0].Outcome,
             LastAlmanacOutcome = outcomes[1].Outcome,
             LastError = firstError,

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Saves;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
@@ -26,10 +27,12 @@ namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 public sealed class StartNextSeasonHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public StartNextSeasonHandler(SaveStore store)
+    public StartNextSeasonHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<StartNextSeasonResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -41,14 +44,27 @@ public sealed class StartNextSeasonHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        StartNextSeasonResponse response;
         try
         {
-            return await StartUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            response = await StartUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
+
+            // New-season boundary commits before BuildResponseAsync: a fresh
+            // stable dossier filename starts while prior seasons' Drive files
+            // are preserved. Cancellation after the commit must still leave a
+            // checkpoint note while the app keeps running. Uses an unlinked
+            // token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
+
+        return response;
     }
 
     internal async Task<StartNextSeasonResponse> StartUnderLockAsync(

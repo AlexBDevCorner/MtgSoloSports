@@ -70,7 +70,16 @@ public sealed class DrivePublishingStore
         string? LastDossierOutcome,
         string? LastAlmanacOutcome,
         string? LastError,
-        IReadOnlyDictionary<int, DossierSlot>? DossierBySeason = null);
+        IReadOnlyDictionary<int, DossierSlot>? DossierBySeason = null,
+        bool AutoPublishEnabled = false,
+        int? AutoRequestedSeason = null,
+        int? AutoRequestedGlobalStage = null,
+        string? AutoRequestedPhase = null,
+        DateTimeOffset? AutoRequestedUtc = null,
+        int AutoAttemptCount = 0,
+        DateTimeOffset? AutoNextRetryUtc = null,
+        string? AutoLastError = null,
+        bool AutoPausedForAuth = false);
 
     public sealed record PendingAuthDocument(
         string State,
@@ -269,6 +278,46 @@ public sealed class DrivePublishingStore
         {
             Directory.CreateDirectory(Path.Combine(root, "destinations"));
             await WriteJsonAsync(DestinationPath(destination.SaveId), destination, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Atomic read-modify-write for checkpoint notes. Holds the store's brief
+    /// file gate across the read and the write (file IO only, never Drive
+    /// network) so concurrent checkpoint notes and publish completions cannot
+    /// lose updates, without ever waiting for slow Google uploads. Returns the
+    /// persisted document, or null when no destination exists.
+    /// </summary>
+    public async Task<DestinationDocument?> UpdateDestinationCheckpointAsync(
+        Guid saveId,
+        Func<DestinationDocument, DestinationDocument?> update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DestinationDocument? current =
+                await ReadJsonAsync<DestinationDocument>(DestinationPath(saveId), cancellationToken).ConfigureAwait(false);
+            if (current is null)
+            {
+                return null;
+            }
+
+            DestinationDocument? updated = update(current);
+            if (updated is null)
+            {
+                return current;
+            }
+
+            string root = GetStoreRoot();
+            Directory.CreateDirectory(Path.Combine(root, "destinations"));
+            await WriteJsonAsync(DestinationPath(saveId), updated, cancellationToken).ConfigureAwait(false);
+            return updated;
         }
         finally
         {

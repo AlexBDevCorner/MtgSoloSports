@@ -104,6 +104,9 @@ builder.Services.AddSingleton<SaveStore>();
 builder.Services.AddSingleton<CatalogDbContextFactory>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DrivePublishingStore>();
+builder.Services.AddSingleton<DriveAutoPublishTracker>();
+builder.Services.AddScoped<DriveAutoPublishNotifier>();
+builder.Services.AddHostedService<DriveAutoPublishWorker>();
 builder.Services.AddHttpClient<IGoogleOAuthClient, GoogleOAuthClient>();
 builder.Services.AddHttpClient<IGoogleDriveClient, GoogleDriveClient>();
 builder.Services.Configure<ScryfallBulkOptions>(builder.Configuration.GetSection(ScryfallBulkOptions.SectionName));
@@ -216,6 +219,8 @@ builder.Services.AddScoped<GetDriveDestinationHandler>();
 builder.Services.AddScoped<PutDriveDestinationHandler>();
 builder.Services.AddScoped<VerifyDriveDestinationHandler>();
 builder.Services.AddScoped<PublishDriveReportsHandler>();
+builder.Services.AddScoped<PutDriveAutoPublishHandler>();
+builder.Services.AddScoped<PostDriveAutoPublishRetryHandler>();
 
 var app = builder.Build();
 
@@ -323,6 +328,8 @@ GetDriveDestinationEndpoint.Map(app);
 PutDriveDestinationEndpoint.Map(app);
 VerifyDriveDestinationEndpoint.Map(app);
 PublishDriveReportsEndpoint.Map(app);
+PutDriveAutoPublishEndpoint.Map(app);
+PostDriveAutoPublishRetryEndpoint.Map(app);
 GetLongRunChecksumEndpoint.Map(app);
 ValidateLongRunInvariantsEndpoint.Map(app);
 GetLongRunStatsEndpoint.Map(app);

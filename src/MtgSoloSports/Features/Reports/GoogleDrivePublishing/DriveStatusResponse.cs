@@ -22,4 +22,14 @@ public sealed record DriveStatusResponse(
     string? PickerClientId,
     string? PickerApiKey,
     string? PickerAppId,
-    bool PickerEnabled);
+    bool PickerEnabled,
+    bool AutoPublishEnabled,
+    string AutoPublishStatus,
+    int? AutoRequestedSeason,
+    int? AutoRequestedGlobalStage,
+    string? AutoRequestedPhase,
+    DateTimeOffset? AutoRequestedUtc,
+    int AutoAttemptCount,
+    DateTimeOffset? AutoNextRetryUtc,
+    string? AutoLastError,
+    bool AutoPausedForAuth);

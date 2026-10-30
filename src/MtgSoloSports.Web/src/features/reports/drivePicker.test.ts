@@ -47,6 +47,16 @@ function statusWith(overrides: Partial<DriveStatus>): DriveStatus {
     pickerApiKey: 'picker-key',
     pickerAppId: '1234567890',
     pickerEnabled: true,
+    autoPublishEnabled: false,
+    autoPublishStatus: 'Disabled',
+    autoRequestedSeason: null,
+    autoRequestedGlobalStage: null,
+    autoRequestedPhase: null,
+    autoRequestedUtc: null,
+    autoAttemptCount: 0,
+    autoNextRetryUtc: null,
+    autoLastError: null,
+    autoPausedForAuth: false,
     ...overrides,
   };
 }

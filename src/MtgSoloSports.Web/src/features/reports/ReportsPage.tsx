@@ -4,10 +4,13 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage, fetchJson } from '../../shared/api/http';
 import { downloadReport, seasonDossierReportUrl, universeAlmanacReportUrl } from '../reports/reportApi';
 import {
+  describeAutoPublishStatus,
   disconnectDrive,
   getDriveStatus,
   publishDriveReports,
+  retryDriveAutoPublish,
   saveDriveDestination,
+  setDriveAutoPublish,
   startDriveConnect,
   verifyDriveDestination,
   type DriveStatus,
@@ -51,6 +54,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [allowCreateMissing, setAllowCreateMissing] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishDriveResponse | null>(null);
   const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
 
@@ -662,6 +666,63 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 {driveStatus.lastError ? ` · error: ${driveStatus.lastError}` : ''}
               </p>
             ) : null}
+            <div className="toolbar" role="group" aria-label="Drive automatic publishing">
+              <label className="field">
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={driveStatus.autoPublishEnabled}
+                    disabled={driveBusy !== null || autoBusy}
+                    onChange={(event) => {
+                      const enabled = event.target.checked;
+                      setAutoBusy(true);
+                      setDriveError(null);
+                      void setDriveAutoPublish(saveId, enabled)
+                        .then(() => refreshDriveStatus())
+                        .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                        .finally(() => setAutoBusy(false));
+                    }}
+                  />{' '}
+                  Automatically publish after each completed stage
+                </span>
+              </label>
+              <span className="muted small" aria-live="polite">
+                Auto-publish: {describeAutoPublishStatus(driveStatus.autoPublishStatus)}
+                {driveStatus.autoRequestedSeason !== null
+                  ? ` · requested season ${driveStatus.autoRequestedSeason} · stage ${driveStatus.autoRequestedGlobalStage ?? '—'}`
+                  : ''}
+              </span>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || autoBusy || !driveStatus.autoPublishEnabled}
+                onClick={() => {
+                  setAutoBusy(true);
+                  setDriveError(null);
+                  void retryDriveAutoPublish(saveId)
+                    .then(() => refreshDriveStatus())
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setAutoBusy(false));
+                }}
+              >
+                {autoBusy ? 'Working…' : 'Retry auto-publish'}
+              </button>
+            </div>
+            {driveStatus.autoLastError ? (
+              <p className="muted small">Auto-publish note: {driveStatus.autoLastError}</p>
+            ) : null}
+            {driveStatus.autoPublishStatus === 'Disconnected' && driveStatus.autoPublishEnabled ? (
+              <p className="muted small">
+                Automatic publishing is paused: reconnect Google Drive to resume. Manual Publish now stays
+                available as an override.
+              </p>
+            ) : null}
+            <p className="muted small">
+              Automatic publishing uploads the current season dossier and universe almanac after each
+              completed global stage while the app runs. It never blocks simulation and never deletes
+              Drive files when disabled. New seasons start a new stable dossier file; prior seasons are
+              preserved.
+            </p>
             {publishResult ? (
               <ul className="muted small">
                 <li>

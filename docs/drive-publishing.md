@@ -148,10 +148,36 @@ first publishes cannot create duplicate `Seasons/` folders or reports.
 destinations are kept for the next connect. Expired/revoked consent is
 detected on the next publish and asks you to reconnect.
 
+## Automatic publishing after each completed stage (MSS-090)
+
+Opt-in **Automatically publish after each completed stage** on Reports/Drive
+(off by default) removes the need to click Publish after every stage:
+
+- Enabling records the current durable checkpoint (season, global stage,
+  phase) as the requested state; the background pump then uploads the current
+  season dossier and universe almanac through the same idempotent publisher.
+- The trigger fires only after a committed durable boundary: a completed
+  global stage (single, bulk, fast simulation, Next Event), season completion
+  and next-season start. Completed rounds, partial league stages and
+  still-rolling transactions never trigger.
+- Burst requests coalesce: bulk simulation of dozens of stages publishes the
+  latest stable snapshot, not each intermediate state, and per-save
+  serialization prevents a stale report from overwriting a newer one.
+- Requested vs last-published checkpoints live in app-level settings outside
+  the save SQLite, so restart/reconnect reconciles unpublished work. Statuses
+  are `Up to date`, `Publishing`, `Pending`, `Failed`, `Disconnected`
+  (`Disabled` when off); a green status never shows for a failed upload.
+- Transient failures retry with capped backoff; auth/permission failures pause
+  automatic work and prompt reconnect. Manual **Publish now** stays as the
+  override/retry; disabling cancels pending work without deleting Drive files.
+- New seasons create a new stable `Seasons/season-N-dossier.md` while prior
+  seasons are preserved; the almanac keeps its file.
+
 ## Limitations
 
-- Publishing needs the app running and an internet connection; it is strictly
-  user-triggered (no automatic publish — see MSS-090).
+- Publishing needs the app running and an internet connection; automatic sync
+  works only while the app runs and is authorized (no background processing
+  when shut down).
 - Only the current dossier + almanac are published (no bulk history upload —
   see MSS-091). `Color Cup`/`Type Cup` team-history destinations are reserved
   for future sync and not published by this task.

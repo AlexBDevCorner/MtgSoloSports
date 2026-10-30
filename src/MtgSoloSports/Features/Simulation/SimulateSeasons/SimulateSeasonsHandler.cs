@@ -5,6 +5,7 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Qualifiers;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -61,10 +62,12 @@ public sealed class SimulateSeasonsHandler
     public const int MaxSeasonsPerRequest = 500;
 
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public SimulateSeasonsHandler(SaveStore store)
+    public SimulateSeasonsHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<SimulateSeasonsResponse> HandleAsync(
@@ -86,14 +89,29 @@ public sealed class SimulateSeasonsHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SimulateSeasonsResponse response;
         try
         {
-            return await SimulateUnderLockAsync(saveId, request.Seasons, cancellationToken).ConfigureAwait(false);
+            response = await SimulateUnderLockAsync(saveId, request.Seasons, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
+
+            // Bulk/fast simulation commits dozens of durable global stages.
+            // The checkpoint note runs even when the bulk request is
+            // cancelled or fails after intermediate commits, so the latest
+            // durable state is eventually published. Coalesced to the newest
+            // stable snapshot, never an older report overwriting a newer one.
+            // Uses an unlinked token so client disconnect cannot lose the note.
+            // Never throws, so it cannot mask the original sporting outcome.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
+
+        return response;
     }
 
     public static void ValidateSeasons(int seasons)
@@ -139,8 +157,12 @@ public sealed class SimulateSeasonsHandler
 
     internal BulkStepHandlers CreateHandlers()
     {
+        // The bulk global-stage path reuses the focused operation including
+        // its post-commit checkpoint note, so a cancelled bulk request still
+        // leaves the latest committed stage durably requested. Non-stage
+        // postseason steps are covered by the per-iteration note in the loop.
         return new BulkStepHandlers(
-            new CompleteStageForAllLeaguesHandler(_store),
+            new CompleteStageForAllLeaguesHandler(_store, _autoPublish),
             new CreateInauguralSuperleagueHandler(_store),
             new ResolveAutomaticMovementHandler(_store),
             new RunAllQualifiersHandler(_store),
@@ -150,7 +172,7 @@ public sealed class SimulateSeasonsHandler
             new RunColorCupTeamHandler(_store),
             new SelectTypeCupTeamsHandler(_store),
             new RunTypeCupTeamHandler(_store),
-            new StartNextSeasonHandler(_store));
+            new StartNextSeasonHandler(_store, _autoPublish));
     }
 
     internal async Task<BulkCounters> RunLifecycleLoopAsync(
@@ -177,6 +199,7 @@ public sealed class SimulateSeasonsHandler
 
             (bool seasonDone, bool stageDone) = await ExecuteNextLifecycleStepAsync(
                 saveId, handlers, cancellationToken).ConfigureAwait(false);
+
             if (stageDone)
             {
                 stagesCompleted = checked(stagesCompleted + 1);

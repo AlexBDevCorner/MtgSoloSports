@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Features.Simulation.SeasonCompletion;
@@ -29,10 +30,12 @@ namespace MtgSoloSports.Features.Simulation.CompleteStage;
 public sealed class CompleteStageHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public CompleteStageHandler(SaveStore store)
+    public CompleteStageHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<CompleteStageResponse> HandleAsync(Guid saveId, int leagueId, CancellationToken cancellationToken = default)
@@ -49,13 +52,57 @@ public sealed class CompleteStageHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CompleteStageResponse response;
         try
         {
-            return await CompleteUnderLockAsync(saveId, leagueId, cancellationToken).ConfigureAwait(false);
+            response = await CompleteUnderLockAsync(saveId, leagueId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
+        }
+
+        // Post-commit observer: local checkpoint note only, never Google
+        // calls, never before the sporting transaction commits. A partial
+        // league stage leaves the global stage unchanged and never notifies;
+        // only the final league's completion (global advance or season
+        // finalization) enqueues an upload. The boundary read and the note use
+        // an unlinked token so an HTTP disconnect after the commit cannot lose
+        // a durable checkpoint.
+        if (_autoPublish is not null && await CompletedGlobalStageAsync(saveId, response, CancellationToken.None).ConfigureAwait(false))
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
+    }
+
+    private async Task<bool> CompletedGlobalStageAsync(
+        Guid saveId,
+        CompleteStageResponse response,
+        CancellationToken cancellationToken)
+    {
+        // Post-commit durability: ignore the caller's HTTP request token. The
+        // sporting transaction already committed, so this boundary read must
+        // survive client disconnect. Never throws due to request cancellation.
+        _ = cancellationToken;
+        CancellationToken detached = CancellationToken.None;
+        try
+        {
+            using SaveDbContext context = _store.OpenDbContext(saveId);
+            SaveMetadataEntity metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, detached).ConfigureAwait(false);
+            RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, detached).ConfigureAwait(false);
+            SeasonEntity season = await AdvanceRoundHandler.LoadSeasonAsync(context, metadata, detached).ConfigureAwait(false);
+            GlobalStageGate.GlobalStageView global = await GlobalStageGate
+                .LoadGlobalStageAsync(context, season, rules, detached)
+                .ConfigureAwait(false);
+            return global.IsSeasonComplete || global.CurrentStage != response.StageNumber;
+        }
+        catch (Exception)
+        {
+            // The sporting commit already succeeded; a failed boundary read
+            // must not fail the command. The next global completion notifies.
+            return false;
         }
     }
 

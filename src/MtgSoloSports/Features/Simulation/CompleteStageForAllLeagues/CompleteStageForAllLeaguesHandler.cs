@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.GlobalStage;
@@ -22,10 +23,12 @@ namespace MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 public sealed class CompleteStageForAllLeaguesHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public CompleteStageForAllLeaguesHandler(SaveStore store)
+    public CompleteStageForAllLeaguesHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<CompleteStageForAllLeaguesResponse> HandleAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -37,24 +40,53 @@ public sealed class CompleteStageForAllLeaguesHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CompleteStageForAllLeaguesResponse response;
         try
         {
-            return await CompleteGlobalStageUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            response = await CompleteGlobalStageUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
+
+            // Post-commit durability: a global stage commits per league, so
+            // cancellation or failure after an intermediate commit must still
+            // leave a durable checkpoint note. Runs even on exception, uses
+            // an unlinked token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
+
+        return response;
     }
 
     internal async Task<CompleteStageForAllLeaguesResponse> CompleteGlobalStageUnderLockAsync(
         Guid saveId,
         CancellationToken cancellationToken)
     {
-        await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
-        GlobalPlan plan = await LoadPlanAsync(saveId, cancellationToken).ConfigureAwait(false);
-        List<BulkLeagueStageResult> results = await CompletePendingAsync(saveId, plan, cancellationToken).ConfigureAwait(false);
-        return await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+            GlobalPlan plan = await LoadPlanAsync(saveId, cancellationToken).ConfigureAwait(false);
+            List<BulkLeagueStageResult> results = await CompletePendingAsync(saveId, plan, cancellationToken).ConfigureAwait(false);
+            CompleteStageForAllLeaguesResponse response =
+                await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
+            return response;
+        }
+        finally
+        {
+            // Durable global-stage boundary commits per league. Cancellation
+            // after the final league commit (ThrowIfCancellationRequested in
+            // CompletePendingAsync or a cancelled BuildResponseAsync) must
+            // still leave a checkpoint note while the app keeps running.
+            // Duplicate-safe; uses an unlinked token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     internal sealed record GlobalPlan(
