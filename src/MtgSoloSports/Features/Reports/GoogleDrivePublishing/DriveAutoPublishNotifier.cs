@@ -74,66 +74,74 @@ public sealed class DriveAutoPublishNotifier
     private async Task NotifyLockedAsync(Guid saveId, CancellationToken cancellationToken)
     {
         // Requirement 3: sporting responses must never wait for Google Drive.
-        // The per-save gate is held across slow report generation and Drive
-        // network writes by HandleAutoAsync. Take it without waiting; when an
-        // upload is in flight, just signal and let the running worker
-        // reconcile the durable checkpoint after the current publish settles
-        // (EnsurePendingSnapshot self-heal plus startup recovery). Uses an
-        // unlinked wait so client disconnect never throws here.
+        // Checkpoint notes use the store's brief file gate only (never the
+        // per-save gate held across slow report generation and Drive network
+        // writes). The atomic read-modify-write cannot lose updates and never
+        // blocks on uploads; the worker reconciles via signals plus
+        // EnsurePendingSnapshot self-heal and startup recovery.
         _ = cancellationToken;
-        SemaphoreSlim gate = DriveSaveGates.ForSave(saveId);
-        bool entered = await gate.WaitAsync(0, CancellationToken.None).ConfigureAwait(false);
-        if (!entered)
-        {
-            _tracker.Signal(saveId);
-            return;
-        }
-
-        try
-        {
-            await NoteCheckpointLockedAsync(saveId, CancellationToken.None).ConfigureAwait(false);
-        }
-        finally
-        {
-            gate.Release();
-        }
-    }
-
-    private async Task NoteCheckpointLockedAsync(Guid saveId, CancellationToken cancellationToken)
-    {
-        DrivePublishingStore.DestinationDocument? destination =
-            await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
-        if (destination is null || !destination.AutoPublishEnabled)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(destination.MtshistoryFolderId))
-        {
-            return;
-        }
-
-        GetSeasonStatusResponse? status = await TryLoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        GetSeasonStatusResponse? status = await TryLoadStatusAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         if (status is null)
         {
             return;
         }
 
-        // Duplicate notifications for the same durable checkpoint collapse:
-        // the requested state already equals the latest committed state.
-        if (IsDuplicate(destination, status))
+        string? saveName = await LoadSaveNameAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        DrivePublishingStore.DestinationDocument? persisted =
+            await _publishing.UpdateDestinationCheckpointAsync(
+                saveId,
+                current => MergeCheckpoint(current, status, saveName, now),
+                CancellationToken.None).ConfigureAwait(false);
+        if (persisted is null || !persisted.AutoPublishEnabled)
         {
-            // Still signal: a prior attempt may have failed and be awaiting
-            // retry, or the worker may have missed the first signal.
-            if (DriveAutoPublishStatus.HasPendingRequest(destination))
-            {
-                _tracker.Signal(saveId);
-            }
-
             return;
         }
 
-        await StoreCheckpointLockedAsync(saveId, destination, status, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(persisted.MtshistoryFolderId))
+        {
+            return;
+        }
+
+        // Duplicate notes collapse (requested already equals durable state) but
+        // still signal when a pending request awaits retry. Paused saves stay
+        // silent until reconnect/reconfiguration.
+        if (!persisted.AutoPausedForAuth && DriveAutoPublishStatus.HasPendingRequest(persisted))
+        {
+            _tracker.Signal(saveId);
+        }
+    }
+
+    private static DrivePublishingStore.DestinationDocument? MergeCheckpoint(
+        DrivePublishingStore.DestinationDocument current,
+        GetSeasonStatusResponse status,
+        string? saveName,
+        DateTimeOffset now)
+    {
+        if (!current.AutoPublishEnabled)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(current.MtshistoryFolderId))
+        {
+            return null;
+        }
+
+        if (IsDuplicate(current, status))
+        {
+            return null;
+        }
+
+        return current with
+        {
+            SaveName = saveName ?? current.SaveName,
+            AutoRequestedSeason = status.CurrentSeasonNumber,
+            AutoRequestedGlobalStage = status.GlobalStage,
+            AutoRequestedPhase = status.ComputedPhase,
+            AutoRequestedUtc = now,
+            AutoNextRetryUtc = current.AutoPausedForAuth ? current.AutoNextRetryUtc : now,
+        };
     }
 
     private async Task<GetSeasonStatusResponse?> TryLoadStatusAsync(Guid saveId, CancellationToken cancellationToken)
@@ -155,29 +163,6 @@ public sealed class DriveAutoPublishNotifier
         return destination.AutoRequestedSeason == status.CurrentSeasonNumber
             && destination.AutoRequestedGlobalStage == status.GlobalStage
             && string.Equals(destination.AutoRequestedPhase, status.ComputedPhase, StringComparison.Ordinal);
-    }
-
-    private async Task StoreCheckpointLockedAsync(
-        Guid saveId,
-        DrivePublishingStore.DestinationDocument destination,
-        GetSeasonStatusResponse status,
-        CancellationToken cancellationToken)
-    {
-        DateTimeOffset now = _timeProvider.GetUtcNow();
-        DrivePublishingStore.DestinationDocument updated = destination with
-        {
-            SaveName = (await LoadSaveNameAsync(saveId, cancellationToken).ConfigureAwait(false)) ?? destination.SaveName,
-            AutoRequestedSeason = status.CurrentSeasonNumber,
-            AutoRequestedGlobalStage = status.GlobalStage,
-            AutoRequestedPhase = status.ComputedPhase,
-            AutoRequestedUtc = now,
-            AutoNextRetryUtc = destination.AutoPausedForAuth ? destination.AutoNextRetryUtc : now,
-        };
-        await _publishing.SaveDestinationAsync(updated, cancellationToken).ConfigureAwait(false);
-        if (!updated.AutoPausedForAuth)
-        {
-            _tracker.Signal(saveId);
-        }
     }
 
     private async Task<string?> LoadSaveNameAsync(Guid saveId, CancellationToken cancellationToken)

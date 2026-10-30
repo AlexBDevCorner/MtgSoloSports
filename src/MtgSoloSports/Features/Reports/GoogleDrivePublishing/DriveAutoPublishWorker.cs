@@ -130,11 +130,10 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             DrivePublishingStore publishing = scope.ServiceProvider.GetRequiredService<DrivePublishingStore>();
             IReadOnlyList<DrivePublishingStore.DestinationDocument> all =
                 await publishing.ListDestinationsAsync(cancellationToken).ConfigureAwait(false);
-            bool connected = await HasConnectionAsync(publishing, cancellationToken).ConfigureAwait(false);
             foreach (DrivePublishingStore.DestinationDocument destination in all)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                await RecoverOneAsync(publishing, destination, connected, cancellationToken).ConfigureAwait(false);
+                await RecoverOneAsync(publishing, destination, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -150,7 +149,6 @@ public sealed class DriveAutoPublishWorker : BackgroundService
     private async Task RecoverOneAsync(
         DrivePublishingStore publishing,
         DrivePublishingStore.DestinationDocument destination,
-        bool connected,
         CancellationToken cancellationToken)
     {
         if (!destination.AutoPublishEnabled)
@@ -162,7 +160,10 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         // note never persisted (cancelled HTTP token or crash between commit
         // and note), persist it now from the durable save state. The notifier
         // is unlinked from cancellation and no-ops when disabled,
-        // unconfigured or already caught up.
+        // unconfigured or already caught up. A persisted permission pause
+        // (e.g. HTTP 403 grant failure) stays paused across restarts: only an
+        // explicit reconnect/reconfiguration may unpause, never a restart
+        // with the same unchanged grant.
         await ReconcileDurableCheckpointAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
 
         DrivePublishingStore.DestinationDocument? current;
@@ -181,9 +182,9 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             return;
         }
 
-        if (current.AutoPausedForAuth && connected)
+        if (current.AutoPausedForAuth)
         {
-            await UnpauseOneAsync(publishing, current.SaveId, cancellationToken).ConfigureAwait(false);
+            return;
         }
 
         _tracker.Signal(current.SaveId);
@@ -211,33 +212,6 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Drive auto-publish startup reconcile failed for save {SaveId}.", saveId);
-        }
-    }
-
-    private async Task UnpauseOneAsync(
-        DrivePublishingStore publishing,
-        Guid saveId,
-        CancellationToken cancellationToken)
-    {
-        SemaphoreSlim gate = DriveSaveGates.ForSave(saveId);
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            DrivePublishingStore.DestinationDocument? current =
-                await publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
-            if (current is not null && current.AutoPausedForAuth && DriveAutoPublishStatus.HasPendingRequest(current))
-            {
-                await publishing.SaveDestinationAsync(current with
-                {
-                    AutoPausedForAuth = false,
-                    AutoLastError = null,
-                    AutoNextRetryUtc = _timeProvider.GetUtcNow(),
-                }, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 

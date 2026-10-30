@@ -1022,6 +1022,63 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task StartupRecovery_KeepsPermissionPause_WithoutUnauthorizedRetry()
+    {
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-startuppause-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-startuppause-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            var (publishing, tracker, worker) = await SeedPausedForStartupAsync(store, driveRoot, saveId);
+            await InvokeStartupScanAsync(worker);
+            await AssertStillPausedAsync(publishing, tracker, saveId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task<(DrivePublishingStore Publishing, DriveAutoPublishTracker Tracker, DriveAutoPublishWorker Worker)> SeedPausedForStartupAsync(
+        MtgSoloSports.Persistence.Saves.SaveStore store, string driveRoot, Guid saveId)
+    {
+        DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+        await publishing.SaveConnectionAsync(new DrivePublishingStore.ConnectionDocument("refresh-unchanged", null, DriveScopes.DriveFile, DateTimeOffset.UtcNow, "access-seed", DateTimeOffset.UtcNow.AddHours(1)), CancellationToken.None).ConfigureAwait(false);
+        GetSeasonStatusHandler status = new(store);
+        GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        DrivePublishingStore.DestinationDocument paused = new(saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, AutoPublishEnabled: true, AutoRequestedSeason: live.CurrentSeasonNumber, AutoRequestedGlobalStage: live.GlobalStage, AutoRequestedPhase: live.ComputedPhase, AutoRequestedUtc: DateTimeOffset.UtcNow.AddMinutes(-5), AutoPausedForAuth: true, AutoLastError: "Google denied access to the destination folder (403). Grant missing.");
+        await publishing.SaveDestinationAsync(paused, CancellationToken.None).ConfigureAwait(false);
+        DriveAutoPublishTracker tracker = new();
+        DriveAutoPublishNotifier notifier = new(store, publishing, tracker, status, TimeProvider.System, NullLogger<DriveAutoPublishNotifier>.Instance);
+        DriveAutoPublishWorker worker = new(new TestScopeFactory(publishing, notifier), tracker, TimeProvider.System, NullLogger<DriveAutoPublishWorker>.Instance);
+        return (publishing, tracker, worker);
+    }
+
+    private static async Task InvokeStartupScanAsync(DriveAutoPublishWorker worker)
+    {
+        MethodInfo? method = typeof(DriveAutoPublishWorker).GetMethod("EnqueuePendingOnStartupAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        method.ShouldNotBeNull();
+        Task? pending = method!.Invoke(worker, [CancellationToken.None]) as Task;
+        Assert.True(pending is not null);
+        await pending!.ConfigureAwait(false);
+    }
+
+    private static async Task AssertStillPausedAsync(DrivePublishingStore publishing, DriveAutoPublishTracker tracker, Guid saveId)
+    {
+        DrivePublishingStore.DestinationDocument? after = await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        after.ShouldNotBeNull();
+        after!.AutoPausedForAuth.ShouldBeTrue();
+        after.AutoNextRetryUtc.ShouldBeNull();
+        after.AutoLastError.ShouldNotBeNull();
+        after.AutoLastError!.ShouldContain("(403)");
+        DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+        tracker.Reader.TryRead(out _).ShouldBeFalse();
+        DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
+    }
+
     private static async Task<(MtgSoloSports.Persistence.Saves.SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteIsolatedAsync(string prefix)
     {
         var (store, root) = TestSaveStores.CreateStore(prefix);
