@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Features.Reports.StandingsReport;
 using MtgSoloSports.Persistence.Saves;
 
 namespace MtgSoloSports.Features.Reports.SeasonDossier;
@@ -106,6 +107,41 @@ internal static class SeasonDossierJson
                 isChampion = r.IsChampion,
                 zone = r.Zone,
                 zoneLabel = r.ZoneLabel,
+            }).ToList(),
+            stagePlacements = SuperleagueStagePlacementsPart(data),
+        };
+    }
+
+    private static object SuperleagueStagePlacementsPart(SeasonDossierData data)
+    {
+        return new
+        {
+            version = StagePlacementReport.ProjectionVersion,
+            leagueId = data.Superleague.LeagueId,
+            leagueName = data.Superleague.LeagueName,
+            isOfficialSuperleague = data.Superleague.IsOfficialSuperleague,
+            completedStages = data.CompletedStages,
+            totalStages = data.TotalStages,
+            stageNumbers = StagePlacementReport.StageNumbers(data.Superleague.StagePlacements).ToList(),
+            units = new
+            {
+                stageRank = "per-stage finish P1..P32 within one completed stage; never cumulative seasonRank",
+                stageNumber = "chronological completed stage 1..totalStages; absent means unplayed/in-progress, never P32 or zero",
+                championshipPointsThousandths = "official per-stage championship points in fixed-point thousandths (divide by 1000); superleague table totals stay cumulative",
+                earnedBonusThousandths = "bonus earned during this stage in fixed-point thousandths; applies only from the next stage",
+                stageScoreThousandths = "persisted stage-score sum in fixed-point thousandths (display only; tie-break input)",
+                roundWins = "rounds won within this stage (0..roundsPerStage)",
+            },
+            note = "Every completed stage lists all 32 roster athletes exactly once. Winners-only stageProgression is preserved separately; this trajectory never substitutes for it.",
+            placements = data.Superleague.StagePlacements.Select(c => new
+            {
+                stageNumber = c.StageNumber,
+                athleteId = c.AthleteId,
+                stageRank = c.StageRank,
+                championshipPointsThousandths = c.ChampionshipPointsThousandths,
+                earnedBonusThousandths = c.EarnedBonusThousandths,
+                stageScoreThousandths = c.StageScoreThousandths,
+                roundWins = c.RoundWins,
             }).ToList(),
         };
     }

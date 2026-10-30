@@ -21,6 +21,7 @@ internal static class StandingsReportMarkdown
         StringBuilder sb = new();
         AppendHeader(sb, saveId, metadata, rules, season, league, data);
         AppendTable(sb, data);
+        AppendStagePlacements(sb, data);
         return sb.ToString();
     }
 
@@ -85,6 +86,27 @@ internal static class StandingsReportMarkdown
         sb.AppendLine(data.IsFinal
             ? "Persisted final table; completed seasons never change when new stages run."
             : "Live cumulative table from persisted completed stages only; an incomplete stage never contributes points. Final ranks persist at season end.");
+        sb.AppendLine();
+    }
+
+    private static void AppendStagePlacements(StringBuilder sb, GetStandingsReportHandler.ReportData data)
+    {
+        IReadOnlyList<int> stages = StagePlacementReport.StageNumbers(data.Placements);
+        sb.AppendLine(CultureInfo.InvariantCulture, $"## Stage placements ({stages.Count} completed stages)");
+        sb.AppendLine();
+        if (stages.Count == 0 || data.Placements.Count == 0)
+        {
+            sb.AppendLine("No completed stages yet. Stage placements appear after Stage 1 persists; an unplayed or in-progress stage is never assigned a rank.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("Stage placements show each athlete's actual per-stage finish (P1-P32) in chronological stage order; not cumulative season rank. Rows follow the main table rank order. Exact per-stage points, earned bonus, stage score and round wins are in the JSON report's stagePlacements section (fixed-point thousandths). Stage championship points are per stage; season totals above are cumulative. Earned bonus applies only from the next stage.");
+        sb.AppendLine();
+        IReadOnlyList<GetStandingsReportHandler.StandingsReportRow> ordered =
+            data.Rows.OrderBy(r => r.Rank).ToList();
+        StagePlacementReport.AppendMatrixBlocks(sb, ordered, data.Placements, stages);
+        sb.AppendLine("Incomplete or future stages have no cell; absent never means P32, zero points or a completed stage.");
         sb.AppendLine();
     }
 }

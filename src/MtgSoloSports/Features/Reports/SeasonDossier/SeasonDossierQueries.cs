@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.History.GetSeasonPlacements;
 using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Reports.StandingsReport;
@@ -24,7 +25,7 @@ internal static class SeasonDossierQueries
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         GlobalStageGate.GlobalStageView global = await GlobalStageGate
             .LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<StageWinnerEntry> progression = await LoadStageProgressionAsync(context, season, superleague, names, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<StageWinnerEntry> progression = BuildProgressionFromPlacements(standings.Placements, names);
         IReadOnlyList<FeederSummaryEntry> feeders = await LoadFeederSummariesAsync(context, season, leagues, superleague, global, names, cancellationToken).ConfigureAwait(false);
         PostseasonSection postseason = await LoadPostseasonAsync(context, season, cancellationToken).ConfigureAwait(false);
         (CupSummaryEntry? color, CupSummaryEntry? type) = await SeasonDossierCupQueries.LoadCupsAsync(context, saveId, season, cancellationToken).ConfigureAwait(false);
@@ -41,7 +42,7 @@ internal static class SeasonDossierQueries
             standings.GlobalStage,
             standings.SeasonChecksum,
             0,
-            new SuperleagueSection(superleague.Id, superleague.Name, isOfficial, standings.Rows),
+            new SuperleagueSection(superleague.Id, superleague.Name, isOfficial, standings.Rows, standings.Placements),
             progression,
             feeders,
             postseason,
@@ -84,6 +85,38 @@ internal static class SeasonDossierQueries
     internal static bool IsOfficialSuperleague(LeagueEntity league)
     {
         return league.Kind == (int)LeagueKind.Superleague;
+    }
+
+    internal static IReadOnlyList<StageWinnerEntry> BuildProgressionFromPlacements(
+        IReadOnlyList<SeasonPlacementCell> placements,
+        Dictionary<int, string> names)
+    {
+        ArgumentNullException.ThrowIfNull(placements);
+        ArgumentNullException.ThrowIfNull(names);
+        if (placements.Count == 0)
+        {
+            return [];
+        }
+
+        List<StageWinnerEntry> winners = new();
+        foreach (IGrouping<int, SeasonPlacementCell> group in placements.GroupBy(c => c.StageNumber).OrderBy(g => g.Key))
+        {
+            SeasonPlacementCell? winner = group.OrderBy(c => c.StageRank).FirstOrDefault();
+            if (winner is null)
+            {
+                continue;
+            }
+
+            names.TryGetValue(winner.AthleteId, out string? name);
+            winners.Add(new StageWinnerEntry(
+                group.Key,
+                winner.AthleteId,
+                name ?? $"Athlete {winner.AthleteId}",
+                winner.ChampionshipPointsThousandths,
+                true));
+        }
+
+        return winners;
     }
 
     internal static async Task<IReadOnlyList<StageWinnerEntry>> LoadStageProgressionAsync(
