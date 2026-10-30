@@ -70,12 +70,15 @@ public sealed class PutDriveDestinationHandler
             await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
         bool destinationChanged = IsDestinationIdentityChanged(existing, normalized, detail.CurrentSeason);
         DrivePublishingStore.DestinationDocument updated = BuildUpdated(detail, existing, normalized, destinationChanged);
-        if (destinationChanged && updated.AutoPublishEnabled && !updated.AutoPausedForAuth)
+        if (destinationChanged && updated.AutoPublishEnabled)
         {
             // A new folder/file id has never been published: the old success
             // baseline must not imply UpToDate for the new destination.
             // Make the pending request due immediately so both the signal
-            // path and the periodic retry scan can pick it up.
+            // path and the periodic retry scan can pick it up. Reconfiguration
+            // is the explicit recovery for a permanent 403 pause, so this
+            // runs even when the previous destination was paused (BuildUpdated
+            // already cleared the pause above).
             updated = updated with { AutoNextRetryUtc = _timeProvider.GetUtcNow() };
         }
 
@@ -198,7 +201,10 @@ public sealed class PutDriveDestinationHandler
         // baseline (Last* checkpoint) must not imply UpToDate for the new
         // destination. Clear it so HasPendingRequest stays true until the
         // new destination is actually uploaded. Keep the requested checkpoint
-        // so the worker knows what durable state to publish.
+        // so the worker knows what durable state to publish. A reconfigured
+        // destination is the explicit recovery for a permanent permission
+        // pause (e.g. HTTP 403): clear the pause so the new destination is
+        // tried once instead of staying stuck Disconnected.
         bool invalidateBaseline = destinationChanged;
         return new DrivePublishingStore.DestinationDocument(
             detail.SaveId,
@@ -230,7 +236,7 @@ public sealed class PutDriveDestinationHandler
             invalidateBaseline ? 0 : existing?.AutoAttemptCount ?? 0,
             existing?.AutoNextRetryUtc,
             invalidateBaseline ? null : existing?.AutoLastError,
-            existing?.AutoPausedForAuth ?? false);
+            invalidateBaseline ? false : (existing?.AutoPausedForAuth ?? false));
     }
 
     private static Dictionary<int, DrivePublishingStore.DossierSlot> BuildDossierMap(

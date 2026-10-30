@@ -516,6 +516,91 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task DestinationChange_ClearsPermissionPause_AndResumes()
+    {
+        // P1: reconfiguring after a 403 must clear the pause so the new
+        // folder is tried once. Same-ids PUT keeps the pause.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-autopub-destunpause-");
+        var created = await store.CreateAsync("DestUnpause", 4242UL, 777UL, UniverseTestCatalog.Build());
+        Guid saveId = created.Detail.SaveId;
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-destunpause-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            var status = new MtgSoloSports.Features.Seasons.GetSeasonStatus.GetSeasonStatusHandler(store);
+            await SeedPaused403Async(publishing, status, saveId);
+            DriveAutoPublishTracker tracker = new();
+            var handler = new MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationHandler(
+                store, publishing, tracker, TimeProvider.System);
+            await AssertSameIdsKeepsPauseAsync(publishing, handler, tracker, saveId);
+            await AssertNewFolderResumesAsync(publishing, handler, tracker, saveId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task SeedPaused403Async(
+        DrivePublishingStore publishing,
+        MtgSoloSports.Features.Seasons.GetSeasonStatus.GetSeasonStatusHandler status,
+        Guid saveId)
+    {
+        GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        DrivePublishingStore.DestinationDocument paused = new(
+            saveId, "Save", "folder-old", null, null,
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true,
+            AutoRequestedSeason: live.CurrentSeasonNumber,
+            AutoRequestedGlobalStage: live.GlobalStage,
+            AutoRequestedPhase: live.ComputedPhase,
+            AutoRequestedUtc: DateTimeOffset.UtcNow.AddMinutes(-5),
+            AutoPausedForAuth: true,
+            AutoLastError: "Google denied access to the destination folder (403). Grant missing.");
+        await publishing.SaveDestinationAsync(paused, CancellationToken.None).ConfigureAwait(false);
+        DriveAutoPublishStatus.Compute(paused, connected: true, publishing: false).ShouldBe("Disconnected");
+    }
+
+    private static async Task AssertSameIdsKeepsPauseAsync(
+        DrivePublishingStore publishing,
+        MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationHandler handler,
+        DriveAutoPublishTracker tracker,
+        Guid saveId)
+    {
+        while (tracker.Reader.TryRead(out _)) { }
+        _ = await handler.HandleAsync(saveId, NewDestination("folder-old"), CancellationToken.None).ConfigureAwait(false);
+        var stillPaused = await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        stillPaused.ShouldNotBeNull();
+        stillPaused!.AutoPausedForAuth.ShouldBeTrue();
+        stillPaused.AutoNextRetryUtc.ShouldBeNull();
+        tracker.Reader.TryRead(out _).ShouldBeFalse();
+    }
+
+    private static async Task AssertNewFolderResumesAsync(
+        DrivePublishingStore publishing,
+        MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationHandler handler,
+        DriveAutoPublishTracker tracker,
+        Guid saveId)
+    {
+        while (tracker.Reader.TryRead(out _)) { }
+        var updated = await handler.HandleAsync(saveId, NewDestination("folder-new"), CancellationToken.None).ConfigureAwait(false);
+        updated.AutoPublishEnabled.ShouldBeTrue();
+        var after = await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        after.ShouldNotBeNull();
+        after!.AutoPausedForAuth.ShouldBeFalse();
+        after.AutoNextRetryUtc.ShouldNotBeNull();
+        after.AutoLastError.ShouldBeNull();
+        after.LastSeasonNumber.ShouldBeNull();
+        DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+        DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Pending");
+        tracker.Reader.TryRead(out Guid signaled).ShouldBeTrue();
+        signaled.ShouldBe(saveId);
+    }
+
     private static MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationRequest NewDestination(string folder) =>
         new(folder, null, null, null, null, null, null, false);
 
