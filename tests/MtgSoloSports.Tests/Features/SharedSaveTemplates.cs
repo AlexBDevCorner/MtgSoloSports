@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
@@ -174,14 +172,9 @@ internal static class SharedSaveTemplates
         Template template = await GetOrBuildAsync(key, build).ConfigureAwait(false);
         Directory.CreateDirectory(savesRoot);
         SaveStore templateStore = TestSaveStores.CreateStoreForRoot(template.Root);
-        using (SaveDbContext context = templateStore.OpenDbContext(template.SaveId))
-        {
-            await context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);").ConfigureAwait(false);
-        }
-
-        SqliteConnection.ClearAllPools();
         string source = SaveFileNaming.GetSaveFilePath(template.Root, template.SaveId);
-        File.Copy(source, SaveFileNaming.GetSaveFilePath(savesRoot, template.SaveId));
+        string destination = SaveFileNaming.GetSaveFilePath(savesRoot, template.SaveId);
+        await TestSaveStores.CopySaveFileLockedAsync(templateStore, template.SaveId, source, destination).ConfigureAwait(false);
         return template.SaveId;
     }
 }
