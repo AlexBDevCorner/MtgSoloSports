@@ -73,11 +73,25 @@ public sealed class DriveAutoPublishNotifier
 
     private async Task NotifyLockedAsync(Guid saveId, CancellationToken cancellationToken)
     {
+        // Requirement 3: sporting responses must never wait for Google Drive.
+        // The per-save gate is held across slow report generation and Drive
+        // network writes by HandleAutoAsync. Take it without waiting; when an
+        // upload is in flight, just signal and let the running worker
+        // reconcile the durable checkpoint after the current publish settles
+        // (EnsurePendingSnapshot self-heal plus startup recovery). Uses an
+        // unlinked wait so client disconnect never throws here.
+        _ = cancellationToken;
         SemaphoreSlim gate = DriveSaveGates.ForSave(saveId);
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        bool entered = await gate.WaitAsync(0, CancellationToken.None).ConfigureAwait(false);
+        if (!entered)
+        {
+            _tracker.Signal(saveId);
+            return;
+        }
+
         try
         {
-            await NoteCheckpointLockedAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await NoteCheckpointLockedAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {

@@ -57,16 +57,18 @@ public sealed class AdvanceToNextEventHandler
         finally
         {
             gate.Release();
-        }
 
-        // Every Next Event step is a durable finalized boundary (global
-        // stage, movement, qualifier, rebalance, Cup steps, next-season
-        // start). The checkpoint note collapses duplicates; completed rounds
-        // never flow through this path so sub-stage progress cannot trigger.
-        // Uses an unlinked token so client disconnect cannot lose the note.
-        if (_autoPublish is not null)
-        {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            // Every Next Event step is a durable finalized boundary (global
+            // stage, movement, qualifier, rebalance, Cup steps, next-season
+            // start). The checkpoint note collapses duplicates; completed rounds
+            // never flow through this path so sub-stage progress cannot trigger.
+            // Runs even on exception/cancellation after an intermediate commit,
+            // uses an unlinked token and never throws so a post-commit
+            // disconnect cannot lose the durable checkpoint.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         return response;
@@ -79,7 +81,11 @@ public sealed class AdvanceToNextEventHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         string beforeAction = await ResolveNextActionAsync(saveId, cancellationToken).ConfigureAwait(false);
         string executedDetail = await ExecuteActionUnderLockAsync(saveId, beforeAction, cancellationToken).ConfigureAwait(false);
-        GetSeasonStatusResponse after = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        // Post-commit durability: the sporting mutation already committed, so
+        // this response read must survive HTTP client disconnect. Ignore the
+        // caller's request token with a detached read; the outer finally note
+        // persists the checkpoint even if this read still fails.
+        GetSeasonStatusResponse after = await LoadStatusAsync(saveId, CancellationToken.None).ConfigureAwait(false);
         return new AdvanceToNextEventResponse(
             saveId,
             beforeAction,
@@ -186,7 +192,12 @@ public sealed class AdvanceToNextEventHandler
 
     internal async Task<string> ExecuteCompleteStageAsync(Guid saveId, CancellationToken cancellationToken)
     {
-        CompleteStageForAllLeaguesHandler handler = new(_store);
+        // Propagate the notifier so the inner global-stage finally records the
+        // durable checkpoint even if the outer post-commit status read is
+        // cancelled. The outer finally note covers all Next Event steps; the
+        // inner note is redundant but ensures the global-stage path cannot be
+        // lost on HTTP disconnect.
+        CompleteStageForAllLeaguesHandler handler = new(_store, _autoPublish);
         CompleteStageForAllLeaguesResponse response = await handler
             .CompleteGlobalStageUnderLockAsync(saveId, cancellationToken)
             .ConfigureAwait(false);

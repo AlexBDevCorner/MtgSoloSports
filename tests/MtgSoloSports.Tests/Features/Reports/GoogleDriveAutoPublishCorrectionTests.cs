@@ -629,6 +629,148 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task Notifier_DoesNotWait_WhenPublishGateHeld()
+    {
+        // P1: sporting responses must never wait for Google Drive. The per-save
+        // gate is held across slow report generation and Drive network writes;
+        // a second completed sporting command must not block behind it.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-nonblock-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-nonblock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        SemaphoreSlim gate = MtgSoloSports.Features.Reports.GoogleDrivePublishing.DriveSaveGates.ForSave(saveId);
+        await gate.WaitAsync(CancellationToken.None);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store,
+                publishing,
+                tracker,
+                status,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId,
+                "Save",
+                "folder-mtshistory",
+                "mtshistory",
+                "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            // Simulate a slow in-flight upload holding the gate. The sporting
+            // checkpoint note must return promptly (no waiting) and signal the
+            // worker to reconcile after the publish settles.
+            Task notifyTask = notifier.NotifyStageCheckpointAsync(saveId, CancellationToken.None);
+            Task completed = await Task.WhenAny(notifyTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            completed.ShouldBeSameAs(notifyTask);
+            await notifyTask;
+
+            tracker.Reader.TryRead(out Guid signaled).ShouldBeTrue();
+            signaled.ShouldBe(saveId);
+        }
+        finally
+        {
+            gate.Release();
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task AdvanceToNextEvent_ExecuteCompleteStage_UsesInnerNotifier()
+    {
+        // P1: AdvanceToNextEvent created its nested global-stage handler without
+        // a notifier, so a disconnect between the inner commit and the outer
+        // post-commit read lost the checkpoint. The inner path must carry the
+        // notifier so its own finally records the durable boundary.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-nextevent-inner-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-nextevent-inner-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            var advance = new MtgSoloSports.Features.Seasons.AdvanceToNextEvent.AdvanceToNextEventHandler(store, notifier);
+            // Direct inner global-stage step (bypasses the outer HandleAsync
+            // note) must still leave a durable auto-publish request via its
+            // own finally.
+            _ = await advance.ExecuteCompleteStageAsync(saveId, CancellationToken.None);
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None);
+            after!.AutoRequestedSeason.ShouldBe(live.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage);
+            after.AutoRequestedPhase.ShouldBe(live.ComputedPhase);
+            DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task AdvanceToNextEvent_HandleAsync_NotesCheckpoint_OnSuccess()
+    {
+        // Outer finally coverage: every Next Event step is a durable finalized
+        // boundary. A completed global stage via Next Event must leave a
+        // pending auto-publish request without a manual Publish now.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-nextevent-outer-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-nextevent-outer-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            var advance = new MtgSoloSports.Features.Seasons.AdvanceToNextEvent.AdvanceToNextEventHandler(store, notifier);
+            _ = await advance.HandleAsync(saveId, CancellationToken.None);
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None);
+            after!.AutoRequestedSeason.ShouldBe(live.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage);
+            after.AutoRequestedPhase.ShouldBe(live.ComputedPhase);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
     private static async Task<(MtgSoloSports.Persistence.Saves.SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteIsolatedAsync(string prefix)
     {
         var (store, root) = TestSaveStores.CreateStore(prefix);
