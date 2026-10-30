@@ -236,6 +236,31 @@ public sealed class StandingsStagePlacementsTests
     }
 
     [Fact]
+    public async Task StandingsReport_IncompleteStageStandings_FailsActionably()
+    {
+        var (store, root, saveId) = await CreateSaveAsync("Placements Incomplete Cursor");
+        try
+        {
+            int leagueId = await FirstLeagueIdAsync(store, saveId);
+            await CompleteOneStageForAllLeaguesAsync(store, saveId);
+            await InsertWellFormedStandingsForIncompleteStageAsync(store, saveId, leagueId);
+
+            var handler = new GetStandingsReportHandler(store);
+            InvalidOperationException jsonEx = await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
+            jsonEx.Message.ShouldContain("not marked complete");
+            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
+
+            // Same orphan rows must also abort the dossier's Superleague trajectory (season 1 fallback is the first league).
+            var dossierHandler = new GetSeasonDossierHandler(store);
+            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task Dossier_SuperleagueTrajectory_MatchesStandingsExport()
     {
         var (store, root, saveId) = await CreateSeason1CompleteAsync("Dossier Trajectory");
@@ -526,6 +551,40 @@ public sealed class StandingsStagePlacementsTests
         int outside = await context.SaveAthletes.AsNoTracking()
             .Where(e => !roster.Contains(e.Id)).Select(e => e.Id).FirstAsync().ConfigureAwait(false);
         row.SaveAthleteId = outside;
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static async Task InsertWellFormedStandingsForIncompleteStageAsync(SaveStore store, Guid saveId, int leagueId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity season = await context.Seasons.AsNoTracking().OrderBy(e => e.SeasonNumber).FirstAsync().ConfigureAwait(false);
+        StageEntity cursor = await context.Stages
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == leagueId && e.StageNumber == 2)
+            .SingleAsync().ConfigureAwait(false);
+        cursor.IsComplete.ShouldBeFalse();
+        List<int> roster = await context.SeasonMemberships.AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == leagueId)
+            .OrderBy(e => e.SaveAthleteId).Select(e => e.SaveAthleteId).ToListAsync().ConfigureAwait(false);
+        roster.Count.ShouldBe(32);
+        for (int i = 0; i < roster.Count; i++)
+        {
+            context.StageStandings.Add(new StageStandingEntity
+            {
+                SeasonId = season.Id,
+                LeagueId = leagueId,
+                StageId = cursor.Id,
+                StageNumber = 2,
+                SaveAthleteId = roster[i],
+                StageRank = i + 1,
+                StageScoreThousandths = 1000,
+                BaseScoreThousandths = 1000,
+                ChampionshipPointsThousandths = 1000,
+                RoundWins = 0,
+                RoundPlaceCountsJson = "[]",
+                EarnedBonusThousandths = 0,
+            });
+        }
+
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 }

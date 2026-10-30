@@ -225,7 +225,13 @@ public sealed class GetStandingsReportHandler
             .OrderBy(e => e.SaveAthleteId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        IReadOnlyList<SeasonPlacementCell> placements = StagePlacementReport.MapValidated(memberships, stageRows, league, rules);
+        List<StageEntity> stages = await context.Stages
+            .AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == league.Id)
+            .OrderBy(e => e.StageNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<SeasonPlacementCell> placements = StagePlacementReport.MapValidated(memberships, stageRows, stages, league, rules);
         int completedStages = placements.Select(c => c.StageNumber).Distinct().Count();
         GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
 

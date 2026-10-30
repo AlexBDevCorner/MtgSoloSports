@@ -45,23 +45,32 @@ internal static class StagePlacementReport
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return MapValidated(memberships, standings, league, rules);
+        List<StageEntity> stages = await context.Stages
+            .AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == league.Id)
+            .OrderBy(e => e.StageNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return MapValidated(memberships, standings, stages, league, rules);
     }
 
     internal static IReadOnlyList<SeasonPlacementCell> MapValidated(
         List<SeasonMembershipEntity> memberships,
         List<StageStandingEntity> standings,
+        List<StageEntity> stages,
         LeagueEntity league,
         SimulationKernel.Rules.RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(memberships);
         ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(stages);
         ArgumentNullException.ThrowIfNull(league);
         ArgumentNullException.ThrowIfNull(rules);
 
         GetSeasonPlacementsHandler.ValidateMemberships(memberships, league);
         GetSeasonPlacementsHandler.ValidateStandings(standings, league, memberships);
-        ValidateReportPlacements(memberships, standings, league, rules);
+        ValidateReportPlacements(memberships, standings, stages, league, rules);
 
         return GetSeasonPlacementsHandler.MapCells(standings);
     }
@@ -69,10 +78,27 @@ internal static class StagePlacementReport
     internal static void ValidateReportPlacements(
         List<SeasonMembershipEntity> memberships,
         List<StageStandingEntity> standings,
+        List<StageEntity> stages,
         LeagueEntity league,
         SimulationKernel.Rules.RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(memberships);
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(stages);
+        ArgumentNullException.ThrowIfNull(league);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        ValidateStandingScope(standings, league, rules);
+        ValidateHistoryShape(standings, league);
+        ValidateRosterCoverage(memberships, standings, league);
+        ValidateStageCursors(standings, stages, league, rules);
+    }
+
+    internal static void ValidateStandingScope(
+        List<StageStandingEntity> standings,
+        LeagueEntity league,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
         ArgumentNullException.ThrowIfNull(standings);
         ArgumentNullException.ThrowIfNull(league);
         ArgumentNullException.ThrowIfNull(rules);
@@ -97,6 +123,14 @@ internal static class StagePlacementReport
                     $"League '{league.Name}' has corrupt stage {row.StageNumber}; expected 1..{rules.StagesPerSeason}.");
             }
         }
+    }
+
+    internal static void ValidateHistoryShape(
+        List<StageStandingEntity> standings,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(league);
 
         List<int> stageNumbers = standings.Select(r => r.StageNumber).Distinct().OrderBy(n => n).ToList();
         for (int i = 0; i < stageNumbers.Count; i++)
@@ -114,6 +148,16 @@ internal static class StagePlacementReport
             throw new InvalidOperationException(
                 $"League '{league.Name}' has duplicate (athleteId, stageNumber) stage standings.");
         }
+    }
+
+    internal static void ValidateRosterCoverage(
+        List<SeasonMembershipEntity> memberships,
+        List<StageStandingEntity> standings,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(memberships);
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(league);
 
         HashSet<int> roster = memberships.Select(m => m.SaveAthleteId).ToHashSet();
         foreach (IGrouping<int, StageStandingEntity> group in standings.GroupBy(r => r.StageNumber))
@@ -129,6 +173,111 @@ internal static class StagePlacementReport
             {
                 throw new InvalidOperationException(
                     $"League '{league.Name}' stage {group.Key} does not match the season roster.");
+            }
+        }
+    }
+
+    internal static void ValidateStageCursors(
+        List<StageStandingEntity> standings,
+        List<StageEntity> stages,
+        LeagueEntity league,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(stages);
+        ArgumentNullException.ThrowIfNull(league);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        Dictionary<int, StageEntity> cursors = BuildCursorMap(stages, league);
+        ValidateCursorCompletion(standings, cursors, league, rules);
+        ValidateNoMissingStandings(standings, stages, league);
+    }
+
+    internal static Dictionary<int, StageEntity> BuildCursorMap(
+        List<StageEntity> stages,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(stages);
+        ArgumentNullException.ThrowIfNull(league);
+
+        Dictionary<int, StageEntity> cursors = new(stages.Count);
+        foreach (StageEntity stage in stages)
+        {
+            if (stage.SeasonId != league.SeasonId || stage.LeagueId != league.Id)
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' stage {stage.StageNumber} cursor references another season or league; cross-season leakage is forbidden.");
+            }
+
+            if (!cursors.TryAdd(stage.StageNumber, stage))
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' has duplicate stage {stage.StageNumber} cursors.");
+            }
+        }
+
+        return cursors;
+    }
+
+    internal static void ValidateCursorCompletion(
+        List<StageStandingEntity> standings,
+        Dictionary<int, StageEntity> cursors,
+        LeagueEntity league,
+        SimulationKernel.Rules.RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(cursors);
+        ArgumentNullException.ThrowIfNull(league);
+        ArgumentNullException.ThrowIfNull(rules);
+
+        List<int> standingNumbers = standings.Select(r => r.StageNumber).Distinct().OrderBy(n => n).ToList();
+        foreach (int stageNumber in standingNumbers)
+        {
+            if (!cursors.TryGetValue(stageNumber, out StageEntity? cursor))
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' stage {stageNumber} has standings without a matching stage cursor; corrupted sporting state.");
+            }
+
+            if (!cursor.IsComplete)
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' stage {stageNumber} is not marked complete; an in-progress stage must never be exported as completed.");
+            }
+
+            if (cursor.CompletedRounds != rules.RoundsPerStage)
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' stage {stageNumber} is marked complete with {cursor.CompletedRounds} rounds; expected {rules.RoundsPerStage}.");
+            }
+
+            foreach (StageStandingEntity row in standings.Where(r => r.StageNumber == stageNumber))
+            {
+                if (row.StageId != cursor.Id)
+                {
+                    throw new InvalidOperationException(
+                        $"League '{league.Name}' stage {stageNumber} standing references stage id {row.StageId}; expected cursor id {cursor.Id}.");
+                }
+            }
+        }
+    }
+
+    internal static void ValidateNoMissingStandings(
+        List<StageStandingEntity> standings,
+        List<StageEntity> stages,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(stages);
+        ArgumentNullException.ThrowIfNull(league);
+
+        HashSet<int> standingNumbers = standings.Select(r => r.StageNumber).ToHashSet();
+        foreach (StageEntity stage in stages)
+        {
+            if (stage.IsComplete && !standingNumbers.Contains(stage.StageNumber))
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' stage {stage.StageNumber} is marked complete but has no stage standings; corrupted sporting state.");
             }
         }
     }
