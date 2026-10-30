@@ -352,3 +352,20 @@ The UI supports both instant simulation and an optional Eurovision-like card-by-
 ## 18. Determinism
 
 Every save stores a random algorithm/version and RNG state. Universe selection, league draws, round shuffles, pool draws and unavoidable random tie-breaks consume only this controlled RNG. Equivalent starting state + rules + RNG state must produce equivalent results.
+
+## 19. Chaos Cup (pure format, MSS-098)
+
+1024 entrants (all source-season league athletes plus Pool invitations), six
+32-athlete group stages with group counts 32/16/8/4/2/1 (1024/512/256/128/64/32
+entrants), top 16 from each nonfinal group, 16 game rounds per group, active
+bonus used but not earned, no league points/promotion, group scores reset.
+Per-color entrants are exactly 128; Pool invitations per color are 128 minus
+active source-season athletes of that color (ordinary 800/224, Season 1
+768/256, legacy compositions likewise). The first draw holds exactly 4 of each
+color per group; later draws are pure random with no color/tier seeding.
+Eliminated athletes carry only an exit-stage category (32/16/8/4/2-group
+stage); only the 32 Finalists hold official places 1..32, with no fabricated
+global ranks. Runs after the 32 league stages and before promotion qualifiers,
+only for a new season after deployment; odd/even Color/Type Cups keep
+alternating and existing sporting history is unchanged. Draw, simulator,
+lifecycle and frontend are follow-ups.
