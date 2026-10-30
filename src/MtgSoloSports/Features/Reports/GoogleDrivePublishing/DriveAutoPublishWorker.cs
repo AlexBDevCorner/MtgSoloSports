@@ -315,15 +315,10 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             return;
         }
 
-        DrivePublishingStore.DestinationDocument? snapshot = await LoadSnapshotAsync(saveId, cancellationToken).ConfigureAwait(false);
-        if (snapshot is null || !snapshot.AutoPublishEnabled)
+        DrivePublishingStore.DestinationDocument? snapshot =
+            await EnsurePendingSnapshotAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
         {
-            return;
-        }
-
-        if (!DriveAutoPublishStatus.HasPendingRequest(snapshot))
-        {
-            await ClearStaleErrorAsync(saveId, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -367,6 +362,42 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         {
             _tracker.ClearPublishing(saveId);
         }
+    }
+
+    private async Task<DrivePublishingStore.DestinationDocument?> EnsurePendingSnapshotAsync(
+        Guid saveId,
+        CancellationToken cancellationToken)
+    {
+        DrivePublishingStore.DestinationDocument? snapshot =
+            await LoadSnapshotAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null || !snapshot.AutoPublishEnabled)
+        {
+            return null;
+        }
+
+        if (DriveAutoPublishStatus.HasPendingRequest(snapshot))
+        {
+            return snapshot;
+        }
+
+        // Signal-triggered self-heal: a missing post-commit note (cancelled
+        // bulk, crash between commit and note) leaves no pending request
+        // while the durable save is ahead. Reconcile now so this save does
+        // not wait for a restart. Duplicate-safe; no signal when caught up.
+        await ReconcileDurableCheckpointAsync(saveId, cancellationToken).ConfigureAwait(false);
+        snapshot = await LoadSnapshotAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null || !snapshot.AutoPublishEnabled)
+        {
+            return null;
+        }
+
+        if (!DriveAutoPublishStatus.HasPendingRequest(snapshot))
+        {
+            await ClearStaleErrorAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+
+        return snapshot;
     }
 
     private async Task<bool> HasSaveConnectionAsync(CancellationToken cancellationToken)

@@ -63,11 +63,15 @@ public sealed class CompleteSeasonHandler
         finally
         {
             gate.Release();
-        }
 
-        if (_autoPublish is not null)
-        {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            // The season fast path commits each global stage separately. The
+            // note runs even when cancellation or a failure follows an
+            // intermediate commit, so the latest durable state is eventually
+            // published. Uses an unlinked token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         return response;
@@ -92,7 +96,10 @@ public sealed class CompleteSeasonHandler
         int seasonNumber,
         CancellationToken cancellationToken)
     {
-        CompleteStageForAllLeaguesHandler bulk = new(_store);
+        // Reuse the focused operation including its post-commit checkpoint
+        // note, so a cancelled season fast-forward still leaves the latest
+        // committed stage durably requested.
+        CompleteStageForAllLeaguesHandler bulk = new(_store, _autoPublish);
         int stagesCompleted = 0;
         while (true)
         {

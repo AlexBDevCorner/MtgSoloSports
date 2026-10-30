@@ -215,6 +215,269 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task BulkHandlers_WireNotifier_SoCancelledBulkKeepsCheckpoint()
+    {
+        // P1 (MSS-090 correction): bulk/fast paths commit global stages
+        // incrementally but previously notified only after the whole request.
+        // The inner bulk operation must carry the notifier so an intermediate
+        // commit is durably requested even when the outer request cancels.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-bulkwire-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-bulkwire-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store,
+                publishing,
+                tracker,
+                status,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            // SimulateSeasons must propagate the notifier to its inner bulk
+            // stage handler (previously constructed without a notifier).
+            MtgSoloSports.Features.Simulation.SimulateSeasons.SimulateSeasonsHandler bulkSeasons =
+                new(store, notifier);
+            var handlers = bulkSeasons.CreateHandlers();
+            FieldInfo? bulkField = typeof(MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesHandler)
+                .GetField("_autoPublish", BindingFlags.NonPublic | BindingFlags.Instance);
+            bulkField.ShouldNotBeNull();
+            bulkField!.GetValue(handlers.BulkStages).ShouldBeSameAs(notifier);
+
+            // CompleteSeason must also carry the notifier into its remaining
+            // stages loop (previously post-success-only).
+            MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler bulkSeason =
+                new(store, notifier);
+            _ = saveId;
+            _ = bulkSeason;
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task CompleteSeason_FailureStillNotesCheckpoint_ViaFinally()
+    {
+        // P1: CompleteSeason notified only after success. A cancelled/failed
+        // bulk request after an intermediate commit left no AutoRequested
+        // checkpoint. The outer note must run even when the sporting work
+        // throws, using an unlinked token and never masking the error.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-autopub-seasonfinally-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-seasonfinally-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store,
+                publishing,
+                tracker,
+                status,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            GetSeasonStatusResponse current = await status.HandleAsync(saveId, CancellationToken.None);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId,
+                "Save",
+                "folder-mtshistory",
+                "mtshistory",
+                "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            // Season 1 is already complete, so this throws without new
+            // commits; the finally note must still record the durable state.
+            MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler handler =
+                new(store, notifier);
+            await Should.ThrowAsync<MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonConflictException>(
+                () => handler.HandleAsync(saveId, CancellationToken.None));
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoRequestedSeason.ShouldBe(current.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(current.GlobalStage);
+            after.AutoRequestedPhase.ShouldBe(current.ComputedPhase);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task RunningWorker_ReconcilesMissingCheckpoint_WithoutRestart()
+    {
+        // P1: the worker reconciled missing checkpoints only at startup.
+        // A bulk request cancelled after an intermediate commit left the
+        // durable save ahead with no AutoRequested note, and the running
+        // worker never healed it (status falsely UpToDate). ProcessSaveAsync
+        // must now reconcile the durable checkpoint before deciding there is
+        // nothing to do, even while disconnected (no Drive upload attempted).
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-running-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-running-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store,
+                publishing,
+                tracker,
+                status,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            GetSeasonStatusResponse before = await SeedUpToDateAsync(publishing, status, saveId);
+            await AdvanceOneStageWithoutNotifyAsync(store, saveId, before.GlobalStage);
+            await AssertStaleUpToDateAsync(publishing, saveId);
+            await HealViaRunningWorkerAsync(publishing, notifier, tracker, saveId);
+            await AssertHealedAsync(publishing, status, saveId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task<GetSeasonStatusResponse> SeedUpToDateAsync(
+        DrivePublishingStore publishing,
+        GetSeasonStatusHandler status,
+        Guid saveId)
+    {
+        GetSeasonStatusResponse before = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        DrivePublishingStore.DestinationDocument blank = new(
+            saveId,
+            "Save",
+            "folder-mtshistory",
+            "mtshistory",
+            "folder-seasons",
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true);
+        DrivePublishingStore.DestinationDocument seed = blank with
+        {
+            AutoRequestedSeason = before.CurrentSeasonNumber,
+            AutoRequestedGlobalStage = before.GlobalStage,
+            AutoRequestedPhase = before.ComputedPhase,
+            AutoRequestedUtc = DateTimeOffset.UtcNow,
+            LastSeasonNumber = before.CurrentSeasonNumber,
+            LastGlobalStage = before.GlobalStage,
+            LastPhase = before.ComputedPhase,
+            LastPublishedUtc = DateTimeOffset.UtcNow,
+        };
+        await publishing.SaveDestinationAsync(seed, CancellationToken.None).ConfigureAwait(false);
+        return before;
+    }
+
+    private static async Task AdvanceOneStageWithoutNotifyAsync(
+        MtgSoloSports.Persistence.Saves.SaveStore store,
+        Guid saveId,
+        int stageBefore)
+    {
+        var withoutNotify = new MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesHandler(store);
+        var completed = await withoutNotify.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        completed.GlobalStageAfter.ShouldBeGreaterThan(stageBefore);
+    }
+
+    private static async Task AssertStaleUpToDateAsync(
+        DrivePublishingStore publishing,
+        Guid saveId)
+    {
+        DrivePublishingStore.DestinationDocument? stale =
+            await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        stale.ShouldNotBeNull();
+        DriveAutoPublishStatus.HasPendingRequest(stale!).ShouldBeFalse();
+        // When connected, the missing note falsely reports UpToDate instead
+        // of Pending; the worker must heal it to a pending request.
+        DriveAutoPublishStatus.Compute(stale, connected: true, publishing: false).ShouldBe("UpToDate");
+    }
+
+    private static async Task HealViaRunningWorkerAsync(
+        DrivePublishingStore publishing,
+        DriveAutoPublishNotifier notifier,
+        DriveAutoPublishTracker tracker,
+        Guid saveId)
+    {
+        var scopes = new TestScopeFactory(publishing, notifier);
+        DriveAutoPublishWorker worker = new(
+            scopes,
+            tracker,
+            TimeProvider.System,
+            NullLogger<DriveAutoPublishWorker>.Instance);
+        await worker.ProcessSaveAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static async Task AssertHealedAsync(
+        DrivePublishingStore publishing,
+        GetSeasonStatusHandler status,
+        Guid saveId)
+    {
+        DrivePublishingStore.DestinationDocument? healed =
+            await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        healed.ShouldNotBeNull();
+        GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        healed!.AutoRequestedSeason.ShouldBe(live.CurrentSeasonNumber);
+        healed.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage);
+        healed.AutoRequestedPhase.ShouldBe(live.ComputedPhase);
+        DriveAutoPublishStatus.HasPendingRequest(healed).ShouldBeTrue();
+    }
+
+    private sealed class TestScopeFactory(
+        DrivePublishingStore publishing,
+        DriveAutoPublishNotifier? notifier) : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope() => new TestScope(publishing, notifier);
+
+        private sealed class TestScope(
+            DrivePublishingStore publishing,
+            DriveAutoPublishNotifier? notifier) : IServiceScope
+        {
+            private readonly TestProvider _provider = new(publishing, notifier);
+            public IServiceProvider ServiceProvider => _provider;
+            public void Dispose()
+            {
+            }
+        }
+
+        private sealed class TestProvider(
+            DrivePublishingStore publishing,
+            DriveAutoPublishNotifier? notifier) : IServiceProvider
+        {
+            public object? GetService(Type serviceType)
+            {
+                if (serviceType == typeof(DrivePublishingStore))
+                {
+                    return publishing;
+                }
+
+                if (serviceType == typeof(DriveAutoPublishNotifier))
+                {
+                    return notifier;
+                }
+
+                return null;
+            }
+        }
+    }
+
     private static void AssertSharedCheckpointUnchanged(
         DrivePublishingStore.DestinationDocument? after,
         int lastSeasonBefore,
