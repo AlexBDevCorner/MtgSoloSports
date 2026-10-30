@@ -385,8 +385,12 @@ public sealed class GoogleDriveAutoPublishTests
                 "stale-access", DateTimeOffset.UtcNow.AddSeconds(-60)), CancellationToken.None);
             using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
             bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
-            AutoState paused = await WaitForAutoStatusAsync(
-                client, saveId, ["Disconnected", "Failed", "Pending"], timeoutSeconds: 30);
+            // The publisher clears the connection before the worker persists
+            // the auth-paused error, so a poll can briefly observe
+            // Disconnected/Pending without an error. Wait for the settled
+            // error-present state instead of the first transient status.
+            AutoState paused = await WaitForAutoErrorAsync(
+                client, saveId, ["Disconnected", "Failed"], timeoutSeconds: 30);
             paused.LastError.ShouldNotBeNullOrWhiteSpace();
             string.Equals(paused.Status, "UpToDate", StringComparison.Ordinal).ShouldBeFalse();
 
@@ -594,6 +598,30 @@ public sealed class GoogleDriveAutoPublishTests
             {
                 throw new Xunit.Sdk.XunitException(
                     $"Timed out waiting for auto-publish status {string.Join("/", wanted)}; last was {latest.Status} (requested {latest.RequestedSeason}/{latest.RequestedStage}, last {latest.LastSeason}/{latest.LastStage}, error: {latest.LastError}).");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+            latest = await GetAutoStateAsync(client, saveId).ConfigureAwait(false);
+        }
+
+        return latest;
+    }
+
+    private static async Task<AutoState> WaitForAutoErrorAsync(
+        HttpClient client,
+        Guid saveId,
+        string[] wanted,
+        int timeoutSeconds)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        AutoState latest = await GetAutoStateAsync(client, saveId).ConfigureAwait(false);
+        while (!wanted.Contains(latest.Status, StringComparer.Ordinal)
+            || string.IsNullOrWhiteSpace(latest.LastError))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new Xunit.Sdk.XunitException(
+                    $"Timed out waiting for auto-publish error status {string.Join("/", wanted)}; last was {latest.Status} (requested {latest.RequestedSeason}/{latest.RequestedStage}, last {latest.LastSeason}/{latest.LastStage}, error: {latest.LastError}).");
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
