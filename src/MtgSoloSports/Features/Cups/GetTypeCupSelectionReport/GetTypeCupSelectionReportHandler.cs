@@ -177,7 +177,8 @@ public sealed class GetTypeCupSelectionReportHandler
             report.FormWeightPermille,
             report.PrestigeWeightPermille,
             teams,
-            missed);
+            missed,
+            report.PrestigeWeightsVersion);
     }
 
     internal static GetTypeCupSelectionReportResponse.Candidate MapCandidate(
@@ -229,7 +230,14 @@ public sealed class GetTypeCupSelectionReportHandler
             candidate.PrestigeFeeder1StageRaw,
             candidate.PrestigeFeeder2StageRaw,
             candidate.PrestigeFeeder3StageRaw,
-            candidate.PrestigeMajorCupRaw);
+            candidate.PrestigeMajorCupRaw,
+            candidate.PrestigeCareerSuperleaguePoints,
+            candidate.PrestigeCareerFeeder1Points,
+            candidate.PrestigeCareerFeeder2Points,
+            candidate.PrestigeCareerFeeder3Points,
+            candidate.PrestigeCareerColorIndividualPoints,
+            candidate.PrestigeCareerColorTeamPoints,
+            candidate.PrestigeCareerTypeTeamPoints);
     }
 
     /// <summary>

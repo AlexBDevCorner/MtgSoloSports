@@ -314,7 +314,7 @@ public sealed class CupPrestigeCalculatorTests
             + candidate.PrestigeFeeder3StageRaw + candidate.PrestigeMajorCupRaw;
         sum.ShouldBe(candidate.PrestigeRaw);
         var report = new ColorCupSelectionReportDocument(
-            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 250, 100,
+            3, 350, 300, 250, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [candidate])]);
         ColorCupSelectionReportDocument restored = ColorCupSelectionReportDocument.FromStored(report.ToStored());
         restored.Version.ShouldBe(3);

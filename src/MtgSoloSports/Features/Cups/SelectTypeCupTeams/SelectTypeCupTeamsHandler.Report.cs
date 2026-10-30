@@ -1,5 +1,7 @@
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared.Careers;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -10,13 +12,13 @@ public sealed partial class SelectTypeCupTeamsHandler
     internal static TypeCupSelectionReportDocument BuildReport(
         TypeCupAllocationInsight.Result insight,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
         SelectionInputs inputs,
         RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(insight);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
-        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
         Dictionary<string, TypeCupAllocationInsight.TypeStanding> standings =
@@ -33,7 +35,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             Dictionary<int, int> selectionRanks = team.Members.ToDictionary(m => m.AthleteId, m => m.SelectionRank);
             List<TypeCupSelectionReportDocument.Candidate> ranking = standing.Ranking
                 .Where(r => r.TypeRank <= TypeCupSelectionReportDocument.ShortlistSize || selectionRanks.ContainsKey(r.Candidate.AthleteId))
-                .Select(r => MapReportCandidate(r, team.CreatureType, selectionRanks, standings, rankByType, metricsByAthlete, prestigeByAthlete, inputs))
+                .Select(r => MapReportCandidate(r, team.CreatureType, selectionRanks, standings, rankByType, metricsByAthlete, careerByAthlete, inputs))
                 .ToList();
             teams.Add(new TypeCupSelectionReportDocument.Team(team.CreatureType, standing.Ranking.Count, ranking));
         }
@@ -50,7 +52,8 @@ public sealed partial class SelectTypeCupTeamsHandler
             rules.CupFormWeightPermille,
             rules.CupPrestigeWeightPermille,
             teams,
-            missed);
+            missed,
+            CareerPerformanceScorer.WeightsVersion);
     }
 
     internal static TypeCupSelectionReportDocument.Candidate MapReportCandidate(
@@ -60,7 +63,7 @@ public sealed partial class SelectTypeCupTeamsHandler
         Dictionary<string, TypeCupAllocationInsight.TypeStanding> standings,
         Dictionary<string, Dictionary<int, int>> rankByType,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
         SelectionInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(ranked);
@@ -69,14 +72,17 @@ public sealed partial class SelectTypeCupTeamsHandler
         ArgumentNullException.ThrowIfNull(standings);
         ArgumentNullException.ThrowIfNull(rankByType);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
-        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         TypeCupAllocation.ScoredCandidate candidate = ranked.Candidate;
         List<TypeCupSelectionReportDocument.Alternative> alternatives = BuildAlternatives(candidate, creatureType, standings, rankByType);
         selectionRanks.TryGetValue(candidate.AthleteId, out int selectionRank);
         (string? leagueName, int? leagueLevel, int factor, int unadjustedPerformance, int unadjustedForm) =
             ResolveLeagueExplanation(candidate.AthleteId, metricsByAthlete, inputs);
-        prestigeByAthlete.TryGetValue(candidate.AthleteId, out CupPrestigeCalculator.PrestigeBreakdown? prestige);
+        SelectionCareerPrestige.BreakdownFor(
+            candidate.AthleteId, careerByAthlete,
+            out int careerSuper, out int careerF1, out int careerF2, out int careerF3,
+            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam);
 
         return new TypeCupSelectionReportDocument.Candidate(
             candidate.AthleteId,
@@ -99,16 +105,9 @@ public sealed partial class SelectTypeCupTeamsHandler
             factor,
             unadjustedPerformance,
             unadjustedForm,
-            prestige?.SuperTitleRaw ?? 0,
-            prestige?.Feeder1TitleRaw ?? 0,
-            prestige?.Feeder2TitleRaw ?? 0,
-            prestige?.Feeder3TitleRaw ?? 0,
-            prestige?.AppearanceRaw ?? 0,
-            prestige?.SuperStageRaw ?? 0,
-            prestige?.Feeder1StageRaw ?? 0,
-            prestige?.Feeder2StageRaw ?? 0,
-            prestige?.Feeder3StageRaw ?? 0,
-            prestige?.MajorCupRaw ?? 0);
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            careerSuper, careerF1, careerF2, careerF3,
+            careerIndividual, careerColorTeam, careerTypeTeam);
     }
 
     internal static List<TypeCupSelectionReportDocument.Alternative> BuildAlternatives(

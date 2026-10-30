@@ -1,5 +1,7 @@
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared.Careers;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -11,19 +13,22 @@ public sealed partial class SelectColorCupTeamsHandler
     /// <summary>
     /// Ranks every candidate of every sporting color. The first four of each
     /// ranking are the selected team; the rest feed the selection report.
-    /// Returns rankings plus the strength-aware metrics and league-aware
-    /// prestige breakdowns behind the adjusted raws.
+    /// Returns rankings plus the strength-aware metrics behind the adjusted
+    /// raws. Career prestige (MSS-096) comes from the shared
+    /// CareerPerformanceLoader scores through the source season; the carrier
+    /// dictionary is returned by the caller for report persistence.
     /// </summary>
-    internal static (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> Rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> Metrics, Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> Prestige) RankAllColors(
+    internal static (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> Rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> Metrics) RankAllColors(
         SelectionInputs inputs,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
         RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(rules);
-        Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules);
+        Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules, careerByAthlete);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestige = BuildPrestigeMap(inputs, rules);
         ValidateEightColors(byColor, rules);
         Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings = new(byColor.Count);
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
@@ -31,7 +36,7 @@ public sealed partial class SelectColorCupTeamsHandler
             rankings[(int)color] = ColorCupSelection.RankAll(byColor[(int)color], rules);
         }
 
-        return (rankings, metrics, prestige);
+        return (rankings, metrics);
     }
 
     internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> TakeTeams(
@@ -52,13 +57,13 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static ColorCupSelectionReportDocument BuildReport(
         Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
         SelectionInputs inputs,
         RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(rankings);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
-        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
         List<ColorCupSelectionReportDocument.Team> teams = new(rankings.Count);
@@ -67,7 +72,7 @@ public sealed partial class SelectColorCupTeamsHandler
             IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = rankings[(int)color];
             List<ColorCupSelectionReportDocument.Candidate> shortlist = ranking
                 .Take(ColorCupSelectionReportDocument.ShortlistSize)
-                .Select(c => MapReportCandidate(c, metricsByAthlete, prestigeByAthlete, inputs))
+                .Select(c => MapReportCandidate(c, metricsByAthlete, careerByAthlete, inputs))
                 .ToList();
             teams.Add(new ColorCupSelectionReportDocument.Team((int)color, ranking.Count, shortlist));
         }
@@ -78,18 +83,19 @@ public sealed partial class SelectColorCupTeamsHandler
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
             rules.CupPrestigeWeightPermille,
-            teams);
+            teams,
+            CareerPerformanceScorer.WeightsVersion);
     }
 
     internal static ColorCupSelectionReportDocument.Candidate MapReportCandidate(
         ColorCupSelection.ScoredCandidate scored,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
         SelectionInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(scored);
         ArgumentNullException.ThrowIfNull(metricsByAthlete);
-        ArgumentNullException.ThrowIfNull(prestigeByAthlete);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(inputs);
         metricsByAthlete.TryGetValue(scored.AthleteId, out CupSelectionMetrics.CupMetrics? metrics);
         string? leagueName = null;
@@ -119,7 +125,10 @@ public sealed partial class SelectColorCupTeamsHandler
             leagueName = "Pool";
         }
 
-        prestigeByAthlete.TryGetValue(scored.AthleteId, out CupPrestigeCalculator.PrestigeBreakdown? prestige);
+        SelectionCareerPrestige.BreakdownFor(
+            scored.AthleteId, careerByAthlete,
+            out int careerSuper, out int careerF1, out int careerF2, out int careerF3,
+            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam);
 
         return new ColorCupSelectionReportDocument.Candidate(
             scored.AthleteId, scored.SelectionRank, scored.FinalRatingThousandths,
@@ -127,11 +136,9 @@ public sealed partial class SelectColorCupTeamsHandler
             scored.PrestigeNormThousandths, scored.BonusRawThousandths, scored.PerformanceRawThousandths,
             scored.FormRaw, scored.PrestigeRaw, leagueName, leagueLevel, factor,
             unadjustedPerformance, unadjustedForm,
-            prestige?.SuperTitleRaw ?? 0, prestige?.Feeder1TitleRaw ?? 0,
-            prestige?.Feeder2TitleRaw ?? 0, prestige?.Feeder3TitleRaw ?? 0,
-            prestige?.AppearanceRaw ?? 0, prestige?.SuperStageRaw ?? 0,
-            prestige?.Feeder1StageRaw ?? 0, prestige?.Feeder2StageRaw ?? 0,
-            prestige?.Feeder3StageRaw ?? 0, prestige?.MajorCupRaw ?? 0);
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            careerSuper, careerF1, careerF2, careerF3,
+            careerIndividual, careerColorTeam, careerTypeTeam);
     }
 
     internal static void AddReport(
