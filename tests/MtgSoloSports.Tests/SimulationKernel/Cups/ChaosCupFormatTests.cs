@@ -234,6 +234,57 @@ public sealed class ChaosCupFormatTests
     }
 
     [Fact]
+    public void StageZero_GeneralValidator_RejectsUnbalancedColor()
+    {
+        List<ChaosCupFormat.ChaosEntrant> field = BuildBalancedField();
+        List<IReadOnlyList<ChaosCupFormat.ChaosEntrant>> groups = BuildBalancedFirstStage(field);
+        // Same swap as FirstStageGroups_UnbalancedColor_Rejected but via the
+        // general stage validator, which promises 4/color/group for stage 0.
+        List<ChaosCupFormat.ChaosEntrant> first = groups[0].ToList();
+        List<ChaosCupFormat.ChaosEntrant> second = groups[1].ToList();
+        int whiteInFirst = first.FindIndex(e => e.Color == SportingColor.White);
+        int blueInSecond = second.FindIndex(e => e.Color == SportingColor.Blue);
+        (first[whiteInFirst], second[blueInSecond]) = (second[blueInSecond], first[whiteInFirst]);
+        groups[0] = first;
+        groups[1] = second;
+        Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateStageGroups(0, field, groups));
+    }
+
+    [Fact]
+    public void FirstStageGroups_ColorSpoof_Rejected()
+    {
+        List<ChaosCupFormat.ChaosEntrant> field = BuildBalancedField();
+        List<IReadOnlyList<ChaosCupFormat.ChaosEntrant>> groups = BuildBalancedFirstStage(field);
+        // Swap colors of two entrants within one group, keeping IDs. Group
+        // color counts stay 4/color so the old ID-only check passed.
+        List<ChaosCupFormat.ChaosEntrant> first = groups[0].ToList();
+        int whiteIndex = first.FindIndex(e => e.Color == SportingColor.White);
+        int blueIndex = first.FindIndex(e => e.Color == SportingColor.Blue);
+        ChaosCupFormat.ChaosEntrant white = first[whiteIndex];
+        ChaosCupFormat.ChaosEntrant blue = first[blueIndex];
+        first[whiteIndex] = new ChaosCupFormat.ChaosEntrant(white.AthleteId, blue.Color);
+        first[blueIndex] = new ChaosCupFormat.ChaosEntrant(blue.AthleteId, white.Color);
+        groups[0] = first;
+        Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateFirstStageGroups(field, groups));
+        Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateStageGroups(0, field, groups));
+    }
+
+    [Fact]
+    public void LaterStages_ColorSpoof_Rejected()
+    {
+        List<ChaosCupFormat.ChaosEntrant> stage = Enumerable.Range(1, 512)
+            .Select(id => new ChaosCupFormat.ChaosEntrant(id, (SportingColor)((id - 1) % 2 == 0 ? 0 : 1)))
+            .ToList();
+        List<IReadOnlyList<ChaosCupFormat.ChaosEntrant>> groups = Enumerable.Range(0, 16)
+            .Select(g => (IReadOnlyList<ChaosCupFormat.ChaosEntrant>)stage.Skip(g * 32).Take(32).ToList())
+            .ToList();
+        List<ChaosCupFormat.ChaosEntrant> first = groups[0].ToList();
+        first[0] = new ChaosCupFormat.ChaosEntrant(first[0].AthleteId, SportingColor.Black);
+        groups[0] = first;
+        Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateStageGroups(1, stage, groups));
+    }
+
+    [Fact]
     public void LaterStages_AcceptPureRandomColorMix()
     {
         // Stage 1 holds 512 entrants in 16 groups; uneven colors are legal.

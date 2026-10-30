@@ -358,13 +358,20 @@ public static class ChaosCupFormat
             throw new InvalidOperationException($"Chaos stage {stageIndex} must hold exactly {EntrantCountForStage(stageIndex)} entrants, was {stageEntrants.Count}.");
         }
 
-        HashSet<int> field = CheckStageField(stageIndex, stageEntrants);
+        Dictionary<int, SportingColor> field = CheckStageField(stageIndex, stageEntrants);
         CheckStageCoverage(stageIndex, stageEntrants, groups, field);
+        if (stageIndex == 0)
+        {
+            for (int i = 0; i < groups.Count; i++)
+            {
+                ValidateSingleFirstStageGroup(groups[i], i);
+            }
+        }
     }
 
-    private static HashSet<int> CheckStageField(int stageIndex, IReadOnlyList<ChaosEntrant> stageEntrants)
+    private static Dictionary<int, SportingColor> CheckStageField(int stageIndex, IReadOnlyList<ChaosEntrant> stageEntrants)
     {
-        HashSet<int> field = new(stageEntrants.Count);
+        Dictionary<int, SportingColor> field = new(stageEntrants.Count);
         foreach (ChaosEntrant entrant in stageEntrants)
         {
             if (entrant is null)
@@ -377,7 +384,7 @@ public static class ChaosCupFormat
                 throw new InvalidOperationException($"Chaos stage {stageIndex} entrant {entrant.AthleteId} has unknown sporting color {(int)entrant.Color}.");
             }
 
-            if (!field.Add(entrant.AthleteId))
+            if (!field.TryAdd(entrant.AthleteId, entrant.Color))
             {
                 throw new InvalidOperationException($"Chaos stage {stageIndex} field contains duplicate athlete {entrant.AthleteId}.");
             }
@@ -390,7 +397,7 @@ public static class ChaosCupFormat
         int stageIndex,
         IReadOnlyList<ChaosEntrant> stageEntrants,
         IReadOnlyList<IReadOnlyList<ChaosEntrant>> groups,
-        HashSet<int> field)
+        Dictionary<int, SportingColor> field)
     {
         HashSet<int> covered = new(stageEntrants.Count);
         for (int i = 0; i < groups.Count; i++)
@@ -408,7 +415,7 @@ public static class ChaosCupFormat
         int stageIndex,
         IReadOnlyList<ChaosEntrant> group,
         int groupIndex,
-        HashSet<int> field,
+        Dictionary<int, SportingColor> field,
         HashSet<int> covered)
     {
         if (group is null)
@@ -428,9 +435,19 @@ public static class ChaosCupFormat
                 throw new InvalidOperationException($"Chaos stage {stageIndex} group {groupIndex + 1} contains a null entrant.");
             }
 
-            if (!field.Contains(entrant.AthleteId))
+            if (!field.TryGetValue(entrant.AthleteId, out SportingColor canonicalColor))
             {
                 throw new InvalidOperationException($"Chaos stage {stageIndex} group {groupIndex + 1} holds athlete {entrant.AthleteId} outside the stage field.");
+            }
+
+            if (!Enum.IsDefined(entrant.Color))
+            {
+                throw new InvalidOperationException($"Chaos stage {stageIndex} group {groupIndex + 1} holds unknown sporting color {(int)entrant.Color} for athlete {entrant.AthleteId}.");
+            }
+
+            if (entrant.Color != canonicalColor)
+            {
+                throw new InvalidOperationException($"Chaos stage {stageIndex} group {groupIndex + 1} holds athlete {entrant.AthleteId} with color {entrant.Color} mismatching stage field color {canonicalColor}.");
             }
 
             if (!covered.Add(entrant.AthleteId))
