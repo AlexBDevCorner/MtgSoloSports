@@ -15,6 +15,7 @@ using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -438,6 +439,203 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         healed.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage);
         healed.AutoRequestedPhase.ShouldBe(live.ComputedPhase);
         DriveAutoPublishStatus.HasPendingRequest(healed).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AutoDisabled_HandleAutoAsync_ReturnsNullWithoutDriveWork()
+    {
+        // P1: worker snapshot can go stale when the toggle is flipped to
+        // disabled after the snapshot load but before the publish gate.
+        // HandleAutoAsync must re-check enabled atomically under the same
+        // per-save gate and return null with no Drive work.
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            PublishResult baseline = await PostPublishAsync(client, saveId, allowCreateMissing: true);
+            baseline.Status.ShouldBe(HttpStatusCode.OK);
+            int filesBefore = drive.Files.Count;
+
+            // Auto mode stays disabled (default off).
+            using (var scope = factory.Services.CreateScope())
+            {
+                var publisher = scope.ServiceProvider.GetRequiredService<MtgSoloSports.Features.Reports.GoogleDrivePublishing.PublishDriveReportsHandler>();
+                var response = await publisher.HandleAutoAsync(
+                    saveId,
+                    new MtgSoloSports.Features.Reports.GoogleDrivePublishing.PublishDriveReportsRequest(
+                        ConfirmCrossSave: false,
+                        AllowOverwriteEditedRemote: false,
+                        AllowCreateMissing: true),
+                    CancellationToken.None);
+                response.ShouldBeNull();
+            }
+
+            drive.Files.Count.ShouldBe(filesBefore);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task DestinationChange_InvalidatesBaseline_AndSignals()
+    {
+        // Isolated save (no shared template) to avoid fork races: only the
+        // destination mapping matters, not sporting progression.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-autopub-destchange-");
+        var created = await store.CreateAsync("DestChange", 4242UL, 777UL, UniverseTestCatalog.Build());
+        Guid saveId = created.Detail.SaveId;
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-destchange-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            var status = new MtgSoloSports.Features.Seasons.GetSeasonStatus.GetSeasonStatusHandler(store);
+            DriveAutoPublishTracker tracker = new();
+            await SeedUpToDateDestinationAsync(publishing, status, saveId);
+            var handler = new MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationHandler(
+                store, publishing, tracker, TimeProvider.System);
+            var updated = await handler.HandleAsync(saveId, NewDestination("folder-new"), CancellationToken.None);
+            updated.AutoPublishEnabled.ShouldBeTrue();
+            await AssertBaselineInvalidatedAsync(publishing, tracker, saveId);
+            while (tracker.Reader.TryRead(out _)) { }
+            _ = await handler.HandleAsync(saveId, NewDestination("folder-new"), CancellationToken.None);
+            (await publishing.GetDestinationAsync(saveId, CancellationToken.None))!.LastSeasonNumber.ShouldBeNull();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static MtgSoloSports.Features.Reports.GoogleDrivePublishing.PutDriveDestinationRequest NewDestination(string folder) =>
+        new(folder, null, null, null, null, null, null, false);
+
+    private static async Task SeedUpToDateDestinationAsync(
+        DrivePublishingStore publishing,
+        MtgSoloSports.Features.Seasons.GetSeasonStatus.GetSeasonStatusHandler status,
+        Guid saveId)
+    {
+        GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        DrivePublishingStore.DestinationDocument seed = new(
+            saveId, "Save", "folder-old", "mtshistory", "folder-seasons-old",
+            null, null, null, null, null, null, null, null,
+            DateTimeOffset.UtcNow, live.CurrentSeasonNumber, live.ComputedPhase, live.GlobalStage,
+            "updated", "updated", null, null,
+            AutoPublishEnabled: true,
+            AutoRequestedSeason: live.CurrentSeasonNumber,
+            AutoRequestedGlobalStage: live.GlobalStage,
+            AutoRequestedPhase: live.ComputedPhase,
+            AutoRequestedUtc: DateTimeOffset.UtcNow);
+        await publishing.SaveDestinationAsync(seed, CancellationToken.None).ConfigureAwait(false);
+        DriveAutoPublishStatus.Compute(seed, connected: true, publishing: false).ShouldBe("UpToDate");
+    }
+
+    private static async Task AssertBaselineInvalidatedAsync(
+        DrivePublishingStore publishing, DriveAutoPublishTracker tracker, Guid saveId)
+    {
+        DrivePublishingStore.DestinationDocument? after = await publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        after.ShouldNotBeNull();
+        after!.LastSeasonNumber.ShouldBeNull();
+        after.LastGlobalStage.ShouldBeNull();
+        after.LastPublishedUtc.ShouldBeNull();
+        DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+        DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Pending");
+        after.AutoNextRetryUtc.ShouldNotBeNull();
+        tracker.Reader.TryRead(out Guid signaled).ShouldBeTrue();
+        signaled.ShouldBe(saveId);
+    }
+
+    [Fact]
+    public async Task CompleteGlobalStage_FailureStillNotesCheckpoint_ViaFinally()
+    {
+        var (store, root, saveId) = await CreateSeason1CompleteIsolatedAsync("mtgsolosports-autopub-globalfinally-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-globalfinally-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+            GetSeasonStatusResponse current = await status.HandleAsync(saveId, CancellationToken.None);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+            var handler = new MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesHandler(store, notifier);
+            await Should.ThrowAsync<MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesConflictException>(
+                () => handler.HandleAsync(saveId, CancellationToken.None));
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoRequestedSeason.ShouldBe(current.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(current.GlobalStage);
+            after.AutoRequestedPhase.ShouldBe(current.ComputedPhase);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task StartNextSeason_FailureStillNotesCheckpoint_ViaFinally()
+    {
+        var (store, root, saveId) = await CreateSeason1CompleteIsolatedAsync("mtgsolosports-autopub-startfinally-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-startfinally-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+            GetSeasonStatusResponse current = await status.HandleAsync(saveId, CancellationToken.None);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+            var handler = new MtgSoloSports.Features.Seasons.StartNextSeason.StartNextSeasonHandler(store, notifier);
+            await Should.ThrowAsync<Exception>(() => handler.HandleAsync(saveId, CancellationToken.None));
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoRequestedSeason.ShouldBe(current.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(current.GlobalStage);
+            after.AutoRequestedPhase.ShouldBe(current.ComputedPhase);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task<(MtgSoloSports.Persistence.Saves.SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteIsolatedAsync(string prefix)
+    {
+        var (store, root) = TestSaveStores.CreateStore(prefix);
+        var created = await store.CreateAsync("Isolated Season1", 4242UL, 777UL, UniverseTestCatalog.Build()).ConfigureAwait(false);
+        await new MtgSoloSports.Features.Simulation.CompleteSeason.CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
+        SqliteConnection.ClearAllPools();
+        return (store, root, created.Detail.SaveId);
     }
 
     private sealed class TestScopeFactory(

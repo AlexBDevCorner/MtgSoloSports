@@ -48,11 +48,15 @@ public sealed class CompleteStageForAllLeaguesHandler
         finally
         {
             gate.Release();
-        }
 
-        if (_autoPublish is not null)
-        {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            // Post-commit durability: a global stage commits per league, so
+            // cancellation or failure after an intermediate commit must still
+            // leave a durable checkpoint note. Runs even on exception, uses
+            // an unlinked token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         return response;
@@ -62,21 +66,27 @@ public sealed class CompleteStageForAllLeaguesHandler
         Guid saveId,
         CancellationToken cancellationToken)
     {
-        await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
-        GlobalPlan plan = await LoadPlanAsync(saveId, cancellationToken).ConfigureAwait(false);
-        List<BulkLeagueStageResult> results = await CompletePendingAsync(saveId, plan, cancellationToken).ConfigureAwait(false);
-        CompleteStageForAllLeaguesResponse response =
-            await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
-        // Durable global-stage boundary committed (one transaction per
-        // league). Local checkpoint note only; bulk/fast callers that reuse
-        // this operation collapse duplicate notifications to the latest state.
-        // Uses an unlinked token so client disconnect cannot lose the note.
-        if (_autoPublish is not null)
+        try
         {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+            GlobalPlan plan = await LoadPlanAsync(saveId, cancellationToken).ConfigureAwait(false);
+            List<BulkLeagueStageResult> results = await CompletePendingAsync(saveId, plan, cancellationToken).ConfigureAwait(false);
+            CompleteStageForAllLeaguesResponse response =
+                await BuildResponseAsync(saveId, plan, results, cancellationToken).ConfigureAwait(false);
+            return response;
         }
-
-        return response;
+        finally
+        {
+            // Durable global-stage boundary commits per league. Cancellation
+            // after the final league commit (ThrowIfCancellationRequested in
+            // CompletePendingAsync or a cancelled BuildResponseAsync) must
+            // still leave a checkpoint note while the app keeps running.
+            // Duplicate-safe; uses an unlinked token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     internal sealed record GlobalPlan(

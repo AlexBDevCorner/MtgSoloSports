@@ -52,14 +52,16 @@ public sealed class StartNextSeasonHandler
         finally
         {
             gate.Release();
-        }
 
-        // New-season boundary: a fresh stable dossier filename starts while
-        // prior seasons' Drive files are preserved by the per-season mapping.
-        // Uses an unlinked token so client disconnect cannot lose the note.
-        if (_autoPublish is not null)
-        {
-            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            // New-season boundary commits before BuildResponseAsync: a fresh
+            // stable dossier filename starts while prior seasons' Drive files
+            // are preserved. Cancellation after the commit must still leave a
+            // checkpoint note while the app keeps running. Uses an unlinked
+            // token and never throws.
+            if (_autoPublish is not null)
+            {
+                await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+            }
         }
 
         return response;

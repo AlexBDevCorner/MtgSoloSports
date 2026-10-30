@@ -343,11 +343,26 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             return;
         }
 
+        await RunPublishAttemptAsync(saveId, snapshot, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task RunPublishAttemptAsync(
+        Guid saveId,
+        DrivePublishingStore.DestinationDocument snapshot,
+        CancellationToken cancellationToken)
+    {
         _tracker.SetPublishing(saveId);
         DateTimeOffset started = _timeProvider.GetUtcNow();
         try
         {
-            PublishDriveReportsResponse response = await PublishLatestAsync(saveId, snapshot, cancellationToken).ConfigureAwait(false);
+            PublishDriveReportsResponse? response = await PublishLatestAsync(saveId, snapshot, cancellationToken).ConfigureAwait(false);
+            if (response is null)
+            {
+                // Auto mode was disabled under the per-save gate after the
+                // snapshot was taken. No Drive work started; skip quietly.
+                return;
+            }
+
             await FinishAfterPublishAsync(saveId, response, started, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -414,7 +429,7 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         return await publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<PublishDriveReportsResponse> PublishLatestAsync(
+    private async Task<PublishDriveReportsResponse?> PublishLatestAsync(
         Guid saveId,
         DrivePublishingStore.DestinationDocument snapshot,
         CancellationToken cancellationToken)
@@ -425,9 +440,11 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         // Existing hierarchy updates in place; a known Seasons/ folder
         // allows new stable season files to be created automatically, while
         // an unknown Seasons/ folder stays fail-closed (no duplicate) until
-        // the user runs Publish now once with creation confirmed.
+        // the user runs Publish now once with creation confirmed. The auto
+        // entry point re-checks AutoPublishEnabled atomically under the
+        // per-save gate so a concurrent disable cannot start a new upload.
         bool allowCreateMissing = !string.IsNullOrWhiteSpace(snapshot.SeasonsFolderId);
-        return await publisher.HandleAsync(
+        return await publisher.HandleAutoAsync(
             saveId,
             new PublishDriveReportsRequest(
                 ConfirmCrossSave: false,
