@@ -261,6 +261,31 @@ public sealed class StandingsStagePlacementsTests
     }
 
     [Fact]
+    public async Task StandingsReport_CorruptFinalRoster_FailsActionably()
+    {
+        var (store, root, saveId) = await CreateSeason1CompleteAsync("Placements Corrupt Final");
+        try
+        {
+            int leagueId = await FirstLeagueIdForSeasonAsync(store, saveId, 1);
+            await CorruptOneFinalRowAsync(store, saveId, leagueId);
+
+            var handler = new GetStandingsReportHandler(store);
+            InvalidOperationException jsonEx = await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
+            jsonEx.Message.ShouldContain("does not match");
+            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
+
+            // Same corrupt final roster must also abort the dossier's Superleague trajectory (season 1 fallback is the first league).
+            var dossierHandler = new GetSeasonDossierHandler(store);
+            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
+            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "md"));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task Dossier_SuperleagueTrajectory_MatchesStandingsExport()
     {
         var (store, root, saveId) = await CreateSeason1CompleteAsync("Dossier Trajectory");
@@ -550,6 +575,23 @@ public sealed class StandingsStagePlacementsTests
             .Select(e => e.SaveAthleteId).ToHashSetAsync().ConfigureAwait(false);
         int outside = await context.SaveAthletes.AsNoTracking()
             .Where(e => !roster.Contains(e.Id)).Select(e => e.Id).FirstAsync().ConfigureAwait(false);
+        row.SaveAthleteId = outside;
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static async Task CorruptOneFinalRowAsync(SaveStore store, Guid saveId, int leagueId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity season = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1).ConfigureAwait(false);
+        SeasonStandingEntity row = await context.SeasonStandings
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == leagueId)
+            .OrderBy(e => e.SeasonRank).FirstAsync().ConfigureAwait(false);
+        HashSet<int> roster = await context.SeasonMemberships.AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == leagueId)
+            .Select(e => e.SaveAthleteId).ToHashSetAsync().ConfigureAwait(false);
+        int outside = await context.SeasonMemberships.AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId != leagueId && !roster.Contains(e.SaveAthleteId))
+            .Select(e => e.SaveAthleteId).FirstAsync().ConfigureAwait(false);
         row.SaveAthleteId = outside;
         await context.SaveChangesAsync().ConfigureAwait(false);
     }

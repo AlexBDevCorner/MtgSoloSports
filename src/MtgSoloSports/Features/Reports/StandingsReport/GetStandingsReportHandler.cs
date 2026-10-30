@@ -142,6 +142,8 @@ public sealed class GetStandingsReportHandler
             throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
         }
 
+        StagePlacementReport.ValidateFinalRoster(rows, league);
+
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
         FeederDivision division = (FeederDivision)league.FeederDivision;
@@ -164,6 +166,8 @@ public sealed class GetStandingsReportHandler
         {
             throw new InvalidOperationException($"League '{league.Name}' stage history must hold {completedStages * 32} cells, was {placements.Count}.");
         }
+
+        StagePlacementReport.ValidateFinalPlacementsCoverage(rows, placements, league);
 
         return new ReportData(
             true,

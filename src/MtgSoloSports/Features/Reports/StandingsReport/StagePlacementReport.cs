@@ -282,6 +282,54 @@ internal static class StagePlacementReport
         }
     }
 
+    internal static void ValidateFinalRoster(
+        List<SeasonStandingEntity> rows,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(league);
+
+        HashSet<int> athletes = rows.Select(r => r.SaveAthleteId).ToHashSet();
+        if (athletes.Count != 32)
+        {
+            throw new InvalidOperationException(
+                $"League '{league.Name}' final table must cover 32 distinct athletes, was {athletes.Count} distinct of {rows.Count} rows; corrupted sporting state.");
+        }
+
+        foreach (SeasonStandingEntity row in rows)
+        {
+            if (row.SeasonId != league.SeasonId)
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' final rank {row.SeasonRank} references season id {row.SeasonId}; cross-season leakage is forbidden.");
+            }
+
+            if (row.LeagueId != league.Id)
+            {
+                throw new InvalidOperationException(
+                    $"League '{league.Name}' final rank {row.SeasonRank} references league id {row.LeagueId}; cross-league leakage is forbidden.");
+            }
+        }
+    }
+
+    internal static void ValidateFinalPlacementsCoverage(
+        List<SeasonStandingEntity> rows,
+        IReadOnlyList<SeasonPlacementCell> placements,
+        LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(placements);
+        ArgumentNullException.ThrowIfNull(league);
+
+        HashSet<int> finalAthletes = rows.Select(r => r.SaveAthleteId).ToHashSet();
+        HashSet<int> placementAthletes = placements.Select(c => c.AthleteId).ToHashSet();
+        if (!finalAthletes.SetEquals(placementAthletes))
+        {
+            throw new InvalidOperationException(
+                $"League '{league.Name}' final table roster does not match the persisted stage-placement roster; corrupted sporting state.");
+        }
+    }
+
     internal static IReadOnlyList<int> StageNumbers(IReadOnlyList<SeasonPlacementCell> placements)
     {
         ArgumentNullException.ThrowIfNull(placements);
@@ -360,10 +408,13 @@ internal static class StagePlacementReport
             StringBuilder line = new($"| {row.Rank} | {ReportMarkdown.Cell(row.Name)} (id {row.AthleteId}) |");
             foreach (int stage in block)
             {
-                string cell = ranks.TryGetValue((row.AthleteId, stage), out int rank)
-                    ? $"P{rank}"
-                    : "—";
-                line.Append(CultureInfo.InvariantCulture, $" {cell} |");
+                if (!ranks.TryGetValue((row.AthleteId, stage), out int rank))
+                {
+                    throw new InvalidOperationException(
+                        $"League table athlete {row.AthleteId} has no persisted placement for completed stage {stage}; corrupted sporting state.");
+                }
+
+                line.Append(CultureInfo.InvariantCulture, $" P{rank} |");
             }
 
             sb.AppendLine(line.ToString());
