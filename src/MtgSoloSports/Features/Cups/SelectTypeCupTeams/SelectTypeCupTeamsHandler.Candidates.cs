@@ -1,5 +1,7 @@
 using System.Text.Json;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared.Careers;
+using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -14,29 +16,28 @@ public sealed partial class SelectTypeCupTeamsHandler
         Dictionary<int, int> SeasonNumbers,
         List<StageStandingEntity> StageRows,
         Dictionary<int, int> PerformanceByAthlete,
-        List<HonourEntity> Honours,
-        List<SeasonMembershipEntity> Memberships,
-        Dictionary<int, int> LeagueKinds,
-        Dictionary<int, int> LeagueLevels,
         int SourceSeasonId,
         int SourceSeasonNumber,
         Dictionary<int, int> SourceLeagueIdByAthlete,
         Dictionary<int, int> SourceLeagueLevels,
         Dictionary<int, string> SourceLeagueNames);
 
-    internal static List<TypeCupAllocation.CandidateRaw> BuildCandidates(SelectionInputs inputs, RulesV1 rules)
+    internal static List<TypeCupAllocation.CandidateRaw> BuildCandidates(
+        SelectionInputs inputs,
+        RulesV1 rules,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         Dictionary<int, List<BonusContribution>> contributions = GroupContributions(inputs);
         Dictionary<int, int> bonusByAthlete = ComputeBonusByAthlete(inputs, contributions, rules);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete = BuildMetricsMap(inputs, rules, stagesByAthlete);
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete = BuildPrestigeMap(inputs, rules);
         List<TypeCupAllocation.CandidateRaw> candidates = new(inputs.ActiveAthletes.Count);
         foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes.OrderBy(e => e.Id))
         {
-            candidates.Add(BuildSingleCandidate(athlete, inputs, rules, bonusByAthlete, metricsByAthlete, prestigeByAthlete));
+            candidates.Add(BuildSingleCandidate(athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete));
         }
 
         return candidates;
@@ -70,43 +71,21 @@ public sealed partial class SelectTypeCupTeamsHandler
         return map;
     }
 
-    internal static Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> BuildPrestigeMap(
-        SelectionInputs inputs,
-        RulesV1 rules)
+    internal static async Task<IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore>> LoadCareerPrestigeAsync(
+        SaveDbContext context,
+        int sourceSeasonNumber,
+        IReadOnlyCollection<int> athleteIds,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(inputs);
-        ArgumentNullException.ThrowIfNull(rules);
-        List<CupPrestigeCalculator.PrestigeHonour> honours = new(inputs.Honours.Count);
-        foreach (HonourEntity honour in inputs.Honours)
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(athleteIds);
+        if (sourceSeasonNumber < 1)
         {
-            honours.Add(new CupPrestigeCalculator.PrestigeHonour(honour.SaveAthleteId, honour.Kind, honour.LeagueId));
+            throw new ArgumentOutOfRangeException(nameof(sourceSeasonNumber), "Source season must be positive.");
         }
 
-        List<CupPrestigeCalculator.PrestigeStage> stages = new(inputs.StageRows.Count);
-        foreach (StageStandingEntity row in inputs.StageRows)
-        {
-            stages.Add(new CupPrestigeCalculator.PrestigeStage(row.SaveAthleteId, row.LeagueId, row.StageRank));
-        }
-
-        List<CupPrestigeCalculator.PrestigeMembership> memberships = new(inputs.Memberships.Count);
-        foreach (SeasonMembershipEntity membership in inputs.Memberships)
-        {
-            memberships.Add(new CupPrestigeCalculator.PrestigeMembership(membership.SaveAthleteId, membership.LeagueId));
-        }
-
-        Dictionary<int, LeagueLevel> levels = new(inputs.LeagueLevels.Count);
-        foreach (KeyValuePair<int, int> entry in inputs.LeagueLevels)
-        {
-            if (!Enum.IsDefined(typeof(LeagueLevel), entry.Value))
-            {
-                throw new InvalidOperationException($"League {entry.Key} has corrupt level {entry.Value}.");
-            }
-
-            levels[entry.Key] = (LeagueLevel)entry.Value;
-        }
-
-        return new Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown>(
-            CupPrestigeCalculator.ComputeAll(honours, stages, memberships, levels, rules));
+        return await CareerPerformanceLoader.LoadScoresUpToAsync(
+            context, sourceSeasonNumber, athleteIds, cancellationToken).ConfigureAwait(false);
     }
 
     internal static Dictionary<int, List<BonusContribution>> GroupContributions(SelectionInputs inputs)
@@ -180,7 +159,7 @@ public sealed partial class SelectTypeCupTeamsHandler
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestigeByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
     {
         int bonusRaw = bonusByAthlete.TryGetValue(athlete.Id, out int bonus) ? bonus : 0;
         if (!metricsByAthlete.TryGetValue(athlete.Id, out CupSelectionMetrics.CupMetrics? metrics))
@@ -190,9 +169,7 @@ public sealed partial class SelectTypeCupTeamsHandler
 
         int performanceRaw = metrics.AdjustedPerformanceThousandths;
         int formRaw = metrics.AdjustedFormRaw;
-        int prestigeRaw = prestigeByAthlete.TryGetValue(athlete.Id, out CupPrestigeCalculator.PrestigeBreakdown? breakdown)
-            ? breakdown.TotalRaw
-            : 0;
+        int prestigeRaw = SelectionCareerPrestige.PrestigeRawFor(athlete.Id, careerByAthlete);
         return new TypeCupAllocation.CandidateRaw(
             athlete.Id,
             athlete.Name,

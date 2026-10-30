@@ -18,8 +18,13 @@ namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 /// adjusted form raw. v3 (MSS-065) adds the league-aware prestige breakdown:
 /// scaled contributions for Super/F1/F2/F3 titles, Superleague appearances,
 /// Super/F1/F2/F3 stage podiums and major Cup titles, summing exactly to
-/// prestige raw. v1/v2 payloads remain readable (missing fields decode to
-/// defaults) and are never rewritten.
+/// prestige raw. v4 (MSS-096) replaces win-only prestige with shared
+/// Career Leaders career-performance points through the selected source season
+/// (MSS-083-v1 weights): prestige raw is the athlete's total career points and
+/// the seven career-category points sum exactly to prestige raw. Legacy
+/// win-only breakdown fields stay for reading v1-v3 payloads and are zero for
+/// v4; career fields are zero for v1-v3. v1/v2/v3 payloads remain readable
+/// (missing fields decode to defaults) and are never rewritten.
 /// </summary>
 public sealed record TypeCupSelectionReportDocument(
     int Version,
@@ -29,9 +34,10 @@ public sealed record TypeCupSelectionReportDocument(
     int FormWeightPermille,
     int PrestigeWeightPermille,
     IReadOnlyList<TypeCupSelectionReportDocument.Team> Teams,
-    IReadOnlyList<TypeCupSelectionReportDocument.MissedType> MissedTypes)
+    IReadOnlyList<TypeCupSelectionReportDocument.MissedType> MissedTypes,
+    string PrestigeWeightsVersion = "")
 {
-    public const int PayloadVersion = 3;
+    public const int PayloadVersion = 4;
 
     public const int LegacyPayloadVersion = 1;
 
@@ -83,7 +89,14 @@ public sealed record TypeCupSelectionReportDocument(
         int PrestigeFeeder1StageRaw = 0,
         int PrestigeFeeder2StageRaw = 0,
         int PrestigeFeeder3StageRaw = 0,
-        int PrestigeMajorCupRaw = 0);
+        int PrestigeMajorCupRaw = 0,
+        int PrestigeCareerSuperleaguePoints = 0,
+        int PrestigeCareerFeeder1Points = 0,
+        int PrestigeCareerFeeder2Points = 0,
+        int PrestigeCareerFeeder3Points = 0,
+        int PrestigeCareerColorIndividualPoints = 0,
+        int PrestigeCareerColorTeamPoints = 0,
+        int PrestigeCareerTypeTeamPoints = 0);
 
     /// <summary>Another type with four or more eligible athletes this athlete could represent.</summary>
     public sealed record Alternative(string CreatureType, int TypeRank, bool FieldsTeam);

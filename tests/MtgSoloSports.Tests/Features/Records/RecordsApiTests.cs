@@ -43,7 +43,11 @@ public sealed class RecordsApiTests
             HallOfFamePayload fame = await FetchHallOfFameAsync(client, saveId);
             fame.Leaders.Count.ShouldBeGreaterThan(0);
             fame.Leaders[0].Rank.ShouldBe(1);
-            fame.Leaders[0].TotalTitles.ShouldBe(1);
+            // MSS-096: career-prestige selection changes the cup field and winners,
+            // so the points leader is the cup double winner (2 major wins, 1787 points)
+            // rather than a league-title holder.
+            fame.Leaders[0].TotalTitles.ShouldBe(0);
+            fame.Leaders[0].MajorWins.ShouldBe(2);
 
             int anyAthlete = honours.Honours[0].AthleteId;
             HonoursPayload filtered = await FetchHonoursByAthleteAsync(client, saveId, anyAthlete);

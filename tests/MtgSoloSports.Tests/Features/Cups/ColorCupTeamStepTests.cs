@@ -15,6 +15,8 @@ public sealed class ColorCupTeamStepTests
     /// pre-stepping runner (commit ff73e98); the checksum was re-captured when bonus became a percentage.
     /// MSS-064 re-captured for league-strength-aware selection (identical results now
     /// score Super > F1 > F2 > F3, so the selected 32 differ from the raw-points field).
+    /// MSS-096 re-captured for career-prestige selection (shared Career Leaders points
+    /// through the source season replace win-only prestige; RNG chain unchanged).
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -23,7 +25,7 @@ public sealed class ColorCupTeamStepTests
         try
         {
             RunColorCupTeamResponse response = await new RunColorCupTeamHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("767087c9afd63b750f10f62a51dbc78ee4fcee70f4d8b0404775670bb8de2ad4");
+            response.Checksum.ShouldBe("353c726554713cd45ddf8345dd0e7e5dce14bb331aaa52e4d72e1cee35bf64bc");
             (await LoadRngAsync(store, saveId)).ShouldBe((-3128078357953407831L, 9292L));
         }
         finally

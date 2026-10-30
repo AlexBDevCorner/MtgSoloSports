@@ -58,6 +58,14 @@ export interface SelectionCandidate {
   prestigeFeeder2StageRaw?: number;
   prestigeFeeder3StageRaw?: number;
   prestigeMajorCupRaw?: number;
+  /** Shared Career Leaders career breakdown (MSS-096 v4), seven category points summing to prestigeRaw. */
+  prestigeCareerSuperleaguePoints?: number;
+  prestigeCareerFeeder1Points?: number;
+  prestigeCareerFeeder2Points?: number;
+  prestigeCareerFeeder3Points?: number;
+  prestigeCareerColorIndividualPoints?: number;
+  prestigeCareerColorTeamPoints?: number;
+  prestigeCareerTypeTeamPoints?: number;
 }
 
 export interface SelectionTeam {
@@ -86,6 +94,8 @@ export interface SelectionReport {
   prestigeWeightPermille: number;
   teams: SelectionTeam[];
   missedTeams?: SelectionMissedTeam[];
+  /** Career weights version for v4 reports (MSS-096, e.g. "MSS-083-v1"); absent/empty on legacy reports. */
+  prestigeWeightsVersion?: string;
 }
 
 const CUP_SEGMENT: Record<SelectionKey, string> = {

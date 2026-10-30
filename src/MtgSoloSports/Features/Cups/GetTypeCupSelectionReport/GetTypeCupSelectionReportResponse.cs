@@ -21,7 +21,8 @@ public sealed record GetTypeCupSelectionReportResponse(
     int FormWeightPermille,
     int PrestigeWeightPermille,
     IReadOnlyList<GetTypeCupSelectionReportResponse.Team> Teams,
-    IReadOnlyList<GetTypeCupSelectionReportResponse.MissedTeam> MissedTeams)
+    IReadOnlyList<GetTypeCupSelectionReportResponse.MissedTeam> MissedTeams,
+    string PrestigeWeightsVersion = "")
 {
     /// <summary>Member is permanently capped for this type and may represent no other.</summary>
     public const string ReasonCapped = "Capped";
@@ -75,7 +76,14 @@ public sealed record GetTypeCupSelectionReportResponse(
         int PrestigeFeeder1StageRaw,
         int PrestigeFeeder2StageRaw,
         int PrestigeFeeder3StageRaw,
-        int PrestigeMajorCupRaw);
+        int PrestigeMajorCupRaw,
+        int PrestigeCareerSuperleaguePoints = 0,
+        int PrestigeCareerFeeder1Points = 0,
+        int PrestigeCareerFeeder2Points = 0,
+        int PrestigeCareerFeeder3Points = 0,
+        int PrestigeCareerColorIndividualPoints = 0,
+        int PrestigeCareerColorTeamPoints = 0,
+        int PrestigeCareerTypeTeamPoints = 0);
 
     public sealed record Alternative(string TeamName, int Rank, bool FieldsTeam);
 

@@ -72,10 +72,16 @@ public sealed partial class SelectColorCupTeamsHandler
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
         SelectionInputs inputs = await LoadInputsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
-        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics, Dictionary<int, CupPrestigeCalculator.PrestigeBreakdown> prestige) =
-            RankAllColors(inputs, rules);
+        IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> career =
+            await LoadCareerPrestigeAsync(
+                context,
+                source.SeasonNumber,
+                inputs.Athletes.Select(e => e.Id).ToList(),
+                cancellationToken).ConfigureAwait(false);
+        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics) =
+            RankAllColors(inputs, career, rules);
         IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, rules);
-        AddReport(context, source, BuildReport(rankings, metrics, prestige, inputs, rules), rules);
+        AddReport(context, source, BuildReport(rankings, metrics, career, inputs, rules), rules);
         await PersistSelectionsAsync(context, source, all, rules, cancellationToken).ConfigureAwait(false);
 
         List<ColorCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -92,10 +98,6 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, int> SeasonNumbers,
         List<StageStandingEntity> StageRows,
         Dictionary<int, int> PerformanceByAthlete,
-        List<HonourEntity> Honours,
-        List<SeasonMembershipEntity> Memberships,
-        Dictionary<int, int> LeagueKinds,
-        Dictionary<int, int> LeagueLevels,
         int SourceSeasonId,
         int SourceSeasonNumber,
         Dictionary<int, int> SourceLeagueIdByAthlete,
@@ -169,13 +171,10 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, int> seasonNumbers = await LoadSeasonNumbersAsync(context, source, cancellationToken).ConfigureAwait(false);
         List<StageStandingEntity> stageRows = await LoadStageRowsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> performance = await LoadPerformanceAsync(context, source, cancellationToken).ConfigureAwait(false);
-        List<HonourEntity> honours = await LoadHonoursAsync(context, source, cancellationToken).ConfigureAwait(false);
-        (List<SeasonMembershipEntity> memberships, Dictionary<int, int> leagueKinds, Dictionary<int, int> leagueLevels) =
-            await LoadMembershipInputsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
         (Dictionary<int, int> leagueIdByAthlete, Dictionary<int, int> levels, Dictionary<int, string> names) =
             await LoadSourceLeagueInputsAsync(context, source, athletes, cancellationToken).ConfigureAwait(false);
         return new SelectionInputs(
-            athletes, seasonNumbers, stageRows, performance, honours, memberships, leagueKinds, leagueLevels,
+            athletes, seasonNumbers, stageRows, performance,
             source.Id, source.SeasonNumber, leagueIdByAthlete, levels, names);
     }
 
@@ -252,44 +251,6 @@ public sealed partial class SelectColorCupTeamsHandler
         return map;
     }
 
-    internal static async Task<List<HonourEntity>> LoadHonoursAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        CancellationToken cancellationToken)
-    {
-        return await context.Honours
-            .AsNoTracking()
-            .Where(e => e.SeasonNumber <= source.SeasonNumber)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    internal static async Task<(List<SeasonMembershipEntity> Memberships, Dictionary<int, int> LeagueKinds, Dictionary<int, int> LeagueLevels)> LoadMembershipInputsAsync(
-        SaveDbContext context,
-        Dictionary<int, int> seasonNumbers,
-        CancellationToken cancellationToken)
-    {
-        HashSet<int> seasonIds = seasonNumbers.Keys.ToHashSet();
-        List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
-            .AsNoTracking()
-            .Where(e => seasonIds.Contains(e.SeasonId))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        List<LeagueEntity> leagues = await context.Leagues
-            .AsNoTracking()
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        Dictionary<int, int> kinds = new(leagues.Count);
-        Dictionary<int, int> levels = new(leagues.Count);
-        foreach (LeagueEntity league in leagues)
-        {
-            kinds[league.Id] = league.Kind;
-            levels[league.Id] = (int)LeagueEntityLevels.GetLevel(league);
-        }
-
-        return (memberships, kinds, levels);
-    }
-
     internal static async Task<(Dictionary<int, int> LeagueIdByAthlete, Dictionary<int, int> Levels, Dictionary<int, string> Names)> LoadSourceLeagueInputsAsync(
         SaveDbContext context,
         SeasonEntity source,
@@ -335,11 +296,15 @@ public sealed partial class SelectColorCupTeamsHandler
         return (leagueIdByAthlete, levels, names);
     }
 
-    internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> ScoreAllColors(SelectionInputs inputs, RulesV1 rules)
+    internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> ScoreAllColors(
+        SelectionInputs inputs,
+        IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(rules);
-        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, _, _) = RankAllColors(inputs, rules);
+        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, _) = RankAllColors(inputs, careerByAthlete, rules);
         return TakeTeams(rankings, rules);
     }
 

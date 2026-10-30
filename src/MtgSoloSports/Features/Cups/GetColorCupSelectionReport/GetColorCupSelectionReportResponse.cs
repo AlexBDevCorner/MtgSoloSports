@@ -16,7 +16,8 @@ public sealed record GetColorCupSelectionReportResponse(
     int PerformanceWeightPermille,
     int FormWeightPermille,
     int PrestigeWeightPermille,
-    IReadOnlyList<GetColorCupSelectionReportResponse.Team> Teams)
+    IReadOnlyList<GetColorCupSelectionReportResponse.Team> Teams,
+    string PrestigeWeightsVersion = "")
 {
     public sealed record Team(
         string TeamKey,
@@ -54,5 +55,12 @@ public sealed record GetColorCupSelectionReportResponse(
         int PrestigeFeeder1StageRaw,
         int PrestigeFeeder2StageRaw,
         int PrestigeFeeder3StageRaw,
-        int PrestigeMajorCupRaw);
+        int PrestigeMajorCupRaw,
+        int PrestigeCareerSuperleaguePoints = 0,
+        int PrestigeCareerFeeder1Points = 0,
+        int PrestigeCareerFeeder2Points = 0,
+        int PrestigeCareerFeeder3Points = 0,
+        int PrestigeCareerColorIndividualPoints = 0,
+        int PrestigeCareerColorTeamPoints = 0,
+        int PrestigeCareerTypeTeamPoints = 0);
 }

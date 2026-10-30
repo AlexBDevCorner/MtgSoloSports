@@ -4,9 +4,14 @@ using MtgSoloSports.SimulationKernel.Rules;
 namespace MtgSoloSports.SimulationKernel.Cups;
 
 /// <summary>
-/// Single shared pure calculator for Cup career prestige (MSS-065).
-/// Both Color Cup and Type Cup selection must use this component; no
-/// duplicated feeder/Super/stage counting may live in the feature slices.
+/// Legacy win-only calculator for Cup career prestige (MSS-065, v1-v3 selections).
+/// v4 selections (MSS-096) use the shared Career Leaders career-performance
+/// points through the selected source season instead; this component remains
+/// for reading historical v1-v3 selections and for regression coverage.
+/// New Color/Type Cup selections must use
+/// <c>Shared.Careers.CareerPerformanceLoader</c> plus
+/// <c>SimulationKernel.Careers.CareerPerformanceScorer</c>; no duplicated
+/// feeder/Super/stage counting may live in the feature slices.
 /// Prestige is cumulative with no time decay: historical achievements keep
 /// their original league context permanently, so an athlete relegated to F3
 /// retains higher prestige from earlier Superleague results.

@@ -146,8 +146,12 @@ public static class CareerPerformanceScorer
 
     /// <summary>
     /// Scores one finalized placement. Integer-only:
-    /// weight × placement × achievement × participation / 1e9.
-    /// Qualification (non-final Type Cup) results carry the reduced credit.
+    /// weight × placement × achievement × participation / 1e9, floored to a
+    /// minimum of one point so every finalized finish stays positive even when
+    /// integer truncation would otherwise erase a tail placement in a very
+    /// large field (e.g. synthetic selection scaffolding with hundreds of
+    /// athletes in one league). Qualification (non-final Type Cup) results
+    /// carry the reduced credit.
     /// </summary>
     public static int ScoreEvent(PlacementEvent scored)
     {
@@ -167,7 +171,8 @@ public static class CareerPerformanceScorer
         int premium = AchievementPremiumPermille(scored.Rank);
         int share = ParticipationShare(scored);
         long points = (long)weight * factor * premium * share;
-        return checked((int)(points / ((long)PlacementScale * PremiumScale * ShareScale)));
+        int truncated = checked((int)(points / ((long)PlacementScale * PremiumScale * ShareScale)));
+        return Math.Max(1, truncated);
     }
 
     internal static int ParticipationShare(PlacementEvent scored)

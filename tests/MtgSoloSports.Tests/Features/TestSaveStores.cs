@@ -22,10 +22,13 @@ namespace MtgSoloSports.Tests.Features;
 /// <see cref="SaveStore"/>; no mutable sporting state is shared. The source
 /// save is checkpointed (WAL frames forced into the main file, pools cleared)
 /// before the copy, mirroring the production checkpoint path, so the clone is
-/// a consistent committed snapshot. Concurrent forks only read the source file.
+/// a consistent committed snapshot. Checkpoint+copy is serialized per source
+/// file because the checkpoint writes to the source main file.
 /// </summary>
 internal static class TestSaveStores
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> ForkGates = new(StringComparer.Ordinal);
+
     internal static (SaveStore Store, string Root) CreateStore(string prefix)
     {
         string root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
@@ -46,6 +49,11 @@ internal static class TestSaveStores
     /// Clones a prepared save into a new isolated temp root under the same
     /// save id (identity is the file name inside its own root, so sharing the
     /// id across roots is safe). The source is left untouched.
+    /// Forks are serialized per source file: concurrent
+    /// <c>PRAGMA wal_checkpoint(TRUNCATE)</c> writes to the same source main
+    /// file racing with a <c>File.Copy</c> reader can produce a torn copy
+    /// (e.g. a forked Season 1 that reads as incomplete). The gate makes
+    /// checkpoint+copy atomic per source path.
     /// </summary>
     internal static async Task<(SaveStore Store, string Root, Guid SaveId)> ForkAsync(
         SaveStore sourceStore,
@@ -64,15 +72,40 @@ internal static class TestSaveStores
             throw new InvalidOperationException($"Cannot fork missing save file '{sourcePath}'.");
         }
 
-        await CheckpointAsync(sourceStore, sourceSaveId).ConfigureAwait(false);
-        SqliteConnection.ClearAllPools();
-
         string root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         string destinationPath = SaveFileNaming.GetSaveFilePath(root, sourceSaveId);
-        File.Copy(sourcePath, destinationPath);
+        await CopySaveFileLockedAsync(sourceStore, sourceSaveId, sourcePath, destinationPath).ConfigureAwait(false);
 
         return (CreateStoreForRoot(root), root, sourceSaveId);
+    }
+
+    internal static async Task CopySaveFileLockedAsync(
+        SaveStore sourceStore,
+        Guid sourceSaveId,
+        string sourcePath,
+        string destinationPath)
+    {
+        ArgumentNullException.ThrowIfNull(sourceStore);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        SemaphoreSlim gate = ForkGates.GetOrAdd(sourcePath, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await CheckpointAsync(sourceStore, sourceSaveId).ConfigureAwait(false);
+            SqliteConnection.ClearAllPools();
+            File.Copy(sourcePath, destinationPath);
+            string walSource = sourcePath + "-wal";
+            if (File.Exists(walSource) && new FileInfo(walSource).Length > 0)
+            {
+                File.Copy(walSource, destinationPath + "-wal", overwrite: true);
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     internal static void DeleteRoot(string root)
