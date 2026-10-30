@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Features.Stories;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared.Careers;
 using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Catalog;
 
