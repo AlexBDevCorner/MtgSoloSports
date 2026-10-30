@@ -37,6 +37,7 @@ internal static class StandingsReportJson
             units = UnitsPart(),
             zones = ZonesPart(level, division, data),
             standings = RowsPart(data),
+            stagePlacements = StagePlacementsPart(data),
         };
         return JsonSerializer.Serialize(envelope, new JsonSerializerOptions
         {
@@ -131,5 +132,36 @@ internal static class StandingsReportJson
             zone = r.Zone,
             zoneLabel = r.ZoneLabel,
         }).ToList();
+    }
+
+    private static object StagePlacementsPart(GetStandingsReportHandler.ReportData data)
+    {
+        return new
+        {
+            version = StagePlacementReport.ProjectionVersion,
+            completedStages = data.CompletedStages,
+            totalStages = data.TotalStages,
+            stageNumbers = StagePlacementReport.StageNumbers(data.Placements).ToList(),
+            units = new
+            {
+                stageRank = "per-stage finish P1..P32 within one completed stage; never cumulative seasonRank",
+                stageNumber = "chronological completed stage 1..totalStages; absent means unplayed/in-progress, never P32 or zero",
+                championshipPointsThousandths = "official per-stage championship points in fixed-point thousandths (divide by 1000); season table totals stay cumulative",
+                earnedBonusThousandths = "bonus earned during this stage in fixed-point thousandths; applies only from the next stage",
+                stageScoreThousandths = "persisted stage-score sum in fixed-point thousandths (display only; tie-break input)",
+                roundWins = "rounds won within this stage (0..roundsPerStage)",
+            },
+            note = "Every completed stage lists all 32 roster athletes exactly once. Incomplete or future stages have no cell. Join athleteId to standings for season rank order.",
+            placements = data.Placements.Select(c => new
+            {
+                stageNumber = c.StageNumber,
+                athleteId = c.AthleteId,
+                stageRank = c.StageRank,
+                championshipPointsThousandths = c.ChampionshipPointsThousandths,
+                earnedBonusThousandths = c.EarnedBonusThousandths,
+                stageScoreThousandths = c.StageScoreThousandths,
+                roundWins = c.RoundWins,
+            }).ToList(),
+        };
     }
 }

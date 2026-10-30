@@ -206,7 +206,7 @@ public sealed class SeasonDossierAlmanacCorrectionTests
             64,
             "checksum",
             1,
-            new SuperleagueSection(null, "Superleague", true, []),
+            new SuperleagueSection(null, "Superleague", true, [], []),
             [],
             [],
             new PostseasonSection("resolved", "not-applicable", "resolved", "summary", [], []),

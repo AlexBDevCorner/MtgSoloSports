@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History;
+using MtgSoloSports.Features.History.GetSeasonPlacements;
 using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
@@ -100,7 +101,8 @@ public sealed class GetStandingsReportHandler
         int TotalStages,
         int GlobalStage,
         string SeasonChecksum,
-        IReadOnlyList<StandingsReportRow> Rows);
+        IReadOnlyList<StandingsReportRow> Rows,
+        IReadOnlyList<SeasonPlacementCell> Placements);
 
     internal static async Task<ReportData> LoadReportDataAsync(
         SaveDbContext context,
@@ -140,21 +142,42 @@ public sealed class GetStandingsReportHandler
             throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
         }
 
+        StagePlacementReport.ValidateFinalRoster(rows, league);
+
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         LeagueLevel level = LeagueEntityLevels.GetLevel(league);
         FeederDivision division = (FeederDivision)league.FeederDivision;
         List<StandingsReportRow> standings = MapFinalRows(rows, names, level, division);
         string checksum = GetCurrentStandingsHandler.ComputePersistedChecksum(rows, names);
         GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<SeasonPlacementCell> placements = await StagePlacementReport.LoadValidatedAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
+        if (placements.Count == 0)
+        {
+            throw new InvalidOperationException($"League '{league.Name}' is marked final but has no persisted stage history.");
+        }
+
+        int completedStages = placements.Select(c => c.StageNumber).Distinct().Count();
+        if (completedStages != rules.StagesPerSeason)
+        {
+            throw new InvalidOperationException($"League '{league.Name}' is marked final but has {completedStages} completed stages; expected {rules.StagesPerSeason}.");
+        }
+
+        if (placements.Count != completedStages * 32)
+        {
+            throw new InvalidOperationException($"League '{league.Name}' stage history must hold {completedStages * 32} cells, was {placements.Count}.");
+        }
+
+        StagePlacementReport.ValidateFinalPlacementsCoverage(rows, placements, league);
 
         return new ReportData(
             true,
             "final",
-            rules.StagesPerSeason,
+            completedStages,
             rules.StagesPerSeason,
             global.CurrentStage,
             checksum,
-            standings);
+            standings,
+            placements);
     }
 
     internal static List<StandingsReportRow> MapFinalRows(
@@ -200,12 +223,25 @@ public sealed class GetStandingsReportHandler
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         Dictionary<int, string> names = await GetCurrentStandingsHandler.LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
-        int completedStages = stageRows.Select(r => r.StageNumber).Distinct().Count();
+        List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == league.Id)
+            .OrderBy(e => e.SaveAthleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<StageEntity> stages = await context.Stages
+            .AsNoTracking()
+            .Where(e => e.SeasonId == season.Id && e.LeagueId == league.Id)
+            .OrderBy(e => e.StageNumber)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<SeasonPlacementCell> placements = StagePlacementReport.MapValidated(memberships, stageRows, stages, league, rules);
+        int completedStages = placements.Select(c => c.StageNumber).Distinct().Count();
         GlobalStageGate.GlobalStageView global = await GlobalStageGate.LoadGlobalStageAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
 
         if (completedStages == 0)
         {
-            return new ReportData(false, "provisional", 0, rules.StagesPerSeason, global.CurrentStage, string.Empty, []);
+            return new ReportData(false, "provisional", 0, rules.StagesPerSeason, global.CurrentStage, string.Empty, [], placements);
         }
 
         List<List<SeasonStageEntry>> groups = GetCurrentStandingsHandler.GroupProvisional(stageRows, league, names);
@@ -219,7 +255,8 @@ public sealed class GetStandingsReportHandler
             rules.StagesPerSeason,
             global.CurrentStage,
             SeasonCalculator.ComputeChecksum(ranked),
-            MapProvisionalRows(ranked));
+            MapProvisionalRows(ranked),
+            placements);
     }
 
     internal static List<StandingsReportRow> MapProvisionalRows(IReadOnlyList<SeasonRankedAthlete> ranked)

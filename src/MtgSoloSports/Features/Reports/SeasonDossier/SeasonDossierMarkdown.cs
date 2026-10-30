@@ -18,6 +18,7 @@ internal static class SeasonDossierMarkdown
         AppendHeader(sb, saveId, metadata, rules, seasonCount, data);
         AppendSuperleague(sb, data);
         AppendProgression(sb, data);
+        AppendSuperleaguePlacements(sb, data);
         AppendFeeders(sb, data);
         AppendPostseason(sb, data);
         AppendCups(sb, data);
@@ -90,6 +91,35 @@ internal static class SeasonDossierMarkdown
             sb.AppendLine(CultureInfo.InvariantCulture, $"| {stage.StageNumber} | {ReportMarkdown.Cell(stage.WinnerName)} (id {stage.WinnerAthleteId?.ToString(CultureInfo.InvariantCulture) ?? "—"}) | {ReportMarkdown.FormatPoints(stage.WinnerPointsThousandths)} |");
         }
 
+        sb.AppendLine();
+    }
+
+    private static void AppendSuperleaguePlacements(StringBuilder sb, SeasonDossierData data)
+    {
+        IReadOnlyList<int> stages = StagePlacementReport.StageNumbers(data.Superleague.StagePlacements);
+        if (data.Superleague.IsOfficialSuperleague)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"## Superleague stage placements ({stages.Count} completed stages)");
+        }
+        else
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"## Superleague stage placements — legacy fallback: {ReportMarkdown.Cell(data.Superleague.LeagueName)} (this season predates the Superleague) ({stages.Count} completed stages)");
+        }
+
+        sb.AppendLine();
+        if (stages.Count == 0 || data.Superleague.StagePlacements.Count == 0)
+        {
+            sb.AppendLine("No completed stages yet. Stage placements appear after Stage 1 persists; an unplayed or in-progress stage is never assigned a rank.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("Superleague stage-by-stage journey for every league athlete: actual per-stage finish (P1-P32) in chronological stage order; not cumulative season rank. Rows follow the full table rank order. Winners-only stage progression above is preserved separately. Exact per-stage points, earned bonus, stage score and round wins are in the JSON dossier's superleague stagePlacements section (fixed-point thousandths). Stage championship points are per stage; superleague totals are cumulative. Earned bonus applies only from the next stage.");
+        sb.AppendLine();
+        IReadOnlyList<GetStandingsReportHandler.StandingsReportRow> ordered =
+            data.Superleague.Table.OrderBy(r => r.Rank).ToList();
+        StagePlacementReport.AppendMatrixBlocks(sb, ordered, data.Superleague.StagePlacements, stages);
+        sb.AppendLine("Incomplete or future stages have no cell; absent never means P32, zero points or a completed stage.");
         sb.AppendLine();
     }
 
