@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared.Careers;
 using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
@@ -66,7 +67,7 @@ public sealed class CareerPerformanceIntegrationTests
             {
                 List<CareerPerformanceScorer.PlacementEvent> typeEvents =
                     await CareerPerformanceLoader.LoadTypeTeamEventsAsync(
-                        context, null, null, CancellationToken.None);
+                        context, null, null, athleteFilter: null, CancellationToken.None);
                 typeEvents.ShouldBeEmpty();
             }
 
@@ -77,6 +78,135 @@ public sealed class CareerPerformanceIntegrationTests
         finally
         {
             TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task SharedProjection_MatchesHallOfFameScores_ForSameSourceCap()
+    {
+        // MSS-095: the shared source-season-capped projection used by future
+        // selection must return precisely the same per-athlete career scores as
+        // the Hall of Fame loader for the same cap, without reimplementing
+        // event loading. Per-athlete subsets keep full official field sizes.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-career-");
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync(
+                "Career Projection", 4242UL, 777UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            List<int> ids = await TakeAthletesAsync(store, saveId, 12);
+            await SeedTwoSeasonsAsync(store, saveId, ids);
+
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaEvents =
+                    await LoadScoresViaEventsAsync(context);
+                await AssertProjectionParityAsync(context, viaEvents, ids);
+            }
+
+            // The Hall of Fame handler path still serves the same totals.
+            GetHallOfFameHandler handler = new(store);
+            GetHallOfFameResponse range = await handler.HandleAsync(saveId, 100, 7, 8);
+            range.Leaders.ShouldNotBeEmpty();
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task SharedProjection_RejectsInvalidCapAndAthletes()
+    {
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-career-");
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync(
+                "Career Projection Range", 4242UL, 777UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                await Should.ThrowAsync<ArgumentException>(() =>
+                    CareerPerformanceLoader.LoadScoresUpToAsync(context, 0, athleteIds: null, CancellationToken.None));
+                await Should.ThrowAsync<ArgumentException>(() =>
+                    CareerPerformanceLoader.LoadScoresUpToAsync(context, 8, [0], CancellationToken.None));
+                await Should.ThrowAsync<ArgumentException>(() =>
+                    CareerPerformanceLoader.LoadAsync(context, 8, 7, CancellationToken.None));
+            }
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task<IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore>> LoadScoresViaEventsAsync(
+        SaveDbContext context)
+    {
+        CareerPerformanceLoader.LoadResult full =
+            await CareerPerformanceLoader.LoadAsync(context, null, 8, CancellationToken.None).ConfigureAwait(false);
+        return CareerPerformanceScorer.ComputeScores(full.Events);
+    }
+
+    private static async Task AssertProjectionParityAsync(
+        SaveDbContext context,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaEvents,
+        List<int> ids)
+    {
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaProjection =
+            await CareerPerformanceLoader.LoadScoresUpToAsync(context, 8, athleteIds: null, CancellationToken.None).ConfigureAwait(false);
+        AssertSameScores(viaProjection, viaEvents);
+        await AssertSeasonCapParityAsync(context).ConfigureAwait(false);
+        await AssertSubsetParityAsync(context, viaEvents, ids).ConfigureAwait(false);
+        await AssertIncompleteIgnoredAsync(context, viaEvents).ConfigureAwait(false);
+    }
+
+    private static async Task AssertSeasonCapParityAsync(SaveDbContext context)
+    {
+        CareerPerformanceLoader.LoadResult season7 =
+            await CareerPerformanceLoader.LoadAsync(context, 7, 7, CancellationToken.None).ConfigureAwait(false);
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> capped7 =
+            await CareerPerformanceLoader.LoadScoresUpToAsync(context, 7, athleteIds: null, CancellationToken.None).ConfigureAwait(false);
+        AssertSameScores(capped7, CareerPerformanceScorer.ComputeScores(season7.Events));
+    }
+
+    private static async Task AssertSubsetParityAsync(
+        SaveDbContext context,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaEvents,
+        List<int> ids)
+    {
+        List<int> subset = ids.Take(3).ToList();
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaSubset =
+            await CareerPerformanceLoader.LoadScoresUpToAsync(context, 8, subset, CancellationToken.None).ConfigureAwait(false);
+        viaSubset.Keys.ShouldBe(subset, ignoreOrder: true);
+        foreach (int athleteId in subset)
+        {
+            viaSubset[athleteId].ShouldBe(viaEvents[athleteId]);
+        }
+    }
+
+    private static async Task AssertIncompleteIgnoredAsync(
+        SaveDbContext context,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> viaEvents)
+    {
+        // The incomplete season 9 contributes nothing through either path.
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> capped9 =
+            await CareerPerformanceLoader.LoadScoresUpToAsync(context, 9, athleteIds: null, CancellationToken.None).ConfigureAwait(false);
+        AssertSameScores(capped9, viaEvents);
+
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> empty =
+            await CareerPerformanceLoader.LoadScoresUpToAsync(context, 8, [], CancellationToken.None).ConfigureAwait(false);
+        empty.ShouldBeEmpty();
+    }
+
+    private static void AssertSameScores(
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> actual,
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> expected)
+    {
+        actual.Keys.ShouldBe(expected.Keys, ignoreOrder: true);
+        foreach (int athleteId in expected.Keys)
+        {
+            actual[athleteId].ShouldBe(expected[athleteId]);
         }
     }
 

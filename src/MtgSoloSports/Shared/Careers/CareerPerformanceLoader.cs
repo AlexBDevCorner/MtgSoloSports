@@ -3,61 +3,155 @@ using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Leagues;
 
-namespace MtgSoloSports.Features.Records.GetHallOfFame;
+namespace MtgSoloSports.Shared.Careers;
 
 /// <summary>
-/// Loads authoritative finalized placements for career scoring without round
-/// payloads. League finishes come from <c>SeasonStandings</c> of completed
-/// seasons (field size = actual rows in that league season, normally 32).
-/// Color Cup individual finishes come from <c>ColorCupIndividualStandings</c>;
-/// Color Cup team finishes credit each leg with its color's official team rank
-/// (field = team count, normally 8) via the group standings roster at the time
-/// of the competition. Type Cup team finishes use the authoritative Final
-/// (legacy phase 0 or Final phase 2) for finalists and a reduced qualification
-/// credit for eliminated qualifiers; an athlete with a Final leg never also
-/// counts qualification. Qualification standings alone never complete the
-/// tournament: a staged edition with phase-1 rows but no persisted Final
-/// contributes nothing, so advancing teams never receive provisional credit.
-/// Incomplete cups (standings absent) contribute nothing; corrupt references
-/// abort. No resimulation, no RNG, no clock.
+/// Shared finalized career-placement loader for Hall of Fame and future squad
+/// selection (MSS-095). Loads authoritative finalized placements without round
+/// payloads: league finishes come from <c>SeasonStandings</c> of completed
+/// seasons (field size = actual rows in that league season); Color Cup
+/// individual finishes come from <c>ColorCupIndividualStandings</c>; Color Cup
+/// team finishes credit each leg with its color's official team rank (field =
+/// team count) via the group standings roster at the time of the competition;
+/// Type Cup team finishes use the authoritative Final (legacy phase 0 or Final
+/// phase 2) for finalists and a reduced qualification credit for eliminated
+/// qualifiers; an athlete with a Final leg never also counts qualification.
+/// Qualification standings alone never complete the tournament: a staged edition
+/// with phase-1 rows but no persisted Final contributes nothing. Incomplete
+/// cups (standings absent) contribute nothing; corrupt references abort. No
+/// resimulation, no RNG, no clock. Read-only: no lock, no mutation.
+/// Historical attribution is source-season scoped: league levels resolve from
+/// the standing's own league row, Color legs use their persisted sporting color
+/// and Type legs use their persisted creature type, never current membership.
+/// Season caps are source-season numbers (selection source season or Hall of
+/// Fame range end); all queries filter at the database level so per-athlete
+/// projections stay bounded. Field sizes always reflect the full official
+/// field for the capped seasons, even when an athlete subset is requested.
 /// </summary>
-internal static class CareerPerformanceLoader
+public static class CareerPerformanceLoader
 {
-    internal sealed record LoadResult(
-        List<CareerPerformanceScorer.PlacementEvent> Events,
+    public sealed record LoadResult(
+        IReadOnlyList<CareerPerformanceScorer.PlacementEvent> Events,
         int MinSeasonNumber,
         int MaxSeasonNumber);
 
-    internal static async Task<LoadResult> LoadAsync(
+    public static async Task<LoadResult> LoadAsync(
         SaveDbContext context,
         int? fromSeason,
         int? toSeason,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        return await LoadAsync(context, fromSeason, toSeason, athleteIds: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<LoadResult> LoadAsync(
+        SaveDbContext context,
+        int? fromSeason,
+        int? toSeason,
+        IReadOnlyCollection<int>? athleteIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (fromSeason is <= 0)
+        {
+            throw new ArgumentException("From season must be positive.", nameof(fromSeason));
+        }
+
+        if (toSeason is <= 0)
+        {
+            throw new ArgumentException("To season must be positive.", nameof(toSeason));
+        }
+
+        if (fromSeason is not null && toSeason is not null && fromSeason.Value > toSeason.Value)
+        {
+            throw new ArgumentException("From season must not exceed to season.", nameof(fromSeason));
+        }
+
+        HashSet<int>? athleteFilter = NormalizeAthleteFilter(athleteIds);
         Dictionary<int, (int SeasonNumber, bool IsComplete)> seasons = await context.Seasons
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => (e.SeasonNumber, e.IsComplete), cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, (int Kind, int Division)> leagues = await context.Leagues
-            .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => (e.Kind, e.FeederDivision), cancellationToken)
-            .ConfigureAwait(false);
+        Dictionary<int, (int Kind, int Division)> leagues = await LoadLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
 
         int minSeason = seasons.Count == 0 ? 0 : seasons.Values.Min(v => v.SeasonNumber);
         int maxSeason = seasons.Count == 0 ? 0 : seasons.Values.Max(v => v.SeasonNumber);
 
         List<CareerPerformanceScorer.PlacementEvent> events = [];
-        events.AddRange(await LoadLeagueEventsAsync(context, seasons, leagues, fromSeason, toSeason, cancellationToken).ConfigureAwait(false));
-        events.AddRange(await LoadColorIndividualEventsAsync(context, fromSeason, toSeason, cancellationToken).ConfigureAwait(false));
-        events.AddRange(await LoadColorTeamEventsAsync(context, fromSeason, toSeason, cancellationToken).ConfigureAwait(false));
-        events.AddRange(await LoadTypeTeamEventsAsync(context, fromSeason, toSeason, cancellationToken).ConfigureAwait(false));
+        events.AddRange(await LoadLeagueEventsAsync(context, seasons, leagues, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
+        events.AddRange(await LoadColorIndividualEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
+        events.AddRange(await LoadColorTeamEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
+        events.AddRange(await LoadTypeTeamEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
         return new LoadResult(events, minSeason, maxSeason);
+    }
+
+    /// <summary>
+    /// Read-only per-athlete career-score projection capped to completed source
+    /// seasons at or below <paramref name="upToSeasonNumber"/> (null = all
+    /// finalized history). Returns exactly the same per-athlete totals as the
+    /// Hall of Fame range path with <c>toSeason</c> set to the same cap, without
+    /// reimplementing event loading. Intended for squad-selection prestige
+    /// (MSS-096): pass the selection source season and the candidate ids for a
+    /// bounded query. No lock, no RNG, no mutation.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore>> LoadScoresUpToAsync(
+        SaveDbContext context,
+        int? upToSeasonNumber,
+        IReadOnlyCollection<int>? athleteIds,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (upToSeasonNumber is <= 0)
+        {
+            throw new ArgumentException("Season number must be positive.", nameof(upToSeasonNumber));
+        }
+
+        HashSet<int>? athleteFilter = NormalizeAthleteFilter(athleteIds);
+        if (athleteFilter is not null && athleteFilter.Count == 0)
+        {
+            return new Dictionary<int, CareerPerformanceScorer.AthleteCareerScore>();
+        }
+
+        LoadResult loaded = await LoadAsync(context, fromSeason: null, toSeason: upToSeasonNumber, athleteFilter, cancellationToken).ConfigureAwait(false);
+        return CareerPerformanceScorer.ComputeScores(loaded.Events);
+    }
+
+    private static HashSet<int>? NormalizeAthleteFilter(IReadOnlyCollection<int>? athleteIds)
+    {
+        if (athleteIds is null)
+        {
+            return null;
+        }
+
+        HashSet<int> filter = athleteIds.ToHashSet();
+        foreach (int athleteId in filter)
+        {
+            if (athleteId <= 0)
+            {
+                throw new ArgumentException("Athlete id must be positive.", nameof(athleteIds));
+            }
+        }
+
+        return filter;
     }
 
     private static bool InRange(int seasonNumber, int? fromSeason, int? toSeason) =>
         (fromSeason is null || seasonNumber >= fromSeason.Value) &&
         (toSeason is null || seasonNumber <= toSeason.Value);
+
+    private static async Task<Dictionary<int, (int Kind, int Division)>> LoadLeaguesAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        // League levels resolve from the standing's own league row (historical
+        // attribution). The table stays small (one row per league per season),
+        // so keep the full map to preserve exact corrupt-reference behavior.
+        return await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => (e.Kind, e.FeederDivision), cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     internal static async Task<List<CareerPerformanceScorer.PlacementEvent>> LoadLeagueEventsAsync(
         SaveDbContext context,
@@ -65,16 +159,43 @@ internal static class CareerPerformanceLoader
         Dictionary<int, (int Kind, int Division)> leagues,
         int? fromSeason,
         int? toSeason,
+        HashSet<int>? athleteFilter,
         CancellationToken cancellationToken)
     {
-        List<LeagueRow> rows = await context.SeasonStandings
+        HashSet<int> eligibleSeasonIds = seasons
+            .Where(kv => kv.Value.IsComplete && InRange(kv.Value.SeasonNumber, fromSeason, toSeason))
+            .Select(kv => kv.Key)
+            .ToHashSet();
+        if (eligibleSeasonIds.Count == 0)
+        {
+            await GuardUnknownSeasonReferenceAsync(context, seasons, cancellationToken).ConfigureAwait(false);
+            return [];
+        }
+
+        // Field sizes reflect the full official field for the capped seasons,
+        // even when a per-athlete subset is requested.
+        Dictionary<(int SeasonId, int LeagueId), int> fieldSizes = await context.SeasonStandings
             .AsNoTracking()
+            .Where(e => eligibleSeasonIds.Contains(e.SeasonId))
+            .GroupBy(e => new { e.SeasonId, e.LeagueId })
+            .Select(g => new { g.Key.SeasonId, g.Key.LeagueId, Count = g.Count() })
+            .ToDictionaryAsync(e => (e.SeasonId, e.LeagueId), e => e.Count, cancellationToken)
+            .ConfigureAwait(false);
+
+        IQueryable<SeasonStandingEntity> query = context.SeasonStandings
+            .AsNoTracking()
+            .Where(e => eligibleSeasonIds.Contains(e.SeasonId));
+        if (athleteFilter is not null)
+        {
+            query = query.Where(e => athleteFilter.Contains(e.SaveAthleteId));
+        }
+
+        List<LeagueRow> rows = await query
             .Select(e => new LeagueRow(e.SeasonId, e.LeagueId, e.SaveAthleteId, e.SeasonRank))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<(int SeasonId, int LeagueId), int> fieldSizes = rows
-            .GroupBy(r => (r.SeasonId, r.LeagueId))
-            .ToDictionary(g => g.Key, g => g.Count());
+
+        await GuardUnknownSeasonReferenceAsync(context, seasons, cancellationToken).ConfigureAwait(false);
 
         List<CareerPerformanceScorer.PlacementEvent> events = new(rows.Count);
         foreach (LeagueRow row in rows)
@@ -87,6 +208,43 @@ internal static class CareerPerformanceLoader
         }
 
         return events;
+    }
+
+    private static async Task GuardUnknownSeasonReferenceAsync(
+        SaveDbContext context,
+        Dictionary<int, (int SeasonNumber, bool IsComplete)> seasons,
+        CancellationToken cancellationToken)
+    {
+        // Bounded corruption guard: the capped standings query skips rows outside
+        // the eligible seasons, so an explicit Take(1) probe preserves the
+        // fail-loud invariant for standings pointing at an unknown season.
+        if (seasons.Count == 0)
+        {
+            bool anyStanding = await context.SeasonStandings.AsNoTracking().AnyAsync(cancellationToken).ConfigureAwait(false);
+            if (anyStanding)
+            {
+                int unknown = await context.SeasonStandings
+                    .AsNoTracking()
+                    .Select(e => e.SeasonId)
+                    .FirstAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                throw new InvalidOperationException($"Season standing references unknown season {unknown}.");
+            }
+
+            return;
+        }
+
+        HashSet<int> knownIds = seasons.Keys.ToHashSet();
+        int? corrupt = await context.SeasonStandings
+            .AsNoTracking()
+            .Where(e => !knownIds.Contains(e.SeasonId))
+            .Select(e => (int?)e.SeasonId)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (corrupt is not null)
+        {
+            throw new InvalidOperationException($"Season standing references unknown season {corrupt.Value}.");
+        }
     }
 
     internal static CareerPerformanceScorer.PlacementEvent? MapLeagueRow(
@@ -127,16 +285,36 @@ internal static class CareerPerformanceLoader
         SaveDbContext context,
         int? fromSeason,
         int? toSeason,
+        HashSet<int>? athleteFilter,
         CancellationToken cancellationToken)
     {
-        List<ColorIndividualRow> rows = await context.ColorCupIndividualStandings
-            .AsNoTracking()
+        IQueryable<ColorCupIndividualStandingEntity> fieldQuery = context.ColorCupIndividualStandings.AsNoTracking();
+        if (fromSeason is not null)
+        {
+            fieldQuery = fieldQuery.Where(e => e.SourceSeasonNumber >= fromSeason.Value);
+        }
+
+        if (toSeason is not null)
+        {
+            fieldQuery = fieldQuery.Where(e => e.SourceSeasonNumber <= toSeason.Value);
+        }
+
+        Dictionary<int, int> fieldSizes = await fieldQuery
+            .GroupBy(e => e.SourceSeasonNumber)
+            .Select(g => new { SeasonNumber = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(e => e.SeasonNumber, e => e.Count, cancellationToken)
+            .ConfigureAwait(false);
+
+        IQueryable<ColorCupIndividualStandingEntity> query = fieldQuery;
+        if (athleteFilter is not null)
+        {
+            query = query.Where(e => athleteFilter.Contains(e.SaveAthleteId));
+        }
+
+        List<ColorIndividualRow> rows = await query
             .Select(e => new ColorIndividualRow(e.SourceSeasonNumber, e.SaveAthleteId, e.CupRank))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, int> fieldSizes = rows
-            .GroupBy(r => r.SeasonNumber)
-            .ToDictionary(g => g.Key, g => g.Count());
 
         List<CareerPerformanceScorer.PlacementEvent> events = new(rows.Count);
         foreach (ColorIndividualRow row in rows)
@@ -162,22 +340,52 @@ internal static class CareerPerformanceLoader
         SaveDbContext context,
         int? fromSeason,
         int? toSeason,
+        HashSet<int>? athleteFilter,
         CancellationToken cancellationToken)
     {
-        List<ColorTeamStandingRow> teams = await context.ColorCupTeamStandings
-            .AsNoTracking()
+        IQueryable<ColorCupTeamStandingEntity> teamsQuery = context.ColorCupTeamStandings.AsNoTracking();
+        IQueryable<ColorCupTeamGroupStandingEntity> legsQuery = context.ColorCupTeamGroupStandings.AsNoTracking();
+        if (fromSeason is not null)
+        {
+            teamsQuery = teamsQuery.Where(e => e.SourceSeasonNumber >= fromSeason.Value);
+            legsQuery = legsQuery.Where(e => e.SourceSeasonNumber >= fromSeason.Value);
+        }
+
+        if (toSeason is not null)
+        {
+            teamsQuery = teamsQuery.Where(e => e.SourceSeasonNumber <= toSeason.Value);
+            legsQuery = legsQuery.Where(e => e.SourceSeasonNumber <= toSeason.Value);
+        }
+
+        List<ColorTeamStandingRow> teams = await teamsQuery
             .Select(e => new ColorTeamStandingRow(e.SourceSeasonNumber, e.SportingColor, e.TeamRank))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         Dictionary<int, List<ColorTeamStandingRow>> teamsBySeason = teams
             .GroupBy(t => t.SeasonNumber)
             .ToDictionary(g => g.Key, g => g.ToList());
-        List<ColorTeamLegRow> legs = await context.ColorCupTeamGroupStandings
-            .AsNoTracking()
+
+        if (athleteFilter is not null)
+        {
+            legsQuery = legsQuery.Where(e => athleteFilter.Contains(e.SaveAthleteId));
+        }
+
+        List<ColorTeamLegRow> legs = await legsQuery
             .Select(e => new ColorTeamLegRow(e.SourceSeasonNumber, e.SaveAthleteId, e.SportingColor))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        return MapColorTeamEvents(legs, teamsBySeason, fromSeason, toSeason);
+    }
+
+    private static List<CareerPerformanceScorer.PlacementEvent> MapColorTeamEvents(
+        List<ColorTeamLegRow> legs,
+        Dictionary<int, List<ColorTeamStandingRow>> teamsBySeason,
+        int? fromSeason,
+        int? toSeason)
+    {
+        ArgumentNullException.ThrowIfNull(legs);
+        ArgumentNullException.ThrowIfNull(teamsBySeason);
         List<CareerPerformanceScorer.PlacementEvent> events = [];
         foreach (ColorTeamLegRow leg in legs)
         {
@@ -214,22 +422,48 @@ internal static class CareerPerformanceLoader
         SaveDbContext context,
         int? fromSeason,
         int? toSeason,
+        HashSet<int>? athleteFilter,
         CancellationToken cancellationToken)
     {
-        List<TypeTeamStandingRow> standings = await context.TypeCupTeamStandings
-            .AsNoTracking()
+        IQueryable<TypeCupTeamStandingEntity> standingsQuery = context.TypeCupTeamStandings.AsNoTracking();
+        IQueryable<TypeCupTeamGroupStandingEntity> legsQuery = context.TypeCupTeamGroupStandings.AsNoTracking();
+        if (fromSeason is not null)
+        {
+            standingsQuery = standingsQuery.Where(e => e.SourceSeasonNumber >= fromSeason.Value);
+            legsQuery = legsQuery.Where(e => e.SourceSeasonNumber >= fromSeason.Value);
+        }
+
+        if (toSeason is not null)
+        {
+            standingsQuery = standingsQuery.Where(e => e.SourceSeasonNumber <= toSeason.Value);
+            legsQuery = legsQuery.Where(e => e.SourceSeasonNumber <= toSeason.Value);
+        }
+
+        List<TypeTeamStandingRow> standings = await standingsQuery
             .Select(e => new TypeTeamStandingRow(
                 e.SourceSeasonNumber, e.TournamentPhase, e.QualificationGroup, e.CreatureType, e.TeamRank))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        List<TypeTeamLegRow> legs = await context.TypeCupTeamGroupStandings
-            .AsNoTracking()
+
+        // Qualification field sizes always reflect the full official group for
+        // the capped seasons, even for per-athlete subsets: standings stay
+        // unfiltered by athlete below while legs carry the athlete filter.
+        if (athleteFilter is not null)
+        {
+            legsQuery = legsQuery.Where(e => athleteFilter.Contains(e.SaveAthleteId));
+        }
+
+        List<TypeTeamLegRow> legs = await legsQuery
             .Select(e => new TypeTeamLegRow(
                 e.SourceSeasonNumber, e.TournamentPhase, e.QualificationGroup,
                 e.SaveAthleteId, e.CreatureType, e.GroupNumber))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        // Distinct capped seasons come from the full standings plus the
+        // requested athletes' legs; unrequested athletes never widen the set.
+        // Field sizes below are recomputed from the full standings per season,
+        // so per-athlete filtering cannot shrink official fields.
         List<CareerPerformanceScorer.PlacementEvent> events = [];
         foreach (int seasonNumber in standings.Select(s => s.SeasonNumber).Concat(legs.Select(l => l.SeasonNumber)).Distinct())
         {
