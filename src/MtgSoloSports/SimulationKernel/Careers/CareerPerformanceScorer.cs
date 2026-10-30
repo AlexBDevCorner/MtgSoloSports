@@ -1,6 +1,6 @@
 using MtgSoloSports.SimulationKernel.Leagues;
 
-namespace MtgSoloSports.Features.Records.GetHallOfFame;
+namespace MtgSoloSports.SimulationKernel.Careers;
 
 /// <summary>
 /// Deterministic career-performance scorer for Hall of Fame Career Leaders
@@ -21,6 +21,9 @@ namespace MtgSoloSports.Features.Records.GetHallOfFame;
 /// Superleague/midfield finishes) vs World Breaker (consecutive Superleague
 /// titles) comparison is decided by these general weights, never by
 /// athlete-specific constants: elite-tier points dominate per event.
+/// Shared kernel home (MSS-094): both Records Hall of Fame and Reports
+/// almanac/dossier paths must use this component; no feature-local copy.
+/// SimulationKernel pure: no HTTP, EF Core, filesystem, clock or RNG.
 /// </summary>
 public static class CareerPerformanceScorer
 {
