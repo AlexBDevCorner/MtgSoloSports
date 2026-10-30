@@ -13,12 +13,14 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// representatives per sporting color for one completed odd source season using
 /// the 35/30/25/10 formula (effective bonus, completed-season performance,
 /// recent form over the latest ten league stages weighted 1..10 oldest-newest,
-/// career prestige). Candidates are all save athletes grouped by their original
-/// sporting color, so Superleague athletes represent their original color.
-/// All normalized/weighted math is fixed-point integer-only with deterministic
-/// tie-breaking and consumes no sporting RNG. Persists 32 rows (8 x 4) with
-/// raw inputs plus normalized components plus final ratings in one transaction.
-/// Holds one per-save lock; read-only selection queries never lock.
+/// career prestige). Candidates are currently active athletes only
+/// (source-season membership with a league) grouped by their permanent
+/// sporting color, so Superleague athletes represent their original color;
+/// common-pool athletes never participate. All normalized/weighted math is
+/// fixed-point integer-only with deterministic tie-breaking and consumes no
+/// sporting RNG. Persists 32 rows (8 x 4) with raw inputs plus normalized
+/// components plus final ratings in one transaction. Holds one per-save lock;
+/// read-only selection queries never lock.
 /// </summary>
 public sealed partial class SelectColorCupTeamsHandler
 {
@@ -71,12 +73,12 @@ public sealed partial class SelectColorCupTeamsHandler
         EnsureOddSeason(source);
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
-        SelectionInputs inputs = await LoadInputsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        SelectionInputs inputs = await LoadInputsAsync(context, source, cancellationToken).ConfigureAwait(false);
         IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> career =
             await LoadCareerPrestigeAsync(
                 context,
                 source.SeasonNumber,
-                inputs.Athletes.Select(e => e.Id).ToList(),
+                inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
         (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics) =
             RankAllColors(inputs, career, rules);
@@ -94,7 +96,7 @@ public sealed partial class SelectColorCupTeamsHandler
     }
 
     internal sealed record SelectionInputs(
-        List<SaveAthleteEntity> Athletes,
+        List<SaveAthleteEntity> ActiveAthletes,
         Dictionary<int, int> SeasonNumbers,
         List<StageStandingEntity> StageRows,
         Dictionary<int, int> PerformanceByAthlete,
@@ -164,10 +166,9 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static async Task<SelectionInputs> LoadInputsAsync(
         SaveDbContext context,
         SeasonEntity source,
-        RulesV1 rules,
         CancellationToken cancellationToken)
     {
-        List<SaveAthleteEntity> athletes = await LoadAthletesAsync(context, rules, cancellationToken).ConfigureAwait(false);
+        List<SaveAthleteEntity> athletes = await LoadActiveAthletesAsync(context, source, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> seasonNumbers = await LoadSeasonNumbersAsync(context, source, cancellationToken).ConfigureAwait(false);
         List<StageStandingEntity> stageRows = await LoadStageRowsAsync(context, seasonNumbers, cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> performance = await LoadPerformanceAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -178,19 +179,37 @@ public sealed partial class SelectColorCupTeamsHandler
             source.Id, source.SeasonNumber, leagueIdByAthlete, levels, names);
     }
 
-    internal static async Task<List<SaveAthleteEntity>> LoadAthletesAsync(
+    internal static async Task<List<SaveAthleteEntity>> LoadActiveAthletesAsync(
         SaveDbContext context,
-        RulesV1 rules,
+        SeasonEntity source,
         CancellationToken cancellationToken)
     {
+        List<int> activeIds = await context.SeasonMemberships
+            .AsNoTracking()
+            .Where(e => e.SeasonId == source.Id && e.LeagueId != null)
+            .Select(e => e.SaveAthleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (activeIds.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> distinct = activeIds.ToHashSet();
+        if (distinct.Count != activeIds.Count)
+        {
+            throw new InvalidOperationException($"Season {source.SeasonNumber} has duplicate active memberships.");
+        }
+
         List<SaveAthleteEntity> athletes = await context.SaveAthletes
             .AsNoTracking()
+            .Where(e => distinct.Contains(e.Id))
             .OrderBy(e => e.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        if (athletes.Count != rules.TotalAthletesInSave)
+        if (athletes.Count != distinct.Count)
         {
-            throw new InvalidOperationException($"Save must hold exactly {rules.TotalAthletesInSave} athletes, was {athletes.Count}.");
+            throw new InvalidOperationException($"Season {source.SeasonNumber} references unknown athletes.");
         }
 
         return athletes;

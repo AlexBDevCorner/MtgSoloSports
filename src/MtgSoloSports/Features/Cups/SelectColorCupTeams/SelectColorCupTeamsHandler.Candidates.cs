@@ -35,8 +35,8 @@ public sealed partial class SelectColorCupTeamsHandler
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
         ArgumentNullException.ThrowIfNull(stagesByAthlete);
-        Dictionary<int, CupSelectionMetrics.CupMetrics> map = new(inputs.Athletes.Count);
-        foreach (SaveAthleteEntity athlete in inputs.Athletes)
+        Dictionary<int, CupSelectionMetrics.CupMetrics> map = new(inputs.ActiveAthletes.Count);
+        foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes)
         {
             LeagueLevel? level = CupSelectionMetrics.ResolveLevel(
                 inputs.SourceLeagueLevels, inputs.SourceLeagueIdByAthlete, athlete.Id, inputs.SourceSeasonNumber);
@@ -103,8 +103,8 @@ public sealed partial class SelectColorCupTeamsHandler
         RulesV1 rules)
     {
         int cupSeason = inputs.SeasonNumbers.Values.Max() + 1;
-        Dictionary<int, int> map = new(inputs.Athletes.Count);
-        foreach (SaveAthleteEntity athlete in inputs.Athletes)
+        Dictionary<int, int> map = new(inputs.ActiveAthletes.Count);
+        foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes)
         {
             contributions.TryGetValue(athlete.Id, out List<BonusContribution>? list);
             IReadOnlyList<BonusContribution> empty = list ?? [];
@@ -150,7 +150,7 @@ public sealed partial class SelectColorCupTeamsHandler
             byColor[(int)color] = [];
         }
 
-        foreach (SaveAthleteEntity athlete in inputs.Athletes)
+        foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes)
         {
             ColorCupSelection.CandidateRaw candidate = BuildSingleCandidate(
                 athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete);
