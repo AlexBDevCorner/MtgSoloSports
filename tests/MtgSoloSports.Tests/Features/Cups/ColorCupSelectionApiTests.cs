@@ -201,7 +201,7 @@ public sealed class ColorCupSelectionApiTests
             foreach (GetColorCupSelectionReportResponse.Team team in report.Teams)
             {
                 ColorCupTeamResult expected = selected.Teams.Single(t => string.Equals(t.SportingColorName, team.TeamName, StringComparison.Ordinal));
-                team.CandidateCount.ShouldBe(256);
+                team.CandidateCount.ShouldBe(96);
                 team.Ranking.Select(c => c.Rank).ShouldBe(Enumerable.Range(1, 12));
                 team.Ranking.Where(c => c.Selected).Select(c => c.AthleteId)
                     .ShouldBe(expected.Members.Select(m => m.SaveAthleteId));

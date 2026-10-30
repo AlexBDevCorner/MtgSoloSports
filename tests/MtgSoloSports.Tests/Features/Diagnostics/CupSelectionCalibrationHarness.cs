@@ -576,23 +576,16 @@ public static class CupSelectionCalibrationHarness
         Dictionary<string, int> candidatesByTier = TierOrder.ToDictionary(t => t, _ => 0, StringComparer.Ordinal);
         foreach (KeyValuePair<int, int?> entry in tierByAthlete)
         {
-            // Type Cup candidates are active athletes only; Color Cup candidates
-            // are every save athlete. The per-edition candidate denominator is
-            // resolved by the caller through tierByAthlete: for Type editions the
-            // caller passes active-only tiers. Here we count what we were given.
+            // Both Color Cup (MSS-097) and Type Cup candidates are active
+            // athletes only. The per-edition candidate denominator is resolved
+            // by the caller through tierByAthlete. Here we count what we were given.
             string key = TierKey(entry.Value);
             candidatesByTier[key] = checked(candidatesByTier[key] + 1);
         }
 
-        // The caller for Type editions passes the same full map; restrict the
-        // denominator to active athletes when the cup is the Type Cup by
-        // dropping Pool (pool never participates in Type Cup allocation).
-        // Color editions keep Pool: pool athletes are real Color candidates
-        // with zero performance/form.
-        if (string.Equals(cup, CupExtensionPoint.TypeCup, StringComparison.Ordinal))
-        {
-            candidatesByTier["Pool"] = 0;
-        }
+        // Both cups restrict the denominator to active athletes; pool never
+        // participates in either allocation.
+        candidatesByTier["Pool"] = 0;
 
         List<TierStats> byTier = [];
         foreach (string tier in TierOrder)

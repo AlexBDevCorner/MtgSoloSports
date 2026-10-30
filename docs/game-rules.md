@@ -261,7 +261,7 @@ Cups use active bonus but award no championship points and generate no new bonus
 
 ## 14. Color Cup
 
-All eight sporting colors participate with four selected athletes each.
+All eight sporting colors participate with four selected athletes each. Only currently active athletes (source-season league membership) are eligible; common-pool athletes never participate, matching the Type Cup.
 
 Automatic selection rating:
 
@@ -284,7 +284,7 @@ Historical win-only prestige (Rules v3 tiered model, quarter-prestige-points wit
 - Feeder titles resolved via the persisted league level of the honour's own competition (historical v1 single-feeder titles count as Feeder 1). Stage podiums resolved via each stage row's own league, never current membership, so relegated athletes kept earlier higher-tier prestige. Prestige was cumulative with no time decay.
 - Rules v1 snapshots keep their original integer prestige constants (feeder 100, Superleague title 300, appearance 20, stage 10/5/2, other major 150) and remain readable; tiered v3 saves used the model above. v1-v3 selection reports carry the win-only breakdown (titles by level, appearances, stage podiums by level, major Cups, total raw) summing exactly to prestige raw and are never rewritten. v4 reports carry the career breakdown plus `MSS-083-v1` weights version; legacy win-only fields are zero for v4.
 
-Competition strength (Rules v2, selection-rating only): Superleague 1000 permille (1.00), Feeder 1 800 (0.80), Feeder 2 600 (0.60), Feeder 3 400 (0.40). Performance raw is source-season championship points × source-league factor / 1000 (checked integer truncation). Recent form is exactly the completed source season's final ten league stages (stages 23-32 under 32-stage rules, generalized from the snapshot) weighted 1..10 oldest-to-newest, then × source-league factor / 1000. Pool athletes have no source-season standing and score zero performance and form, even with excellent older history; historical stages never leak. Active athletes must present a complete final-ten window or selection aborts.
+Competition strength (Rules v2, selection-rating only): Superleague 1000 permille (1.00), Feeder 1 800 (0.80), Feeder 2 600 (0.60), Feeder 3 400 (0.40). Performance raw is source-season championship points × source-league factor / 1000 (checked integer truncation). Recent form is exactly the completed source season's final ten league stages (stages 23-32 under 32-stage rules, generalized from the snapshot) weighted 1..10 oldest-to-newest, then × source-league factor / 1000. Only active athletes are candidates (MSS-097); pool athletes cannot qualify even with high bonus or career prestige. Active athletes must present a complete final-ten window or selection aborts.
 
 Effective bonus reflects accumulated career advantage (already tier-aware through bonus generation); performance/form reflect current results adjusted by current competition strength. The softer 100/80/60/40% factor deliberately avoids counting tier strength three times at the same severity as the bonus 2×/1×/1/2×/1/4× scale. Type Cup uses the same performance/form calculation, normalized globally across active candidates.
 
