@@ -240,11 +240,55 @@ function hasPrestigeBreakdown(candidate: SelectionCandidate): boolean {
     candidate.prestigeFeeder1StageRaw !== undefined ||
     candidate.prestigeFeeder2StageRaw !== undefined ||
     candidate.prestigeFeeder3StageRaw !== undefined ||
-    candidate.prestigeMajorCupRaw !== undefined
+    candidate.prestigeMajorCupRaw !== undefined ||
+    candidate.prestigeCareerSuperleaguePoints !== undefined ||
+    candidate.prestigeCareerFeeder1Points !== undefined ||
+    candidate.prestigeCareerFeeder2Points !== undefined ||
+    candidate.prestigeCareerFeeder3Points !== undefined ||
+    candidate.prestigeCareerColorIndividualPoints !== undefined ||
+    candidate.prestigeCareerColorTeamPoints !== undefined ||
+    candidate.prestigeCareerTypeTeamPoints !== undefined
   );
 }
 
+function hasCareerBreakdown(candidate: SelectionCandidate): boolean {
+  return (
+    (candidate.prestigeCareerSuperleaguePoints ?? 0) > 0 ||
+    (candidate.prestigeCareerFeeder1Points ?? 0) > 0 ||
+    (candidate.prestigeCareerFeeder2Points ?? 0) > 0 ||
+    (candidate.prestigeCareerFeeder3Points ?? 0) > 0 ||
+    (candidate.prestigeCareerColorIndividualPoints ?? 0) > 0 ||
+    (candidate.prestigeCareerColorTeamPoints ?? 0) > 0 ||
+    (candidate.prestigeCareerTypeTeamPoints ?? 0) > 0
+  );
+}
+
+function careerPrestigeSummary(candidate: SelectionCandidate): string {
+  const parts: string[] = [];
+  const push = (label: string, value: number | undefined): void => {
+    if (value !== undefined && value > 0) {
+      parts.push(`${label} ${value}`);
+    }
+  };
+  push('Superleague', candidate.prestigeCareerSuperleaguePoints);
+  push('F1', candidate.prestigeCareerFeeder1Points);
+  push('F2', candidate.prestigeCareerFeeder2Points);
+  push('F3', candidate.prestigeCareerFeeder3Points);
+  push('Color individual', candidate.prestigeCareerColorIndividualPoints);
+  push('Color team', candidate.prestigeCareerColorTeamPoints);
+  push('Type team', candidate.prestigeCareerTypeTeamPoints);
+  if (parts.length === 0) {
+    return `Career prestige ${candidate.prestigeRaw} pts — no career placements yet.`;
+  }
+  return `Career prestige ${candidate.prestigeRaw} pts (${parts.join(', ')}).`;
+}
+
 function prestigeSummary(candidate: SelectionCandidate): string {
+  // v4 reports (MSS-096) store real points in the career categories and zero
+  // the legacy win-only fields; legacy v1-v3 reports do the opposite.
+  if (hasCareerBreakdown(candidate)) {
+    return careerPrestigeSummary(candidate);
+  }
   const parts: string[] = [];
   const push = (label: string, value: number | undefined): void => {
     if (value !== undefined && value > 0) {
