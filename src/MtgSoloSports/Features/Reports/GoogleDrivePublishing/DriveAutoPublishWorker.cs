@@ -463,11 +463,22 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         {
             await MarkAuthPausedAsync(saveId, "Google authorization expired or was revoked. Reconnect with Connect Google Drive.", cancellationToken).ConfigureAwait(false);
         }
-        else if (ex is DriveNotConfiguredException or DriveConflictException or InvalidOperationException)
-        {
-            await MarkFailedAsync(saveId, Trim(ex.Message), cancellationToken).ConfigureAwait(false);
-        }
         else if (ex is DriveApiException { StatusCode: System.Net.HttpStatusCode.Forbidden })
+        {
+            // Permanent permission failure (missing drive.file grant): pause
+            // automatic work until reconnect/reconfiguration instead of
+            // retrying an unauthorized upload on every later stage.
+            await MarkAuthPausedAsync(saveId, Trim(ex.Message), cancellationToken).ConfigureAwait(false);
+        }
+        else if (IsPermissionMessage(ex.Message))
+        {
+            // Publisher surfaces some 403 grant failures as
+            // DriveConflictException (e.g. inaccessible Seasons/ folder).
+            // Those are also permanent permission errors, not retryable
+            // failures.
+            await MarkAuthPausedAsync(saveId, Trim(ex.Message), cancellationToken).ConfigureAwait(false);
+        }
+        else if (ex is DriveNotConfiguredException or DriveConflictException or InvalidOperationException)
         {
             await MarkFailedAsync(saveId, Trim(ex.Message), cancellationToken).ConfigureAwait(false);
         }
@@ -525,7 +536,21 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         }
 
         string detail = failures[0].Detail ?? $"{failures[0].Report} publish failed.";
-        if (IsTransientDetail(detail) || IsStaleMidPublish(current, started))
+        if (IsPermissionDetail(detail))
+        {
+            // Permanent permission failure (missing drive.file grant, 403):
+            // pause automatic work until reconnect/reconfiguration instead of
+            // retrying an unauthorized upload on every later stage. Takes
+            // precedence over the stale-mid-publish retry: the newest state
+            // would fail the same way.
+            await publishing.SaveDestinationAsync(current with
+            {
+                AutoLastError = Trim(detail),
+                AutoNextRetryUtc = null,
+                AutoPausedForAuth = true,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        else if (IsTransientDetail(detail) || IsStaleMidPublish(current, started))
         {
             await SaveTransientLockedAsync(publishing, current, detail, cancellationToken).ConfigureAwait(false);
         }
@@ -715,6 +740,19 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             || detail.Contains("could not be confirmed", StringComparison.OrdinalIgnoreCase)
             || detail.Contains("does not match the new report", StringComparison.OrdinalIgnoreCase)
             || detail.Contains("Re-run Publish now to retry", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsPermissionDetail(string detail)
+    {
+        // All publisher permission failures embed the HTTP status as
+        // "(403)" (denied folder/file/grant). Manual-publish guidance uses
+        // the same marker, so auto-publish can reliably pause on it.
+        return detail.Contains("(403)", StringComparison.Ordinal);
+    }
+
+    private static bool IsPermissionMessage(string message)
+    {
+        return message.Contains("(403)", StringComparison.Ordinal);
     }
 
     private static async Task DelayQuietAsync(TimeSpan delay, CancellationToken cancellationToken)

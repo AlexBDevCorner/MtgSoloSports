@@ -771,6 +771,257 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public void IsPermissionDetail_Detects403GrantFailures()
+    {
+        DriveAutoPublishWorker.IsPermissionDetail(
+            "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created.").ShouldBeTrue();
+        DriveAutoPublishWorker.IsPermissionDetail(
+            "The configured Seasons/ folder id is not accessible (403). With drive.file the app can only use folders it created.").ShouldBeTrue();
+        DriveAutoPublishWorker.IsPermissionDetail(
+            "The Drive file was edited independently since the last publish. Re-run with overwrite confirmation.").ShouldBeFalse();
+        DriveAutoPublishWorker.IsPermissionDetail(
+            "Google Drive is temporarily unavailable (503). Re-run Publish now to retry.").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ForbiddenException_PausesAutomaticWork()
+    {
+        // P1: HTTP 403 must pause automatic work until reconnect/
+        // reconfiguration, not mark a plain failure that the next stage
+        // immediately retries with another unauthorized upload.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-autopub-403exc-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-403exc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            Guid saveId = (await store.CreateAsync("ForbiddenExc", 4242UL, 777UL, UniverseTestCatalog.Build())).Detail.SaveId;
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "ForbiddenExc", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true,
+                AutoRequestedSeason: 1,
+                AutoRequestedGlobalStage: 2,
+                AutoRequestedPhase: "SeasonInProgress",
+                AutoRequestedUtc: DateTimeOffset.UtcNow);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishWorker worker = new(
+                new TestScopeFactory(publishing, null),
+                tracker,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishWorker>.Instance);
+
+            MethodInfo? method = typeof(DriveAutoPublishWorker).GetMethod(
+                "HandlePublishExceptionAsync",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            method.ShouldNotBeNull();
+            Task? pending = method!.Invoke(worker,
+                [saveId, new DriveApiException(HttpStatusCode.Forbidden, "Google denied access (403). Grant missing."), CancellationToken.None]) as Task;
+            Assert.True(pending is not null);
+            await pending!;
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoPausedForAuth.ShouldBeTrue();
+            after.AutoNextRetryUtc.ShouldBeNull();
+            after.AutoLastError.ShouldNotBeNullOrWhiteSpace();
+            DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+            DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task ForbiddenConflictException_PausesAutomaticWork()
+    {
+        // Publisher surfaces some 403 grant failures as DriveConflictException
+        // (inaccessible Seasons/ folder). Those are also permanent permission
+        // errors and must pause.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-autopub-403conf-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-403conf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            Guid saveId = (await store.CreateAsync("ForbiddenConf", 4242UL, 777UL, UniverseTestCatalog.Build())).Detail.SaveId;
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            DrivePublishingStore.DestinationDocument seed = new(
+                saveId, "ForbiddenConf", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true,
+                AutoRequestedSeason: 1,
+                AutoRequestedGlobalStage: 2,
+                AutoRequestedPhase: "SeasonInProgress",
+                AutoRequestedUtc: DateTimeOffset.UtcNow);
+            await publishing.SaveDestinationAsync(seed, CancellationToken.None);
+
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishWorker worker = new(
+                new TestScopeFactory(publishing, null),
+                tracker,
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishWorker>.Instance);
+
+            MethodInfo? method = typeof(DriveAutoPublishWorker).GetMethod(
+                "HandlePublishExceptionAsync",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            method.ShouldNotBeNull();
+            Task? pending = method!.Invoke(worker,
+                [saveId, new DriveConflictException("The configured Seasons/ folder id is not accessible (403). With drive.file the app can only use folders it created."), CancellationToken.None]) as Task;
+            Assert.True(pending is not null);
+            await pending!;
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoPausedForAuth.ShouldBeTrue();
+            after.AutoNextRetryUtc.ShouldBeNull();
+            DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task ForbiddenFileOutcome_PausesAutomaticWork()
+    {
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-autopub-403file-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-403file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            Guid saveId = (await store.CreateAsync("ForbiddenFile", 4242UL, 777UL, UniverseTestCatalog.Build())).Detail.SaveId;
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            await SeedPendingAsync(publishing, saveId);
+            DriveAutoPublishWorker worker = new(
+                new TestScopeFactory(publishing, null),
+                new DriveAutoPublishTracker(),
+                TimeProvider.System,
+                NullLogger<DriveAutoPublishWorker>.Instance);
+            await InvokeSettleWith403Async(worker, publishing, saveId);
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.AutoPausedForAuth.ShouldBeTrue();
+            after.AutoNextRetryUtc.ShouldBeNull();
+            after.AutoLastError.ShouldNotBeNull();
+            after.AutoLastError!.ShouldContain("(403)");
+            DriveAutoPublishStatus.HasPendingRequest(after).ShouldBeTrue();
+            DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
+    private static async Task SeedPendingAsync(DrivePublishingStore publishing, Guid saveId)
+    {
+        DrivePublishingStore.DestinationDocument seed = new(
+            saveId, "ForbiddenFile", "folder-mtshistory", "mtshistory", "folder-seasons",
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true,
+            AutoRequestedSeason: 1,
+            AutoRequestedGlobalStage: 2,
+            AutoRequestedPhase: "SeasonInProgress",
+            AutoRequestedUtc: DateTimeOffset.UtcNow);
+        await publishing.SaveDestinationAsync(seed, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static async Task InvokeSettleWith403Async(
+        DriveAutoPublishWorker worker,
+        DrivePublishingStore publishing,
+        Guid saveId)
+    {
+        var response = new PublishDriveReportsResponse(
+            saveId, 1, "SeasonInProgress", 2, DateTimeOffset.UtcNow,
+            [
+                new DriveFileOutcome("dossier", "failed", "file-denied", "season-1-dossier.md", "fp-new", null, "Google denied access to the destination folder (403). Grant missing."),
+                new DriveFileOutcome("almanac", "updated", "file-almanac", "almanac.md", "fp-new", "https://drive.test/file-almanac", "Updated in place."),
+            ]);
+        MethodInfo? method = typeof(DriveAutoPublishWorker).GetMethod(
+            "SettleLockedAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        method.ShouldNotBeNull();
+        Task? pending = method!.Invoke(worker,
+            [publishing, saveId, response, DateTimeOffset.UtcNow.AddMinutes(-1), CancellationToken.None]) as Task;
+        Assert.True(pending is not null);
+        await pending!.ConfigureAwait(false);
+    }
+
+    [Fact]
+    public async Task PausedCheckpoint_NextStageDoesNotScheduleRetry()
+    {
+        // While paused, a new committed stage must advance the requested
+        // checkpoint without scheduling an immediate retry; recovery happens
+        // via reconnect/reconfiguration.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1PlusCupsAsync("mtgsolosports-autopub-pausednote-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-pausednote-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+            GetSeasonStatusHandler status = new(store);
+            DriveAutoPublishTracker tracker = new();
+            DriveAutoPublishNotifier notifier = new(
+                store, publishing, tracker, status, TimeProvider.System,
+                NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            GetSeasonStatusResponse before = await status.HandleAsync(saveId, CancellationToken.None);
+            DrivePublishingStore.DestinationDocument paused = new(
+                saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                AutoPublishEnabled: true,
+                AutoRequestedSeason: before.CurrentSeasonNumber,
+                AutoRequestedGlobalStage: before.GlobalStage,
+                AutoRequestedPhase: before.ComputedPhase,
+                AutoRequestedUtc: DateTimeOffset.UtcNow.AddMinutes(-5),
+                AutoPausedForAuth: true,
+                AutoLastError: "Google denied access (403).");
+            await publishing.SaveDestinationAsync(paused, CancellationToken.None);
+
+            // Advance sporting state without notifying, then notify the new
+            // durable checkpoint while still paused.
+            var withoutNotify = new MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues.CompleteStageForAllLeaguesHandler(store);
+            var completed = await withoutNotify.HandleAsync(saveId, CancellationToken.None);
+            completed.GlobalStageAfter.ShouldBeGreaterThan(before.GlobalStage);
+            while (tracker.Reader.TryRead(out _)) { }
+
+            await notifier.NotifyStageCheckpointAsync(saveId, CancellationToken.None);
+
+            DrivePublishingStore.DestinationDocument? after =
+                await publishing.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            GetSeasonStatusResponse live = await status.HandleAsync(saveId, CancellationToken.None);
+            after!.AutoRequestedSeason.ShouldBe(live.CurrentSeasonNumber);
+            after.AutoRequestedGlobalStage.ShouldBe(live.GlobalStage);
+            after.AutoPausedForAuth.ShouldBeTrue();
+            after.AutoNextRetryUtc.ShouldBeNull();
+            tracker.Reader.TryRead(out _).ShouldBeFalse();
+            DriveAutoPublishStatus.Compute(after, connected: true, publishing: false).ShouldBe("Disconnected");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { Directory.Delete(root, recursive: true); } catch { }
+            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+        }
+    }
+
     private static async Task<(MtgSoloSports.Persistence.Saves.SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteIsolatedAsync(string prefix)
     {
         var (store, root) = TestSaveStores.CreateStore(prefix);
