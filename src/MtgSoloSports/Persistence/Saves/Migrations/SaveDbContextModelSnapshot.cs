@@ -1534,6 +1534,284 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
 
                     b.ToTable("TypeCupTournamentDraws", (string)null);
                 });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupEditionEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosFormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EditionChecksum")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FieldSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RulesVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceSeasonId")
+                        .IsUnique();
+
+                    b.HasIndex("SourceSeasonNumber");
+
+                    b.ToTable("ChaosCupEditions", (string)null);
+                });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupEntrantEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsPoolInvite")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SaveAthleteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceFeederDivision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("SourceLeagueId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceLeagueKind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SportingColor")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SaveAthleteId");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "SaveAthleteId")
+                        .IsUnique();
+
+                    b.ToTable("ChaosCupEntrants", (string)null);
+                });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupDrawEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosFormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DrawChecksum")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("DrawIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RulesVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SaveAthleteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StageGroupCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StageIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "SaveAthleteId")
+                        .IsUnique();
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber", "DrawIndex")
+                        .IsUnique();
+
+                    b.ToTable("ChaosCupDraws", (string)null);
+                });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupRoundEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosFormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("PayloadChecksum")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RngAfterState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngAfterStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeState")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("RngBeforeStream")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RoundNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RulesVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StageIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber", "RoundNumber")
+                        .IsUnique();
+
+                    b.ToTable("ChaosCupRounds", (string)null);
+                });
+
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupGroupStandingEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BaseScoreThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupRank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("GroupScoreThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsAdvanced")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RoundPlaceCountsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RoundWins")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SaveAthleteId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SourceSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SportingColor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StageIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SaveAthleteId");
+
+                    b.HasIndex("SourceSeasonId");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber");
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "SaveAthleteId")
+                        .IsUnique();
+
+                    b.HasIndex("SourceSeasonId", "StageIndex", "GroupNumber", "GroupRank")
+                        .IsUnique();
+
+                    b.ToTable("ChaosCupGroupStandings", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }

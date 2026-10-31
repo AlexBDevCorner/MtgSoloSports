@@ -73,6 +73,16 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<TypeCupTournamentDrawEntity> TypeCupTournamentDraws => Set<TypeCupTournamentDrawEntity>();
 
+    public DbSet<ChaosCupEditionEntity> ChaosCupEditions => Set<ChaosCupEditionEntity>();
+
+    public DbSet<ChaosCupEntrantEntity> ChaosCupEntrants => Set<ChaosCupEntrantEntity>();
+
+    public DbSet<ChaosCupDrawEntity> ChaosCupDraws => Set<ChaosCupDrawEntity>();
+
+    public DbSet<ChaosCupRoundEntity> ChaosCupRounds => Set<ChaosCupRoundEntity>();
+
+    public DbSet<ChaosCupGroupStandingEntity> ChaosCupGroupStandings => Set<ChaosCupGroupStandingEntity>();
+
     public DbSet<CupSelectionReportEntity> CupSelectionReports => Set<CupSelectionReportEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -93,6 +103,7 @@ public sealed class SaveDbContext : DbContext
         ConfigureTypeCupSelections(modelBuilder);
         ConfigureTypeCupTeam(modelBuilder);
         ConfigureTypeCupTournamentDraw(modelBuilder);
+        ConfigureChaosCup(modelBuilder);
         ConfigureCupSelectionReports(modelBuilder);
     }
 
@@ -810,6 +821,140 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.RngAfterState).IsRequired();
             entity.Property(e => e.RngAfterStream).IsRequired();
             entity.Property(e => e.DrawChecksum).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureChaosCup(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+        ConfigureChaosEditions(modelBuilder);
+        ConfigureChaosEntrants(modelBuilder);
+        ConfigureChaosDraws(modelBuilder);
+        ConfigureChaosRounds(modelBuilder);
+        ConfigureChaosStandings(modelBuilder);
+    }
+
+    private static void ConfigureChaosEditions(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChaosCupEditionEntity>(entity =>
+        {
+            entity.ToTable("ChaosCupEditions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => e.SourceSeasonId).IsUnique();
+            entity.HasIndex(e => e.SourceSeasonNumber);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.ChaosFormatVersion).IsRequired();
+            entity.Property(e => e.FieldSize).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.EditionChecksum).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureChaosEntrants(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChaosCupEntrantEntity>(entity =>
+        {
+            entity.ToTable("ChaosCupEntrants");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.HasIndex(e => e.SaveAthleteId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.SourceLeagueKind).IsRequired();
+            entity.Property(e => e.SourceFeederDivision).IsRequired();
+            entity.Property(e => e.IsPoolInvite).IsRequired();
+        });
+    }
+
+    private static void ConfigureChaosDraws(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChaosCupDrawEntity>(entity =>
+        {
+            entity.ToTable("ChaosCupDraws");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber, e.DrawIndex }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber });
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.StageIndex).IsRequired();
+            entity.Property(e => e.GroupNumber).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.DrawIndex).IsRequired();
+            entity.Property(e => e.GroupSize).IsRequired();
+            entity.Property(e => e.StageGroupCount).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.ChaosFormatVersion).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.DrawChecksum).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureChaosRounds(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChaosCupRoundEntity>(entity =>
+        {
+            entity.ToTable("ChaosCupRounds");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber, e.RoundNumber }).IsUnique();
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber });
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.StageIndex).IsRequired();
+            entity.Property(e => e.GroupNumber).IsRequired();
+            entity.Property(e => e.RoundNumber).IsRequired();
+            entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.ChaosFormatVersion).IsRequired();
+            entity.Property(e => e.RngBeforeState).IsRequired();
+            entity.Property(e => e.RngBeforeStream).IsRequired();
+            entity.Property(e => e.RngAfterState).IsRequired();
+            entity.Property(e => e.RngAfterStream).IsRequired();
+            entity.Property(e => e.PayloadJson).IsRequired();
+            entity.Property(e => e.PayloadChecksum).IsRequired().HasMaxLength(64);
+        });
+    }
+
+    private static void ConfigureChaosStandings(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ChaosCupGroupStandingEntity>(entity =>
+        {
+            entity.ToTable("ChaosCupGroupStandings");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.SaveAthleteId }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber, e.GroupRank }).IsUnique();
+            entity.HasIndex(e => new { e.SourceSeasonId, e.StageIndex, e.GroupNumber });
+            entity.HasIndex(e => e.SourceSeasonId);
+            entity.HasIndex(e => e.SaveAthleteId);
+            entity.Property(e => e.SourceSeasonId).IsRequired();
+            entity.Property(e => e.SourceSeasonNumber).IsRequired();
+            entity.Property(e => e.StageIndex).IsRequired();
+            entity.Property(e => e.GroupNumber).IsRequired();
+            entity.Property(e => e.SaveAthleteId).IsRequired();
+            entity.Property(e => e.GroupRank).IsRequired();
+            entity.Property(e => e.GroupScoreThousandths).IsRequired();
+            entity.Property(e => e.BaseScoreThousandths).IsRequired();
+            entity.Property(e => e.RoundWins).IsRequired();
+            entity.Property(e => e.RoundPlaceCountsJson).IsRequired();
+            entity.Property(e => e.SportingColor).IsRequired();
+            entity.Property(e => e.IsAdvanced).IsRequired();
         });
     }
 
