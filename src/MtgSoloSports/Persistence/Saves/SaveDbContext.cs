@@ -873,6 +873,7 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.SourceLeagueKind).IsRequired();
             entity.Property(e => e.SourceFeederDivision).IsRequired();
             entity.Property(e => e.IsPoolInvite).IsRequired();
+            entity.Property(e => e.EffectiveBonusThousandths).IsRequired();
         });
     }
 

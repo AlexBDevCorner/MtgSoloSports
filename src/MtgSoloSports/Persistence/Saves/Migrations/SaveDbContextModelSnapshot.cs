@@ -1592,6 +1592,9 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                     b.Property<bool>("IsPoolInvite")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("EffectiveBonusThousandths")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("SaveAthleteId")
                         .HasColumnType("INTEGER");
 

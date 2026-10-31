@@ -23,6 +23,7 @@ using MtgSoloSports.Features.Cups.PlayTypeCupTeamRound;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
+using MtgSoloSports.Features.Cups.SelectChaosCupField;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Diagnostics.LongRunChecksum;
@@ -160,6 +161,7 @@ builder.Services.AddScoped<MtgSoloSports.Features.Qualifiers.PlayFeederQualifier
 builder.Services.AddScoped<MtgSoloSports.Features.Qualifiers.GetQualifierRounds.GetQualifierRoundsHandler>();
 builder.Services.AddScoped<RebalanceFeedersHandler>();
 builder.Services.AddScoped<GetRebalanceResultHandler>();
+builder.Services.AddScoped<SelectChaosCupFieldHandler>();
 builder.Services.AddScoped<SelectColorCupTeamsHandler>();
 builder.Services.AddScoped<GetColorCupSelectionHandler>();
 builder.Services.AddScoped<GetColorCupSelectionReportHandler>();
@@ -272,6 +274,9 @@ MtgSoloSports.Features.Qualifiers.PlayFeederQualifierRound.PlayFeederQualifierRo
 MtgSoloSports.Features.Qualifiers.GetQualifierRounds.GetQualifierRoundsEndpoint.Map(app);
 RebalanceFeedersEndpoint.Map(app);
 GetRebalanceResultEndpoint.Map(app);
+// MSS-100: Chaos field handler stays DI-registered but its HTTP route is deferred
+// to MSS-106, which owns forward-only postseason activation and season/phase gating.
+// Do not map the Chaos field endpoint here.
 SelectColorCupTeamsEndpoint.Map(app);
 GetColorCupSelectionEndpoint.Map(app);
 GetColorCupSelectionReportEndpoint.Map(app);
