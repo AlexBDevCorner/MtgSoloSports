@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Cups.SelectChaosCupField;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.FixedPoint;
+using MtgSoloSports.SimulationKernel.Rules;
+using MtgSoloSports.SimulationKernel.Scoring;
 using MtgSoloSports.Tests.Features;
 using Shouldly;
 using Xunit;
@@ -141,6 +145,56 @@ public sealed class ChaosCupFieldTests
         {
             TestSaveStores.DeleteRoot(rootA);
             TestSaveStores.DeleteRoot(rootB);
+        }
+    }
+
+    [Fact]
+    public async Task FrozenBonuses_MatchEffectiveContext_AndSurviveProgression()
+    {
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-chaos-field-bonus-");
+        try
+        {
+            SelectChaosCupFieldHandler handler = new(store);
+            SelectChaosCupFieldResponse response = await handler.HandleAsync(saveId, sourceSeasonNumber: 1);
+            response.FieldSize.ShouldBe(ChaosCupFormat.FieldSize);
+
+            Dictionary<int, int> frozen = await LoadFrozenBonusesAsync(store, saveId, 1);
+            frozen.Count.ShouldBe(ChaosCupFormat.FieldSize);
+            foreach (int thousandths in frozen.Values)
+            {
+                thousandths.ShouldBeGreaterThanOrEqualTo(0);
+            }
+
+            frozen.Values.Any(v => v > 0).ShouldBeTrue("edition-time effective bonuses must be frozen, not all zero");
+            Dictionary<int, int> expected = await ComputeExpectedBonusesAsync(store, saveId, 1);
+            foreach ((int athleteId, int want) in expected)
+            {
+                frozen[athleteId].ShouldBe(want, $"frozen bonus for athlete {athleteId} must match edition-time effective bonus");
+            }
+
+            // Subsequent season progression (inaugural + feeders + synthetic standings)
+            // must not rewrite the frozen edition-time bonus context.
+            await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId);
+            await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, saveId);
+            await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, saveId);
+
+            Dictionary<int, int> reloaded = await LoadFrozenBonusesAsync(store, saveId, 1);
+            foreach ((int athleteId, int want) in frozen)
+            {
+                reloaded[athleteId].ShouldBe(want, $"frozen bonus for athlete {athleteId} must survive season progression");
+            }
+
+            SelectChaosCupFieldResponse retry = await handler.HandleAsync(saveId, sourceSeasonNumber: 1);
+            retry.EditionChecksum.ShouldBe(response.EditionChecksum);
+            Dictionary<int, int> afterRetry = await LoadFrozenBonusesAsync(store, saveId, 1);
+            foreach ((int athleteId, int want) in frozen)
+            {
+                afterRetry[athleteId].ShouldBe(want);
+            }
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -325,5 +379,63 @@ public sealed class ChaosCupFieldTests
         (await context.ChaosCupEditions.CountAsync(e => e.SourceSeasonId == source.Id).ConfigureAwait(false)).ShouldBe(1);
         (await context.ChaosCupEntrants.CountAsync(e => e.SourceSeasonId == source.Id).ConfigureAwait(false)).ShouldBe(1024);
         (await context.ChaosCupDraws.CountAsync(e => e.SourceSeasonId == source.Id && e.StageIndex == 0).ConfigureAwait(false)).ShouldBe(1024);
+    }
+
+    private static async Task<Dictionary<int, int>> LoadFrozenBonusesAsync(SaveStore store, Guid saveId, int sourceSeasonNumber)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == sourceSeasonNumber).ConfigureAwait(false);
+        return await context.ChaosCupEntrants
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToDictionaryAsync(e => e.SaveAthleteId, e => e.EffectiveBonusThousandths)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<Dictionary<int, int>> ComputeExpectedBonusesAsync(SaveStore store, Guid saveId, int sourceSeasonNumber)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == sourceSeasonNumber).ConfigureAwait(false);
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, default).ConfigureAwait(false);
+        Dictionary<int, int> seasonNumbers = await context.Seasons
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber)
+            .ConfigureAwait(false);
+        int cupSeason = checked(seasonNumbers[source.Id] + 1);
+        IReadOnlySet<int> relevant = AdvanceRoundHandler.SelectBonusSeasonIds(seasonNumbers, cupSeason);
+        List<int> entrantIds = await context.ChaosCupEntrants
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .Select(e => e.SaveAthleteId)
+            .ToListAsync()
+            .ConfigureAwait(false);
+        HashSet<int> rosterIds = entrantIds.ToHashSet();
+        List<StageStandingEntity> standings = await context.StageStandings
+            .AsNoTracking()
+            .Where(e => rosterIds.Contains(e.SaveAthleteId) && relevant.Contains(e.SeasonId))
+            .ToListAsync()
+            .ConfigureAwait(false);
+        Dictionary<int, List<BonusContribution>> byAthlete = rosterIds.ToDictionary(id => id, _ => new List<BonusContribution>());
+        foreach (StageStandingEntity row in standings)
+        {
+            if (!seasonNumbers.TryGetValue(row.SeasonId, out int earnedSeason))
+            {
+                continue;
+            }
+
+            byAthlete[row.SaveAthleteId].Add(new BonusContribution(
+                earnedSeason,
+                row.StageNumber,
+                Bonus.FromThousandths(row.EarnedBonusThousandths)));
+        }
+
+        Dictionary<int, int> expected = new(rosterIds.Count);
+        foreach (int athleteId in rosterIds)
+        {
+            Bonus bonus = BonusCalculator.EffectiveBonus(byAthlete[athleteId], cupSeason, 1, rules);
+            expected[athleteId] = bonus.Thousandths;
+        }
+
+        return expected;
     }
 }

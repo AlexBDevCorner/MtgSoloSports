@@ -27,7 +27,8 @@ public sealed partial class SelectChaosCupFieldHandler
     {
         FieldInputs inputs = await LoadFieldInputsAsync(context, state.Source, state.Rules, cancellationToken).ConfigureAwait(false);
         SelectionResult selection = SelectField(inputs, state);
-        EnsureBonusContextFrozen(context, selection.Entrants, state.Source, state.Rules, cancellationToken);
+        Dictionary<int, Bonus> bonuses = EnsureBonusContextFrozen(context, selection.Entrants, state.Source, state.Rules, cancellationToken);
+        ApplyFrozenBonuses(selection.Entrants, bonuses);
         return await PersistFieldAsync(context, saveId, state, inputs, selection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -173,7 +174,7 @@ public sealed partial class SelectChaosCupFieldHandler
         ChaosCupFormat.ValidateEntrantField(field);
     }
 
-    internal static void EnsureBonusContextFrozen(
+    internal static Dictionary<int, Bonus> EnsureBonusContextFrozen(
         SaveDbContext context,
         List<ChaosCupEntrantEntity> entrants,
         SeasonEntity source,
@@ -195,6 +196,24 @@ public sealed partial class SelectChaosCupFieldHandler
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        return bonuses;
+    }
+
+    internal static void ApplyFrozenBonuses(
+        List<ChaosCupEntrantEntity> entrants,
+        IReadOnlyDictionary<int, Bonus> bonuses)
+    {
+        ArgumentNullException.ThrowIfNull(entrants);
+        ArgumentNullException.ThrowIfNull(bonuses);
+        foreach (ChaosCupEntrantEntity entrant in entrants)
+        {
+            if (!bonuses.TryGetValue(entrant.SaveAthleteId, out Bonus bonus))
+            {
+                throw new InvalidOperationException($"Chaos Cup bonus freeze misses athlete {entrant.SaveAthleteId}.");
+            }
+
+            entrant.EffectiveBonusThousandths = bonus.Thousandths;
+        }
     }
 
     private static Dictionary<int, int> LoadSeasonNumbers(SaveDbContext context, SeasonEntity source)

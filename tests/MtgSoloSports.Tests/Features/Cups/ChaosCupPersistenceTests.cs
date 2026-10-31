@@ -405,6 +405,7 @@ public sealed class ChaosCupPersistenceTests
                     SourceLeagueKind = kind,
                     SourceFeederDivision = division,
                     IsPoolInvite = leagueId is null,
+                    EffectiveBonusThousandths = 0,
                 });
             }
         }
@@ -742,6 +743,7 @@ public sealed class ChaosCupPersistenceTests
             SourceLeagueKind = e.SourceLeagueKind,
             SourceFeederDivision = e.SourceFeederDivision,
             IsPoolInvite = e.IsPoolInvite,
+            EffectiveBonusThousandths = e.EffectiveBonusThousandths,
         }).ToList();
     }
 
@@ -774,6 +776,7 @@ public sealed class ChaosCupPersistenceTests
             SourceLeagueKind = first.SourceLeagueKind,
             SourceFeederDivision = first.SourceFeederDivision,
             IsPoolInvite = first.IsPoolInvite,
+            EffectiveBonusThousandths = first.EffectiveBonusThousandths,
         };
     }
 

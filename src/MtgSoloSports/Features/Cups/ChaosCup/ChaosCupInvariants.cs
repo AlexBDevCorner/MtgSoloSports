@@ -104,15 +104,8 @@ public static class ChaosCupInvariants
                 throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has unknown sporting color {row.SportingColor}.");
             }
 
-            if (row.IsPoolInvite != (row.SourceLeagueId is null))
-            {
-                throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has inconsistent Pool invitation linkage.");
-            }
-
-            if (!row.IsPoolInvite && row.SourceLeagueId <= 0)
-            {
-                throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt source league linkage.");
-            }
+            CheckEntrantDivision(row);
+            CheckEntrantBonus(row);
 
             SportingColor color = (SportingColor)row.SportingColor;
             perColor.TryGetValue(color, out int current);
@@ -132,6 +125,29 @@ public static class ChaosCupInvariants
         if (!perColor.TryGetValue(color, out int count) || count != ChaosCupFormat.EntrantsPerColor)
         {
             throw new InvalidOperationException($"Chaos Cup field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {count}.");
+        }
+    }
+
+    private static void CheckEntrantDivision(ChaosCupEntrantEntity row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (row.IsPoolInvite != (row.SourceLeagueId is null))
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has inconsistent Pool invitation linkage.");
+        }
+
+        if (!row.IsPoolInvite && row.SourceLeagueId <= 0)
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt source league linkage.");
+        }
+    }
+
+    private static void CheckEntrantBonus(ChaosCupEntrantEntity row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (row.EffectiveBonusThousandths < 0)
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt frozen bonus {row.EffectiveBonusThousandths}.");
         }
     }
 

@@ -28,4 +28,13 @@ public sealed class ChaosCupEntrantEntity
     public int SourceFeederDivision { get; set; }
 
     public bool IsPoolInvite { get; set; }
+
+    /// <summary>
+    /// Frozen edition-time effective bonus in thousandths (MSS-100). Computed from
+    /// source-season history with the edition rules version before promotion or
+    /// rebalancing and persisted in the same transaction as the field so later
+    /// Chaos Cup rounds consume a fixed scoring context without recomputation.
+    /// Integer-only; never negative.
+    /// </summary>
+    public int EffectiveBonusThousandths { get; set; }
 }
