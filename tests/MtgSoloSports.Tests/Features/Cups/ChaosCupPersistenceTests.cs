@@ -215,6 +215,14 @@ public sealed class ChaosCupPersistenceTests
             .Select(p => p.AthleteId).ShouldBe(decoded.Placements.Select(p => p.AthleteId).ToList());
         field.Standings.Count.ShouldBe(0);
         ChaosCupInvariants.ValidateStageDraw(setup.Source, field.Edition, field.Entrants, field.Draws.Where(d => d.StageIndex == 0).ToList(), 0);
+        ChaosCupInvariants.ValidateStageStandings(
+            setup.Source,
+            field.Edition,
+            field.Draws.Where(d => d.StageIndex == 0).ToList(),
+            field.Rounds.Where(r => r.StageIndex == 0).ToList(),
+            field.Standings.Where(s => s.StageIndex == 0).ToList(),
+            0,
+            setup.Rules);
     }
 
     private static async Task PersistCompleteStageZeroAsync(SaveStore store, Guid saveId, ChaosSetup setup)
@@ -235,6 +243,23 @@ public sealed class ChaosCupPersistenceTests
         rounds0.Count.ShouldBe(32 * ChaosCupFormat.RoundsPerGroup);
         standings0.Count.ShouldBe(ChaosCupFormat.EntrantCountForStage(0));
         ChaosCupInvariants.ValidateStageStandings(setup.Source, field.Edition, stage0, rounds0, standings0, 0, setup.Rules);
+        List<ChaosCupGroupStandingEntity> tampered = standings0.Select(s => new ChaosCupGroupStandingEntity
+        {
+            SourceSeasonId = s.SourceSeasonId,
+            SourceSeasonNumber = s.SourceSeasonNumber,
+            StageIndex = s.StageIndex,
+            GroupNumber = s.GroupNumber,
+            SaveAthleteId = s.SaveAthleteId,
+            GroupRank = s.GroupRank,
+            GroupScoreThousandths = 0,
+            BaseScoreThousandths = 0,
+            RoundWins = s.RoundWins,
+            RoundPlaceCountsJson = s.RoundPlaceCountsJson,
+            SportingColor = s.SportingColor,
+            IsAdvanced = s.IsAdvanced,
+        }).ToList();
+        Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateStageStandings(
+            setup.Source, field.Edition, stage0, rounds0, tampered, 0, setup.Rules));
         List<ChaosCupDrawEntity> stage1 = field.Draws.Where(d => d.StageIndex == 1).ToList();
         stage1.Count.ShouldBe(ChaosCupFormat.EntrantCountForStage(1));
         ChaosCupInvariants.ValidateStageDraw(setup.Source, field.Edition, field.Entrants, stage1, 1);
@@ -518,10 +543,18 @@ public sealed class ChaosCupPersistenceTests
         bool isFinal = ChaosCupFormat.IsFinalStage(stageIndex);
         foreach (int group in orderByGroup.Keys.OrderBy(g => g))
         {
-            List<int> ordered = orderByGroup[group].OrderBy(id => id).ToList();
+            List<int> drawOrder = orderByGroup[group];
+            Dictionary<int, int> positionByAthlete = drawOrder
+                .Select((id, index) => (Id: id, Position: index + 1))
+                .ToDictionary(x => x.Id, x => x.Position);
+            List<int> byScore = drawOrder.OrderBy(id => positionByAthlete[id]).ToList();
             for (int rank = 1; rank <= ChaosCupFormat.GroupSize; rank++)
             {
-                int athleteId = ordered[rank - 1];
+                int athleteId = byScore[rank - 1];
+                int position = positionByAthlete[athleteId];
+                int basePoints = setup.Rules.ScoringTable[position - 1] * RulesV1.FixedScale;
+                int score = checked(basePoints * ChaosCupFormat.RoundsPerGroup);
+                int wins = position == 1 ? ChaosCupFormat.RoundsPerGroup : 0;
                 context.ChaosCupGroupStandings.Add(new ChaosCupGroupStandingEntity
                 {
                     SourceSeasonId = setup.Source.Id,
@@ -530,10 +563,10 @@ public sealed class ChaosCupPersistenceTests
                     GroupNumber = group,
                     SaveAthleteId = athleteId,
                     GroupRank = rank,
-                    GroupScoreThousandths = 0,
-                    BaseScoreThousandths = 0,
-                    RoundWins = rank == 1 ? ChaosCupFormat.RoundsPerGroup : 0,
-                    RoundPlaceCountsJson = PlaceCountsJson(),
+                    GroupScoreThousandths = score,
+                    BaseScoreThousandths = score,
+                    RoundWins = wins,
+                    RoundPlaceCountsJson = PlaceCountsJson(position),
                     SportingColor = (int)setup.ColorByAthlete[athleteId],
                     IsAdvanced = !isFinal && rank <= ChaosCupFormat.AdvancingPerGroup,
                 });
@@ -610,10 +643,10 @@ public sealed class ChaosCupPersistenceTests
         return (row, rngAfter);
     }
 
-    private static string PlaceCountsJson()
+    private static string PlaceCountsJson(int position = 1)
     {
         List<int> counts = new(new int[ChaosCupFormat.GroupSize]);
-        counts[0] = ChaosCupFormat.RoundsPerGroup;
+        counts[position - 1] = ChaosCupFormat.RoundsPerGroup;
         return System.Text.Json.JsonSerializer.Serialize(counts);
     }
 

@@ -452,8 +452,8 @@ public static class ChaosCupInvariants
             .ToDictionary(g => g.Key, g => g.ToList());
 
         CheckStageGroups(source, edition, drawsByGroup, rounds, standingsByGroup, stageIndex, groupCount, isFinal, rules);
-        CheckStageCoverage(draws, standings, stageIndex);
-        CheckStageAdvancement(standings, stageIndex, isFinal);
+        CheckStageCoverage(draws, rounds, standings, stageIndex, groupCount);
+        CheckStageAdvancement(rounds, standings, stageIndex, isFinal, groupCount);
     }
 
     private static void CheckStageGroups(
@@ -476,7 +476,7 @@ public static class ChaosCupInvariants
             }
 
             List<ChaosCupRoundEntity> groupRounds = rounds
-                .Where(r => r.GroupNumber == group)
+                .Where(r => r.StageIndex == stageIndex && r.GroupNumber == group)
                 .OrderBy(r => r.RoundNumber)
                 .ToList();
             ValidateGroupRoundsContiguous(groupRounds, stageIndex, group);
@@ -505,8 +505,10 @@ public static class ChaosCupInvariants
 
     private static void CheckStageCoverage(
         IReadOnlyList<ChaosCupDrawEntity> draws,
+        IReadOnlyList<ChaosCupRoundEntity> rounds,
         IReadOnlyList<ChaosCupGroupStandingEntity> standings,
-        int stageIndex)
+        int stageIndex,
+        int groupCount)
     {
         HashSet<int> standingAthletes = standings.Select(s => s.SaveAthleteId).ToHashSet();
         if (standingAthletes.Count != standings.Count)
@@ -515,16 +517,65 @@ public static class ChaosCupInvariants
         }
 
         HashSet<int> drawnAthletes = draws.Select(d => d.SaveAthleteId).ToHashSet();
-        if (!standingAthletes.IsSubsetOf(drawnAthletes) || standingAthletes.Count != drawnAthletes.Count)
+        if (!standingAthletes.IsSubsetOf(drawnAthletes))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} standings must cover exactly the drawn athletes.");
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} standings must cover only drawn athletes.");
+        }
+
+        HashSet<int> completed = CompletedGroups(rounds, stageIndex, groupCount);
+        int expected = checked(completed.Count * ChaosCupFormat.GroupSize);
+        if (standings.Count != expected)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, expected {expected} standings, was {standings.Count}.");
+        }
+
+        HashSet<int> standingGroups = standings.Select(s => s.GroupNumber).ToHashSet();
+        if (!standingGroups.SetEquals(completed))
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} standings groups must match completed groups.");
         }
     }
 
+    private static HashSet<int> CompletedGroups(
+        IReadOnlyList<ChaosCupRoundEntity> rounds,
+        int stageIndex,
+        int groupCount)
+    {
+        foreach (ChaosCupRoundEntity row in rounds)
+        {
+            if (row.StageIndex != stageIndex)
+            {
+                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} contains a foreign stage {row.StageIndex} round.");
+            }
+
+            if (row.GroupNumber < 1 || row.GroupNumber > groupCount)
+            {
+                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} round group {row.GroupNumber} is out of range.");
+            }
+        }
+
+        Dictionary<int, int> countByGroup = rounds
+            .Where(r => r.StageIndex == stageIndex)
+            .GroupBy(r => r.GroupNumber)
+            .ToDictionary(g => g.Key, g => g.Count());
+        HashSet<int> completed = new();
+        foreach ((int group, int count) in countByGroup)
+        {
+            if (count == ChaosCupFormat.RoundsPerGroup)
+            {
+                completed.Add(group);
+            }
+        }
+
+        return completed;
+    }
+
     private static void CheckStageAdvancement(
+        IReadOnlyList<ChaosCupRoundEntity> rounds,
         IReadOnlyList<ChaosCupGroupStandingEntity> standings,
         int stageIndex,
-        bool isFinal)
+        bool isFinal,
+        int groupCount)
     {
         if (isFinal)
         {
@@ -536,11 +587,12 @@ public static class ChaosCupInvariants
             return;
         }
 
+        HashSet<int> completed = CompletedGroups(rounds, stageIndex, groupCount);
+        int expected = checked(completed.Count * ChaosCupFormat.AdvancingPerGroup);
         int advanced = standings.Count(s => s.IsAdvanced);
-        int expected = ChaosCupFormat.AdvancingCountForStage(stageIndex);
         if (advanced != expected)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must advance exactly {expected} athletes, was {advanced}.");
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, must advance exactly {expected} athletes, was {advanced}.");
         }
 
         foreach (ChaosCupGroupStandingEntity standing in standings)
@@ -796,6 +848,202 @@ public static class ChaosCupInvariants
         {
             throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must cover ranks 1..{ChaosCupFormat.GroupSize} exactly once.");
         }
+
+        CheckGroupStandingsMatchRounds(groupDraws, groupStandings, groupRounds, stageIndex, group, rules);
+    }
+
+    private sealed class DerivedGroupTotals
+    {
+        public required HashSet<int> Drawn { get; init; }
+
+        public required Dictionary<int, int> ScoreById { get; init; }
+
+        public required Dictionary<int, int> BaseById { get; init; }
+
+        public required Dictionary<int, int[]> CountsById { get; init; }
+    }
+
+    private static void CheckGroupStandingsMatchRounds(
+        List<ChaosCupDrawEntity> groupDraws,
+        List<ChaosCupGroupStandingEntity> groupStandings,
+        List<ChaosCupRoundEntity> groupRounds,
+        int stageIndex,
+        int group,
+        RulesV1 rules)
+    {
+        if (groupRounds.Count != ChaosCupFormat.RoundsPerGroup)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must hold exactly {ChaosCupFormat.RoundsPerGroup} rounds to rank standings, was {groupRounds.Count}.");
+        }
+
+        DerivedGroupTotals derived = AccumulateGroupTotals(groupDraws, groupRounds, stageIndex, group, rules);
+        VerifyGroupTotalsMatch(groupStandings, derived, stageIndex, group);
+        VerifyGroupRankOrder(groupStandings, derived, stageIndex, group);
+    }
+
+    private static DerivedGroupTotals AccumulateGroupTotals(
+        List<ChaosCupDrawEntity> groupDraws,
+        List<ChaosCupRoundEntity> groupRounds,
+        int stageIndex,
+        int group,
+        RulesV1 rules)
+    {
+        HashSet<int> drawn = groupDraws.Select(d => d.SaveAthleteId).ToHashSet();
+        Dictionary<int, int> scoreById = drawn.ToDictionary(id => id, _ => 0);
+        Dictionary<int, int> baseById = drawn.ToDictionary(id => id, _ => 0);
+        Dictionary<int, int[]> countsById = drawn.ToDictionary(id => id, _ => new int[ChaosCupFormat.GroupSize]);
+        Dictionary<int, int> runningById = drawn.ToDictionary(id => id, _ => 0);
+        foreach (ChaosCupRoundEntity row in groupRounds.OrderBy(r => r.RoundNumber))
+        {
+            AccumulateSingleRound(row, drawn, scoreById, baseById, countsById, runningById, stageIndex, group, rules);
+        }
+
+        return new DerivedGroupTotals { Drawn = drawn, ScoreById = scoreById, BaseById = baseById, CountsById = countsById };
+    }
+
+    private static void AccumulateSingleRound(
+        ChaosCupRoundEntity row,
+        HashSet<int> drawn,
+        Dictionary<int, int> scoreById,
+        Dictionary<int, int> baseById,
+        Dictionary<int, int[]> countsById,
+        Dictionary<int, int> runningById,
+        int stageIndex,
+        int group,
+        RulesV1 rules)
+    {
+        ChaosCupRoundPayloadDocument payload = ChaosCupRoundPayloadDocument.FromStored(row.PayloadJson);
+        if (payload.StageIndex != stageIndex || payload.GroupNumber != group || payload.RoundNumber != row.RoundNumber)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} payload identity is corrupt.");
+        }
+
+        ValidateRoundPayload(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
+        HashSet<int> roundAthletes = payload.Placements.Select(p => p.AthleteId).ToHashSet();
+        if (!roundAthletes.SetEquals(drawn))
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} must cover exactly its drawn athletes.");
+        }
+
+        foreach (RoundPayloadEntry placement in payload.Placements)
+        {
+            if (runningById[placement.AthleteId] != placement.CumulativeBeforeThousandths)
+            {
+                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} cumulative total for athlete {placement.AthleteId} breaks the immutable chain.");
+            }
+
+            checked
+            {
+                scoreById[placement.AthleteId] += placement.FinalThousandths;
+                baseById[placement.AthleteId] += placement.BaseThousandths;
+                runningById[placement.AthleteId] = placement.CumulativeAfterThousandths;
+            }
+
+            countsById[placement.AthleteId][placement.Position - 1]++;
+        }
+    }
+
+    private static void VerifyGroupTotalsMatch(
+        List<ChaosCupGroupStandingEntity> groupStandings,
+        DerivedGroupTotals derived,
+        int stageIndex,
+        int group)
+    {
+        foreach (ChaosCupGroupStandingEntity standing in groupStandings)
+        {
+            VerifySingleDerivedStanding(standing, derived, stageIndex, group);
+        }
+    }
+
+    private static void VerifySingleDerivedStanding(
+        ChaosCupGroupStandingEntity standing,
+        DerivedGroupTotals derived,
+        int stageIndex,
+        int group)
+    {
+        if (!derived.ScoreById.TryGetValue(standing.SaveAthleteId, out int expectedScore))
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} ranks athlete {standing.SaveAthleteId} outside its draw.");
+        }
+
+        if (standing.GroupScoreThousandths != expectedScore)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} score {standing.GroupScoreThousandths} does not match immutable rounds total {expectedScore}.");
+        }
+
+        if (standing.BaseScoreThousandths != derived.BaseById[standing.SaveAthleteId])
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} base {standing.BaseScoreThousandths} does not match immutable rounds total {derived.BaseById[standing.SaveAthleteId]}.");
+        }
+
+        int expectedWins = derived.CountsById[standing.SaveAthleteId][0];
+        if (standing.RoundWins != expectedWins)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} round wins {standing.RoundWins} does not match immutable rounds total {expectedWins}.");
+        }
+
+        List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
+        if (counts is null || counts.Count != ChaosCupFormat.GroupSize)
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing has corrupt round-place counts.");
+        }
+
+        int[] expectedCounts = derived.CountsById[standing.SaveAthleteId];
+        for (int i = 0; i < expectedCounts.Length; i++)
+        {
+            if (counts[i] != expectedCounts[i])
+            {
+                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} place counts do not match immutable rounds.");
+            }
+        }
+    }
+
+    private static void VerifyGroupRankOrder(
+        List<ChaosCupGroupStandingEntity> groupStandings,
+        DerivedGroupTotals derived,
+        int stageIndex,
+        int group)
+    {
+        List<int> expectedOrder = derived.Drawn.OrderBy(id => id).ToList();
+        expectedOrder.Sort((left, right) => CompareDerivedAthletes(left, right, derived.ScoreById, derived.BaseById, derived.CountsById));
+        List<int> actualOrder = groupStandings.OrderBy(s => s.GroupRank).Select(s => s.SaveAthleteId).ToList();
+        if (!expectedOrder.SequenceEqual(actualOrder))
+        {
+            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} ranks do not follow derived round totals.");
+        }
+    }
+
+    private static int CompareDerivedAthletes(
+        int left,
+        int right,
+        Dictionary<int, int> scoreById,
+        Dictionary<int, int> baseById,
+        Dictionary<int, int[]> countsById)
+    {
+        int score = scoreById[right].CompareTo(scoreById[left]);
+        if (score != 0)
+        {
+            return score;
+        }
+
+        int[] leftCounts = countsById[left];
+        int[] rightCounts = countsById[right];
+        for (int i = 0; i < leftCounts.Length; i++)
+        {
+            int place = rightCounts[i].CompareTo(leftCounts[i]);
+            if (place != 0)
+            {
+                return place;
+            }
+        }
+
+        int baseScore = baseById[right].CompareTo(baseById[left]);
+        if (baseScore != 0)
+        {
+            return baseScore;
+        }
+
+        return left.CompareTo(right);
     }
 
     private static void CheckSingleStanding(
