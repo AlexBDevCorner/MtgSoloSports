@@ -146,6 +146,59 @@ public sealed class ChaosCupPersistenceTests
     }
 
     [Fact]
+    public async Task EntrantColorSwap_IsRejectedByEditionChecksum()
+    {
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-chaos-checksum-");
+        try
+        {
+            (Guid _, ChaosSetup setup) = await PrepareFieldAsync(store, 9351UL, 9352UL);
+            string checksum = ChaosCupInvariants.ComputeEditionChecksum(setup.Entrants);
+            ChaosCupEditionEntity edition = NewEdition(setup, checksum);
+            ChaosCupInvariants.ValidateEntrants(setup.Source, edition, setup.Entrants);
+
+            List<ChaosCupEntrantEntity> swapped = CloneEntrants(setup.Entrants);
+            ChaosCupEntrantEntity firstWhite = swapped.First(e => (SportingColor)e.SportingColor == SportingColor.White);
+            ChaosCupEntrantEntity firstBlue = swapped.First(e => (SportingColor)e.SportingColor == SportingColor.Blue);
+            (firstBlue.SportingColor, firstWhite.SportingColor) = (firstWhite.SportingColor, firstBlue.SportingColor);
+
+            ChaosCupInvariants.ComputeEditionChecksum(swapped).Equals(checksum, StringComparison.Ordinal).ShouldBeFalse();
+            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, swapped));
+
+            ChaosCupEditionEntity tamperedEdition = NewEdition(setup, new string('0', 64));
+            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, tamperedEdition, setup.Entrants));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task EntrantSourceDivision_IsCoveredByEditionChecksum()
+    {
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-chaos-checksum-src-");
+        try
+        {
+            (Guid _, ChaosSetup setup) = await PrepareFieldAsync(store, 9361UL, 9362UL);
+            string checksum = ChaosCupInvariants.ComputeEditionChecksum(setup.Entrants);
+            ChaosCupEditionEntity edition = NewEdition(setup, checksum);
+
+            List<ChaosCupEntrantEntity> tampered = CloneEntrants(setup.Entrants);
+            ChaosCupEntrantEntity leagueEntrant = tampered.First(e => !e.IsPoolInvite);
+            leagueEntrant.SourceLeagueId = checked((leagueEntrant.SourceLeagueId ?? 1) + 100000);
+            leagueEntrant.SourceLeagueKind += 7;
+            leagueEntrant.SourceFeederDivision += 11;
+
+            ChaosCupInvariants.ComputeEditionChecksum(tampered).Equals(checksum, StringComparison.Ordinal).ShouldBeFalse();
+            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, tampered));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task ExistingSaves_MigrateWithoutPastResultChanges()
     {
         var (store, root) = TestSaveStores.CreateStore("mtgsolosports-chaos-migrate-");
@@ -658,6 +711,38 @@ public sealed class ChaosCupPersistenceTests
         List<ChaosCupRoundEntity> rounds = await context.ChaosCupRounds.AsNoTracking().Where(e => e.SourceSeasonId == sourceSeasonId).ToListAsync().ConfigureAwait(false);
         List<ChaosCupGroupStandingEntity> standings = await context.ChaosCupGroupStandings.AsNoTracking().Where(e => e.SourceSeasonId == sourceSeasonId).ToListAsync().ConfigureAwait(false);
         return new ChaosField(edition, entrants, draws, rounds, standings);
+    }
+
+    private static ChaosCupEditionEntity NewEdition(ChaosSetup setup, string checksum)
+    {
+        return new ChaosCupEditionEntity
+        {
+            SourceSeasonId = setup.Source.Id,
+            SourceSeasonNumber = setup.Source.SeasonNumber,
+            RulesVersion = setup.Rules.Version,
+            ChaosFormatVersion = ChaosCupFormat.ChaosFormatVersion,
+            FieldSize = ChaosCupFormat.FieldSize,
+            RngBeforeState = 7001,
+            RngBeforeStream = 7002,
+            RngAfterState = 7003,
+            RngAfterStream = 7004,
+            EditionChecksum = checksum,
+        };
+    }
+
+    private static List<ChaosCupEntrantEntity> CloneEntrants(List<ChaosCupEntrantEntity> entrants)
+    {
+        return entrants.Select(e => new ChaosCupEntrantEntity
+        {
+            SourceSeasonId = e.SourceSeasonId,
+            SourceSeasonNumber = e.SourceSeasonNumber,
+            SaveAthleteId = e.SaveAthleteId,
+            SportingColor = e.SportingColor,
+            SourceLeagueId = e.SourceLeagueId,
+            SourceLeagueKind = e.SourceLeagueKind,
+            SourceFeederDivision = e.SourceFeederDivision,
+            IsPoolInvite = e.IsPoolInvite,
+        }).ToList();
     }
 
     private static ChaosCupEditionEntity DuplicateEdition(ChaosSetup setup, ChaosField field)

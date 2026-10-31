@@ -121,10 +121,26 @@ public static class ChaosCupInvariants
 
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
         {
-            if (!perColor.TryGetValue(color, out int count) || count != ChaosCupFormat.EntrantsPerColor)
-            {
-                throw new InvalidOperationException($"Chaos Cup field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {count}.");
-            }
+            CheckEntrantColorQuota(perColor, color);
+        }
+
+        CheckEditionChecksum(edition, entrants);
+    }
+
+    private static void CheckEntrantColorQuota(Dictionary<SportingColor, int> perColor, SportingColor color)
+    {
+        if (!perColor.TryGetValue(color, out int count) || count != ChaosCupFormat.EntrantsPerColor)
+        {
+            throw new InvalidOperationException($"Chaos Cup field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {count}.");
+        }
+    }
+
+    private static void CheckEditionChecksum(ChaosCupEditionEntity edition, IReadOnlyList<ChaosCupEntrantEntity> entrants)
+    {
+        string expectedChecksum = ComputeEditionChecksum(entrants);
+        if (!string.Equals(edition.EditionChecksum, expectedChecksum, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Chaos Cup edition checksum does not match its frozen entrants.");
         }
     }
 
@@ -637,6 +653,12 @@ public static class ChaosCupInvariants
             builder.Append(row.SportingColor);
             builder.Append(':');
             builder.Append(row.IsPoolInvite ? 'P' : 'L');
+            builder.Append(':');
+            builder.Append(row.SourceLeagueId.HasValue ? row.SourceLeagueId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "-");
+            builder.Append(':');
+            builder.Append(row.SourceLeagueKind.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            builder.Append(':');
+            builder.Append(row.SourceFeederDivision.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.Append('\n');
         }
 
