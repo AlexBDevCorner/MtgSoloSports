@@ -274,7 +274,9 @@ MtgSoloSports.Features.Qualifiers.PlayFeederQualifierRound.PlayFeederQualifierRo
 MtgSoloSports.Features.Qualifiers.GetQualifierRounds.GetQualifierRoundsEndpoint.Map(app);
 RebalanceFeedersEndpoint.Map(app);
 GetRebalanceResultEndpoint.Map(app);
-SelectChaosCupFieldEndpoint.Map(app);
+// MSS-100: Chaos field handler stays DI-registered but its HTTP route is deferred
+// to MSS-106, which owns forward-only postseason activation and season/phase gating.
+// Do not map the Chaos field endpoint here.
 SelectColorCupTeamsEndpoint.Map(app);
 GetColorCupSelectionEndpoint.Map(app);
 GetColorCupSelectionReportEndpoint.Map(app);
