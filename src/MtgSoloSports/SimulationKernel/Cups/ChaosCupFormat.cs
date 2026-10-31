@@ -379,6 +379,11 @@ public static class ChaosCupFormat
                 throw new InvalidOperationException($"Chaos stage {stageIndex} field contains a null entrant.");
             }
 
+            if (entrant.AthleteId <= 0)
+            {
+                throw new InvalidOperationException($"Chaos stage {stageIndex} entrant has corrupt athlete id {entrant.AthleteId}.");
+            }
+
             if (!Enum.IsDefined(entrant.Color))
             {
                 throw new InvalidOperationException($"Chaos stage {stageIndex} entrant {entrant.AthleteId} has unknown sporting color {(int)entrant.Color}.");

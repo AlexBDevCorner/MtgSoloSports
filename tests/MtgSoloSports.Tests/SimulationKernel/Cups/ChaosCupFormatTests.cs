@@ -284,6 +284,21 @@ public sealed class ChaosCupFormatTests
         Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateStageGroups(1, stage, groups));
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void StageGroups_NonPositiveAthleteId_Rejected(int badId)
+    {
+        List<ChaosCupFormat.ChaosEntrant> stage = Enumerable.Range(1, 512)
+            .Select(id => new ChaosCupFormat.ChaosEntrant(id, (SportingColor)((id - 1) % 2 == 0 ? 0 : 1)))
+            .ToList();
+        stage[0] = new ChaosCupFormat.ChaosEntrant(badId, stage[0].Color);
+        List<IReadOnlyList<ChaosCupFormat.ChaosEntrant>> groups = Enumerable.Range(0, 16)
+            .Select(g => (IReadOnlyList<ChaosCupFormat.ChaosEntrant>)stage.Skip(g * 32).Take(32).ToList())
+            .ToList();
+        Should.Throw<InvalidOperationException>(() => ChaosCupFormat.ValidateStageGroups(1, stage, groups));
+    }
+
     [Fact]
     public void LaterStages_AcceptPureRandomColorMix()
     {
