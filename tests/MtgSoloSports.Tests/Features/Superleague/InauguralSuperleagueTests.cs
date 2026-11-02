@@ -103,33 +103,24 @@ public sealed class InauguralSuperleagueTests
     [Fact]
     public async Task Create_SameSeed_ProducesSameRoster()
     {
-        // MSS-067: one Season 1 simulation forked into two isolated saves instead
-        // of simulating the same season twice; both transitions still execute
-        // independently from bit-identical starting state.
-        var (firstStore, firstRoot) = CreateStore();
+        // MSS-122: two isolated forks of the shared Season 1 template; both
+        // transitions still execute independently (determinism holds for any seed).
+        var (firstStore, firstRoot, firstId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
+        var (secondStore, secondRoot, secondId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
         try
         {
-            SaveStore.CreationRecord first = await firstStore.CreateAsync("Inaugural A", 9001UL, 7002UL, UniverseTestCatalog.Build());
-            await CompleteSeasonOneAsync(firstStore, first.Detail.SaveId);
-            var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(firstStore, first.Detail.SaveId, "mtgsolosports-inaugural-");
-            try
-            {
-                CreateInauguralSuperleagueHandler firstHandler = new(firstStore);
-                CreateInauguralSuperleagueHandler secondHandler = new(secondStore);
-                CreateInauguralSuperleagueResponse responseA = await firstHandler.HandleAsync(first.Detail.SaveId);
-                CreateInauguralSuperleagueResponse responseB = await secondHandler.HandleAsync(secondId);
+            CreateInauguralSuperleagueHandler firstHandler = new(firstStore);
+            CreateInauguralSuperleagueHandler secondHandler = new(secondStore);
+            CreateInauguralSuperleagueResponse responseA = await firstHandler.HandleAsync(firstId);
+            CreateInauguralSuperleagueResponse responseB = await secondHandler.HandleAsync(secondId);
 
-                responseA.Members.Select(m => m.Name).ShouldBe(responseB.Members.Select(m => m.Name).ToList());
-                responseA.Members.Select(m => m.FromSeasonRank).ShouldBe(responseB.Members.Select(m => m.FromSeasonRank).ToList());
-            }
-            finally
-            {
-                TestSaveStores.DeleteRoot(secondRoot);
-            }
+            responseA.Members.Select(m => m.Name).ShouldBe(responseB.Members.Select(m => m.Name).ToList());
+            responseA.Members.Select(m => m.FromSeasonRank).ShouldBe(responseB.Members.Select(m => m.FromSeasonRank).ToList());
         }
         finally
         {
             Directory.Delete(firstRoot, recursive: true);
+            TestSaveStores.DeleteRoot(secondRoot);
         }
     }
 
