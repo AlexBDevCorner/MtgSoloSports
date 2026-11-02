@@ -266,7 +266,11 @@ public sealed class GetAthleteProfileHandler
             .ConfigureAwait(false);
         int colorTeams = await CountColorTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         int typeTeams = await CountTypeTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
-        return checked(individual + colorTeams + typeTeams);
+        int chaos = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .CountAsync(e => e.SaveAthleteId == athleteId && e.StageIndex == 5 && e.GroupRank >= 1 && e.GroupRank <= 3, cancellationToken)
+            .ConfigureAwait(false);
+        return checked(individual + colorTeams + typeTeams + chaos);
     }
 
     internal static async Task<int> CountColorTeamPodiumsForAthleteAsync(
@@ -364,11 +368,35 @@ public sealed class GetAthleteProfileHandler
         honours.AddRange(await DeriveIndividualPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
         honours.AddRange(await DeriveColorTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
         honours.AddRange(await DeriveTypeTeamPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
+        honours.AddRange(await DeriveChaosPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false));
         return honours
             .OrderBy(e => e.SeasonNumber)
             .ThenBy(e => e.LeagueName, StringComparer.Ordinal)
             .ThenBy(e => e.HonourKind, StringComparer.Ordinal)
             .ToList();
+    }
+
+    internal static async Task<List<AthleteHonourDto>> DeriveChaosPodiumsForAthleteAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        List<ChaosCupGroupStandingEntity> rows = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId && e.StageIndex == 5 && e.GroupRank >= 1 && e.GroupRank <= 3)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<AthleteHonourDto> honours = new(rows.Count);
+        foreach (ChaosCupGroupStandingEntity row in rows)
+        {
+            Records.HonourKind kind = Records.HonourKindMapper.FromChaosCupIndividualRank(row.GroupRank);
+            honours.Add(new AthleteHonourDto(
+                row.SourceSeasonNumber,
+                Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler.ChaosHonourLeagueName,
+                kind.ToString()));
+        }
+
+        return honours;
     }
 
     internal static async Task<List<AthleteHonourDto>> DeriveLeaguePodiumsForAthleteAsync(

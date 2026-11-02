@@ -47,7 +47,8 @@ public static class HonourKindMapper
         (int)HonourKind.SuperleagueTitle or
         (int)HonourKind.ColorCupIndividualChampion or
         (int)HonourKind.ColorCupTeamChampion or
-        (int)HonourKind.TypeCupTeamChampion;
+        (int)HonourKind.TypeCupTeamChampion or
+        (int)HonourKind.ChaosCupIndividualChampion;
 
     /// <summary>
     /// True for league podium honours (titles plus runner-up and third place).
@@ -91,5 +92,17 @@ public static class HonourKindMapper
         2 => HonourKind.TypeCupTeamRunnerUp,
         3 => HonourKind.TypeCupTeamThirdPlace,
         _ => throw new ArgumentOutOfRangeException(nameof(teamRank), $"Team rank {teamRank} is not a podium honour."),
+    };
+
+    /// <summary>
+    /// Resolves the Chaos Cup individual honour kind for a Final rank 1..3.
+    /// Only the Final podium are honours; group wins and exits never qualify.
+    /// </summary>
+    public static HonourKind FromChaosCupIndividualRank(int cupRank) => cupRank switch
+    {
+        1 => HonourKind.ChaosCupIndividualChampion,
+        2 => HonourKind.ChaosCupIndividualRunnerUp,
+        3 => HonourKind.ChaosCupIndividualThirdPlace,
+        _ => throw new ArgumentOutOfRangeException(nameof(cupRank), $"Chaos Cup rank {cupRank} is not a podium honour."),
     };
 }

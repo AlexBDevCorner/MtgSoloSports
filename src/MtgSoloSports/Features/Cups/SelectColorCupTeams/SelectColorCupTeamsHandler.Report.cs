@@ -128,7 +128,8 @@ public sealed partial class SelectColorCupTeamsHandler
         SelectionCareerPrestige.BreakdownFor(
             scored.AthleteId, careerByAthlete,
             out int careerSuper, out int careerF1, out int careerF2, out int careerF3,
-            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam);
+            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam,
+            out int careerChaos);
 
         return new ColorCupSelectionReportDocument.Candidate(
             scored.AthleteId, scored.SelectionRank, scored.FinalRatingThousandths,
@@ -138,7 +139,7 @@ public sealed partial class SelectColorCupTeamsHandler
             unadjustedPerformance, unadjustedForm,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             careerSuper, careerF1, careerF2, careerF3,
-            careerIndividual, careerColorTeam, careerTypeTeam);
+            careerIndividual, careerColorTeam, careerTypeTeam, careerChaos);
     }
 
     internal static void AddReport(

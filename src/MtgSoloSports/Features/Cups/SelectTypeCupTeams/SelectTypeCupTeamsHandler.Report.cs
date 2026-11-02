@@ -82,7 +82,8 @@ public sealed partial class SelectTypeCupTeamsHandler
         SelectionCareerPrestige.BreakdownFor(
             candidate.AthleteId, careerByAthlete,
             out int careerSuper, out int careerF1, out int careerF2, out int careerF3,
-            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam);
+            out int careerIndividual, out int careerColorTeam, out int careerTypeTeam,
+            out int careerChaos);
 
         return new TypeCupSelectionReportDocument.Candidate(
             candidate.AthleteId,
@@ -107,7 +108,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             unadjustedForm,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             careerSuper, careerF1, careerF2, careerF3,
-            careerIndividual, careerColorTeam, careerTypeTeam);
+            careerIndividual, careerColorTeam, careerTypeTeam, careerChaos);
     }
 
     internal static List<TypeCupSelectionReportDocument.Alternative> BuildAlternatives(

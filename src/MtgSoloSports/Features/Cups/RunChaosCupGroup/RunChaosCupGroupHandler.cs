@@ -566,6 +566,12 @@ public sealed class RunChaosCupGroupHandler
         });
     }
 
+    internal const int ChaosHonourLeagueId = -4;
+
+    internal const int ChaosHonourLeagueKind = -5;
+
+    internal const string ChaosHonourLeagueName = "Chaos Cup";
+
     private static void PersistStandings(
         SaveDbContext context,
         GroupState state,
@@ -584,6 +590,62 @@ public sealed class RunChaosCupGroupHandler
         foreach (ChaosCupGroupStandingEntity row in rows)
         {
             context.ChaosCupGroupStandings.Add(row);
+        }
+
+        if (ChaosCupFormat.IsFinalStage(stageIndex))
+        {
+            PersistFinalHonours(context, state, rows);
+        }
+    }
+
+    /// <summary>
+    /// Records only the Final podium (P1..P3) as official honours. No group-win
+    /// title, no bonus, no promotion. Runs in the caller's standings
+    /// transaction so standings and honours commit atomically; retries reuse
+    /// persisted standings and never duplicate honours.
+    /// </summary>
+    internal static void PersistFinalHonours(
+        SaveDbContext context,
+        GroupState state,
+        List<ChaosCupGroupStandingEntity> rows)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(rows);
+        List<ChaosCupGroupStandingEntity> podium = rows
+            .Where(r => r.GroupRank is >= 1 and <= 3)
+            .OrderBy(r => r.GroupRank)
+            .ToList();
+        if (podium.Count != 3)
+        {
+            throw new InvalidOperationException($"Chaos Cup Final must hold exactly three podium finishers, was {podium.Count}.");
+        }
+
+        foreach (ChaosCupGroupStandingEntity standing in podium)
+        {
+            Features.Records.HonourKind kind =
+                Features.Records.HonourKindMapper.FromChaosCupIndividualRank(standing.GroupRank);
+            bool exists = context.Honours.Local.Any(e =>
+                e.SeasonId == state.Source.Id
+                && e.SeasonNumber == state.Source.SeasonNumber
+                && e.LeagueId == ChaosHonourLeagueId
+                && e.SaveAthleteId == standing.SaveAthleteId
+                && e.Kind == (int)kind);
+            if (exists)
+            {
+                continue;
+            }
+
+            context.Honours.Add(new HonourEntity
+            {
+                SeasonId = state.Source.Id,
+                SeasonNumber = state.Source.SeasonNumber,
+                LeagueId = ChaosHonourLeagueId,
+                LeagueName = ChaosHonourLeagueName,
+                LeagueKind = ChaosHonourLeagueKind,
+                SaveAthleteId = standing.SaveAthleteId,
+                Kind = (int)kind,
+            });
         }
     }
 

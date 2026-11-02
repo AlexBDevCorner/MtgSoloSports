@@ -47,6 +47,10 @@ public static class SearchAthletesFilter
 
     public sealed record CupTypeTeamInput(int SourceSeasonId, string CreatureType, int TeamRank);
 
+    public sealed record CupChaosEntrantInput(int SaveAthleteId, int SourceSeasonId);
+
+    public sealed record CupChaosFinalInput(int SaveAthleteId, int CupRank);
+
     public sealed record HonourTotals(int Honours, int Titles, int CupAppearances, int CupPodiums, int CupTitles);
 
     /// <summary>
@@ -55,6 +59,9 @@ public static class SearchAthletesFilter
     /// Cup individual ranks 1..3 yield one honour each; team legs yield one honour
     /// when their team (same season + color/type) finished 1..3. Rank 4+ yields none.
     /// Every individual row and every team leg counts as one Cup appearance.
+    /// Chaos entrants each count one Cup appearance (completed editions only);
+    /// Chaos Final ranks 1..3 each yield one honour (rank 1 yields one title)
+    /// without an extra appearance since the entrant row already counted it.
     /// </summary>
     public static IReadOnlyDictionary<int, HonourTotals> AggregateHonours(
         IReadOnlyList<LeaguePodiumInput> leaguePodiums,
@@ -62,7 +69,9 @@ public static class SearchAthletesFilter
         IReadOnlyList<CupColorLegInput> colorLegs,
         IReadOnlyList<CupColorTeamInput> colorTeams,
         IReadOnlyList<CupTypeLegInput> typeLegs,
-        IReadOnlyList<CupTypeTeamInput> typeTeams)
+        IReadOnlyList<CupTypeTeamInput> typeTeams,
+        IReadOnlyList<CupChaosEntrantInput> chaosEntrants,
+        IReadOnlyList<CupChaosFinalInput> chaosFinals)
     {
         ArgumentNullException.ThrowIfNull(leaguePodiums);
         ArgumentNullException.ThrowIfNull(individuals);
@@ -70,12 +79,16 @@ public static class SearchAthletesFilter
         ArgumentNullException.ThrowIfNull(colorTeams);
         ArgumentNullException.ThrowIfNull(typeLegs);
         ArgumentNullException.ThrowIfNull(typeTeams);
+        ArgumentNullException.ThrowIfNull(chaosEntrants);
+        ArgumentNullException.ThrowIfNull(chaosFinals);
 
         Dictionary<int, HonourTotals> totals = [];
         AddLeaguePodiums(totals, leaguePodiums);
         AddIndividuals(totals, individuals);
         AddColorLegs(totals, colorLegs, colorTeams);
         AddTypeLegs(totals, typeLegs, typeTeams);
+        AddChaosEntrants(totals, chaosEntrants);
+        AddChaosFinals(totals, chaosFinals);
         return totals;
     }
 
@@ -139,6 +152,32 @@ public static class SearchAthletesFilter
             bool podium = hasTeam && teamRank is >= 1 and <= 3;
             bool title = hasTeam && teamRank == 1;
             Add(totals, leg.SaveAthleteId, podium ? 1 : 0, title ? 1 : 0, 1, podium ? 1 : 0, title ? 1 : 0);
+        }
+    }
+
+    private static void AddChaosEntrants(
+        Dictionary<int, HonourTotals> totals,
+        IReadOnlyList<CupChaosEntrantInput> chaosEntrants)
+    {
+        foreach (CupChaosEntrantInput entrant in chaosEntrants)
+        {
+            Add(totals, entrant.SaveAthleteId, 0, 0, 1, 0, 0);
+        }
+    }
+
+    private static void AddChaosFinals(
+        Dictionary<int, HonourTotals> totals,
+        IReadOnlyList<CupChaosFinalInput> chaosFinals)
+    {
+        foreach (CupChaosFinalInput final in chaosFinals)
+        {
+            if (final.CupRank is < 1 or > 3)
+            {
+                continue;
+            }
+
+            bool title = final.CupRank == 1;
+            Add(totals, final.SaveAthleteId, 1, title ? 1 : 0, 0, 1, title ? 1 : 0);
         }
     }
 

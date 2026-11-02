@@ -272,7 +272,7 @@ Automatic selection rating:
 
 Each component is normalized within the color. The four highest scores make the team and are ordered #1-#4 by selection rating.
 
-Career prestige (MSS-096, shared Career Leaders points, MSS-083-v1 weights, exact integer-only) is the same weighted full-placement career history used by Career Leaders, through the selected source season, including nonpodium league and Cup results. Honours, titles and prestige are different concepts: an honour is any top-three finish shown in career history; a title is a first-place honour; prestige is the weighted career-performance total where competition level and field size matter. Prestige raw is the athlete's total career points; the seven career-category points (Superleague, Feeder 1/2/3, Color Cup individual, Color Cup team, Type Cup team) sum exactly to prestige raw. Every finalized placement scores positive; medals never add a second bonus beyond the placement itself; a Type Cup finalist never also takes qualification credit. The outer prestige weight stays 10% (35/30/25/10 unchanged), normalized per sporting color for Color Cup and globally for Type Cup; normalization removes uniform internal-unit scaling.
+Career prestige (MSS-096, shared Career Leaders points, MSS-104-v1 weights, exact integer-only) is the same weighted full-placement career history used by Career Leaders, through the selected source season, including nonpodium league and Cup results. Honours, titles and prestige are different concepts: an honour is any top-three finish shown in career history; a title is a first-place honour; prestige is the weighted career-performance total where competition level and field size matter. Prestige raw is the athlete's total career points; the eight career-category points (Superleague, Feeder 1/2/3, Color Cup individual, Color Cup team, Type Cup team, Chaos Cup individual) sum exactly to prestige raw. Every finalized placement scores positive; medals never add a second bonus beyond the placement itself; a Type Cup finalist never also takes qualification credit. Chaos eliminations share one fixed credit per exit stage (10/7/4/2/1) with no global 33..1024 ranks; the Chaos Final uses weight 450 over 32 places (champion 675, last place 13 strictly above the best exit). The outer prestige weight stays 10% (35/30/25/10 unchanged), normalized per sporting color for Color Cup and globally for Type Cup; normalization removes uniform internal-unit scaling.
 
 Historical win-only prestige (Rules v3 tiered model, quarter-prestige-points with scale 4, v1-v3 selection reports) distinguished only titles, Superleague appearances, stage podiums and major Cup titles:
 
@@ -282,7 +282,7 @@ Historical win-only prestige (Rules v3 tiered model, quarter-prestige-points wit
 - Major Cup championship: Color Cup individual title 150 (600), Color Cup team title 150 (600), Type Cup team title 150 (600, Final champion only).
 - Cup runner-up/third-place honours remain honours but added no prestige (win-only). Type Cup qualification-group wins persisted no honour and added no prestige; only the Final champion was the official Type Cup title.
 - Feeder titles resolved via the persisted league level of the honour's own competition (historical v1 single-feeder titles count as Feeder 1). Stage podiums resolved via each stage row's own league, never current membership, so relegated athletes kept earlier higher-tier prestige. Prestige was cumulative with no time decay.
-- Rules v1 snapshots keep their original integer prestige constants (feeder 100, Superleague title 300, appearance 20, stage 10/5/2, other major 150) and remain readable; tiered v3 saves used the model above. v1-v3 selection reports carry the win-only breakdown (titles by level, appearances, stage podiums by level, major Cups, total raw) summing exactly to prestige raw and are never rewritten. v4 reports carry the career breakdown plus `MSS-083-v1` weights version; legacy win-only fields are zero for v4.
+- Rules v1 snapshots keep their original integer prestige constants (feeder 100, Superleague title 300, appearance 20, stage 10/5/2, other major 150) and remain readable; tiered v3 saves used the model above. v1-v3 selection reports carry the win-only breakdown (titles by level, appearances, stage podiums by level, major Cups, total raw) summing exactly to prestige raw and are never rewritten. v4 reports carry the career breakdown plus `MSS-104-v1` weights version (MSS-083 values unchanged for pre-Chaos categories, Chaos zero on old saves); legacy win-only fields are zero for v4.
 
 Competition strength (Rules v2, selection-rating only): Superleague 1000 permille (1.00), Feeder 1 800 (0.80), Feeder 2 600 (0.60), Feeder 3 400 (0.40). Performance raw is source-season championship points × source-league factor / 1000 (checked integer truncation). Recent form is exactly the completed source season's final ten league stages (stages 23-32 under 32-stage rules, generalized from the snapshot) weighted 1..10 oldest-to-newest, then × source-league factor / 1000. Only active athletes are candidates (MSS-097); pool athletes cannot qualify even with high bonus or career prestige. Active athletes must present a complete final-ten window or selection aborts.
 
@@ -336,13 +336,14 @@ Season 1 includes the special inaugural-Superleague creation.
 
 The application retains permanent career and historical data including league positions, stage/round wins, titles, Cup medals, promotion/relegation, Superleague tenure, bonus history, selections and Type Cup nationality.
 
-Official major honours (MSS-047: each podium finish counts as one honour):
+Official major honours (MSS-047: each podium finish counts as one honour; MSS-104 adds Chaos):
 
 - eight feeder-league championships plus eight runner-up and eight third-place honours per season;
 - Superleague championship plus runner-up and third-place honours per season from Season 2;
 - Color Cup individual championship plus runner-up and third-place honours;
 - Color Cup team championship plus runner-up and third-place honours (four members each);
-- Type Cup team championship plus runner-up and third-place honours (four members each).
+- Type Cup team championship plus runner-up and third-place honours (four members each);
+- Chaos Cup individual championship plus runner-up and third-place honours (Final P1..P3 only, one honour each; no group-win honour).
 
 A win/title/championship remains a 1st-place result only; an honour is any top-three
 finish. Stages are important statistics, not major trophies. Qualifier success is a career event, not a major title.

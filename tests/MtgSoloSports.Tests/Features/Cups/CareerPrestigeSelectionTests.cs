@@ -71,8 +71,8 @@ public sealed class CareerPrestigeSelectionTests
         var empty = new Dictionary<int, CareerPerformanceScorer.AthleteCareerScore>();
         SelectionCareerPrestige.PrestigeRawFor(99, empty).ShouldBe(0);
         SelectionCareerPrestige.BreakdownFor(99, empty,
-            out int s0, out int f10, out int f20, out int f30, out int ci0, out int ct0, out int tt0);
-        new[] { s0, f10, f20, f30, ci0, ct0, tt0 }.ShouldAllBe(x => x == 0);
+            out int s0, out int f10, out int f20, out int f30, out int ci0, out int ct0, out int tt0, out int ch0);
+        new[] { s0, f10, f20, f30, ci0, ct0, tt0, ch0 }.ShouldAllBe(x => x == 0);
 
         var events = new List<CareerPerformanceScorer.PlacementEvent>();
         for (int season = 1; season <= 30; season++)
@@ -90,8 +90,8 @@ public sealed class CareerPrestigeSelectionTests
         first[5].ScoredEvents.ShouldBe(30);
 
         SelectionCareerPrestige.BreakdownFor(5, first,
-            out int s, out int f1, out int f2, out int f3, out int ci, out int ct, out int tt);
-        checked(s + f1 + f2 + f3 + ci + ct + tt).ShouldBe(first[5].TotalPoints);
+            out int s, out int f1, out int f2, out int f3, out int ci, out int ct, out int tt, out int ch);
+        checked(s + f1 + f2 + f3 + ci + ct + tt + ch).ShouldBe(first[5].TotalPoints);
         s.ShouldBe(first[5].TotalPoints);
         f1.ShouldBe(0);
     }
@@ -136,11 +136,12 @@ public sealed class CareerPrestigeSelectionTests
             "Superleague", (int)LeagueLevel.Superleague, 1000, 10_000, 55_000,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             career.SuperleaguePoints, career.Feeder1Points, career.Feeder2Points, career.Feeder3Points,
-            career.ColorCupIndividualPoints, career.ColorCupTeamPoints, career.TypeCupTeamPoints);
+            career.ColorCupIndividualPoints, career.ColorCupTeamPoints, career.TypeCupTeamPoints,
+            career.ChaosCupIndividualPoints);
         int colorSum = colorCandidate.PrestigeCareerSuperleaguePoints + colorCandidate.PrestigeCareerFeeder1Points
             + colorCandidate.PrestigeCareerFeeder2Points + colorCandidate.PrestigeCareerFeeder3Points
             + colorCandidate.PrestigeCareerColorIndividualPoints + colorCandidate.PrestigeCareerColorTeamPoints
-            + colorCandidate.PrestigeCareerTypeTeamPoints;
+            + colorCandidate.PrestigeCareerTypeTeamPoints + colorCandidate.PrestigeCareerChaosCupIndividualPoints;
         colorSum.ShouldBe(colorCandidate.PrestigeRaw);
         colorSum.ShouldBe(career.TotalPoints);
 
@@ -149,11 +150,12 @@ public sealed class CareerPrestigeSelectionTests
             "Superleague", (int)LeagueLevel.Superleague, 1000, 10_000, 55_000,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             career.SuperleaguePoints, career.Feeder1Points, career.Feeder2Points, career.Feeder3Points,
-            career.ColorCupIndividualPoints, career.ColorCupTeamPoints, career.TypeCupTeamPoints);
+            career.ColorCupIndividualPoints, career.ColorCupTeamPoints, career.TypeCupTeamPoints,
+            career.ChaosCupIndividualPoints);
         int typeSum = typeCandidate.PrestigeCareerSuperleaguePoints + typeCandidate.PrestigeCareerFeeder1Points
             + typeCandidate.PrestigeCareerFeeder2Points + typeCandidate.PrestigeCareerFeeder3Points
             + typeCandidate.PrestigeCareerColorIndividualPoints + typeCandidate.PrestigeCareerColorTeamPoints
-            + typeCandidate.PrestigeCareerTypeTeamPoints;
+            + typeCandidate.PrestigeCareerTypeTeamPoints + typeCandidate.PrestigeCareerChaosCupIndividualPoints;
         typeSum.ShouldBe(typeCandidate.PrestigeRaw);
         typeSum.ShouldBe(colorSum);
     }
@@ -173,10 +175,10 @@ public sealed class CareerPrestigeSelectionTests
             [new ColorCupSelectionReportDocument.Team(0, 1, [career])],
             CareerPerformanceScorer.WeightsVersion);
         v4.Version.ShouldBe(4);
-        v4.PrestigeWeightsVersion.ShouldBe("MSS-083-v1");
+        v4.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
         ColorCupSelectionReportDocument restoredV4 = ColorCupSelectionReportDocument.FromStored(v4.ToStored());
         restoredV4.Version.ShouldBe(4);
-        restoredV4.PrestigeWeightsVersion.ShouldBe("MSS-083-v1");
+        restoredV4.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
         ColorCupSelectionReportDocument.Candidate back = restoredV4.Teams[0].Ranking[0];
         SumCareer(back).ShouldBe(back.PrestigeRaw);
     }
@@ -208,13 +210,13 @@ public sealed class CareerPrestigeSelectionTests
         7, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, 1420,
         "White League", (int)LeagueLevel.Feeder1, 800, 10_000, 55_000,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        800, 400, 100, 50, 30, 20, 20);
+        800, 400, 100, 50, 30, 20, 20, 0);
 
     private static int SumCareer(ColorCupSelectionReportDocument.Candidate copy) =>
         copy.PrestigeCareerSuperleaguePoints + copy.PrestigeCareerFeeder1Points
             + copy.PrestigeCareerFeeder2Points + copy.PrestigeCareerFeeder3Points
             + copy.PrestigeCareerColorIndividualPoints + copy.PrestigeCareerColorTeamPoints
-            + copy.PrestigeCareerTypeTeamPoints;
+            + copy.PrestigeCareerTypeTeamPoints + copy.PrestigeCareerChaosCupIndividualPoints;
 
     [Fact]
     public void BothSelectionPaths_AreDeterministic_OnIdenticalCareerRaws()

@@ -224,11 +224,12 @@ public sealed class ListHonoursHandler
     /// <summary>
     /// Derives cup podium honours from authoritative cup standings tables.
     /// One honour per qualifying result: individual ranks 1..3 each yield one
-    /// honour; team ranks 1..min(3, N) each yield four honours (one per leg).
+    /// honour; team ranks 1..min(3, N) each yield four honours (one per leg);
+    /// Chaos Final ranks 1..3 each yield one honour (no group-win honour).
     /// Rank 4 or lower yields none. Never touches round payloads.
     /// Cup LeagueId/Name/Kind constants mirror the Cup slices to avoid
     /// cross-slice dependencies (0/Color Cup/-1, -1/Color Cup Team/-2,
-    /// -3/Type Cup Team/-4).
+    /// -3/Type Cup Team/-4, -4/Chaos Cup/-5).
     /// </summary>
     internal static async Task<List<HonourEntry>> DeriveCupPodiumsAsync(
         SaveDbContext context,
@@ -240,6 +241,45 @@ public sealed class ListHonoursHandler
         entries.AddRange(await DeriveIndividualPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
         entries.AddRange(await DeriveColorTeamPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
         entries.AddRange(await DeriveTypeTeamPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
+        entries.AddRange(await DeriveChaosPodiumsAsync(context, athleteId, names, cancellationToken).ConfigureAwait(false));
+        return entries;
+    }
+
+    internal static async Task<List<HonourEntry>> DeriveChaosPodiumsAsync(
+        SaveDbContext context,
+        int? athleteId,
+        Dictionary<int, string> names,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<ChaosCupGroupStandingEntity> query = context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.StageIndex == 5 && e.GroupRank >= 1 && e.GroupRank <= 3);
+        if (athleteId is not null)
+        {
+            query = query.Where(e => e.SaveAthleteId == athleteId.Value);
+        }
+
+        List<ChaosCupGroupStandingEntity> rows = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> resolvedNames = names.Count > 0 ? names : await context.SaveAthletes
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ConfigureAwait(false);
+        List<HonourEntry> entries = new(rows.Count);
+        foreach (ChaosCupGroupStandingEntity row in rows)
+        {
+            HonourKind kind = HonourKindMapper.FromChaosCupIndividualRank(row.GroupRank);
+            resolvedNames.TryGetValue(row.SaveAthleteId, out string? name);
+            entries.Add(new HonourEntry(
+                row.SourceSeasonNumber,
+                row.SourceSeasonId,
+                Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler.ChaosHonourLeagueId,
+                Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler.ChaosHonourLeagueName,
+                Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler.ChaosHonourLeagueKind,
+                kind.ToString(),
+                row.SaveAthleteId,
+                name ?? $"Athlete {row.SaveAthleteId}"));
+        }
+
         return entries;
     }
 

@@ -6,18 +6,20 @@ using Xunit;
 namespace MtgSoloSports.Tests.Features.Records;
 
 /// <summary>
-/// MSS-094 historical regression fixtures: locks the MSS-083-v1 career points
-/// formulas after extraction into SimulationKernel. Every expected integer is a
-/// persisted historical value; any change fails loudly instead of silently
-/// shifting Career Leaders totals or ordering for legacy (v1 single-feeder)
-/// and tiered (F1/F2/F3) saves.
+/// MSS-094 historical regression fixtures: locks the MSS-083 career points
+/// formulas after extraction into SimulationKernel, extended by MSS-104
+/// (Chaos 450, version MSS-104-v1). Every expected integer is a persisted
+/// historical value; any change fails loudly instead of silently shifting
+/// Career Leaders totals or ordering for legacy (v1 single-feeder) and tiered
+/// (F1/F2/F3) saves. Pre-Chaos totals are unchanged: old saves without Chaos
+/// rows score identically with zero Chaos points.
 /// </summary>
 public sealed class CareerPerformanceRegressionTests
 {
     [Fact]
     public void Weights_AreHistoricalConstants()
     {
-        CareerPerformanceScorer.WeightsVersion.ShouldBe("MSS-083-v1");
+        CareerPerformanceScorer.WeightsVersion.ShouldBe("MSS-104-v1");
         CareerPerformanceScorer.SuperleagueWeight.ShouldBe(1000);
         CareerPerformanceScorer.Feeder1Weight.ShouldBe(400);
         CareerPerformanceScorer.Feeder2Weight.ShouldBe(200);
@@ -25,6 +27,12 @@ public sealed class CareerPerformanceRegressionTests
         CareerPerformanceScorer.ColorCupIndividualWeight.ShouldBe(800);
         CareerPerformanceScorer.ColorCupTeamWeight.ShouldBe(600);
         CareerPerformanceScorer.TypeCupTeamWeight.ShouldBe(600);
+        CareerPerformanceScorer.ChaosCupIndividualWeight.ShouldBe(450);
+        CareerPerformanceScorer.ChaosExitPointsStageWith2Groups.ShouldBe(10);
+        CareerPerformanceScorer.ChaosExitPointsStageWith4Groups.ShouldBe(7);
+        CareerPerformanceScorer.ChaosExitPointsStageWith8Groups.ShouldBe(4);
+        CareerPerformanceScorer.ChaosExitPointsStageWith16Groups.ShouldBe(2);
+        CareerPerformanceScorer.ChaosExitPointsStageWith32Groups.ShouldBe(1);
         CareerPerformanceScorer.TeamSharePermille.ShouldBe(250);
         CareerPerformanceScorer.QualificationCreditPermille.ShouldBe(300);
         CareerPerformanceScorer.FirstPlacePremiumPermille.ShouldBe(1500);
@@ -43,6 +51,7 @@ public sealed class CareerPerformanceRegressionTests
         Score(CareerPerformanceScorer.Category.ColorCupIndividual, 1, 32, true).ShouldBe(1200);
         Score(CareerPerformanceScorer.Category.ColorCupTeam, 1, 8, true).ShouldBe(225);
         Score(CareerPerformanceScorer.Category.TypeCupTeam, 1, 4, true).ShouldBe(225);
+        Score(CareerPerformanceScorer.Category.ChaosCupIndividual, 1, 32, true).ShouldBe(675);
     }
 
     [Fact]
