@@ -164,6 +164,7 @@ builder.Services.AddScoped<RebalanceFeedersHandler>();
 builder.Services.AddScoped<GetRebalanceResultHandler>();
 builder.Services.AddScoped<SelectChaosCupFieldHandler>();
 builder.Services.AddScoped<RunChaosCupGroupHandler>();
+builder.Services.AddScoped<MtgSoloSports.Features.Cups.AdvanceChaosCupStage.AdvanceChaosCupStageHandler>();
 builder.Services.AddScoped<SelectColorCupTeamsHandler>();
 builder.Services.AddScoped<GetColorCupSelectionHandler>();
 builder.Services.AddScoped<GetColorCupSelectionReportHandler>();
