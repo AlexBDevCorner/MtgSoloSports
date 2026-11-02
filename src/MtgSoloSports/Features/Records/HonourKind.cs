@@ -16,7 +16,8 @@ namespace MtgSoloSports.Features.Records;
 /// each contribute exactly one honour. Champion/title kinds (values 0-4)
 /// remain win-only for prestige, records and title stories; runner-up and
 /// third-place kinds (values 5-14) represent Silver/2nd and Bronze/3rd honours
-/// for the same competitions.
+/// for the same competitions. MSS-104 adds the Chaos Cup individual podium
+/// (values 15-17): only Final P1..P3 are honours, no group-win title.
 /// </summary>
 public enum HonourKind
 {
@@ -35,4 +36,7 @@ public enum HonourKind
     ColorCupTeamThirdPlace = 12,
     TypeCupTeamRunnerUp = 13,
     TypeCupTeamThirdPlace = 14,
+    ChaosCupIndividualChampion = 15,
+    ChaosCupIndividualRunnerUp = 16,
+    ChaosCupIndividualThirdPlace = 17,
 }

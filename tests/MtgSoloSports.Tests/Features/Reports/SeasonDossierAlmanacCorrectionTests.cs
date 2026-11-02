@@ -92,14 +92,14 @@ public sealed class SeasonDossierAlmanacCorrectionTests
                 i, i, $"Top {i}", 0, "White",
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 1, 1,
-                10000 - i, 10000 - i, 0, 0, 0, 0, 0, 0, 0, 1));
+                10000 - i, 10000 - i, 0, 0, 0, 0, 0, 0, 0, 0, 1));
         }
 
         full.Add(new HallOfFameEntry(
             21, 999, "Streak Holder", 1, "Blue",
             0, 5, 5, 10, 10, 5, 5, 5, 0, 0, 0,
             5, 6,
-            1, 1, 0, 0, 0, 0, 0, 0, 0, 1));
+            1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1));
 
         IReadOnlyList<HallOfFameEntry> truncated = full.Take(20).ToList();
         (IReadOnlyList<StreakEntry> truncatedTitles, IReadOnlyList<StreakEntry> truncatedStages) =

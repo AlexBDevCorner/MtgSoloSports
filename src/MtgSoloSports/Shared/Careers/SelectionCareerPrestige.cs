@@ -3,17 +3,17 @@ using MtgSoloSports.SimulationKernel.Careers;
 namespace MtgSoloSports.Shared.Careers;
 
 /// <summary>
-/// Shared career-prestige bridge for squad selection (MSS-096).
+/// Shared career-prestige bridge for squad selection (MSS-096, Chaos MSS-104).
 /// New Color/Type Cup selections use the same weighted full-placement career
 /// history as Career Leaders: prestige raw is the athlete's total career
 /// points through the selected source season, including nonpodium league and
-/// Cup results. The seven career-category points sum exactly to prestige raw.
+/// Cup results. The eight career-category points sum exactly to prestige raw.
 /// Missing athletes (no finalized placements) map to zero prestige.
 /// Pure integer math, deterministic, no RNG/clock.
 /// </summary>
 public static class SelectionCareerPrestige
 {
-    public const string PrestigeSource = "Career-MSS-083-v1";
+    public const string PrestigeSource = "Career-MSS-104-v1";
 
     public static int PrestigeRawFor(
         int athleteId,
@@ -39,7 +39,8 @@ public static class SelectionCareerPrestige
         out int feeder3,
         out int colorIndividual,
         out int colorTeam,
-        out int typeTeam)
+        out int typeTeam,
+        out int chaosIndividual)
     {
         ArgumentNullException.ThrowIfNull(scores);
         if (athleteId <= 0)
@@ -56,6 +57,7 @@ public static class SelectionCareerPrestige
             colorIndividual = 0;
             colorTeam = 0;
             typeTeam = 0;
+            chaosIndividual = 0;
             return;
         }
 
@@ -66,6 +68,7 @@ public static class SelectionCareerPrestige
         colorIndividual = score.ColorCupIndividualPoints;
         colorTeam = score.ColorCupTeamPoints;
         typeTeam = score.TypeCupTeamPoints;
+        chaosIndividual = score.ChaosCupIndividualPoints;
         ValidateSum(athleteId, score);
     }
 
@@ -75,7 +78,8 @@ public static class SelectionCareerPrestige
         checked
         {
             int sum = score.SuperleaguePoints + score.Feeder1Points + score.Feeder2Points + score.Feeder3Points
-                + score.ColorCupIndividualPoints + score.ColorCupTeamPoints + score.TypeCupTeamPoints;
+                + score.ColorCupIndividualPoints + score.ColorCupTeamPoints + score.TypeCupTeamPoints
+                + score.ChaosCupIndividualPoints;
             if (sum != score.TotalPoints)
             {
                 throw new InvalidOperationException(
@@ -86,7 +90,8 @@ public static class SelectionCareerPrestige
         if (score.TotalPoints < 0
             || score.SuperleaguePoints < 0 || score.Feeder1Points < 0 || score.Feeder2Points < 0
             || score.Feeder3Points < 0 || score.ColorCupIndividualPoints < 0
-            || score.ColorCupTeamPoints < 0 || score.TypeCupTeamPoints < 0)
+            || score.ColorCupTeamPoints < 0 || score.TypeCupTeamPoints < 0
+            || score.ChaosCupIndividualPoints < 0)
         {
             throw new InvalidOperationException($"Career prestige for athlete {athleteId} has corrupt negative points.");
         }

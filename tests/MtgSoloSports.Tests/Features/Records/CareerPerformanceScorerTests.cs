@@ -109,9 +109,9 @@ public sealed class CareerPerformanceScorerTests
         List<HallOfFameEntry> ranked = GetHallOfFameHandler.RankEntries(
             [
                 new HallOfFameEntry(0, 2, "Beta", 0, "White", 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    scores[2].TotalPoints, 1500, 0, 0, 0, 0, 0, 0, 1, 1),
+                    scores[2].TotalPoints, 1500, 0, 0, 0, 0, 0, 0, 0, 1, 1),
                 new HallOfFameEntry(0, 1, "Alpha", 0, "White", 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    scores[1].TotalPoints, 1500, 0, 0, 0, 0, 0, 0, 1, 1),
+                    scores[1].TotalPoints, 1500, 0, 0, 0, 0, 0, 0, 0, 1, 1),
             ], 10);
         ranked[0].AthleteId.ShouldBe(1);
         ranked[0].Rank.ShouldBe(1);

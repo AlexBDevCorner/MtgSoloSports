@@ -16,10 +16,10 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// and adjusted form raw. v3 (MSS-065) adds the league-aware prestige breakdown:
 /// scaled contributions for Super/F1/F2/F3 titles, Superleague appearances,
 /// Super/F1/F2/F3 stage podiums and major Cup titles, summing exactly to
-/// prestige raw. v4 (MSS-096) replaces win-only prestige with shared
+/// prestige raw. v4 (MSS-096, Chaos MSS-104) replaces win-only prestige with shared
 /// Career Leaders career-performance points through the selected source season
-/// (MSS-083-v1 weights): prestige raw is the athlete's total career points and
-/// the seven career-category points sum exactly to prestige raw. Legacy
+/// (MSS-104-v1 weights): prestige raw is the athlete's total career points and
+/// the eight career-category points sum exactly to prestige raw. Legacy
 /// win-only breakdown fields stay for reading v1-v3 payloads and are zero for
 /// v4; career fields are zero for v1-v3. v1/v2/v3 payloads remain readable
 /// (missing fields decode to Pool/zero defaults) and are never rewritten.
@@ -84,7 +84,8 @@ public sealed record ColorCupSelectionReportDocument(
         int PrestigeCareerFeeder3Points = 0,
         int PrestigeCareerColorIndividualPoints = 0,
         int PrestigeCareerColorTeamPoints = 0,
-        int PrestigeCareerTypeTeamPoints = 0);
+        int PrestigeCareerTypeTeamPoints = 0,
+        int PrestigeCareerChaosCupIndividualPoints = 0);
 
     public string ToStored() => RoundPayloadCodec.Encode(JsonSerializer.Serialize(this, JsonOptions));
 

@@ -83,6 +83,7 @@ public static class CareerPerformanceLoader
         events.AddRange(await LoadColorIndividualEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
         events.AddRange(await LoadColorTeamEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
         events.AddRange(await LoadTypeTeamEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
+        events.AddRange(await LoadChaosEventsAsync(context, fromSeason, toSeason, athleteFilter, cancellationToken).ConfigureAwait(false));
         return new LoadResult(events, minSeason, maxSeason);
     }
 
@@ -633,6 +634,150 @@ public static class CareerPerformanceLoader
             team.Rank,
             qualFieldByGroup[qualLeg.Group],
             IsFinal: false);
+    }
+
+    /// <summary>
+    /// Loads Chaos Cup career credits (MSS-104). Each completed edition
+    /// contributes exactly one positive event per entrant (1024 total):
+    /// Finalists score P1..P32 over field 32; eliminated athletes share one
+    /// fixed credit per exit stage over the synthetic 5-tier encoding
+    /// (Rank 1 = semifinal .. Rank 5 = first stage, FieldSize 5) so no global
+    /// 33..1024 rank is fabricated. Pool invites count identically to league
+    /// athletes here; selection eligibility still filters to active athletes
+    /// elsewhere, so Pool inclusion never grants selection rights. Incomplete
+    /// editions (no completed Final) contribute nothing, like Type
+    /// qualification without a Final; old saves without Chaos tables are empty.
+    /// Advancers appear in multiple stage standings but count only once at
+    /// their final outcome, so an edition is never double-counted.
+    /// </summary>
+    internal static async Task<List<CareerPerformanceScorer.PlacementEvent>> LoadChaosEventsAsync(
+        SaveDbContext context,
+        int? fromSeason,
+        int? toSeason,
+        HashSet<int>? athleteFilter,
+        CancellationToken cancellationToken)
+    {
+        List<ChaosCupGroupStandingEntity> rows = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => (fromSeason == null || e.SourceSeasonNumber >= fromSeason.Value)
+                && (toSeason == null || e.SourceSeasonNumber <= toSeason.Value))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return [];
+        }
+
+        List<CareerPerformanceScorer.PlacementEvent> events = [];
+        foreach (int seasonNumber in rows.Select(r => r.SourceSeasonNumber).Distinct().OrderBy(n => n))
+        {
+            if (!InRange(seasonNumber, fromSeason, toSeason))
+            {
+                continue;
+            }
+
+            events.AddRange(ScoreChaosSeason(seasonNumber, rows, athleteFilter));
+        }
+
+        return events;
+    }
+
+    private static List<CareerPerformanceScorer.PlacementEvent> ScoreChaosSeason(
+        int seasonNumber,
+        List<ChaosCupGroupStandingEntity> allRows,
+        HashSet<int>? athleteFilter)
+    {
+        List<ChaosCupGroupStandingEntity> seasonRows = allRows.Where(r => r.SourceSeasonNumber == seasonNumber).ToList();
+        List<ChaosCupGroupStandingEntity> finals = seasonRows.Where(r => r.StageIndex == 5).ToList();
+        if (finals.Count != SimulationKernel.Cups.ChaosCupFormat.FinalFieldSize)
+        {
+            return [];
+        }
+
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> byAthlete = seasonRows
+            .GroupBy(r => r.SaveAthleteId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        if (byAthlete.Count != SimulationKernel.Cups.ChaosCupFormat.FieldSize)
+        {
+            return [];
+        }
+
+        EnsureNoDuplicateFinals(seasonNumber, byAthlete);
+        Dictionary<int, int> finalRankByAthlete = finals.ToDictionary(r => r.SaveAthleteId, r => r.GroupRank);
+        return BuildChaosSeasonEvents(seasonNumber, byAthlete, finalRankByAthlete, athleteFilter);
+    }
+
+    private static void EnsureNoDuplicateFinals(
+        int seasonNumber,
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> byAthlete)
+    {
+        foreach (var kv in byAthlete)
+        {
+            if (kv.Value.Count(s => s.StageIndex == 5) > 1)
+            {
+                throw new InvalidOperationException($"Chaos Cup season {seasonNumber} holds duplicate Final rows for athlete {kv.Key}.");
+            }
+        }
+    }
+
+    private static List<CareerPerformanceScorer.PlacementEvent> BuildChaosSeasonEvents(
+        int seasonNumber,
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> byAthlete,
+        Dictionary<int, int> finalRankByAthlete,
+        HashSet<int>? athleteFilter)
+    {
+        List<CareerPerformanceScorer.PlacementEvent> events = new(byAthlete.Count);
+        foreach ((int athleteId, List<ChaosCupGroupStandingEntity> athleteRows) in byAthlete)
+        {
+            if (athleteFilter is not null && !athleteFilter.Contains(athleteId))
+            {
+                continue;
+            }
+
+            if (finalRankByAthlete.TryGetValue(athleteId, out int finalRank))
+            {
+                events.Add(MapChaosFinal(athleteId, seasonNumber, finalRank));
+                continue;
+            }
+
+            events.Add(MapChaosExit(athleteId, seasonNumber, athleteRows));
+        }
+
+        return events;
+    }
+
+    private static CareerPerformanceScorer.PlacementEvent MapChaosFinal(int athleteId, int seasonNumber, int finalRank)
+    {
+        if (finalRank < 1 || finalRank > 32)
+        {
+            throw new InvalidOperationException($"Chaos Cup Final rank {finalRank} for season {seasonNumber} is corrupt.");
+        }
+
+        return new CareerPerformanceScorer.PlacementEvent(
+            athleteId, seasonNumber, CareerPerformanceScorer.Category.ChaosCupIndividual, finalRank, 32, IsFinal: true);
+    }
+
+    private static CareerPerformanceScorer.PlacementEvent MapChaosExit(
+        int athleteId,
+        int seasonNumber,
+        List<ChaosCupGroupStandingEntity> athleteRows)
+    {
+        int exitStage = athleteRows.Max(r => r.StageIndex);
+        if (exitStage is < 0 or > 4)
+        {
+            throw new InvalidOperationException($"Chaos Cup season {seasonNumber} athlete {athleteId} has corrupt exit stage {exitStage}.");
+        }
+
+        ChaosCupGroupStandingEntity exitRow = athleteRows.First(r => r.StageIndex == exitStage);
+        if (exitRow.IsAdvanced)
+        {
+            throw new InvalidOperationException($"Chaos Cup season {seasonNumber} athlete {athleteId} is marked advanced at its last stage {exitStage}.");
+        }
+
+        int exitRank = CareerPerformanceScorer.ChaosExitRankForStage(exitStage);
+        return new CareerPerformanceScorer.PlacementEvent(
+            athleteId, seasonNumber, CareerPerformanceScorer.Category.ChaosCupIndividual,
+            exitRank, CareerPerformanceScorer.ChaosExitFieldSize, IsFinal: false);
     }
 
     private sealed record TypeFinals(Dictionary<string, TypeTeamStandingRow> ByTeam, bool HasStagedFinal);

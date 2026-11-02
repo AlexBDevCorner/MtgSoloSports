@@ -8,9 +8,10 @@ namespace MtgSoloSports.Features.Records.GetHallOfFame;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Serves the Hall of Fame
-/// career leaderboard from the weighted MSS-083 performance score computed
-/// over officially finalized league and major-cup placements in the selected
-/// inclusive season range (all time by default). Ordering is deterministic:
+/// career leaderboard from the weighted MSS-104-v1 performance score computed
+/// over officially finalized league and major-cup placements (including Chaos)
+/// in the selected inclusive season range (all time by default). Ordering is
+/// deterministic:
 /// career points, major-event wins, Superleague titles, Superleague points,
 /// athlete name, athlete id. Read-only: no lock, no RNG, no mutation.
 /// Titles are period-scoped supporting statistics; legacy stage/round/tenure
@@ -176,6 +177,7 @@ public sealed class GetHallOfFameHandler
             performance?.ColorCupIndividualPoints ?? 0,
             performance?.ColorCupTeamPoints ?? 0,
             performance?.TypeCupTeamPoints ?? 0,
+            performance?.ChaosCupIndividualPoints ?? 0,
             performance?.MajorWins ?? 0,
             performance?.ScoredEvents ?? 0);
     }
