@@ -20,6 +20,7 @@ using MtgSoloSports.Features.Cups.ListCupEditions;
 using MtgSoloSports.Features.Cups.PlayColorCupIndividualRound;
 using MtgSoloSports.Features.Cups.PlayColorCupTeamRound;
 using MtgSoloSports.Features.Cups.PlayTypeCupTeamRound;
+using MtgSoloSports.Features.Cups.RunChaosCupGroup;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
@@ -162,6 +163,7 @@ builder.Services.AddScoped<MtgSoloSports.Features.Qualifiers.GetQualifierRounds.
 builder.Services.AddScoped<RebalanceFeedersHandler>();
 builder.Services.AddScoped<GetRebalanceResultHandler>();
 builder.Services.AddScoped<SelectChaosCupFieldHandler>();
+builder.Services.AddScoped<RunChaosCupGroupHandler>();
 builder.Services.AddScoped<SelectColorCupTeamsHandler>();
 builder.Services.AddScoped<GetColorCupSelectionHandler>();
 builder.Services.AddScoped<GetColorCupSelectionReportHandler>();
