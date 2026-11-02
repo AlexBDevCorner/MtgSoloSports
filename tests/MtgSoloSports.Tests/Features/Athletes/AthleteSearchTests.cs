@@ -7,6 +7,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Athletes.SearchAthletes;
+using MtgSoloSports.Features.Cups.CompleteChaosCup;
+using MtgSoloSports.Features.Cups.SelectChaosCupField;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Tests.Features.Universe;
@@ -26,6 +28,8 @@ public sealed class AthleteSearchTests
             [],
             [],
             [],
+            [],
+            [],
             []);
         totals[1].Honours.ShouldBe(2);
         totals[1].Titles.ShouldBe(1);
@@ -41,6 +45,8 @@ public sealed class AthleteSearchTests
             [new(7, 10, 0), new(8, 10, 1)],
             [new(10, 0, 2), new(10, 1, 5)],
             [],
+            [],
+            [],
             []);
         totals[7].Honours.ShouldBe(1);
         totals[7].Titles.ShouldBe(0);
@@ -49,6 +55,152 @@ public sealed class AthleteSearchTests
         totals[8].Honours.ShouldBe(0);
         totals[8].CupAppearances.ShouldBe(1);
         totals[8].CupPodiums.ShouldBe(0);
+    }
+
+    [Fact]
+    public void AggregateHonours_ChaosEntrantsAndFinals_CountOnce()
+    {
+        IReadOnlyDictionary<int, SearchAthletesFilter.HonourTotals> totals = SearchAthletesFilter.AggregateHonours(
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [new(1, 10), new(2, 10), new(3, 10), new(4, 10)],
+            [new(1, 1), new(2, 2), new(3, 3), new(4, 4)]);
+        totals[1].Honours.ShouldBe(1);
+        totals[1].Titles.ShouldBe(1);
+        totals[1].CupAppearances.ShouldBe(1);
+        totals[1].CupPodiums.ShouldBe(1);
+        totals[1].CupTitles.ShouldBe(1);
+        totals[2].Honours.ShouldBe(1);
+        totals[2].Titles.ShouldBe(0);
+        totals[2].CupAppearances.ShouldBe(1);
+        totals[2].CupPodiums.ShouldBe(1);
+        totals[4].Honours.ShouldBe(0);
+        totals[4].CupAppearances.ShouldBe(1);
+        totals[4].CupPodiums.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Search_AfterCompletedChaosCup_CountsEntrantsAndMedals()
+    {
+        // Incidental Season 1 history is forked; the Chaos field plus full-tournament
+        // completion below is the named action under test.
+        var (store, root, saveId) = await Features.SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-search-chaos-");
+        try
+        {
+            await new SelectChaosCupFieldHandler(store).HandleAsync(saveId, sourceSeasonNumber: 1);
+            CompleteChaosCupResponse cupped = await new CompleteChaosCupHandler(store).CompleteCupAsync(saveId, sourceSeasonNumber: 1);
+            cupped.IsComplete.ShouldBeTrue();
+
+            await AssertChaosSearchAsync(store, saveId);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static async Task AssertChaosSearchAsync(SaveStore store, Guid saveId)
+    {
+        List<int> entrantIds;
+        List<ChaosCupGroupStandingEntity> finals;
+        using (SaveDbContext context = store.OpenDbContext(saveId))
+        {
+            entrantIds = await context.ChaosCupEntrants
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonNumber == 1)
+                .Select(e => e.SaveAthleteId)
+                .ToListAsync().ConfigureAwait(false);
+            finals = await context.ChaosCupGroupStandings
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonNumber == 1 && e.StageIndex == 5)
+                .OrderBy(e => e.GroupRank)
+                .ToListAsync().ConfigureAwait(false);
+        }
+
+        entrantIds.Count.ShouldBe(1024);
+        finals.Count.ShouldBe(32);
+        int championId = finals.Single(e => e.GroupRank == 1).SaveAthleteId;
+        int runnerUpId = finals.Single(e => e.GroupRank == 2).SaveAthleteId;
+        int thirdId = finals.Single(e => e.GroupRank == 3).SaveAthleteId;
+        int lastFinalistId = finals.Single(e => e.GroupRank == 32).SaveAthleteId;
+        SearchAthletesHandler handler = new(store);
+        await AssertChaosFiltersAsync(handler, saveId, entrantIds, championId, runnerUpId, thirdId, lastFinalistId).ConfigureAwait(false);
+        await AssertChaosChampionAsync(store, handler, saveId, championId).ConfigureAwait(false);
+    }
+
+    private static async Task AssertChaosFiltersAsync(
+        SearchAthletesHandler handler,
+        Guid saveId,
+        List<int> entrantIds,
+        int championId,
+        int runnerUpId,
+        int thirdId,
+        int lastFinalistId)
+    {
+        HashSet<int> participantIds = await CollectCupIdsAsync(handler, saveId, "participant").ConfigureAwait(false);
+        participantIds.Count.ShouldBe(entrantIds.Count);
+        foreach (int id in entrantIds)
+        {
+            participantIds.Contains(id).ShouldBeTrue();
+        }
+
+        HashSet<int> podiumIds = await CollectCupIdsAsync(handler, saveId, "podium").ConfigureAwait(false);
+        podiumIds.Contains(championId).ShouldBeTrue();
+        podiumIds.Contains(runnerUpId).ShouldBeTrue();
+        podiumIds.Contains(thirdId).ShouldBeTrue();
+        podiumIds.Contains(lastFinalistId).ShouldBeFalse();
+
+        HashSet<int> titleIds = await CollectCupIdsAsync(handler, saveId, "title").ConfigureAwait(false);
+        titleIds.Contains(championId).ShouldBeTrue();
+        titleIds.Contains(runnerUpId).ShouldBeFalse();
+
+        SearchAthletesResponse honoured = await handler.HandleAsync(
+            saveId, SearchAthletesQuery.Empty with { MinHonours = 1, HasTitle = "only", Take = 500 }).ConfigureAwait(false);
+        honoured.Results.Any(e => e.AthleteId == championId).ShouldBeTrue();
+    }
+
+    private static async Task<HashSet<int>> CollectCupIdsAsync(SearchAthletesHandler handler, Guid saveId, string cupStatus)
+    {
+        HashSet<int> ids = [];
+        int skip = 0;
+        while (true)
+        {
+            SearchAthletesResponse page = await handler.HandleAsync(
+                saveId, SearchAthletesQuery.Empty with { CupStatus = cupStatus, Skip = skip, Take = 500 }).ConfigureAwait(false);
+            foreach (AthleteSearchResultDto row in page.Results)
+            {
+                ids.Add(row.AthleteId);
+            }
+
+            if (ids.Count >= page.TotalCount)
+            {
+                return ids;
+            }
+
+            skip = checked(skip + page.Results.Count);
+        }
+    }
+
+    private static async Task AssertChaosChampionAsync(SaveStore store, SearchAthletesHandler handler, Guid saveId, int championId)
+    {
+        string championName;
+        using (SaveDbContext context = store.OpenDbContext(saveId))
+        {
+            championName = await context.SaveAthletes.AsNoTracking().Where(e => e.Id == championId).Select(e => e.Name).SingleAsync().ConfigureAwait(false);
+        }
+
+        SearchAthletesResponse championLookup = await handler.HandleAsync(
+            saveId, SearchAthletesQuery.Empty with { Search = championName, Take = 10 }).ConfigureAwait(false);
+        AthleteSearchResultDto champion = championLookup.Results.Single(e => e.AthleteId == championId);
+        champion.HonoursCount.ShouldBeGreaterThanOrEqualTo(1);
+        champion.TitlesCount.ShouldBeGreaterThanOrEqualTo(1);
+        champion.CupAppearances.ShouldBeGreaterThanOrEqualTo(1);
+        champion.CupPodiums.ShouldBeGreaterThanOrEqualTo(1);
+        champion.CupTitles.ShouldBeGreaterThanOrEqualTo(1);
     }
 
     [Fact]

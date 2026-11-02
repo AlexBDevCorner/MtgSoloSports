@@ -376,7 +376,9 @@ public sealed class SearchAthletesHandler
         IReadOnlyList<SearchAthletesFilter.CupColorTeamInput> colorTeams = await LoadColorTeamsAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.CupTypeLegInput> typeLegs = await LoadTypeLegsAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.CupTypeTeamInput> typeTeams = await LoadTypeTeamsAsync(context, cancellationToken).ConfigureAwait(false);
-        return SearchAthletesFilter.AggregateHonours(league, individuals, colorLegs, colorTeams, typeLegs, typeTeams);
+        (List<SearchAthletesFilter.CupChaosEntrantInput> chaosEntrants, List<SearchAthletesFilter.CupChaosFinalInput> chaosFinals) =
+            await LoadChaosInputsAsync(context, cancellationToken).ConfigureAwait(false);
+        return SearchAthletesFilter.AggregateHonours(league, individuals, colorLegs, colorTeams, typeLegs, typeTeams, chaosEntrants, chaosFinals);
     }
 
     private static Task<List<SearchAthletesFilter.LeaguePodiumInput>> LoadLeaguePodiumsAsync(
@@ -432,6 +434,50 @@ public sealed class SearchAthletesHandler
             .AsNoTracking()
             .Select(e => new SearchAthletesFilter.CupTypeTeamInput(e.SourceSeasonId, e.CreatureType, e.TeamRank))
             .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads Chaos Cup search inputs from authoritative tables (MSS-104). Only
+    /// completed editions (Final stage holds exactly 32 rows) contribute: every
+    /// entrant counts one Cup appearance and Final ranks 1..3 yield podium
+    /// honours. Incomplete editions and old saves without Chaos rows contribute
+    /// nothing, matching career credit. Bulk queries only; no round payloads.
+    /// </summary>
+    private static async Task<(List<SearchAthletesFilter.CupChaosEntrantInput> Entrants, List<SearchAthletesFilter.CupChaosFinalInput> Finals)> LoadChaosInputsAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        List<ChaosFinalProbe> finals = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.StageIndex == 5)
+            .Select(e => new ChaosFinalProbe(e.SourceSeasonId, e.SaveAthleteId, e.GroupRank))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (finals.Count == 0)
+        {
+            return ([], []);
+        }
+
+        HashSet<int> completedSeasonIds = finals
+            .GroupBy(e => e.SourceSeasonId)
+            .Where(g => g.Count() == global::MtgSoloSports.SimulationKernel.Cups.ChaosCupFormat.FinalFieldSize)
+            .Select(g => g.Key)
+            .ToHashSet();
+        if (completedSeasonIds.Count == 0)
+        {
+            return ([], []);
+        }
+
+        List<SearchAthletesFilter.CupChaosEntrantInput> entrants = await context.ChaosCupEntrants
+            .AsNoTracking()
+            .Where(e => completedSeasonIds.Contains(e.SourceSeasonId))
+            .Select(e => new SearchAthletesFilter.CupChaosEntrantInput(e.SaveAthleteId, e.SourceSeasonId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<SearchAthletesFilter.CupChaosFinalInput> completedFinals = finals
+            .Where(e => completedSeasonIds.Contains(e.SourceSeasonId))
+            .Select(e => new SearchAthletesFilter.CupChaosFinalInput(e.SaveAthleteId, e.GroupRank))
+            .ToList();
+        return (entrants, completedFinals);
     }
 
     internal static Task<Dictionary<int, (bool EverSuper, int SuperSeasons)>> LoadSuperTenureAsync(
@@ -521,4 +567,6 @@ public sealed class SearchAthletesHandler
     private sealed record MembershipKindProbe(int SaveAthleteId, int? LeagueId);
 
     private sealed record SummaryProbe(int SaveAthleteId, int? LeagueKind);
+
+    private sealed record ChaosFinalProbe(int SourceSeasonId, int SaveAthleteId, int GroupRank);
 }
