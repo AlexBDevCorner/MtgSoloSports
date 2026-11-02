@@ -143,3 +143,134 @@ the test action, and cutting them would remove end-to-end coverage:
 
 None of the above was taken because each trades unique end-to-end coverage
 for time. The 50% target is met; revisit only if CI budgets demand it.
+
+---
+
+# MSS-122 (2026-11-02): reusable Season 2 / Type Cup states
+
+Follow-up to MSS-067. Historical MSS-067 measurements above are preserved;
+below is the fresh MSS-122 baseline and the dated result. Commands are the
+same as MSS-067 (`restore --locked-mode`, `build Release --no-restore`,
+`test Release --no-build --no-restore --logger "trx;LogFileName=..."`,
+`python3 scripts/test-timing.py <trx> --top 20`).
+
+## Fresh baseline (before, MSS-122 start)
+
+- Target commit: `d5d8dee` (main at dispatch). SDK 10.0.403, runtime 10.0.14,
+  Ubuntu 26.04.1 LTS, 4 CPUs, 15 GiB RAM, ephemeral runner
+  (`computerName runnervmnwato` in TRX), Release, no opt-in flags.
+- Restore ~2 s, build ~82 s (separate from test execution below).
+- Suite: **1276 tests, all passing**. `Duration: 21 m 40 s`, wall clock
+  **1304 s (21.7 min)**, sequential-equivalent **4770 s (79.5 min)**
+  (~3.7x parallelism; TRX durations include parallel contention and are
+  ranking signals, not exact budgets).
+- Slowest 20 cases: `ThreeSeasons_Rotate` 186 s, `FullLifecycle S1→S3` 120 s,
+  `TypeCupCompletionHandoff` 119/115/109 s (3 tests),
+  `Mss075Full` 117 s, `Mss075RepeatSafety` 113/87 s (2 tests),
+  `TypeCupPostSelection` 109 s, `EventProgress` 93/73/73 s (3 tests),
+  `FastSimulation Equivalent` 90/84 s, `TransitionReveal` 78/73 s (2 tests),
+  `Mss075Resume` 71 s, `Mss075Partial` 70 s, `LongRunChecksum` 56 s,
+  `CupLeagueReport TypeCup` 55 s.
+- Slowest classes (true `TestMethod@className` grouping): `TypeCupCompletionHandoff`
+  343 s (3), `FastSimulationTests` 325 s (11), `EventProgress` 240 s (4),
+  `CupLifecycleIntegration` 204 s (3), `Mss075RepeatSafety` 199 s (2),
+  `StandingsStagePlacements` 180 s (13), `SeasonLifecycle` 164 s (3),
+  `ColorCupTeamStep` 159 s (8), `ColorCupIndividualStep` 156 s (7),
+  `TransitionReveal` 154 s (3).
+- Audit: every top case except the two from-scratch lifecycle proofs and the
+  fast-vs-manual equivalences paid a repeated lifecycle prefix as incidental
+  setup — `ForkSeason1Complete` + `DrainToAction("RunQualifier")` (real S2
+  32 stages + movement, ~40-50 s) in 10 qualifier/lifecycle tests, and
+  `Create + drain to SelectTypeCup` (S1+S2+qualifier+rebalance, ~90 s) in 4
+  Type Cup tournament tests — plus one Season 1 build per step-equivalence
+  and read-model test still on `Prepare*` helpers.
+
+## What changed (MSS-122)
+
+- `SharedSaveTemplates`: added `ForkSeason2CompleteAsync` (real S2,
+  movement pending), `ForkSeason2QualifierPendingAsync` (real S2, movement
+  resolved, qualifier pending; chains Season2Complete), and
+  `ForkTypeCupSelectedAsync` (tournament catalog, 64 types × 8 colors × 4,
+  real S1+S2+qualifier+rebalance + Type Cup selection, team event pending).
+  All built once per process through production handlers with boundary
+  assertions; forks are isolated temp roots via the existing
+  checkpoint/copy path.
+- Migrated: `Mss075Full/Partial/Resume/RepeatSafety` (5 tests),
+  `EventProgress` (3), `TransitionReveal` movement + rebalance (2),
+  `TypeCupCompletionHandoff` (3) + `TypeCupPostSelection` (1),
+  `QualifierStep`/`ColorCupTeamStep`/`ColorCupIndividualStep` equivalences (7),
+  `StandingsStagePlacements` Season 1 reads (3), `ColorCupMedalTables` (2),
+  `ColorCupTeamHistory`/`ListCupEditions` (2), `ColorCupIndividual/Team`
+  determinism (2), `FeederQualifier` determinism (1), `Rebalance` +
+  `Inaugural` determinism (2). Every named action still executes in its test;
+  golden seeds/checksums keep their own builds.
+- Added `SharedSaveTemplateIsolationTests` (4 tests): fork independence,
+  parallel first-use agreement, Season2Complete and TypeCupSelected
+  boundaries.
+- `scripts/test-timing.py`: class grouping now uses TRX
+  `TestMethod@className` metadata (parameterized cases group correctly) with
+  display-name fallback, plus `--self-check` synthetic coverage. CI runs the
+  self-check, publishes a ranked top-20 summary to the job summary, and
+  uploads bounded TRX + summary artifacts (7 days, timing files only) without
+  masking test failures.
+- Docs: new `docs/testing.md` (selection, state inventory, examples, safe
+  extension, checklist, commands), normative testing section in `AGENTS.md`,
+  README link.
+
+## After (three consecutive cold-cache processes)
+
+- Code commit measured: `4ffd8fe` (docs-only follow-up does not affect tests).
+  Suite: **1280 tests (1276 + 4 isolation), all passing, three consecutive
+  processes with no isolation/order failures.**
+- Run 1: `Duration: 14 m 28 s`, wall **871 s**, sequential **2951 s**.
+- Run 2: `Duration: 14 m 46 s`, wall **889 s**, sequential **2886 s**.
+- Run 3: `Duration: 14 m 12 s`, wall **855 s**, sequential **3043 s**.
+- Median wall **871 s (14.5 min)** vs 1304 s baseline: **~33% wall, ~38%
+  sequential reduction (4770 s → ~2950 s, ~1820 s saved).**
+- Remaining slowest cases (run 1): `FullLifecycle S1→S3` 122 s,
+  `ThreeSeasons_Rotate` 105 s, `TypeCupCompletionHandoff PartialThenBulk` 95 s,
+  `FastSimulation` equivalence 84/77/61 s, `Mss075Resume` 75 s,
+  `LongRunChecksum` 67 s. EventProgress/Mss075 drains are gone from the top;
+  qualifier and Type Cup tournament *runs* remain because they are the named
+  actions.
+- Changed expensive classes pass alone from fresh processes (Mss075 family +
+  EventProgress + TransitionReveal + TypeCup handoff/post-selection: 16 tests
+  in 2 m 8 s; step/read-model batch: 68 tests in 2 m 36 s; isolation: 4 tests
+  in 1 m 56 s; inaugural: 4 tests in 33 s).
+- Opt-in diagnostics with flags set
+  (`MTG_LONGRUN=1 MTG_CUP_CALIBRATION=1`): 12 tests pass in 9 m 9 s.
+- Retained proofs pass: from-scratch `FullLifecycle`, golden
+  `ColorCupTeam/Qualifier` one-shots, fast-vs-manual equivalence, checksum
+  equivalence, API read, history replay, isolation (11 tests in 3 m 10 s).
+
+## Target shortfall and irreducible work (Requirement 19)
+
+The 50% goal (≤652 s wall, ideally <10 min) is **not met**; median 871 s
+misses by ~219 s (~34% further cut needed). This is a measured material
+reduction with no safe high-impact setup reuse left unimplemented — not a
+report-only result:
+
+1. From-scratch lifecycle proofs (`FullLifecycle S1→S3`, `ThreeSeasons_Rotate`,
+   ~225 s combined per run): the simulated history is the subject. Kept by
+   design with `RejectsIllegalTransitions` as the additional S1 path.
+2. Fast-vs-manual/bulk equivalence (`FastSimulation` 300 s,
+   `LongRunChecksum` 67-77 s): both full-season simulations are the assertion.
+   Forking already avoids double universe creation; templating either side
+   would precompute the compared answer.
+3. Qualifier (272 rounds) and Type Cup tournament runs that remain
+   (`Mss075Resume/Repeat`, `TypeCupCompletionHandoff/PostSelection`,
+   ~300 s combined): the runs still execute per test by design; only their
+   prefixes were shared. Precomputing them would erase the regression trigger.
+4. API end-to-end simulations whose setup is the endpoint under test
+   (`FastSimulationApi`, `HistoryApi` bulk, `CompleteSeasonApi`) plus per-test
+   HTTP host startup (~2 s × ~100 factory tests) and catalog import: sharing
+   one factory/catalog per collection would trade isolation for seconds and
+   was rejected as disproportionate.
+5. Long tail (Cups 221 tests, Reports 136 tests): already on templates or
+   cheap single-stage setups; remaining per-test seconds are handler
+   execution, not shareable seasons.
+
+No ordinary coverage was hidden, skipped, gated, or moved out of the suite to
+manufacture savings (counts rose 1276 → 1280; opt-in gates unchanged).
+Reaching 10 minutes would require removing or thinning the above correctness
+proofs, which this task explicitly forbids.

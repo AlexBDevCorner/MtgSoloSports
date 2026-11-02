@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
@@ -8,7 +9,6 @@ using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
-using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
