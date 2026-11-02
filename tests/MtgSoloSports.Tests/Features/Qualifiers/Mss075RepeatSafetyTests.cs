@@ -21,10 +21,10 @@ public sealed class Mss075RepeatSafetyTests
     [Fact]
     public async Task RepeatBulkAndSingle_DoNotDuplicateOrOverwrite()
     {
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-mss075-repeat-");
+        // MSS-122: real qualifier-pending template; first bulk run and repeats below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-mss075-repeat-");
         try
         {
-            await PostseasonTestSaves.DrainToActionAsync(store, saveId, "RunQualifier");
             RunAllQualifiersResponse first = await new RunAllQualifiersHandler(store).HandleAsync(saveId);
             first.ExecutedNow.Count.ShouldBe(17);
 
@@ -64,10 +64,10 @@ public sealed class Mss075RepeatSafetyTests
         // MSS-075 correction P1: repeating run-all after feeder rebalance must
         // stay a no-op success without moving the persisted phase backwards to
         // QualifierResolved and without touching RNG/results.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-mss075-repeat-rebal-");
+        // MSS-122: real qualifier-pending template; qualifier, rebalance and repeat below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-mss075-repeat-rebal-");
         try
         {
-            await PostseasonTestSaves.DrainToActionAsync(store, saveId, "RunQualifier");
             RunAllQualifiersResponse first = await new RunAllQualifiersHandler(store).HandleAsync(saveId);
             await new RebalanceFeedersHandler(store).HandleAsync(saveId);
 

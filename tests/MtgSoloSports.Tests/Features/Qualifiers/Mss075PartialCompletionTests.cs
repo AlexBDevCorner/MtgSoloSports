@@ -20,10 +20,10 @@ public sealed class Mss075PartialCompletionTests
     [Fact]
     public async Task PartialCompletion_IsAccuratelyRepresented()
     {
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-mss075-partial-");
+        // MSS-122: real qualifier-pending template; the single/boundary runs below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-mss075-partial-");
         try
         {
-            await PostseasonTestSaves.DrainToActionAsync(store, saveId, "RunQualifier");
             GetSeasonStatusResponse before = await new GetSeasonStatusHandler(store).HandleAsync(saveId);
             int source = before.SourceSeasonNumber!.Value;
 

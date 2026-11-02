@@ -13,10 +13,12 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_AllRounds_EqualsOneShot()
     {
-        // MSS-067: one prepared save forked into two isolated copies instead of
-        // simulating the same Season 1 twice for the identical starting state.
-        var (oneShotStore, oneShotRoot, oneShotId) = await PrepareQualifierAsync(5151UL, 6161UL);
-        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-qual-step-");
+        // MSS-122: two isolated forks of the shared qualifier template instead of
+        // simulating the same Season 1 twice; step-vs-one-shot still executes from
+        // bit-identical starting state (equivalence holds for any seed; pinned
+        // seed coverage stays in OneShot_MatchesPreRefactorGolden).
+        var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
+        var (stepStore, stepRoot, stepId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-step-");
         try
         {
             await new RunQualifierHandler(oneShotStore).HandleAsync(oneShotId);
@@ -65,9 +67,9 @@ public sealed class QualifierStepTests
     [Fact]
     public async Task Step_Then_OneShot_EqualsOneShot()
     {
-        // MSS-067: forked copy instead of a second identical Season 1 simulation.
-        var (oneShotStore, oneShotRoot, oneShotId) = await PrepareQualifierAsync(5252UL, 6262UL);
-        var (mixedStore, mixedRoot, mixedId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-qual-mixed-");
+        // MSS-122: shared qualifier template forks; mixed step-then-bulk still executes (see above for seed note).
+        var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-mixed-");
+        var (mixedStore, mixedRoot, mixedId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-qual-mixed-");
         try
         {
             await new RunQualifierHandler(oneShotStore).HandleAsync(oneShotId);

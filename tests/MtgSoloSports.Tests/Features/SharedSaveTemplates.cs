@@ -1,10 +1,17 @@
 using System.Collections.Concurrent;
+using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
+using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
+using MtgSoloSports.Features.Seasons.GetSeasonStatus;
+using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.Tests.Features.Universe;
 
 namespace MtgSoloSports.Tests.Features;
@@ -68,6 +75,39 @@ internal static class SharedSaveTemplates
     internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkSeason1PlusCupsAsync(string prefix)
     {
         return ForkAsync("Season1PlusCups", BuildSeason1PlusCupsAsync, prefix);
+    }
+
+    /// <summary>
+    /// MSS-122: real Season 2 league play complete (S1 postseason plus 32 S2
+    /// stages through production <c>AdvanceToNextEvent</c>), with automatic
+    /// movement still pending. Built once per process; consumers fork an
+    /// isolated copy and still execute the movement themselves.
+    /// </summary>
+    internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkSeason2CompleteAsync(string prefix)
+    {
+        return ForkAsync("Season2Complete", BuildSeason2CompleteAsync, prefix);
+    }
+
+    /// <summary>
+    /// MSS-122: real Season 2 complete with automatic movement resolved, so the
+    /// qualifier is the next legal action. Built once per process through the
+    /// production lifecycle (no synthetic standings); consumers fork an
+    /// isolated copy and still execute the qualifier run(s) themselves.
+    /// </summary>
+    internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkSeason2QualifierPendingAsync(string prefix)
+    {
+        return ForkAsync("Season2QualifierPending", BuildSeason2QualifierPendingAsync, prefix);
+    }
+
+    /// <summary>
+    /// MSS-122: real Season 2 lifecycle through Type Cup team selection (tournament
+    /// catalog with a &gt;32-team field), with the team event still pending.
+    /// Built once per process; consumers fork an isolated copy and still
+    /// execute the team rounds themselves.
+    /// </summary>
+    internal static Task<(SaveStore Store, string Root, Guid SaveId)> ForkTypeCupSelectedAsync(string prefix)
+    {
+        return ForkAsync("TypeCupSelected", BuildTypeCupSelectedAsync, prefix);
     }
 
     /// <summary>
@@ -164,6 +204,112 @@ internal static class SharedSaveTemplates
             "Season1Complete", BuildSeason1CompleteAsync, "mtgsolosports-shared-pluscups-").ConfigureAwait(false);
         await new SimulateSeasonsHandler(store).HandleAsync(saveId, new SimulateSeasonsRequest(1)).ConfigureAwait(false);
         return new Template(root, saveId);
+    }
+
+    private static async Task<Template> BuildSeason2CompleteAsync()
+    {
+        var (store, root, saveId) = await ForkAsync(
+            "Season1Complete", BuildSeason1CompleteAsync, "mtgsolosports-shared-s2-").ConfigureAwait(false);
+        await PostseasonTestSaves.DrainToActionAsync(store, saveId, SeasonLifecycleActions.ResolveAutomaticMovement).ConfigureAwait(false);
+        GetSeasonStatusResponse status = await new GetSeasonStatusHandler(store).HandleAsync(saveId).ConfigureAwait(false);
+        if (status.LegalNextActions.Count != 1 || !string.Equals(status.LegalNextActions[0], SeasonLifecycleActions.ResolveAutomaticMovement, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Season2Complete template did not reach automatic movement.");
+        }
+
+        return new Template(root, saveId);
+    }
+
+    private static async Task<Template> BuildSeason2QualifierPendingAsync()
+    {
+        var (store, root, saveId) = await ForkAsync(
+            "Season2Complete", BuildSeason2CompleteAsync, "mtgsolosports-shared-qualpending-").ConfigureAwait(false);
+        await new ResolveAutomaticMovementHandler(store).HandleAsync(saveId).ConfigureAwait(false);
+        GetSeasonStatusResponse status = await new GetSeasonStatusHandler(store).HandleAsync(saveId).ConfigureAwait(false);
+        if (status.LegalNextActions.Count != 1 || !string.Equals(status.LegalNextActions[0], SeasonLifecycleActions.RunQualifier, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Season2QualifierPending template did not reach qualifier.");
+        }
+
+        return new Template(root, saveId);
+    }
+
+    private static async Task<Template> BuildTypeCupSelectedAsync()
+    {
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-shared-typecup-");
+        SaveStore.CreationRecord created = await store.CreateAsync(
+            "Shared TypeCup", 79079UL, 80079UL, BuildTournamentCatalog()).ConfigureAwait(false);
+        Guid saveId = created.Detail.SaveId;
+        GetSeasonStatusHandler status = new(store);
+        AdvanceToNextEventHandler advance = new(store);
+        for (int guard = 0; guard < 200; guard++)
+        {
+            GetSeasonStatusResponse current = await status.HandleAsync(saveId).ConfigureAwait(false);
+            if (current.LegalNextActions.Count == 1
+                && string.Equals(current.LegalNextActions[0], SeasonLifecycleActions.SelectTypeCup, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            await advance.HandleAsync(saveId).ConfigureAwait(false);
+        }
+
+        GetSeasonStatusResponse pending = await status.HandleAsync(saveId).ConfigureAwait(false);
+        if (pending.LegalNextActions.Count != 1 || !string.Equals(pending.LegalNextActions[0], SeasonLifecycleActions.SelectTypeCup, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("TypeCupSelected template did not reach Type Cup selection.");
+        }
+
+        await new SelectTypeCupTeamsHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2).ConfigureAwait(false);
+        GetSeasonStatusResponse selected = await status.HandleAsync(saveId).ConfigureAwait(false);
+        if (selected.LegalNextActions.Count != 1 || !string.Equals(selected.LegalNextActions[0], SeasonLifecycleActions.RunTypeCupTeam, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("TypeCupSelected template did not reach Type Cup team run.");
+        }
+
+        return new Template(root, saveId);
+    }
+
+    internal static IReadOnlyList<CatalogAthlete> BuildTournamentCatalog()
+    {
+        const int types = 64;
+        const int perColor = 4;
+        List<CatalogAthlete> athletes = new(types * 8 * perColor);
+        for (int type = 0; type < types; type++)
+        {
+            string typeName = $"MSS122-Type-{type:D2}";
+            foreach (SportingColor color in Enum.GetValues<SportingColor>())
+            {
+                (IReadOnlyList<string> FrontColors, string ManaCost, bool IsArtifact) shape = color switch
+                {
+                    SportingColor.White => (["W"], "{W}", false),
+                    SportingColor.Blue => (["U"], "{U}", false),
+                    SportingColor.Black => (["B"], "{B}", false),
+                    SportingColor.Red => (["R"], "{R}", false),
+                    SportingColor.Green => (["G"], "{G}", false),
+                    SportingColor.Multicolor => (["W", "U"], "{W}{U}", false),
+                    SportingColor.Hybrid => (["W", "U"], "{W/U}", false),
+                    _ => ([], "{4}", true),
+                };
+                for (int rep = 0; rep < perColor; rep++)
+                {
+                    athletes.Add(new CatalogAthlete(
+                        $"MSS122 {typeName} {color} {rep:D2}",
+                        color,
+                        [typeName],
+                        shape.IsArtifact,
+                        false,
+                        color == SportingColor.Hybrid,
+                        shape.FrontColors,
+                        shape.ManaCost,
+                        $"Creature — {typeName}",
+                        null,
+                        "t122"));
+                }
+            }
+        }
+
+        return athletes;
     }
 
     private static async Task<Guid> SeedSavesRootAsync(string savesRoot, string key, Func<Task<Template>> build)

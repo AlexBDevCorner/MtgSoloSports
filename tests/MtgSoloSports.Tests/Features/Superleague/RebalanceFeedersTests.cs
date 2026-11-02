@@ -165,10 +165,10 @@ public sealed class RebalanceFeedersTests
     [Fact]
     public async Task Rebalance_SameSeed_Inaugural_IsDeterministic()
     {
-        // MSS-067: one prepared save forked into two isolated copies instead of
-        // simulating the same Season 1 twice; both runs still execute
-        // independently from bit-identical starting state.
-        var (store, root, saveId) = await PrepareInauguralForSeedAsync(4242UL, 777UL);
+        // MSS-122: shared Season 1 template fork plus inaugural (same canonical seed);
+        // both rebalance runs still execute independently from bit-identical starting state.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-det-");
+        await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId);
         var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-rebalance-det-");
         try
         {

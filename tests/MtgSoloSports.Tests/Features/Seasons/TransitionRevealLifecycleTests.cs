@@ -29,8 +29,9 @@ public sealed class TransitionRevealLifecycleTests
     [Fact]
     public async Task AutomaticMovement_ExecuteOnce_ReloadIdentical_ContinueIsQualifier()
     {
-        // MSS-067: shared Season 1 template, then the same lifecycle drain.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-transition-");
+        // MSS-122: real Season 2 complete template (S1+S2 via production lifecycle
+        // once per process); the movement and qualifier below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2CompleteAsync("mtgsolosports-transition-");
         try
         {
             await RunLifecycleToActionAsync(store, saveId, SeasonLifecycleActions.ResolveAutomaticMovement);
@@ -76,16 +77,14 @@ public sealed class TransitionRevealLifecycleTests
     [Fact]
     public async Task Rebalance_ExecuteOnce_ReloadIdentical_ContinueIsCupSelection()
     {
-        // MSS-067: shared Season 1 template, then the same lifecycle drains.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-transition-");
+        // MSS-122: real qualifier-pending template; qualifier and rebalance below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-transition-");
         try
         {
             // Season 1 rebalances without a qualifier first; drive through the
-            // Season 2 movement and qualifier so this covers the Season 2
+            // Season 2 qualifier so this covers the Season 2
             // rebalance (fromSeason 2) followed by Type Cup selection.
-            await RunLifecycleToActionAsync(store, saveId, SeasonLifecycleActions.ResolveAutomaticMovement);
             AdvanceToNextEventHandler drain = new(store);
-            (await drain.HandleAsync(saveId)).ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveAutomaticMovement);
             (await drain.HandleAsync(saveId)).ExecutedAction.ShouldBe(SeasonLifecycleActions.RunQualifier);
             await RunLifecycleToActionAsync(store, saveId, SeasonLifecycleActions.RebalanceFeeders);
 

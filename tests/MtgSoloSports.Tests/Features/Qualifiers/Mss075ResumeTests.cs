@@ -13,10 +13,10 @@ public sealed class Mss075ResumeTests
     [Fact]
     public async Task CompletedSave_SurvivesReloadAndResume()
     {
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-mss075-resume-");
+        // MSS-122: real qualifier-pending template; the bulk run below still executes.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-mss075-resume-");
         try
         {
-            await PostseasonTestSaves.DrainToActionAsync(store, saveId, "RunQualifier");
             RunAllQualifiersResponse runAll = await new RunAllQualifiersHandler(store).HandleAsync(saveId);
 
             GetSeasonStatusResponse first = await new GetSeasonStatusHandler(store).HandleAsync(saveId);

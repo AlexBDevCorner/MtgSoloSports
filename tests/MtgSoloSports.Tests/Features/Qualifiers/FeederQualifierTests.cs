@@ -7,6 +7,7 @@ using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
+using MtgSoloSports.Tests.Features;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
@@ -113,11 +114,10 @@ public sealed class FeederQualifierTests
     [Fact]
     public async Task DeterministicOrder_SameSeed_SameRng()
     {
-        // MSS-067: one prepared save forked into two isolated copies instead of
-        // simulating the same Season 1 twice; both runs still execute
-        // independently from bit-identical starting state.
-        var (store, root, saveId) = await PrepareForSeedAsync(9009UL, 1010UL);
-        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-feeder-det-");
+        // MSS-122: two isolated forks of the shared qualifier template; both runs
+        // still execute independently from bit-identical starting state.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-feeder-det-");
+        var (secondStore, secondRoot, secondId) = await SharedSaveTemplates.ForkQualifierResolvedAsync("mtgsolosports-feeder-det-");
         try
         {
             RunAllQualifiersResponse first = await new RunAllQualifiersHandler(store).HandleAsync(saveId);

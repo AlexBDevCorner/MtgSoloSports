@@ -39,9 +39,10 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_AllRounds_EqualsOneShot()
     {
-        // MSS-067: forked copy instead of a second identical Season 1 simulation.
-        var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9191UL, 9292UL);
-        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-step-");
+        // MSS-122: shared Color Cup template forks; step-vs-one-shot still executes
+        // (equivalence holds for any seed; pinned seed coverage stays in the golden test).
+        var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-step-");
+        var (stepStore, stepRoot, stepId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-step-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);
@@ -68,9 +69,9 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_Then_OneShot_EqualsOneShot()
     {
-        // MSS-067: forked copy instead of a second identical Season 1 simulation.
-        var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9393UL, 9494UL);
-        var (mixedStore, mixedRoot, mixedId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-mixed-");
+        // MSS-122: shared template forks (see above for seed note).
+        var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-mixed-");
+        var (mixedStore, mixedRoot, mixedId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-mixed-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);
@@ -93,9 +94,9 @@ public sealed class ColorCupTeamStepTests
     [Fact]
     public async Task Step_GroupBoundary_MatchesOneShotRngChain()
     {
-        // MSS-067: forked copy instead of a second identical Season 1 simulation.
-        var (oneShotStore, oneShotRoot, oneShotId) = await PrepareColorCupAsync(9595UL, 9696UL);
-        var (stepStore, stepRoot, stepId) = await TestSaveStores.ForkAsync(oneShotStore, oneShotId, "mtgsolosports-cup-team-bound-");
+        // MSS-122: shared template forks (see above for seed note).
+        var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-bound-");
+        var (stepStore, stepRoot, stepId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-bound-");
         try
         {
             await new RunColorCupTeamHandler(oneShotStore).HandleAsync(oneShotId);

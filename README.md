@@ -26,6 +26,7 @@ See:
 - [Technical design](docs/technical-design.md)
 - [Autonomous development](docs/autonomous-development.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
+- [Testing guide](docs/testing.md) (prepared saves, budgets, `test-timing.py`)
 
 ## Recommended local run (Docker)
 

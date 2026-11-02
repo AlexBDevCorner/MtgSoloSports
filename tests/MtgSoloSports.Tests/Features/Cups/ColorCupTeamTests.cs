@@ -14,6 +14,7 @@ using MtgSoloSports.Features.Records.ListHonours;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Stories;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
@@ -243,11 +244,10 @@ public sealed class ColorCupTeamTests
     [Fact]
     public async Task Run_SameSeed_IsDeterministic()
     {
-        // MSS-067: one prepared save forked into two isolated copies instead of
-        // simulating the same Season 1 twice; both runs still execute
-        // independently from bit-identical starting state.
-        var (store, root, saveId) = await PrepareTeamForSeedAsync(42421UL, 7771UL);
-        var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-cup-team-det-");
+        // MSS-122: shared Color Cup template forks; both runs still execute
+        // independently (determinism holds for any seed).
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-det-");
+        var (secondStore, secondRoot, secondId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-team-det-");
         try
         {
             RunColorCupTeamResponse first = await new RunColorCupTeamHandler(store).HandleAsync(saveId);

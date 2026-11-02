@@ -15,9 +15,8 @@ public sealed class EventProgressTests
     [Fact]
     public async Task Status_BeforeQualifierRoundOne_ReportsZeroProgress()
     {
-        // MSS-067: shared Season 1 template, then the same lifecycle drain.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
-        await DrainToActionAsync(store, saveId, "RunQualifier");
+        // MSS-122: real qualifier-pending template; no qualifier run needed for this status read.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-eventprog-");
         try
         {
             GetSeasonStatusResponse status = await new GetSeasonStatusHandler(store).HandleAsync(saveId);
@@ -42,9 +41,8 @@ public sealed class EventProgressTests
     [Fact]
     public async Task Status_MidQualifier_ReportsInProgressPhaseAndRounds()
     {
-        // MSS-067: shared Season 1 template, then the same lifecycle drain.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
-        await DrainToActionAsync(store, saveId, "RunQualifier");
+        // MSS-122: real qualifier-pending template; the three step runs below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-eventprog-");
         try
         {
             PlayQualifierRoundHandler step = new(store);
@@ -65,9 +63,8 @@ public sealed class EventProgressTests
     [Fact]
     public async Task AdvanceNextEvent_FinishesPartlyPlayedQualifier()
     {
-        // MSS-067: shared Season 1 template, then the same lifecycle drain.
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-eventprog-");
-        await DrainToActionAsync(store, saveId, "RunQualifier");
+        // MSS-122: real qualifier-pending template; the step plus bulk finish below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-eventprog-");
         try
         {
             await new PlayQualifierRoundHandler(store).HandleAsync(saveId);

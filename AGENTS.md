@@ -84,6 +84,15 @@ Before lock files exist, use ordinary restore/install only for the repository-bo
 - Prefer local feature components; move to shared UI only after real reuse emerges.
 - Dark presentation is the default direction, with sports-database screens for history and expressive card-based presentation for live rounds.
 
+## Testing — normative
+
+- Test selection is mandatory: pure kernel tests for sporting math, handler/database tests for single events, HTTP contract tests through the real pipeline, and from-scratch lifecycle proofs only when the simulated history is the subject. See `docs/testing.md`.
+- Never add avoidable full-season/multi-season/qualifier setup. Fork the cheapest applicable prepared save in `SharedSaveTemplates` when that history is incidental setup; keep the named action, regression trigger, seeds, RNG expectations and assertions executing in each test.
+- Seed-specific golden, rule-version and determinism coverage stays pinned; a canonical template must not silently replace those seeds or versions.
+- Templates are built once per test process through production handlers and forked into isolated temp roots; consumers mutate only their fork and delete their root. Do not copy live WAL state, share live contexts, or commit SQLite snapshots.
+- Keep at least one normal-suite from-scratch path per critical lifecycle transition. Do not hide, skip, gate, or thin ordinary correctness coverage to improve timing.
+- Verify with `dotnet test ... --logger "trx;LogFileName=timing.trx"` plus `python3 scripts/test-timing.py <trx> --top 20`, and run changed classes alone from a fresh process. Full backend suite remains a PR check.
+
 ## Project agent skills
 
 Reusable skills live in `.opencode/skills/` and are discovered by OpenCode on demand. Use them alongside, never instead of, the repository's architecture, deterministic-simulation, and autonomous-worker rules above.
