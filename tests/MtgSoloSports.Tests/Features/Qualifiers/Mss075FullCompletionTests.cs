@@ -20,10 +20,11 @@ public sealed class Mss075FullCompletionTests
     [Fact]
     public async Task FullCompletion_Agrees_AndAdvancesToRebalance()
     {
-        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-mss075-full-");
+        // MSS-122: real Season 2 qualifier-pending template (S1+S2 via production
+        // lifecycle once per process); the qualifier run and rebalance below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason2QualifierPendingAsync("mtgsolosports-mss075-full-");
         try
         {
-            await PostseasonTestSaves.DrainToActionAsync(store, saveId, "RunQualifier");
             GetSeasonStatusResponse before = await new GetSeasonStatusHandler(store).HandleAsync(saveId);
             AssertBeforeState(before);
 

@@ -4,18 +4,16 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Cups.PlayTypeCupTeamRound;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Saves;
-using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
+using MtgSoloSports.Tests.Features;
 using Shouldly;
 using Xunit;
 
@@ -30,16 +28,14 @@ namespace MtgSoloSports.Tests.Features.Seasons;
 /// </summary>
 public sealed class TypeCupPostSelectionStatusTests
 {
-    private const int TeamTypes = 64;
-    private const int AthletesPerTypePerColor = 4;
-
     [Fact]
     public async Task PostSelection_TournamentField_ProgressesToFinal_ThenStartsNextSeason()
     {
-        var (store, root) = CreateStore();
+        // MSS-122: shared real Type Cup selected template; post-selection status,
+        // downgrade/upgrade, step, bulk finish and next-season start below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkTypeCupSelectedAsync("mtgsolosports-mss070-");
         try
         {
-            Guid saveId = await DrainToTypeCupSelectionAsync(store);
 
             int teamCount = await CountSelectedTeamsAsync(store, saveId);
             teamCount.ShouldBeGreaterThan(32);
@@ -189,87 +185,6 @@ public sealed class TypeCupPostSelectionStatusTests
         pending.ShouldBeEmpty();
     }
 
-    private static async Task<Guid> DrainToTypeCupSelectionAsync(SaveStore store)
-    {
-        SaveStore.CreationRecord created = await store.CreateAsync(
-            "MSS-070 Type Cup", 70070UL, 80080UL, BuildTournamentCatalog()).ConfigureAwait(false);
-        Guid saveId = created.Detail.SaveId;
-
-        GetSeasonStatusHandler status = new(store);
-        AdvanceToNextEventHandler advance = new(store);
-        bool reachedSelection = false;
-        for (int guard = 0; guard < 200; guard++)
-        {
-            GetSeasonStatusResponse current = await status.HandleAsync(saveId).ConfigureAwait(false);
-            if (current.LegalNextActions.Count == 1
-                && string.Equals(current.LegalNextActions[0], SeasonLifecycleActions.SelectTypeCup, StringComparison.Ordinal))
-            {
-                reachedSelection = true;
-                break;
-            }
-
-            if (current.LegalNextActions.Count == 1
-                && string.Equals(current.LegalNextActions[0], SeasonLifecycleActions.StartNextSeason, StringComparison.Ordinal)
-                && current.SourceSeasonNumber == 2)
-            {
-                throw new InvalidOperationException("Lifecycle reached Season 3 before Type Cup selection.");
-            }
-
-            await advance.HandleAsync(saveId).ConfigureAwait(false);
-        }
-
-        reachedSelection.ShouldBeTrue();
-
-        AdvanceToNextEventResponse selected = await advance.HandleAsync(saveId).ConfigureAwait(false);
-        selected.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectTypeCup);
-        return saveId;
-    }
-
-    private static IReadOnlyList<CatalogAthlete> BuildTournamentCatalog()
-    {
-        // 64 single-typed creature types with 4 athletes per sporting color:
-        // every type can field a team, so selection allocates a 64-team
-        // qualification tournament (the same >32 path as the reported 84-team
-        // save, with two balanced groups instead of three).
-        List<CatalogAthlete> athletes = new(TeamTypes * 8 * AthletesPerTypePerColor);
-        for (int type = 0; type < TeamTypes; type++)
-        {
-            string typeName = $"MSS070-Type-{type:D2}";
-            foreach (SportingColor color in Enum.GetValues<SportingColor>())
-            {
-                (IReadOnlyList<string> FrontColors, string ManaCost, bool IsArtifact) shape = color switch
-                {
-                    SportingColor.White => (["W"], "{W}", false),
-                    SportingColor.Blue => (["U"], "{U}", false),
-                    SportingColor.Black => (["B"], "{B}", false),
-                    SportingColor.Red => (["R"], "{R}", false),
-                    SportingColor.Green => (["G"], "{G}", false),
-                    SportingColor.Multicolor => (["W", "U"], "{W}{U}", false),
-                    SportingColor.Hybrid => (["W", "U"], "{W/U}", false),
-                    _ => ([], "{4}", true),
-                };
-                for (int rep = 0; rep < AthletesPerTypePerColor; rep++)
-                {
-                    athletes.Add(new CatalogAthlete(
-                        $"MSS070 {typeName} {color} {rep:D2}",
-                        color,
-                        [typeName],
-                        shape.IsArtifact,
-                        false,
-                        color == SportingColor.Hybrid,
-                        shape.FrontColors,
-                        shape.ManaCost,
-                        $"Creature — {typeName}",
-                        null,
-                        "t70"));
-                }
-            }
-        }
-
-        athletes.Count.ShouldBe(TeamTypes * 8 * AthletesPerTypePerColor);
-        return athletes;
-    }
-
     private static async Task<int> CountSelectedTeamsAsync(SaveStore store, Guid saveId)
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
@@ -300,13 +215,6 @@ public sealed class TypeCupPostSelectionStatusTests
         using SaveDbContext context = store.OpenDbContext(saveId);
         RngStateEntity rng = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1).ConfigureAwait(false);
         return ((ulong)rng.State, (ulong)rng.Stream);
-    }
-
-    private static (SaveStore Store, string Root) CreateStore()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-mss070-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        return (OpenStore(root), root);
     }
 
     private static SaveStore OpenStore(string root)

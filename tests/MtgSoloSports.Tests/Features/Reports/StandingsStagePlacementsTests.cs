@@ -5,7 +5,6 @@ using MtgSoloSports.Features.History.GetSeasonPlacements;
 using MtgSoloSports.Features.Reports.SeasonDossier;
 using MtgSoloSports.Features.Reports.StandingsReport;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
-using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Persistence.Saves;
@@ -263,7 +262,8 @@ public sealed class StandingsStagePlacementsTests
     [Fact]
     public async Task StandingsReport_CorruptFinalRoster_FailsActionably()
     {
-        var (store, root, saveId) = await CreateSeason1CompleteAsync("Placements Corrupt Final");
+        // MSS-122: shared Season 1 template fork; corruption below still executes on the isolated fork.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stageplacements-");
         try
         {
             int leagueId = await FirstLeagueIdForSeasonAsync(store, saveId, 1);
@@ -288,7 +288,8 @@ public sealed class StandingsStagePlacementsTests
     [Fact]
     public async Task Dossier_SuperleagueTrajectory_MatchesStandingsExport()
     {
-        var (store, root, saveId) = await CreateSeason1CompleteAsync("Dossier Trajectory");
+        // MSS-122: shared Season 1 template fork; read-model assertions unchanged.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stageplacements-");
         try
         {
             int season1League = await FirstLeagueIdForSeasonAsync(store, saveId, 1);
@@ -346,7 +347,8 @@ public sealed class StandingsStagePlacementsTests
     [Fact]
     public async Task Dossier_Season1LegacyFallback_LabelledAndScoped()
     {
-        var (store, root, saveId) = await CreateSeason1CompleteAsync("Dossier Legacy");
+        // MSS-122: shared Season 1 template fork; read-model assertions unchanged.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stageplacements-");
         try
         {
             var dossierHandler = new GetSeasonDossierHandler(store);
@@ -456,14 +458,6 @@ public sealed class StandingsStagePlacementsTests
     {
         var (store, root) = TestSaveStores.CreateStore("mtgsolosports-stageplacements-");
         SaveStore.CreationRecord created = await store.CreateAsync(name, 4242UL, 777UL, UniverseTestCatalog.Build()).ConfigureAwait(false);
-        return (store, root, created.Detail.SaveId);
-    }
-
-    private static async Task<(SaveStore Store, string Root, Guid SaveId)> CreateSeason1CompleteAsync(string name)
-    {
-        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-stageplacements-");
-        SaveStore.CreationRecord created = await store.CreateAsync(name, 4242UL, 777UL, UniverseTestCatalog.Build()).ConfigureAwait(false);
-        await new CompleteSeasonHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
         return (store, root, created.Detail.SaveId);
     }
 

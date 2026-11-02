@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features;
 using Shouldly;
 using Xunit;
 using static MtgSoloSports.Tests.Features.PostseasonTestSaves;
@@ -200,7 +201,8 @@ public sealed class ColorCupMedalTablesTests
     [Fact]
     public async Task Handler_RemapAthleteColor_DoesNotMoveIndividualMedal()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(9191UL, 2020UL);
+        // MSS-122: shared Color Cup template fork; the SimulateSeasons(1) postseason below still executes.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-medals-");
         try
         {
             // Resolve one full Color Cup (individual + team) through the lifecycle.
@@ -252,7 +254,8 @@ public sealed class ColorCupMedalTablesTests
     [Fact]
     public async Task Handler_IndividualOnly_DoesNotCountTowardMedalTables()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(9293UL, 3030UL);
+        // MSS-122: shared Color Cup template fork; individual/team runs below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-medals-");
         try
         {
             // Lifecycle order is individual before team. After the individual

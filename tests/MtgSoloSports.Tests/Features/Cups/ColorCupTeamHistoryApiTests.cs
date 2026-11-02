@@ -6,6 +6,7 @@ using MtgSoloSports.Features.Cups.GetColorCupTeamResult;
 using MtgSoloSports.Features.Cups.PlayColorCupTeamRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.Tests.Features;
 using Shouldly;
 using Xunit;
 using static MtgSoloSports.Tests.Features.PostseasonTestSaves;
@@ -128,7 +129,8 @@ public sealed class ColorCupTeamHistoryApiTests
     [Fact]
     public async Task History_BeforeAndDuringTheFirstCup_ShowsSquadWithoutResult()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(5151UL, 6262UL);
+        // MSS-122: shared Color Cup template fork; history reads and step runs below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cuphistory-");
         try
         {
             GetColorCupTeamHistoryHandler handler = new(store);

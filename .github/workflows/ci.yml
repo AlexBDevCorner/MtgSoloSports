@@ -24,7 +24,37 @@ jobs:
       - name: Build backend
         run: dotnet build MtgSoloSports.slnx --configuration Release --no-restore
       - name: Test backend
-        run: dotnet test MtgSoloSports.slnx --configuration Release --no-build --no-restore
+        run: dotnet test MtgSoloSports.slnx --configuration Release --no-build --no-restore --logger "trx;LogFileName=test-results.trx"
+      - name: Slow-test summary
+        # MSS-122: ranked slow-test report from TRX metadata; runs even on test
+        # failure but never turns a failed test job green (no continue-on-error).
+        if: always()
+        run: |
+          python3 scripts/test-timing.py --self-check
+          TRX_FILE=$(ls tests/MtgSoloSports.Tests/TestResults/*.trx 2>/dev/null | head -n 1)
+          if [ -z "$TRX_FILE" ]; then
+            echo "No TRX results found; skipping timing summary." | tee timing-summary.txt
+          else
+            python3 scripts/test-timing.py "$TRX_FILE" --top 20 | tee timing-summary.txt
+          fi
+          {
+            echo "## Slow-test summary (MSS-122)"
+            echo '```'
+            cat timing-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload test timing artifacts
+        # MSS-122: bounded TRX plus compact summary, including on failure.
+        # Only timing files are uploaded: no save databases or catalog dumps.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: |
+            tests/MtgSoloSports.Tests/TestResults/*.trx
+            timing-summary.txt
+          retention-days: 7
+          if-no-files-found: warn
       - name: Verify formatting
         run: dotnet format MtgSoloSports.slnx --verify-no-changes --no-restore
       - name: Install frontend dependencies

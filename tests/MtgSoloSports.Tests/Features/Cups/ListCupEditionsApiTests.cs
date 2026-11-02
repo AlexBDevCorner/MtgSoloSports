@@ -7,6 +7,7 @@ using MtgSoloSports.Features.Cups.PlayColorCupTeamRound;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.Tests.Features;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
@@ -108,7 +109,8 @@ public sealed class ListCupEditionsApiTests
     [Fact]
     public async Task List_TracksStateThroughOneEdition()
     {
-        var (store, root, saveId) = await PrepareColorCupAsync(8181UL, 9292UL);
+        // MSS-122: shared Color Cup template fork; history reads and step/bulk runs below still execute.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cupeditions-");
         try
         {
             ListCupEditionsHandler handler = new(store);
