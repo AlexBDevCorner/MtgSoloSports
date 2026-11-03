@@ -199,8 +199,9 @@ internal static class SharedSaveTemplates
     {
         var (store, root, saveId) = await ForkAsync(
             "Season1Complete", BuildSeason1CompleteAsync, "mtgsolosports-shared-qualpre-").ConfigureAwait(false);
-        await new MtgSoloSports.Features.Cups.SelectChaosCupField.SelectChaosCupFieldHandler(store).HandleAsync(saveId).ConfigureAwait(false);
-        await new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(store).CompleteCupAsync(saveId).ConfigureAwait(false);
+        // Incidental qualifier/movement coverage keeps the previous chain:
+        // disable Chaos so Season 2 movement does not require a tournament.
+        await DisableChaosAsync(store, saveId).ConfigureAwait(false);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, saveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, saveId).ConfigureAwait(false);

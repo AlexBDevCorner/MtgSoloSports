@@ -27,9 +27,9 @@ public sealed class RecordsApiTests
             using HttpClient client = factory.CreateClient();
 
             HonoursPayload honours = await FetchHonoursAsync(client, saveId);
-            // Season 1 is odd, so SimulateSeasons now includes the post-season Color Cup:
-            // 24 feeder leagues x3 podiums (72) + 3 individual podiums + 12 team podiums = 87.
-            honours.Honours.Count.ShouldBe(87);
+            // Season 1 is odd, so SimulateSeasons now includes the post-season Color Cup plus Chaos:
+            // 24 feeder leagues x3 podiums (72) + 3 individual podiums + 12 team podiums + 3 Chaos podiums = 90.
+            honours.Honours.Count.ShouldBe(90);
 
             RecordsPayload records = await FetchRecordsAsync(client, saveId);
             records.Records.Count.ShouldBe(13);
@@ -43,11 +43,12 @@ public sealed class RecordsApiTests
             HallOfFamePayload fame = await FetchHallOfFameAsync(client, saveId);
             fame.Leaders.Count.ShouldBeGreaterThan(0);
             fame.Leaders[0].Rank.ShouldBe(1);
-            // MSS-096: career-prestige selection changes the cup field and winners,
-            // so the points leader is the cup double winner (2 major wins, 1787 points)
-            // rather than a league-title holder.
+            // MSS-106: Chaos runs before promotion and consumes RNG, so the Color Cup
+            // winners shift; the points leader is a consistent high placer across
+            // league/Chaos/Cup events (0 titles, 0 majors) rather than the pre-Chaos
+            // cup double winner.
             fame.Leaders[0].TotalTitles.ShouldBe(0);
-            fame.Leaders[0].MajorWins.ShouldBe(2);
+            fame.Leaders[0].MajorWins.ShouldBe(0);
 
             int anyAthlete = honours.Honours[0].AthleteId;
             HonoursPayload filtered = await FetchHonoursByAthleteAsync(client, saveId, anyAthlete);

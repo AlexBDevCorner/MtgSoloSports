@@ -114,7 +114,12 @@ public sealed class DashboardPolishTests
             withHonour.Honours.Any(h => h.SeasonNumber == 1).ShouldBeTrue();
 
             // Inaugural movement then rebalancing are explicit Next Event steps.
+            // Eligible Season 1 runs Chaos (field + tournament) before movement.
             AdvanceToNextEventHandler advance = new(store);
+            AdvanceToNextEventResponse selectedChaos = await advance.HandleAsync(saveId);
+            selectedChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectChaosCup);
+            AdvanceToNextEventResponse ranChaos = await advance.HandleAsync(saveId);
+            ranChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunChaosCup);
             AdvanceToNextEventResponse inaugural = await advance.HandleAsync(saveId);
             inaugural.ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveInauguralMovement);
             GetAthleteProfileResponse withMovement = await profiles.HandleAsync(saveId, champion);

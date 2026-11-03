@@ -439,6 +439,7 @@ public sealed class FeederQualifierTests
         var (store, root) = PostseasonTestSaves.CreateStore();
         var created = await store.CreateAsync("MSS058 Seed", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         await PostseasonTestSaves.CompleteSeasonOneAsync(store, created.Detail.SaveId).ConfigureAwait(false);
+        await SharedSaveTemplates.DisableChaosAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(created.Detail.SaveId).ConfigureAwait(false);
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, created.Detail.SaveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, created.Detail.SaveId).ConfigureAwait(false);

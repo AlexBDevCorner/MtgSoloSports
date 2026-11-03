@@ -46,7 +46,11 @@ public sealed class InauguralSuperleagueApiTests
             // MSS-067: seed a shared completed Season 1 instead of importing
             // the catalog and simulating 32 stages over HTTP; the inaugural
             // endpoints under test still execute over HTTP.
-            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(Path.Combine(root, "saves"));
+            // Chaos is incidental here: disable so inaugural stays the next step.
+            string savesRoot = Path.Combine(root, "saves");
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(savesRoot);
+            var disableStore = TestSaveStores.CreateStoreForRoot(savesRoot);
+            await SharedSaveTemplates.DisableChaosAsync(disableStore, saveId);
             using HttpClient client = factory.CreateClient();
 
             using HttpResponseMessage post = await client.PostAsync($"/api/saves/{saveId:D}/superleague/inaugural", null);
