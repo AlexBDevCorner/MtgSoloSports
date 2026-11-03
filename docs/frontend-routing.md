@@ -11,7 +11,7 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves` — save management.
 - `/saves/:saveId/dashboard`
 - `/saves/:saveId/live?league=<id>&round=<n>`
-- `/saves/:saveId/live?event=chaos-cup&season=<n>&stage=<0..5>&group=<n>&round=<n>` — read-only Chaos Cup group navigation (MSS-109).
+- `/saves/:saveId/live?event=chaos-cup&season=<n>&stage=<0..5>&group=<n>&round=<n>` — Chaos Cup group navigation with scoped Live controls (MSS-109/110).
 - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
 - `/saves/:saveId/records`
 - `/saves/:saveId/reports` — ChatGPT source packs (MSS-088): season dossier + universe almanac downloads.
@@ -50,8 +50,12 @@ share them instead of hand-rolling URLs.
   the event after it completes, so the completed event stays on screen.
   Next Round and Run remaining appear only while the URL's event and season
   are the save's next step; any other event shows its rounds read-only.
-  The Chaos Cup is read-only on Live (MSS-109): no simulation buttons, only
-  the edition overview plus the selected group and one round are fetched.
+  The Chaos Cup offers scoped Live controls while `RunChaosCup` is the legal
+  next event for the edition's season (MSS-110): one game round, one group,
+  the current stage, an explicit next-stage draw once every group completes,
+  and the full Cup behind a two-step confirmation. Other seasons and
+  post-Chaos phases replay read-only. Only the edition overview plus the
+  selected group and one round are ever fetched.
 - Live selection: `event=color-cup-selection` or `event=type-cup-selection`
   with `season` shows that Cup's squad selection. Without `event`, Live shows
   the selection while it is the save's next lifecycle step; announcing it pins

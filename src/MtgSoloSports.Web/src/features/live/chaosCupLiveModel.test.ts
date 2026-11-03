@@ -7,7 +7,9 @@ import {
   chaosStageLabel,
   chaosStageShortLabel,
   chaosStageStatus,
+  isChaosLivePlayable,
   isFinalChaosStage,
+  nextDrawableChaosStage,
   selectedChaosGroup,
   selectedChaosRound,
   selectedChaosStage,
@@ -101,5 +103,34 @@ describe('MSS-109 Chaos Cup live model', () => {
     assert.ok(chaosCutLabel(true).includes('provisional'), 'provisional wording');
     assert.ok(chaosCutLabel(false).includes('official'), 'official wording');
     assert.ok(chaosCutLabel(true).includes('top 16 advance'), 'cut size travels with the label');
+  });
+
+  it('offers the explicit next-stage draw only once every group completes (MSS-110)', () => {
+    const pending = editionWith([
+      { stageIndex: 0, isDrawn: true, isComplete: false, state: 'InProgress' },
+      { stageIndex: 1, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 2, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 3, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 4, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 5, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+    ]);
+    assert.equal(nextDrawableChaosStage(pending), null, 'active stage blocks the draw');
+    const ready = editionWith([
+      { stageIndex: 0, isDrawn: true, isComplete: true, state: 'Completed' },
+      { stageIndex: 1, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 2, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 3, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 4, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+      { stageIndex: 5, isDrawn: false, isComplete: false, state: 'NotDrawn' },
+    ]);
+    assert.equal(nextDrawableChaosStage(ready), 1, 'completed stage unlocks the next draw');
+    assert.equal(nextDrawableChaosStage(null), null, 'no edition means no draw');
+  });
+
+  it('gates scoped controls on the Dashboard legal next event (MSS-110)', () => {
+    assert.equal(isChaosLivePlayable(['RunChaosCup'], 2, 2), true, 'active edition is playable');
+    assert.equal(isChaosLivePlayable(['RunChaosCup'], 2, 1), false, 'historical editions replay read-only');
+    assert.equal(isChaosLivePlayable(['ResolveAutomaticMovement'], 2, 2), false, 'post-Chaos phases replay read-only');
+    assert.equal(isChaosLivePlayable(null, 2, 2), false, 'unknown status never simulates');
   });
 });

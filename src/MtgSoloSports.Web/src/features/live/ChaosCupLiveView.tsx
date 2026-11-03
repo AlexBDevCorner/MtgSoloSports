@@ -3,15 +3,21 @@ import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
+  completeChaosCup,
+  completeChaosStage,
+  drawChaosStage,
   fetchChaosEdition,
   fetchChaosGroup,
   fetchChaosRound,
+  finishChaosGroup,
+  playChaosRound,
   type ChaosCupEdition,
   type ChaosCupGroup,
   type ChaosCupRound,
 } from '../cups/chaosCupApi';
-import { AthleteLink, Link } from '../routing/router';
+import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi';
 import { dashboardPath } from '../routing/routes';
+import { AthleteLink, Link } from '../routing/router';
 import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import {
@@ -25,19 +31,28 @@ import {
   chaosStageStatus,
   chaosStageStatusLabel,
   formatChaosPoints,
+  isChaosLivePlayable,
   isFinalChaosStage,
+  nextDrawableChaosStage,
   selectedChaosGroup,
   selectedChaosRound,
   selectedChaosStage,
 } from './chaosCupLiveModel';
 import './LivePage.css';
 
+/** True once the backend reports the tournament as already resolved (HTTP 409). */
+function isAlreadyCompleteMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('already been resolved') || normalized.includes('already complete');
+}
+
 /**
- * Read-only Chaos Cup group navigation on Live (MSS-109). Reuses the Live
- * sidebar/main layout and the shared RoundReveal presentation; the backend
- * stays authoritative and nothing here simulates, draws or consumes RNG.
- * Only the edition overview, the selected group and one round are fetched —
- * never the whole 1008-round tournament.
+ * Chaos Cup group navigation with scoped Live controls (MSS-109/110). Reuses
+ * the Live sidebar/main layout and the shared RoundReveal presentation; the
+ * backend stays authoritative and the view only re-reads the affected
+ * edition/group/round after each scoped POST — never the whole 1008-round
+ * tournament. Each (stage, group) owns an isolated RNG, so group order and
+ * incremental-vs-complete calls stay byte-identical.
  */
 export function ChaosCupLiveView({
   saveId,
@@ -46,6 +61,7 @@ export function ChaosCupLiveView({
   urlGroup,
   urlRound,
   onSelect,
+  onMutated,
 }: {
   saveId: string;
   /** Source season from `?season=`; null follows the latest Chaos edition. */
@@ -55,6 +71,8 @@ export function ChaosCupLiveView({
   urlRound: number | null;
   /** Stable shareable selection; a null round follows the latest played round. */
   onSelect: (stage: number, group: number, round: number | null) => void;
+  /** Refreshes the Dashboard status so both surfaces agree on the next event. */
+  onMutated?: () => void;
 }) {
   const [edition, setEdition] = useState<ChaosCupEdition | null>(null);
   const [editionLoading, setEditionLoading] = useState(true);
@@ -68,6 +86,12 @@ export function ChaosCupLiveView({
   const [roundLoading, setRoundLoading] = useState(false);
   const [roundError, setRoundError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [status, setStatus] = useState<SeasonStatus | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [pending, setPending] = useState<'round' | 'group' | 'stage' | 'draw' | 'cup' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmEntire, setConfirmEntire] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -93,6 +117,26 @@ export function ChaosCupLiveView({
       });
     return () => controller.abort();
   }, [saveId, season, revision]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setStatusLoading(true);
+    setStatusError(null);
+    fetchSeasonStatus(saveId, controller.signal)
+      .then((loaded) => {
+        setStatus(loaded);
+        setStatusLoading(false);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        setStatus(null);
+        setStatusError(apiErrorMessage(failure));
+        setStatusLoading(false);
+      });
+    return () => controller.abort();
+  }, [saveId, revision]);
 
   const stage = selectedChaosStage(urlStage, edition);
   const stageSummary = edition?.stages.find((entry) => entry.stageIndex === stage) ?? null;
@@ -207,6 +251,120 @@ export function ChaosCupLiveView({
     setRevision((value) => value + 1);
   }
 
+  // MSS-110 scoped controls: Dashboard and Live agree through the single
+  // legal next action. Historical editions (or a post-Chaos phase) replay
+  // read-only; only the active edition while `RunChaosCup` is legal may
+  // simulate, and interrupted work resumes from persisted rounds.
+  const playable = isChaosLivePlayable(
+    status?.legalNextActions,
+    status?.sourceSeasonNumber,
+    edition?.sourceSeasonNumber ?? null,
+  );
+  const busy = pending !== null;
+  const drawableStage = nextDrawableChaosStage(edition);
+  const canPlayRound =
+    playable && !busy && stageDrawn && !statusLoading && (visibleGroup ? !visibleGroup.isComplete : true);
+  const canFinishGroup = playable && !busy && stageDrawn && !statusLoading && (visibleGroup ? !visibleGroup.isComplete : true);
+  const canFinishStage =
+    playable && !busy && stageDrawn && !statusLoading && !(stageSummary?.isComplete ?? false);
+  const canDraw = playable && !busy && !statusLoading && drawableStage !== null;
+  const canFinishCup = playable && !busy && !statusLoading && !(edition?.isComplete ?? true);
+
+  function friendlyActionMessage(message: string): string {
+    if (isAlreadyCompleteMessage(message)) {
+      return `${message} The completed results stay replayable below; continue on the Dashboard for the next season.`;
+    }
+    return message;
+  }
+
+  function afterMutation(): void {
+    setConfirmEntire(false);
+    refresh();
+    onMutated?.();
+  }
+
+  async function runScoped(kind: 'round' | 'group' | 'stage' | 'draw' | 'cup', call: () => Promise<unknown>): Promise<boolean> {
+    if (busy) {
+      return false;
+    }
+    setPending(kind);
+    setActionError(null);
+    try {
+      await call();
+      afterMutation();
+      return true;
+    } catch (failure) {
+      setActionError(friendlyActionMessage(apiErrorMessage(failure)));
+      return false;
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function handlePlayRound(): void {
+    if (!canPlayRound || resolvedSeason === null) {
+      return;
+    }
+    const pinnedStage = stage;
+    const pinnedGroup = groupNumber;
+    void runScoped('round', () => playChaosRound(saveId, pinnedStage, pinnedGroup, resolvedSeason)).then((ok) => {
+      if (ok) {
+        // Stay on the same group and follow the latest persisted round.
+        onSelect(pinnedStage, pinnedGroup, null);
+      }
+    });
+  }
+
+  function handleFinishGroup(): void {
+    if (!canFinishGroup || resolvedSeason === null) {
+      return;
+    }
+    const pinnedStage = stage;
+    const pinnedGroup = groupNumber;
+    void runScoped('group', () => finishChaosGroup(saveId, pinnedStage, pinnedGroup, resolvedSeason)).then((ok) => {
+      if (ok) {
+        onSelect(pinnedStage, pinnedGroup, null);
+      }
+    });
+  }
+
+  function handleFinishStage(): void {
+    if (!canFinishStage || resolvedSeason === null) {
+      return;
+    }
+    const pinnedStage = stage;
+    const pinnedGroup = groupNumber;
+    void runScoped('stage', () => completeChaosStage(saveId, pinnedStage, resolvedSeason)).then((ok) => {
+      if (ok) {
+        onSelect(pinnedStage, pinnedGroup, null);
+      }
+    });
+  }
+
+  function handleDrawNext(): void {
+    if (!canDraw || drawableStage === null || resolvedSeason === null) {
+      return;
+    }
+    const target = drawableStage;
+    void runScoped('draw', () => drawChaosStage(saveId, target, resolvedSeason)).then((ok) => {
+      if (ok) {
+        // The fresh stage starts at group 1 with no rounds yet.
+        onSelect(target, 1, null);
+      }
+    });
+  }
+
+  function handleFinishCup(): void {
+    if (!canFinishCup || resolvedSeason === null) {
+      return;
+    }
+    if (!confirmEntire) {
+      setConfirmEntire(true);
+      return;
+    }
+    void runScoped('cup', () => completeChaosCup(saveId, resolvedSeason));
+  }
+
   function handleSelectStage(nextStage: number): void {
     // Group counts differ per stage, so a stage switch restarts at group 1
     // and follows the latest played round there.
@@ -319,6 +477,177 @@ export function ChaosCupLiveView({
               fetched, never the whole tournament.
             </p>
           </details>
+        </Card>
+
+        <Card eyebrow="Live controls" title={playable ? 'Play the active stage' : 'Chaos Cup controls'}>
+          {statusLoading ? (
+            <Loading label="Loading next event…" />
+          ) : statusError ? (
+            <Notice tone="error" title="Next event unavailable">
+              <p>{statusError}</p>
+              <p>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={refresh}
+                >
+                  Retry
+                </button>
+              </p>
+            </Notice>
+          ) : playable ? (
+            <div className="live-manage-controls">
+              <div className="live-buttons">
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={!canPlayRound}
+                  aria-busy={pending === 'round'}
+                  title={
+                    !stageDrawn
+                      ? 'This stage has no persisted draw yet.'
+                      : visibleGroup?.isComplete
+                        ? 'This group already holds all 16 persisted rounds.'
+                        : `Simulate the next round of Stage ${stage + 1} Group ${groupNumber} on the backend.`
+                  }
+                  onClick={handlePlayRound}
+                >
+                  {pending === 'round' ? 'Simulating…' : `Play next round · Group ${groupNumber}`}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={!canFinishGroup}
+                  aria-busy={pending === 'group'}
+                  title={
+                    !stageDrawn
+                      ? 'This stage has no persisted draw yet.'
+                      : visibleGroup?.isComplete
+                        ? 'This group already holds all 16 persisted rounds.'
+                        : `Simulate the remaining rounds of Stage ${stage + 1} Group ${groupNumber} in canonical order.`
+                  }
+                  onClick={handleFinishGroup}
+                >
+                  {pending === 'group' ? 'Finishing…' : `Finish group ${groupNumber}`}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={!canFinishStage}
+                  aria-busy={pending === 'stage'}
+                  title={
+                    !stageDrawn
+                      ? 'This stage has no persisted draw yet.'
+                      : (stageSummary?.isComplete ?? false)
+                        ? 'This stage already holds every group result.'
+                        : `Simulate every remaining group of ${isFinalChaosStage(stage) ? 'the Final' : `Stage ${stage + 1}`} in canonical group order; stops before the next draw.`
+                  }
+                  onClick={handleFinishStage}
+                >
+                  {pending === 'stage'
+                    ? 'Finishing…'
+                    : isFinalChaosStage(stage)
+                      ? 'Finish Final'
+                      : `Finish Stage ${stage + 1}`}
+                </button>
+                {drawableStage !== null ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={!canDraw}
+                    aria-busy={pending === 'draw'}
+                    title={`Draw ${isFinalChaosStage(drawableStage) ? 'the Final' : `Stage ${drawableStage + 1}`} now that ${isFinalChaosStage(stage) ? 'the previous stage' : `Stage ${stage + 1}`} is complete; pure-random groups of 32.`}
+                    onClick={handleDrawNext}
+                  >
+                    {pending === 'draw'
+                      ? 'Drawing…'
+                      : isFinalChaosStage(drawableStage)
+                        ? 'Draw Final'
+                        : `Draw Stage ${drawableStage + 1}`}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={!canFinishCup}
+                  aria-busy={pending === 'cup'}
+                  title="Tournament-wide fast-forward: plays every remaining group and the Final."
+                  onClick={handleFinishCup}
+                >
+                  {pending === 'cup' ? 'Finishing…' : 'Finish entire Cup'}
+                </button>
+              </div>
+              <p className="muted small">Each round is saved and can&apos;t be undone.</p>
+              <p className="muted small live-count">
+                Group {groupNumber} · {visibleGroup?.roundsPlayed ?? 0}/{CHAOS_ROUNDS_PER_GROUP} rounds
+                {visibleGroup?.isComplete ? ' · group complete' : ''} · Stage {stage + 1} ·{' '}
+                {stageSummary?.groupsCompleted ?? 0}/{stageSummary?.groupCount ?? chaosGroupCount(stage)} groups
+              </p>
+              {confirmEntire ? (
+                <Notice tone="error" title="Finish the entire Chaos Cup?">
+                  <p>
+                    This plays every remaining group and the Final to the official places. To stop at the
+                    end of {isFinalChaosStage(stage) ? 'the Final' : `Stage ${stage + 1}`}, use{' '}
+                    {isFinalChaosStage(stage) ? 'Finish Final' : `Finish Stage ${stage + 1}`} instead.
+                  </p>
+                  <p className="live-buttons">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy}
+                      onClick={handleFinishCup}
+                    >
+                      {pending === 'cup' ? 'Finishing…' : 'Yes, finish entire Cup'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy}
+                      onClick={() => setConfirmEntire(false)}
+                    >
+                      Keep stage scope
+                    </button>
+                  </p>
+                </Notice>
+              ) : null}
+              {actionError ? (
+                <Notice tone="error" title="The round did not complete">
+                  <p>{actionError}</p>
+                  <p>
+                    <button type="button" className="ghost-button" onClick={() => setActionError(null)}>
+                      Dismiss
+                    </button>
+                  </p>
+                </Notice>
+              ) : null}
+            </div>
+          ) : (
+            <Notice tone="info" title="Not the next event">
+              <p>
+                {edition.isComplete
+                  ? 'This Chaos Cup is complete and replayable below.'
+                  : status?.legalNextActions[0]
+                    ? `The Dashboard names “${status.legalNextActions[0]}” next; scoped Chaos rounds unlock while “RunChaosCup” is legal for Season ${edition.sourceSeasonNumber}.`
+                    : 'Scoped Chaos rounds unlock while “RunChaosCup” is the legal next event.'}{' '}
+                Refreshing re-reads persisted rounds and never resimulates.
+              </p>
+              <p className="live-buttons">
+                <Link to={dashboardPath(saveId)} className="primary-button">
+                  Continue on the Dashboard
+                </Link>
+              </p>
+            </Notice>
+          )}
+          {actionError && !playable ? (
+            <Notice tone="error" title="The round did not complete">
+              <p>{actionError}</p>
+              <p>
+                <button type="button" className="ghost-button" onClick={() => setActionError(null)}>
+                  Dismiss
+                </button>
+              </p>
+            </Notice>
+          ) : null}
         </Card>
 
         <Card eyebrow="Stages" title={`Stages · ${edition.stageCount} of 6`}>

@@ -1,10 +1,11 @@
 import { fetchJson } from '../../shared/api/http';
 
 /**
- * Read-only Chaos Cup browsing over the MSS-107 endpoints (MSS-109 Live).
- * Every value is a persisted backend fact; the frontend never simulates,
- * draws or consumes RNG. Only the selected group's rounds are fetched, never
- * the whole 1008-round tournament.
+ * Chaos Cup browsing over the MSS-107 read endpoints plus the MSS-110 scoped
+ * Live mutations. Reads return persisted backend facts; mutations run on the
+ * backend (isolated per-group RNG, save RNG only for draws) and the view
+ * re-reads the affected group/edition afterwards. Only the selected group's
+ * rounds are fetched, never the whole 1008-round tournament.
  */
 
 export interface ChaosCupStageSummary {
@@ -167,4 +168,61 @@ export function fetchChaosRound(
     `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/groups/${groupNumber}/rounds/${roundNumber}${seasonQuery(season)}`,
     { signal },
   );
+}
+
+/** Simulates exactly one game round in the selected group on the backend. */
+export function playChaosRound(
+  saveId: string,
+  stageIndex: number,
+  groupNumber: number,
+  season: number | null,
+): Promise<unknown> {
+  return fetchJson<unknown>(
+    `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/groups/${groupNumber}/rounds${seasonQuery(season)}`,
+    { method: 'POST' },
+  );
+}
+
+/** Finishes the selected 32-athlete group (all 16 rounds) on the backend. */
+export function finishChaosGroup(
+  saveId: string,
+  stageIndex: number,
+  groupNumber: number,
+  season: number | null,
+): Promise<unknown> {
+  return fetchJson<unknown>(
+    `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/groups/${groupNumber}/complete${seasonQuery(season)}`,
+    { method: 'POST' },
+  );
+}
+
+/** Finishes the current stage (every remaining group in canonical order). */
+export function completeChaosStage(
+  saveId: string,
+  stageIndex: number,
+  season: number | null,
+): Promise<unknown> {
+  return fetchJson<unknown>(
+    `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/complete${seasonQuery(season)}`,
+    { method: 'POST' },
+  );
+}
+
+/** Draws the next stage once every group of the previous stage completes. */
+export function drawChaosStage(
+  saveId: string,
+  stageIndex: number,
+  season: number | null,
+): Promise<unknown> {
+  return fetchJson<unknown>(
+    `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/draw${seasonQuery(season)}`,
+    { method: 'POST' },
+  );
+}
+
+/** Fast-forwards every remaining stage to the Final (requires confirmation in the view). */
+export function completeChaosCup(saveId: string, season: number | null): Promise<unknown> {
+  return fetchJson<unknown>(`/api/saves/${saveId}/cups/chaos/complete${seasonQuery(season)}`, {
+    method: 'POST',
+  });
 }

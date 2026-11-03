@@ -1,11 +1,12 @@
 import type { ChaosCupEdition } from '../cups/chaosCupApi';
 
 /**
- * Pure Chaos Cup Live navigation helpers (MSS-109). No sporting math and no
- * I/O: stage labels, canonical/selected stage and group resolution, and the
- * P16/P17 cut wording. The backend stays authoritative for draws, rounds and
+ * Pure Chaos Cup Live navigation and scoped-control helpers (MSS-109/110). No
+ * sporting math and no I/O: stage labels, canonical/selected stage and group
+ * resolution, the P16/P17 cut wording, plus the explicit draw-next-stage and
+ * playable gates. The backend stays authoritative for draws, rounds and
  * standings; this model only decides what a stable `?event=chaos-cup`
- * URL names.
+ * URL names and which scoped action the view may offer.
  */
 
 export const CHAOS_STAGE_COUNT = 6;
@@ -120,4 +121,45 @@ export function chaosCutLabel(isProvisional: boolean): string {
 /** Display-only thousandths projection (no sporting math). */
 export function formatChaosPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
+}
+
+/**
+ * Explicit next-stage draw (MSS-110): the first undrawn stage whose previous
+ * stage is drawn and complete, or null while the active stage is still
+ * pending (or the tournament is fully drawn). The backend rejects any other
+ * draw with 409; the view only offers this one.
+ */
+export function nextDrawableChaosStage(edition: ChaosCupEdition | null): number | null {
+  if (!edition) {
+    return null;
+  }
+  const byIndex = new Map(edition.stages.map((stage) => [stage.stageIndex, stage]));
+  for (let stage = 1; stage < CHAOS_STAGE_COUNT; stage += 1) {
+    const previous = byIndex.get(stage - 1);
+    const current = byIndex.get(stage);
+    if (!previous || !current) {
+      continue;
+    }
+    if (previous.isDrawn && previous.isComplete && !current.isDrawn) {
+      return stage;
+    }
+  }
+  return null;
+}
+
+/**
+ * Dashboard/Live agreement gate (MSS-110): scoped Chaos controls are legal
+ * only while the season status names `RunChaosCup` for the edition's source
+ * season. Historical editions and interrupted post-Chaos phases replay
+ * read-only, matching the Dashboard's single legal next action.
+ */
+export function isChaosLivePlayable(
+  legalNextActions: readonly string[] | null | undefined,
+  statusSourceSeason: number | null | undefined,
+  editionSourceSeason: number | null | undefined,
+): boolean {
+  if (!legalNextActions || statusSourceSeason == null || editionSourceSeason == null) {
+    return false;
+  }
+  return legalNextActions.includes('RunChaosCup') && statusSourceSeason === editionSourceSeason;
 }

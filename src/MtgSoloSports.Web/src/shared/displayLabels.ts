@@ -272,6 +272,8 @@ export function storyEventLabel(eventType: string | null | undefined): string {
 
 const ACTION_LABELS: Record<string, string> = {
   CompleteNextGlobalStage: 'Complete global stage',
+  SelectChaosCup: 'Select Chaos Cup field',
+  RunChaosCup: 'Run Chaos Cup',
   ResolveInauguralMovement: 'Form Superleague',
   ResolveAutomaticMovement: 'Resolve promotion',
   RunQualifier: 'Run qualifier',
