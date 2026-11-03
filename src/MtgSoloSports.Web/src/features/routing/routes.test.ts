@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   athletePath,
+  chaosLivePath,
   cupEditionPath,
   cupsPath,
   cupTeamPath,
@@ -79,6 +80,7 @@ describe('MSS-040 route shapes', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, ''), {
@@ -93,6 +95,7 @@ describe('MSS-040 route shapes', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.equal(livePath(SAVE, { league: 7, round: 3 }), `/saves/${SAVE}/live?league=7&round=3`);
@@ -143,6 +146,7 @@ describe('MSS-040 route shapes', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/history`, '?season=0&competition=x'), {
@@ -172,6 +176,7 @@ describe('MSS-040 route shapes', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=bogus&round=5'), {
@@ -186,6 +191,7 @@ describe('MSS-040 route shapes', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.equal(
@@ -382,6 +388,48 @@ describe('MSS-060 qualifier routes', () => {
       'qualifiers/f1f2/%20',
     ]) {
       assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
+    }
+  });
+});
+
+describe('MSS-109 Chaos Cup live routes', () => {
+  it('round-trips the selected stage, group and round on Live', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?event=chaos-cup&season=2&stage=0&group=1&round=5'), {
+      name: 'live',
+      saveId: SAVE,
+      leagueId: null,
+      round: 5,
+      event: 'chaos-cup',
+      selection: null,
+      transition: null,
+      eventSeason: 2,
+      group: 1,
+      tournamentPhase: null,
+      qualificationGroup: null,
+      stage: 0,
+      qualifier: null,
+    });
+    assert.equal(
+      chaosLivePath(SAVE, 2, 0, 1, 5),
+      `/saves/${SAVE}/live?round=5&event=chaos-cup&season=2&group=1&stage=0`,
+    );
+    assert.equal(
+      livePath(SAVE, { event: 'chaos-cup', season: 2, stage: 5, group: 1 }),
+      `/saves/${SAVE}/live?event=chaos-cup&season=2&group=1&stage=5`,
+    );
+  });
+
+  it('keeps stage 0 valid while rejecting out-of-range stages', () => {
+    assert.equal(parseRoute(`/saves/${SAVE}/live`, '?event=chaos-cup&season=2&stage=0').name, 'live');
+    const sixth = parseRoute(`/saves/${SAVE}/live`, '?event=chaos-cup&season=2&stage=6');
+    assert.equal(sixth.name, 'live');
+    if (sixth.name === 'live') {
+      assert.equal(sixth.stage, null);
+    }
+    const negative = parseRoute(`/saves/${SAVE}/live`, '?event=chaos-cup&season=2&stage=-1');
+    assert.equal(negative.name, 'live');
+    if (negative.name === 'live') {
+      assert.equal(negative.stage, null);
     }
   });
 });

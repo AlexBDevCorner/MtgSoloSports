@@ -91,6 +91,9 @@ const STEP_ROUTES: Record<EventKey, string> = {
   'color-cup-individual': 'cups/color/individual',
   'color-cup-team': 'cups/color/team',
   'type-cup-team': 'cups/type/team',
+  // MSS-109: Chaos Cup is read-only on Live (no simulation buttons); the
+  // round step lives on scoped Chaos endpoints owned by MSS-110, never here.
+  'chaos-cup': 'cups/chaos',
 };
 
 /** Simulates exactly one round of the event on the backend. */

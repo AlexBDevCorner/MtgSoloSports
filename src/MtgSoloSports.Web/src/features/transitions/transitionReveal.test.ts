@@ -67,6 +67,7 @@ describe('MSS-053 transition keys', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/live`, '?transition=rebalance&season=3'), {
@@ -81,6 +82,7 @@ describe('MSS-053 transition keys', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: null,
     });
   });
