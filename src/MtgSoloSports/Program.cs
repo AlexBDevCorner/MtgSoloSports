@@ -6,8 +6,10 @@ using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Catalog.ImportFromScryfall;
 using MtgSoloSports.Features.Cups.DrawTypeCupQualificationGroups;
 using MtgSoloSports.Features.Cups.FinishTypeCupTeamStage;
+using MtgSoloSports.Features.Cups.GetChaosCupAthleteJourney;
 using MtgSoloSports.Features.Cups.GetChaosCupEdition;
 using MtgSoloSports.Features.Cups.GetChaosCupGroup;
+using MtgSoloSports.Features.Cups.GetChaosCupSurvival;
 using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.GetColorCupSelection;
 using MtgSoloSports.Features.Cups.GetColorCupSelectionReport;
@@ -170,6 +172,8 @@ builder.Services.AddScoped<MtgSoloSports.Features.Cups.AdvanceChaosCupStage.Adva
 builder.Services.AddScoped<MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler>();
 builder.Services.AddScoped<GetChaosCupEditionHandler>();
 builder.Services.AddScoped<GetChaosCupGroupHandler>();
+builder.Services.AddScoped<GetChaosCupAthleteJourneyHandler>();
+builder.Services.AddScoped<GetChaosCupSurvivalHandler>();
 builder.Services.AddScoped<SelectColorCupTeamsHandler>();
 builder.Services.AddScoped<GetColorCupSelectionHandler>();
 builder.Services.AddScoped<GetColorCupSelectionReportHandler>();
@@ -289,6 +293,8 @@ GetRebalanceResultEndpoint.Map(app);
 // routes stay unmapped; GETs never simulate or draw.
 GetChaosCupEditionEndpoint.Map(app);
 GetChaosCupGroupEndpoint.Map(app);
+GetChaosCupAthleteJourneyEndpoint.Map(app);
+GetChaosCupSurvivalEndpoint.Map(app);
 SelectColorCupTeamsEndpoint.Map(app);
 GetColorCupSelectionEndpoint.Map(app);
 GetColorCupSelectionReportEndpoint.Map(app);
