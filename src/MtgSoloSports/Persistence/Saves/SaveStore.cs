@@ -743,32 +743,30 @@ public sealed class SaveStore
         cancellationToken.ThrowIfCancellationRequested();
         SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
-        await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
-        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Re-check under the gates: a concurrent restore/import could have
-            // replaced the file after the pre-gate existence check.
-            if (!File.Exists(path))
+            SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                throw new SaveNotFoundException(saveId);
+                SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+                await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    DeleteLiveSaveFile(path, saveId);
+                }
+                finally
+                {
+                    snapshotGate.Release();
+                }
             }
-
-            // Drop pooled handles before removing the file so the delete and
-            // companion cleanup never race open SQLite mappings (Windows share
-            // violations, Linux fd resurrection).
-            ClearSaveConnections(path);
-            File.Delete(path);
-            DeleteCompanionFiles(path);
-            ClearSaveConnections(path);
-            InvalidateMigrationVerified(saveId);
+            finally
+            {
+                migrationGate.Release();
+            }
         }
         finally
         {
-            snapshotGate.Release();
-            migrationGate.Release();
             mutationGate.Release();
         }
 
@@ -788,6 +786,25 @@ public sealed class SaveStore
                 _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
             }
         }
+    }
+
+    private void DeleteLiveSaveFile(string path, Guid saveId)
+    {
+        // Re-check under the gates: a concurrent restore/import could have
+        // replaced the file after the pre-gate existence check.
+        if (!File.Exists(path))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        // Drop pooled handles before removing the file so the delete and
+        // companion cleanup never race open SQLite mappings (Windows share
+        // violations, Linux fd resurrection).
+        ClearSaveConnections(path);
+        File.Delete(path);
+        DeleteCompanionFiles(path);
+        ClearSaveConnections(path);
+        InvalidateMigrationVerified(saveId);
     }
 
     private static void ClearCheckpointPools(string checkpointDirectory)
@@ -953,36 +970,42 @@ public sealed class SaveStore
         // always acquired Advance -> Migration -> Snapshot, never reverse).
         SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(staged.Manifest.SaveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        SemaphoreSlim migrationGate = AcquireMigrationGate(staged.Manifest.SaveId);
-        await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (File.Exists(target))
+            SemaphoreSlim migrationGate = AcquireMigrationGate(staged.Manifest.SaveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                if (!overwrite)
+                if (File.Exists(target))
                 {
-                    throw new SaveAlreadyExistsException(staged.Manifest.SaveId);
+                    if (!overwrite)
+                    {
+                        throw new SaveAlreadyExistsException(staged.Manifest.SaveId);
+                    }
+
+                    await CreateCheckpointAsync(staged.Manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
+                    await ReplaceLiveDatabaseAsync(staged.Manifest.SaveId, target, staged.StagedPath, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    ClearSaveConnections(staged.StagedPath);
+                    ClearSaveConnections(target);
+                    File.Move(staged.StagedPath, target);
                 }
 
-                await CreateCheckpointAsync(staged.Manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
-                await ReplaceLiveDatabaseAsync(staged.Manifest.SaveId, target, staged.StagedPath, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                ClearSaveConnections(staged.StagedPath);
+                // File replacement bypasses pooled SQLite handles, which would
+                // otherwise keep serving pages from the previous file content.
                 ClearSaveConnections(target);
-                File.Move(staged.StagedPath, target);
+                InvalidateMigrationVerified(staged.Manifest.SaveId);
+                return await ReadDetailAsync(staged.Manifest.SaveId, cancellationToken).ConfigureAwait(false);
             }
-
-            // File replacement bypasses pooled SQLite handles, which would
-            // otherwise keep serving pages from the previous file content.
-            ClearSaveConnections(target);
-            InvalidateMigrationVerified(staged.Manifest.SaveId);
-            return await ReadDetailAsync(staged.Manifest.SaveId, cancellationToken).ConfigureAwait(false);
+            finally
+            {
+                migrationGate.Release();
+            }
         }
         finally
         {
-            migrationGate.Release();
             mutationGate.Release();
         }
     }
@@ -1418,24 +1441,30 @@ public sealed class SaveStore
         string livePath = GetSaveFilePath(saveId);
         SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
-        await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (await IsLiveHealthyAsync(saveId, cancellationToken).ConfigureAwait(false))
+            SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
-            }
-            else if (File.Exists(livePath))
-            {
-                await PreserveDamagedLiveCopyAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
-            }
+                if (await IsLiveHealthyAsync(saveId, cancellationToken).ConfigureAwait(false))
+                {
+                    await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
+                }
+                else if (File.Exists(livePath))
+                {
+                    await PreserveDamagedLiveCopyAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+                }
 
-            await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+                await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                migrationGate.Release();
+            }
         }
         finally
         {
-            migrationGate.Release();
             mutationGate.Release();
         }
 

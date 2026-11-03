@@ -1,10 +1,13 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
@@ -223,6 +226,135 @@ public sealed class SaveWindowsFileSharingTests
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Delete_CanceledWhileWaitingForMigration_ReleasesMutationGate()
+    {
+        // MSS-125 correction: canceling DeleteAsync while it waits for the
+        // migration gate must not leak the mutation gate. PlaceStagedImport
+        // and Restore share the same Advance -> Migration nesting.
+        var (store, root) = CreateStore();
+        SemaphoreSlim? migrationGate = null;
+        bool migrationHeld = false;
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("GateProbe", 1701UL, 1702UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            migrationGate = AcquirePrivateGate("MigrationGates", saveId);
+            await migrationGate.WaitAsync();
+            migrationHeld = true;
+            using CancellationTokenSource cts = new();
+            Task deleteTask = store.DeleteAsync(saveId, cts.Token);
+            await WaitForMutationHeldAsync(saveId, deleteTask);
+            cts.Cancel();
+            await Should.ThrowAsync<OperationCanceledException>(() => deleteTask);
+            migrationGate.Release();
+            migrationHeld = false;
+            AdvanceRoundSaveLock.Acquire(saveId).CurrentCount.ShouldBe(1);
+            await store.DeleteAsync(saveId);
+            File.Exists(store.GetSaveFilePath(saveId)).ShouldBeFalse();
+        }
+        finally
+        {
+            if (migrationHeld && migrationGate is not null)
+            {
+                try
+                {
+                    migrationGate.Release();
+                }
+                catch (SemaphoreFullException)
+                {
+                }
+            }
+
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Delete_CanceledWhileWaitingForSnapshot_ReleasesMutationAndMigration()
+    {
+        // Canceling while DeleteAsync waits for the snapshot gate must release
+        // both earlier gates so later operations for that save still run.
+        var (store, root) = CreateStore();
+        SemaphoreSlim? snapshotGate = null;
+        bool snapshotHeld = false;
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("GateProbe2", 1703UL, 1704UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+            snapshotGate = AcquirePrivateGate("SnapshotGates", saveId);
+            await snapshotGate.WaitAsync();
+            snapshotHeld = true;
+            using CancellationTokenSource cts = new();
+            Task deleteTask = store.DeleteAsync(saveId, cts.Token);
+            await WaitForMigrationHeldAsync(saveId, deleteTask);
+            cts.Cancel();
+            await Should.ThrowAsync<OperationCanceledException>(() => deleteTask);
+            snapshotGate.Release();
+            snapshotHeld = false;
+            AdvanceRoundSaveLock.Acquire(saveId).CurrentCount.ShouldBe(1);
+            AcquirePrivateGate("MigrationGates", saveId).CurrentCount.ShouldBe(1);
+            await store.DeleteAsync(saveId);
+            File.Exists(store.GetSaveFilePath(saveId)).ShouldBeFalse();
+        }
+        finally
+        {
+            if (snapshotHeld && snapshotGate is not null)
+            {
+                try
+                {
+                    snapshotGate.Release();
+                }
+                catch (SemaphoreFullException)
+                {
+                }
+            }
+
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static SemaphoreSlim AcquirePrivateGate(string fieldName, Guid saveId)
+    {
+        FieldInfo? field = typeof(SaveStore).GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
+        field.ShouldNotBeNull($"SaveStore.{fieldName} gate map must exist.");
+        ConcurrentDictionary<Guid, SemaphoreSlim> map =
+            (ConcurrentDictionary<Guid, SemaphoreSlim>)field.GetValue(null)!;
+        return map.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout, string message)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (!condition())
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new Xunit.Sdk.XunitException(message);
+            }
+
+            await Task.Delay(20).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task WaitForMutationHeldAsync(Guid saveId, Task blocked)
+    {
+        await WaitUntilAsync(
+            () => AdvanceRoundSaveLock.Acquire(saveId).CurrentCount == 0 && !blocked.IsCompleted,
+            TimeSpan.FromSeconds(5),
+            "DeleteAsync did not acquire the mutation gate.").ConfigureAwait(false);
+    }
+
+    private static async Task WaitForMigrationHeldAsync(Guid saveId, Task blocked)
+    {
+        await WaitUntilAsync(
+            () => AcquirePrivateGate("MigrationGates", saveId).CurrentCount == 0 && !blocked.IsCompleted,
+            TimeSpan.FromSeconds(5),
+            "DeleteAsync did not acquire the migration gate.").ConfigureAwait(false);
     }
 
     private static async Task<int> ReadAthleteCountAsync(SaveStore store, Guid saveId)
