@@ -4,8 +4,9 @@ namespace MtgSoloSports.Persistence.Saves;
 /// Single-row table (Id always 1) holding the save-specific Chaos Cup activation.
 /// <see cref="EffectiveFromSeasonNumber"/> is the first source season that runs Chaos:
 /// new saves use 1 (Season 1 inaugural branch included); saves created before MSS-106
-/// backfill to max persisted season + 1 on first migration so current/historic seasons
-/// never gain an injected tournament. <see cref="ChaosFormatVersion"/> pins the format.
+/// backfill to SaveMetadata.CurrentSeason + 1 on first migration so current/historic seasons
+/// never gain an injected tournament while a pending not-yet-started successor stays
+/// eligible. <see cref="ChaosFormatVersion"/> pins the format.
 /// </summary>
 public sealed class ChaosCupActivationEntity
 {

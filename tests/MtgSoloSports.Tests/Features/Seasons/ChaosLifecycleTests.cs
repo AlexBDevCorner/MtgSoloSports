@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Cups.CompleteChaosCup;
 using MtgSoloSports.Features.Cups.SelectChaosCupField;
 using MtgSoloSports.Features.Saves;
@@ -111,6 +112,49 @@ public sealed class ChaosLifecycleTests
             SelectChaosCupFieldHandler selector = new(store);
             await Should.ThrowAsync<SelectChaosCupFieldConflictException>(
                 () => selector.HandleAsync(saveId));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LegacyBackfill_WithPendingSuccessor_KeepsSuccessorEligible()
+    {
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-chaos106-backfill-");
+        try
+        {
+            // Simulate old-chain postseason progress to a pending successor before upgrade.
+            await SharedSaveTemplates.DisableChaosAsync(store, saveId);
+            await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId);
+
+            int current;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                SaveMetadataEntity metadata = await context.SaveMetadata.AsNoTracking().SingleAsync(e => e.Id == 1);
+                current = metadata.CurrentSeason;
+                current.ShouldBe(1);
+                (await context.Seasons.MaxAsync(e => e.SeasonNumber)).ShouldBe(2);
+
+                // Simulate a pre-MSS-106 save missing the activation row.
+                List<ChaosCupActivationEntity> rows = await context.ChaosCupActivations.ToListAsync();
+                context.ChaosCupActivations.RemoveRange(rows);
+                await context.SaveChangesAsync();
+            }
+
+            store.InvalidateMigrationVerified(saveId);
+
+            ChaosCupActivationEntity activation;
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                activation = await ChaosCupLifecycle.EnsureActivationAsync(context, CancellationToken.None);
+            }
+
+            // First unstarted season is CurrentSeason + 1, not max persisted + 1.
+            activation.EffectiveFromSeasonNumber.ShouldBe(current + 1);
+            ChaosCupLifecycle.IsEligible(activation, current).ShouldBeFalse();
+            ChaosCupLifecycle.IsEligible(activation, current + 1).ShouldBeTrue();
         }
         finally
         {

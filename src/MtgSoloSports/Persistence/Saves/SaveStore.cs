@@ -294,8 +294,9 @@ public sealed class SaveStore
     internal async Task EnsureChaosActivationAsync(Guid saveId, CancellationToken cancellationToken)
     {
         // Backfills the single-row Chaos activation for pre-MSS-106 saves: first source
-        // season at max persisted season + 1 so current/historic seasons never gain an
-        // injected tournament. New saves already carry EffectiveFrom=1 from creation.
+        // season at SaveMetadata.CurrentSeason + 1 so current/historic seasons never gain an
+        // injected tournament while a pending not-yet-started successor stays eligible.
+        // New saves already carry EffectiveFrom=1 from creation.
         // Idempotent; consumes no sporting RNG.
         using SaveDbContext context = OpenDbContext(saveId);
         try

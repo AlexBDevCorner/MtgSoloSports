@@ -42,13 +42,32 @@ public static class ChaosCupLifecycle
             return existing;
         }
 
-        int maxSeason = await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false)
-            ? await context.Seasons.MaxAsync(e => e.SeasonNumber, cancellationToken).ConfigureAwait(false)
-            : 0;
+        // Legacy backfill: the first unstarted season is CurrentSeason + 1. A pending
+        // successor (movement already resolved, StartNextSeason not yet run) has not
+        // started league play, so it stays eligible; max-persisted-season + 1 would
+        // permanently skip it depending on upgrade timing. New saves already seed
+        // EffectiveFrom = 1 at creation, so this path only runs for pre-MSS-106 saves.
+        int effectiveFrom;
+        SaveMetadataEntity? metadata = await context.SaveMetadata
+            .AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == 1, cancellationToken)
+            .ConfigureAwait(false);
+        if (metadata is not null && await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false))
+        {
+            effectiveFrom = checked(metadata.CurrentSeason + 1);
+        }
+        else
+        {
+            int maxSeason = await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false)
+                ? await context.Seasons.MaxAsync(e => e.SeasonNumber, cancellationToken).ConfigureAwait(false)
+                : 0;
+            effectiveFrom = checked(maxSeason + 1);
+        }
+
         var created = new ChaosCupActivationEntity
         {
             Id = ActivationId,
-            EffectiveFromSeasonNumber = checked(maxSeason + 1),
+            EffectiveFromSeasonNumber = effectiveFrom,
             ChaosFormatVersion = ChaosCupFormat.ChaosFormatVersion,
         };
         ValidateActivation(created);
