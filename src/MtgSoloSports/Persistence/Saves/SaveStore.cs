@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Leagues.InauguralDraw;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Universe.CreateUniverse;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
@@ -725,6 +726,10 @@ public sealed class SaveStore
     /// Explicitly deletes one save's own database file, its SQLite companion
     /// files (-wal/-shm/-journal) and its technical recovery checkpoints.
     /// The resolved path must stay inside the saves root; nothing else is ever removed.
+    /// Destructive file removal holds the per-save mutation, migration and
+    /// snapshot gates (in that order) so an active simulation write cannot
+    /// retain an invalid handle or write into a removed database. Ordinary
+    /// queries never take the mutation gate and stay concurrent.
     /// </summary>
     public async Task DeleteAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -736,34 +741,42 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
-        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
+        await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Re-check under the gate: a concurrent restore/import could have
-            // replaced the file after the pre-gate existence check.
-            if (!File.Exists(path))
+            SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                throw new SaveNotFoundException(saveId);
+                SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+                await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    DeleteLiveSaveFile(path, saveId);
+                }
+                finally
+                {
+                    snapshotGate.Release();
+                }
             }
-
-            // Drop pooled handles before removing the file so the delete and
-            // companion cleanup never race open SQLite mappings (Windows share
-            // violations, Linux fd resurrection).
-            ClearSaveConnections(path);
-            File.Delete(path);
-            DeleteCompanionFiles(path);
-            ClearSaveConnections(path);
-            InvalidateMigrationVerified(saveId);
+            finally
+            {
+                migrationGate.Release();
+            }
         }
         finally
         {
-            snapshotGate.Release();
+            mutationGate.Release();
         }
 
         string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
         if (Directory.Exists(checkpointDirectory))
         {
+            // Drop pooled handles to checkpoint databases before removing the
+            // directory; otherwise Windows directory deletion races open
+            // mappings. Only this save's checkpoint files are touched.
+            ClearCheckpointPools(checkpointDirectory);
             try
             {
                 Directory.Delete(checkpointDirectory, recursive: true);
@@ -771,6 +784,49 @@ public sealed class SaveStore
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
+            }
+        }
+    }
+
+    private void DeleteLiveSaveFile(string path, Guid saveId)
+    {
+        // Re-check under the gates: a concurrent restore/import could have
+        // replaced the file after the pre-gate existence check.
+        if (!File.Exists(path))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        // Drop pooled handles before removing the file so the delete and
+        // companion cleanup never race open SQLite mappings (Windows share
+        // violations, Linux fd resurrection).
+        ClearSaveConnections(path);
+        File.Delete(path);
+        DeleteCompanionFiles(path);
+        ClearSaveConnections(path);
+        InvalidateMigrationVerified(saveId);
+    }
+
+    private static void ClearCheckpointPools(string checkpointDirectory)
+    {
+        string[] candidates;
+        try
+        {
+            candidates = Directory.GetFiles(checkpointDirectory, "*.db");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        foreach (string candidate in candidates)
+        {
+            try
+            {
+                ClearSaveConnections(candidate);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
             }
         }
     }
@@ -818,9 +874,11 @@ public sealed class SaveStore
             }
             finally
             {
+                // Pool first: deleting a file with pooled SQLite handles open
+                // throws a Windows sharing violation; clearing after is too late.
+                ClearSaveConnections(snapshotPath);
                 DeleteFileBestEffort(snapshotPath);
                 DeleteCompanionFiles(snapshotPath);
-                ClearSaveConnections(snapshotPath);
             }
         }
         finally
@@ -860,41 +918,95 @@ public sealed class SaveStore
         Directory.CreateDirectory(root);
         string stagingDirectory = Path.Combine(root, $".staging-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stagingDirectory);
+        StagedImport? staged = null;
         try
         {
-            SaveBundle.Extraction extraction = await SaveBundle
-                .ExtractToStagingAsync(bundleBytes, stagingDirectory, cancellationToken)
-                .ConfigureAwait(false);
-            SaveBundleManifest manifest = extraction.Manifest;
-            SaveRulesCompatibility.EnsureImportableRules(manifest);
-            await VerifyStagedDatabaseAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
-            await MigrateStagedDatabaseIfNeededAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
-
-            string target = SaveFileNaming.GetSaveFilePath(root, manifest.SaveId);
-            if (File.Exists(target))
-            {
-                if (!overwrite)
-                {
-                    throw new SaveAlreadyExistsException(manifest.SaveId);
-                }
-
-                await CreateCheckpointAsync(manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
-                await ReplaceLiveDatabaseAsync(manifest.SaveId, target, extraction.StagedDatabasePath, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                File.Move(extraction.StagedDatabasePath, target);
-            }
-
-            // File replacement bypasses pooled SQLite handles, which would
-            // otherwise keep serving pages from the previous file content.
-            ClearSaveConnections(target);
-            InvalidateMigrationVerified(manifest.SaveId);
-            return await ReadDetailAsync(manifest.SaveId, cancellationToken).ConfigureAwait(false);
+            staged = await StageValidatedImportAsync(bundleBytes, stagingDirectory, cancellationToken).ConfigureAwait(false);
+            return await PlaceStagedImportAsync(root, staged, overwrite, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            if (staged is not null)
+            {
+                ClearSaveConnections(staged.StagedPath);
+                ClearSaveConnections(SaveFileNaming.GetSaveFilePath(root, staged.Manifest.SaveId));
+            }
+
             DeleteDirectoryBestEffort(stagingDirectory);
+        }
+    }
+
+    private sealed record StagedImport(string StagedPath, SaveBundleManifest Manifest);
+
+    private async Task<StagedImport> StageValidatedImportAsync(
+        byte[] bundleBytes,
+        string stagingDirectory,
+        CancellationToken cancellationToken)
+    {
+        SaveBundle.Extraction extraction = await SaveBundle
+            .ExtractToStagingAsync(bundleBytes, stagingDirectory, cancellationToken)
+            .ConfigureAwait(false);
+        SaveBundleManifest manifest = extraction.Manifest;
+        SaveRulesCompatibility.EnsureImportableRules(manifest);
+        await VerifyStagedDatabaseAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
+        await MigrateStagedDatabaseIfNeededAsync(extraction.StagedDatabasePath, manifest, cancellationToken).ConfigureAwait(false);
+        // Staged verification opens pooled handles; drop them before any
+        // file placement so Windows moves/copies never race open mappings.
+        ClearSaveConnections(extraction.StagedDatabasePath);
+        return new StagedImport(extraction.StagedDatabasePath, manifest);
+    }
+
+    private async Task<SaveDetailRecord> PlaceStagedImportAsync(
+        string root,
+        StagedImport staged,
+        bool overwrite,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(staged);
+        string target = SaveFileNaming.GetSaveFilePath(root, staged.Manifest.SaveId);
+        // Placement replaces or creates the live file: hold the per-save
+        // mutation and migration gates so an active simulation write cannot
+        // retain an invalid handle. Snapshot captures nest inside (gates are
+        // always acquired Advance -> Migration -> Snapshot, never reverse).
+        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(staged.Manifest.SaveId);
+        await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            SemaphoreSlim migrationGate = AcquireMigrationGate(staged.Manifest.SaveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (File.Exists(target))
+                {
+                    if (!overwrite)
+                    {
+                        throw new SaveAlreadyExistsException(staged.Manifest.SaveId);
+                    }
+
+                    await CreateCheckpointAsync(staged.Manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
+                    await ReplaceLiveDatabaseAsync(staged.Manifest.SaveId, target, staged.StagedPath, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    ClearSaveConnections(staged.StagedPath);
+                    ClearSaveConnections(target);
+                    File.Move(staged.StagedPath, target);
+                }
+
+                // File replacement bypasses pooled SQLite handles, which would
+                // otherwise keep serving pages from the previous file content.
+                ClearSaveConnections(target);
+                InvalidateMigrationVerified(staged.Manifest.SaveId);
+                return await ReadDetailAsync(staged.Manifest.SaveId, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                migrationGate.Release();
+            }
+        }
+        finally
+        {
+            mutationGate.Release();
         }
     }
 
@@ -947,9 +1059,9 @@ public sealed class SaveStore
             }
             catch
             {
+                ClearSaveConnections(paths.TempCopy);
                 DeleteFileBestEffort(paths.TempCopy);
                 DeleteCompanionFiles(paths.TempCopy);
-                ClearSaveConnections(paths.TempCopy);
                 throw;
             }
         }
@@ -1183,7 +1295,9 @@ public sealed class SaveStore
     /// Replaces the live save file with a staged database under the per-save
     /// snapshot gate so a concurrent snapshot capture cannot read a torn file.
     /// Pooled handles are dropped before the copy so old WAL frames cannot
-    /// resurrect after the replacement when pools close.
+    /// resurrect after the replacement when pools close. Callers hold the
+    /// per-save mutation and migration gates; this helper only takes the
+    /// snapshot gate to preserve the Advance -&gt; Migration -&gt; Snapshot order.
     /// </summary>
     private static async Task ReplaceLiveDatabaseAsync(
         Guid saveId,
@@ -1199,6 +1313,7 @@ public sealed class SaveStore
             ClearSaveConnections(stagedPath);
             File.Copy(stagedPath, livePath, overwrite: true);
             DeleteCompanionFiles(livePath);
+            ClearSaveConnections(livePath);
         }
         finally
         {
@@ -1294,7 +1409,9 @@ public sealed class SaveStore
     /// recovery checkpoint. A corrupt backup never touches live data; a
     /// healthy live save gains a safety checkpoint first while a damaged or
     /// missing live file is recovered from the checkpoint with surviving
-    /// damaged bytes preserved for diagnosis.
+    /// damaged bytes preserved for diagnosis. The replacement holds the
+    /// per-save mutation and migration gates so active writers cannot retain
+    /// invalid handles; snapshot captures nest inside those gates.
     /// </summary>
     public async Task<SaveDetailRecord> RestoreCheckpointAsync(
         Guid saveId,
@@ -1322,16 +1439,34 @@ public sealed class SaveStore
         await VerifyCheckpointForRestoreAsync(saveId, checkpointId, databasePath, sidecarPath, cancellationToken).ConfigureAwait(false);
 
         string livePath = GetSaveFilePath(saveId);
-        if (await IsLiveHealthyAsync(saveId, cancellationToken).ConfigureAwait(false))
+        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
+        await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
-        }
-        else if (File.Exists(livePath))
-        {
-            await PreserveDamagedLiveCopyAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
-        }
+            SemaphoreSlim migrationGate = AcquireMigrationGate(saveId);
+            await migrationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await IsLiveHealthyAsync(saveId, cancellationToken).ConfigureAwait(false))
+                {
+                    await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
+                }
+                else if (File.Exists(livePath))
+                {
+                    await PreserveDamagedLiveCopyAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+                }
 
-        await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+                await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                migrationGate.Release();
+            }
+        }
+        finally
+        {
+            mutationGate.Release();
+        }
 
         _logger.LogWarning(
             "Restored save {SaveId} from technical recovery checkpoint {CheckpointId}.",
@@ -1476,9 +1611,9 @@ public sealed class SaveStore
                 ex,
                 "Snapshot preservation failed for damaged save {SaveId}; falling back to a raw byte copy.",
                 saveId);
+            ClearSaveConnections(damagedPath);
             DeleteFileBestEffort(damagedPath);
             DeleteCompanionFiles(damagedPath);
-            ClearSaveConnections(damagedPath);
         }
 
         try
@@ -1725,8 +1860,10 @@ public sealed class SaveStore
         }
         finally
         {
-            DeleteCompanionFiles(checkpointDatabasePath);
+            // Pool first: companion deletes with pooled handles open throw on
+            // Windows; clearing after is too late.
             ClearSaveConnections(checkpointDatabasePath);
+            DeleteCompanionFiles(checkpointDatabasePath);
         }
     }
 
@@ -1735,6 +1872,10 @@ public sealed class SaveStore
     /// verifies the result opens. The checkpoint stages through a temp file
     /// so a failed replacement leaves prior live bytes in place; the
     /// checkpoint itself is only read. A missing live file is recreated.
+    /// Callers hold the per-save mutation and migration gates (Restore) or the
+    /// migration gate inside <see cref="EnsureMigratedAsync"/>; this helper
+    /// only takes the snapshot gate to preserve Advance -&gt; Migration -&gt;
+    /// Snapshot ordering and avoid reentrant deadlocks.
     /// </summary>
     private async Task OverwriteLiveFromCheckpointAsync(
         Guid saveId,
@@ -1778,9 +1919,9 @@ public sealed class SaveStore
         {
             if (stagingPath is not null)
             {
+                ClearSaveConnections(stagingPath);
                 DeleteFileBestEffort(stagingPath);
                 DeleteCompanionFiles(stagingPath);
-                ClearSaveConnections(stagingPath);
             }
 
             snapshotGate.Release();
@@ -1802,6 +1943,7 @@ public sealed class SaveStore
         string stagingPath = Path.Combine(
             liveDirectory ?? GetSavesRoot(),
             $".restore-{saveId:N}-{Guid.NewGuid():N}.tmp");
+        ClearSaveConnections(stagingPath);
         DeleteFileBestEffort(stagingPath);
         DeleteCompanionFiles(stagingPath);
         return stagingPath;
@@ -1871,6 +2013,7 @@ public sealed class SaveStore
     /// </summary>
     private static void DeleteSaveFilesBestEffort(string path)
     {
+        ClearSaveConnections(path);
         foreach (string candidate in new[] { path, path + "-wal", path + "-shm", path + "-journal" })
         {
             try
@@ -1884,5 +2027,7 @@ public sealed class SaveStore
             {
             }
         }
+
+        ClearSaveConnections(path);
     }
 }

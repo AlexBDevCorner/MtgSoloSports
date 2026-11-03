@@ -32,6 +32,7 @@ public static class SaveBundle
 
     /// <summary>
     /// Builds a portable bundle from a live save database file plus its manifest.
+    /// Source reads allow concurrent pooled SQLite handles (Windows share mode).
     /// </summary>
     public static byte[] Create(string saveDbPath, SaveBundleManifest manifest)
     {
@@ -50,7 +51,7 @@ public static class SaveBundle
             ZipArchiveEntry databaseEntry = archive.CreateEntry(
                 SaveBundleManifest.DatabaseEntryName, CompressionLevel.Optimal);
             using (Stream entryStream = databaseEntry.Open())
-            using (FileStream source = File.OpenRead(saveDbPath))
+            using (FileStream source = OpenSharedRead(saveDbPath))
             {
                 source.CopyTo(entryStream);
             }
@@ -243,8 +244,24 @@ public static class SaveBundle
     public static string ComputeFileSha256Hex(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        using FileStream stream = File.OpenRead(path);
+        using FileStream stream = OpenSharedRead(path);
         return ComputeStreamSha256Hex(stream);
+    }
+
+    private static FileStream OpenSharedRead(string path)
+    {
+        // Pooled SQLite handles keep the database file open for writes; a plain
+        // File.OpenRead (Share.Read) throws a Windows sharing violation while
+        // those handles exist. Allow concurrent readers/writers so hashing and
+        // bundling work after ordinary disposed contexts without clearing pools
+        // before the read. The snapshot gate still serializes replacements.
+        return new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            4096,
+            FileOptions.SequentialScan);
     }
 
     public static string ComputeBytesSha256Hex(byte[] bytes)
