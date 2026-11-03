@@ -23,8 +23,8 @@
  * - `/saves/:saveId/qualifiers/f2f3/:color?season=<n>` -> one F2↔F3 qualifier
  * - `/saves/:saveId/records`
  * - `/saves/:saveId/cups`
- * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type`) -> one Cup edition
- * - `/saves/:saveId/cups/:cup/teams/:teamKey` -> one Cup team's history
+ * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type` | `chaos`) -> one Cup edition
+ * - `/saves/:saveId/cups/:cup/teams/:teamKey` (`cup` = `color` | `type`) -> one Cup team's history
  * - `/saves/:saveId/athletes?{search}` -> athlete search/browse (MSS-052)
  * - `/saves/:saveId/athletes/:athleteId`
  *
@@ -66,13 +66,13 @@ import { qualifierBoundaryFromSegment, type QualifierBoundary } from '../../shar
 
 export type StandingsView = 'season' | 'matrix';
 
-export type CupKind = 'color' | 'type';
+export type CupKind = 'color' | 'type' | 'chaos';
 
-/** Which Cups page a `/cups` URL names: the hub, one edition or one team. */
+/** Which Cups page a `/cups` URL names: the hub, one edition or one team. Chaos has editions but no team histories. */
 export type CupsView =
   | { kind: 'hub' }
   | { kind: 'edition'; cup: CupKind; season: number }
-  | { kind: 'team'; cup: CupKind; teamKey: string };
+  | { kind: 'team'; cup: Exclude<CupKind, 'chaos'>; teamKey: string };
 
 export type Route =
   | { name: 'root' }
@@ -817,22 +817,29 @@ function decodeURIComponentSafe(value: string): string {
   }
 }
 
-/** `teams` is a reserved segment, so it never parses as a season. */
+/**
+ * `teams` is a reserved segment, so it never parses as a season. Chaos has
+ * editions but no team histories: `/cups/chaos/:season` parses, while
+ * `/cups/chaos/teams/*` stays notFound (MSS-111).
+ */
 function parseCupsView(rest: string[]): CupsView | null {
   if (rest.length === 0) {
     return { kind: 'hub' };
   }
   const cup = rest[0];
-  if (cup !== 'color' && cup !== 'type') {
+  if (cup !== 'color' && cup !== 'type' && cup !== 'chaos') {
     return null;
   }
   if (rest.length === 2) {
     const season = parsePositiveInt(rest[1] ?? '');
-    return season === null ? null : { kind: 'edition', cup, season };
+    return season === null ? null : { kind: 'edition', cup: cup as CupKind, season };
   }
   if (rest.length === 3 && rest[1] === 'teams') {
+    if (cup === 'chaos') {
+      return null;
+    }
     const teamKey = decodeURIComponentSafe(rest[2] ?? '').trim();
-    return teamKey ? { kind: 'team', cup, teamKey } : null;
+    return teamKey ? { kind: 'team', cup: cup as Exclude<CupKind, 'chaos'>, teamKey } : null;
   }
   return null;
 }

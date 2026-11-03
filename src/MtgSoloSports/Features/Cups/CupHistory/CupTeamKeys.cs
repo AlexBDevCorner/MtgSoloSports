@@ -13,6 +13,13 @@ public static class CupTeamKeys
 
     public const string TypeCup = "Type";
 
+    /// <summary>
+    /// Chaos Cup edition identifier (MSS-111). Individual 1024-entrant tournament;
+    /// never a team table. Listed alongside Color/Type history without inventing
+    /// editions for saves that never ran Chaos.
+    /// </summary>
+    public const string ChaosCup = "Chaos";
+
     public static string ColorKey(SportingColor color) => color switch
     {
         SportingColor.White => "white",

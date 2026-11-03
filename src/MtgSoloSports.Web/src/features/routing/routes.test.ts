@@ -280,6 +280,7 @@ describe('Cup history routes', () => {
   it('builds edition and team paths', () => {
     assert.equal(cupEditionPath(SAVE, 'color', 3), `/saves/${SAVE}/cups/color/3`);
     assert.equal(cupEditionPath(SAVE, 'type', 4), `/saves/${SAVE}/cups/type/4`);
+    assert.equal(cupEditionPath(SAVE, 'chaos', 1), `/saves/${SAVE}/cups/chaos/1`);
     assert.equal(cupTeamPath(SAVE, 'color', 'red'), `/saves/${SAVE}/cups/color/teams/red`);
     assert.equal(cupTeamPath(SAVE, 'type', 'Time Lord'), `/saves/${SAVE}/cups/type/teams/Time%20Lord`);
   });
@@ -294,6 +295,11 @@ describe('Cup history routes', () => {
       name: 'cups',
       saveId: SAVE,
       view: { kind: 'edition', cup: 'type', season: 4 },
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/cups/chaos/1`, ''), {
+      name: 'cups',
+      saveId: SAVE,
+      view: { kind: 'edition', cup: 'chaos', season: 1 },
     });
   });
 
@@ -324,6 +330,9 @@ describe('Cup history routes', () => {
       'cups/color/3/extra',
       'cups/color/teams/red/extra',
       'cups/type/teams/%20',
+      'cups/chaos/teams/red',
+      'cups/chaos',
+      'cups/chaos/0',
     ]) {
       assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
     }

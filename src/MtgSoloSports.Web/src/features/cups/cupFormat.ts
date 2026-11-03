@@ -41,12 +41,24 @@ export function rankOf(rank: number, count: number): string {
 }
 
 export function cupTitle(cup: CupKind): string {
-  return cup === 'color' ? 'Color Cup' : 'Type Cup';
+  if (cup === 'color') {
+    return 'Color Cup';
+  }
+  if (cup === 'type') {
+    return 'Type Cup';
+  }
+  return 'Chaos Cup';
 }
 
-/** Maps the backend Cup name ("Color" | "Type") to the route segment. */
+/** Maps the backend Cup name ("Color" | "Type" | "Chaos") to the route segment. */
 export function cupKindOf(cup: string): CupKind {
-  return cup === 'Color' ? 'color' : 'type';
+  if (cup === 'Color') {
+    return 'color';
+  }
+  if (cup === 'Chaos') {
+    return 'chaos';
+  }
+  return 'type';
 }
 
 /** Color keys are lower-case color names; Type keys are the creature type itself. */
@@ -59,10 +71,19 @@ export function teamSwatchClass(cup: CupKind, teamKey: string): string {
 }
 
 export function teamEventKey(cup: CupKind): EventKey {
-  return cup === 'color' ? 'color-cup-team' : 'type-cup-team';
+  if (cup === 'color') {
+    return 'color-cup-team';
+  }
+  if (cup === 'chaos') {
+    return 'chaos-cup';
+  }
+  return 'type-cup-team';
 }
 
 export function selectionKeyFor(cup: CupKind): SelectionKey {
+  if (cup === 'chaos') {
+    throw new Error('Chaos Cup has no squad-selection reveal; its field is selected on the Dashboard.');
+  }
   return cup === 'color' ? 'color-cup-selection' : 'type-cup-selection';
 }
 

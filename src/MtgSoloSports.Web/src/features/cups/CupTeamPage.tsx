@@ -30,7 +30,15 @@ import './CupHistory.css';
  * and result of each season, and everyone who ever represented it. Read-only
  * over stored selections and results.
  */
-export function CupTeamPage({ saveId, cup, teamKey }: { saveId: string; cup: CupKind; teamKey: string }) {
+export function CupTeamPage({
+  saveId,
+  cup,
+  teamKey,
+}: {
+  saveId: string;
+  cup: Exclude<CupKind, 'chaos'>;
+  teamKey: string;
+}) {
   const [history, setHistory] = useState<CupTeamHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);

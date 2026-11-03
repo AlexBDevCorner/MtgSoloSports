@@ -1,7 +1,7 @@
 import { ApiError, fetchJson } from '../../shared/api/http';
 import type { CupKind } from '../routing/routes';
 
-export type CupName = 'Color' | 'Type';
+export type CupName = 'Color' | 'Type' | 'Chaos';
 export type EditionState = 'Selected' | 'InProgress' | 'Completed';
 
 export interface CupEditionPodiumTeam {
@@ -19,7 +19,13 @@ export interface CupEditionChampion {
   teamKey: string;
 }
 
-/** `podium` is empty until the team event finished; `individualChampion` is Color only. */
+/**
+ * `podium` is empty until the team event (or Chaos Final) finished.
+ * `individualChampion` is the Color individual winner, or the Chaos Final
+ * winner (P1) once official; null for Type and for unfinished editions.
+ * For Chaos, `teamCount` is the 1024-entrant field and `podium` holds the
+ * official Final P1..P3 athletes (athlete ids as keys, never teams).
+ */
 export interface CupEdition {
   cup: CupName;
   sourceSeasonNumber: number;
