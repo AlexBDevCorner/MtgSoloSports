@@ -21,19 +21,24 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// (MSS-104-v1 weights): prestige raw is the athlete's total career points and
 /// the eight career-category points sum exactly to prestige raw. Legacy
 /// win-only breakdown fields stay for reading v1-v3 payloads and are zero for
-/// v4; career fields are zero for v1-v3. v1/v2/v3 payloads remain readable
-/// (missing fields decode to Pool/zero defaults) and are never rewritten.
+/// v4; career fields are zero for v1-v3. v5 (MSS-105) adds the Chaos form
+/// component (35/30/20/5/10): chaos raw is one outcome of the relevant
+/// completed Chaos edition (reached stage and Final rank), normalized alongside
+/// the other four; legacy payloads without chaos decode to zero and stay readable.
+/// v1/v2/v3/v4 payloads remain readable (missing fields decode to Pool/zero
+/// defaults) and are never rewritten.
 /// </summary>
 public sealed record ColorCupSelectionReportDocument(
     int Version,
     int BonusWeightPermille,
     int PerformanceWeightPermille,
     int FormWeightPermille,
+    int ChaosWeightPermille,
     int PrestigeWeightPermille,
     IReadOnlyList<ColorCupSelectionReportDocument.Team> Teams,
     string PrestigeWeightsVersion = "")
 {
-    public const int PayloadVersion = 4;
+    public const int PayloadVersion = 5;
 
     public const int LegacyPayloadVersion = 1;
 
@@ -58,10 +63,12 @@ public sealed record ColorCupSelectionReportDocument(
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw,
         string? SourceLeagueName = null,
         int? SourceLeagueLevel = null,

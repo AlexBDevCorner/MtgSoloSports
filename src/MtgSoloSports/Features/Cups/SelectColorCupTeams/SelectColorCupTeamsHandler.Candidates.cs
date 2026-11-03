@@ -15,7 +15,8 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static Dictionary<int, List<ColorCupSelection.CandidateRaw>> BuildCandidates(
         SelectionInputs inputs,
         RulesV1 rules,
-        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        IReadOnlyDictionary<int, int>? chaosByAthlete = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
@@ -24,7 +25,60 @@ public sealed partial class SelectColorCupTeamsHandler
         Dictionary<int, int> bonusByAthlete = ComputeBonusByAthlete(inputs, contributions, rules);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete = BuildMetricsMap(inputs, rules, stagesByAthlete);
-        return AssembleCandidates(inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete);
+        return AssembleCandidates(inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete, chaosByAthlete ?? new Dictionary<int, int>());
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadChaosRawsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        List<ChaosCupGroupStandingEntity> rows = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        List<ChaosCupGroupStandingEntity> finals = rows.Where(r => r.StageIndex == 5).ToList();
+        if (finals.Count != ChaosCupFormat.FinalFieldSize)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> byAthlete = rows
+            .GroupBy(r => r.SaveAthleteId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        Dictionary<int, int> raws = new(byAthlete.Count);
+        foreach ((int athleteId, List<ChaosCupGroupStandingEntity> athleteRows) in byAthlete)
+        {
+            ChaosCupGroupStandingEntity peak = athleteRows.MaxBy(r => r.StageIndex)!;
+            if (peak.StageIndex == 5)
+            {
+                if (peak.GroupRank < 1 || peak.GroupRank > ChaosCupFormat.FinalFieldSize)
+                {
+                    throw new InvalidOperationException($"Chaos Cup Final rank {peak.GroupRank} for season {source.SeasonNumber} is corrupt.");
+                }
+
+                raws[athleteId] = ChaosSelectionForm.ForFinal(peak.GroupRank);
+            }
+            else
+            {
+                if (peak.IsAdvanced)
+                {
+                    throw new InvalidOperationException($"Chaos Cup season {source.SeasonNumber} athlete {athleteId} is marked advanced at its last stage {peak.StageIndex}.");
+                }
+
+                raws[athleteId] = ChaosSelectionForm.ForElimination(peak.StageIndex);
+            }
+        }
+
+        return raws;
     }
 
     internal static Dictionary<int, CupSelectionMetrics.CupMetrics> BuildMetricsMap(
@@ -142,7 +196,8 @@ public sealed partial class SelectColorCupTeamsHandler
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        IReadOnlyDictionary<int, int> chaosByAthlete)
     {
         Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = [];
         foreach (SportingColor color in Enum.GetValues<SportingColor>())
@@ -153,7 +208,7 @@ public sealed partial class SelectColorCupTeamsHandler
         foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes)
         {
             ColorCupSelection.CandidateRaw candidate = BuildSingleCandidate(
-                athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete);
+                athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete, chaosByAthlete);
             byColor[athlete.SportingColor].Add(candidate);
         }
 
@@ -174,7 +229,8 @@ public sealed partial class SelectColorCupTeamsHandler
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        IReadOnlyDictionary<int, int> chaosByAthlete)
     {
         int bonusRaw = bonusByAthlete.TryGetValue(athlete.Id, out int bonus) ? bonus : 0;
         if (!metricsByAthlete.TryGetValue(athlete.Id, out CupSelectionMetrics.CupMetrics? metrics))
@@ -184,8 +240,9 @@ public sealed partial class SelectColorCupTeamsHandler
 
         int performanceRaw = metrics.AdjustedPerformanceThousandths;
         int formRaw = metrics.AdjustedFormRaw;
+        chaosByAthlete.TryGetValue(athlete.Id, out int chaosRaw);
         int prestigeRaw = SelectionCareerPrestige.PrestigeRawFor(athlete.Id, careerByAthlete);
         return new ColorCupSelection.CandidateRaw(
-            athlete.Id, athlete.Name, athlete.SportingColor, bonusRaw, performanceRaw, formRaw, prestigeRaw);
+            athlete.Id, athlete.Name, athlete.SportingColor, bonusRaw, performanceRaw, formRaw, chaosRaw, prestigeRaw);
     }
 }

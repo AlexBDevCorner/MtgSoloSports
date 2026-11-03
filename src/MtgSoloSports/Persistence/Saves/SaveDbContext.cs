@@ -545,10 +545,12 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.BonusNormThousandths).IsRequired();
             entity.Property(e => e.PerformanceNormThousandths).IsRequired();
             entity.Property(e => e.FormNormThousandths).IsRequired();
+            entity.Property(e => e.ChaosNormThousandths).IsRequired();
             entity.Property(e => e.PrestigeNormThousandths).IsRequired();
             entity.Property(e => e.BonusRawThousandths).IsRequired();
             entity.Property(e => e.PerformanceRawThousandths).IsRequired();
             entity.Property(e => e.FormRaw).IsRequired();
+            entity.Property(e => e.ChaosRaw).IsRequired();
             entity.Property(e => e.PrestigeRaw).IsRequired();
             entity.Property(e => e.RulesVersion).IsRequired();
         });
@@ -700,10 +702,12 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.BonusNormThousandths).IsRequired();
             entity.Property(e => e.PerformanceNormThousandths).IsRequired();
             entity.Property(e => e.FormNormThousandths).IsRequired();
+            entity.Property(e => e.ChaosNormThousandths).IsRequired();
             entity.Property(e => e.PrestigeNormThousandths).IsRequired();
             entity.Property(e => e.BonusRawThousandths).IsRequired();
             entity.Property(e => e.PerformanceRawThousandths).IsRequired();
             entity.Property(e => e.FormRaw).IsRequired();
+            entity.Property(e => e.ChaosRaw).IsRequired();
             entity.Property(e => e.PrestigeRaw).IsRequired();
             entity.Property(e => e.RulesVersion).IsRequired();
         });

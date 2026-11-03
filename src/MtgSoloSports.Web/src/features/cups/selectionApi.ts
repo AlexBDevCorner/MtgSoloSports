@@ -32,10 +32,12 @@ export interface SelectionCandidate {
   bonusNormThousandths: number;
   performanceNormThousandths: number;
   formNormThousandths: number;
+  chaosNormThousandths?: number;
   prestigeNormThousandths: number;
   bonusRawThousandths: number;
   performanceRawThousandths: number;
   formRaw: number;
+  chaosRaw?: number;
   prestigeRaw: number;
   /** Source-season league name, or "Pool" for pool athletes (MSS-064). Absent on legacy reports. */
   sourceLeagueName?: string | null;
@@ -58,7 +60,7 @@ export interface SelectionCandidate {
   prestigeFeeder2StageRaw?: number;
   prestigeFeeder3StageRaw?: number;
   prestigeMajorCupRaw?: number;
-  /** Shared Career Leaders career breakdown (MSS-096 v4), seven category points summing to prestigeRaw. */
+  /** Shared Career Leaders career breakdown (MSS-096 v4), eight category points summing to prestigeRaw (MSS-104 adds Chaos). */
   prestigeCareerSuperleaguePoints?: number;
   prestigeCareerFeeder1Points?: number;
   prestigeCareerFeeder2Points?: number;
@@ -66,6 +68,7 @@ export interface SelectionCandidate {
   prestigeCareerColorIndividualPoints?: number;
   prestigeCareerColorTeamPoints?: number;
   prestigeCareerTypeTeamPoints?: number;
+  prestigeCareerChaosCupIndividualPoints?: number;
 }
 
 export interface SelectionTeam {
@@ -91,6 +94,7 @@ export interface SelectionReport {
   bonusWeightPermille: number;
   performanceWeightPermille: number;
   formWeightPermille: number;
+  chaosWeightPermille?: number;
   prestigeWeightPermille: number;
   teams: SelectionTeam[];
   missedTeams?: SelectionMissedTeam[];

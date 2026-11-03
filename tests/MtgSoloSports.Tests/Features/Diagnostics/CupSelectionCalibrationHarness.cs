@@ -21,7 +21,7 @@ namespace MtgSoloSports.Tests.Features.Diagnostics;
 /// rewritten; no sporting state is mutated. Production behavior is untouched
 /// when disabled: the harness only runs under the opt-in
 /// <c>MTG_CUP_CALIBRATION=1</c> flag, outside normal CI.
-/// Outer weights (35/30/25/10) and strength factors (1000/800/600/400) are
+/// Outer weights (35/30/20/5/10) and strength factors (1000/800/600/400) are
 /// recorded, never auto-tuned. No tier quota or absolute tier-priority rule
 /// exists anywhere in this path: lower-tier selections are reported as
 /// inspectable examples, never enforced or forbidden.
@@ -47,6 +47,7 @@ public static class CupSelectionCalibrationHarness
         double AvgBonusNorm,
         double AvgPerformanceNorm,
         double AvgFormNorm,
+        double AvgChaosNorm,
         double AvgPrestigeNorm);
 
     public sealed record NearestMissComparison(
@@ -63,6 +64,7 @@ public static class CupSelectionCalibrationHarness
         int BonusDelta,
         int PerformanceDelta,
         int FormDelta,
+        int ChaosDelta,
         int PrestigeDelta);
 
     public sealed record CrossTierExample(
@@ -97,6 +99,7 @@ public static class CupSelectionCalibrationHarness
         int BonusWeightPermille,
         int PerformanceWeightPermille,
         int FormWeightPermille,
+        int ChaosWeightPermille,
         int PrestigeWeightPermille,
         int SuperFactorPermille,
         int Feeder1FactorPermille,
@@ -283,7 +286,7 @@ public static class CupSelectionCalibrationHarness
             saveId, options.Seasons, seasonsCompleted, options.Seed, options.Stream,
             rules.Version,
             rules.CupBonusWeightPermille, rules.CupPerformanceWeightPermille,
-            rules.CupFormWeightPermille, rules.CupPrestigeWeightPermille,
+            rules.CupFormWeightPermille, rules.CupChaosWeightPermille, rules.CupPrestigeWeightPermille,
             rules.GetCupStrengthFactor(LeagueLevel.Superleague),
             rules.GetCupStrengthFactor(LeagueLevel.Feeder1),
             rules.GetCupStrengthFactor(LeagueLevel.Feeder2),
@@ -409,6 +412,7 @@ public static class CupSelectionCalibrationHarness
         int BonusNorm,
         int PerfNorm,
         int FormNorm,
+        int ChaosNorm,
         int PrestigeNorm);
 
     internal static EditionSummary SummarizeColorEdition(
@@ -434,7 +438,7 @@ public static class CupSelectionCalibrationHarness
                     c.Rank <= rules.ColorCupTeamSize,
                     c.FinalRatingThousandths,
                     c.BonusNormThousandths, c.PerformanceNormThousandths,
-                    c.FormNormThousandths, c.PrestigeNormThousandths))
+                    c.FormNormThousandths, c.ChaosNormThousandths, c.PrestigeNormThousandths))
                 .ToList();
             all.AddRange(ranking);
 
@@ -450,6 +454,7 @@ public static class CupSelectionCalibrationHarness
                     lastIn.BonusNorm - firstOut.BonusNorm,
                     lastIn.PerfNorm - firstOut.PerfNorm,
                     lastIn.FormNorm - firstOut.FormNorm,
+                    lastIn.ChaosNorm - firstOut.ChaosNorm,
                     lastIn.PrestigeNorm - firstOut.PrestigeNorm));
             }
 
@@ -496,7 +501,7 @@ public static class CupSelectionCalibrationHarness
                     c.SelectionRank > 0,
                     c.FinalRatingThousandths,
                     c.BonusNormThousandths, c.PerformanceNormThousandths,
-                    c.FormNormThousandths, c.PrestigeNormThousandths))
+                    c.FormNormThousandths, c.ChaosNormThousandths, c.PrestigeNormThousandths))
                 .ToList();
             all.AddRange(ranking);
 
@@ -512,6 +517,7 @@ public static class CupSelectionCalibrationHarness
                     weakestMember.BonusNorm - bestMiss.BonusNorm,
                     weakestMember.PerfNorm - bestMiss.PerfNorm,
                     weakestMember.FormNorm - bestMiss.FormNorm,
+                    weakestMember.ChaosNorm - bestMiss.ChaosNorm,
                     weakestMember.PrestigeNorm - bestMiss.PrestigeNorm));
             }
 
@@ -544,8 +550,9 @@ public static class CupSelectionCalibrationHarness
         long bonus = (long)(selected.BonusNorm - missed.BonusNorm) * rules.CupBonusWeightPermille;
         long perf = (long)(selected.PerfNorm - missed.PerfNorm) * rules.CupPerformanceWeightPermille;
         long form = (long)(selected.FormNorm - missed.FormNorm) * rules.CupFormWeightPermille;
+        long chaos = (long)(selected.ChaosNorm - missed.ChaosNorm) * rules.CupChaosWeightPermille;
         long prestige = (long)(selected.PrestigeNorm - missed.PrestigeNorm) * rules.CupPrestigeWeightPermille;
-        long best = Math.Max(Math.Max(bonus, perf), Math.Max(form, prestige));
+        long best = Math.Max(Math.Max(Math.Max(bonus, perf), Math.Max(form, chaos)), prestige);
         if (best == bonus)
         {
             return "bonus";
@@ -559,6 +566,11 @@ public static class CupSelectionCalibrationHarness
         if (best == form)
         {
             return "form";
+        }
+
+        if (best == chaos)
+        {
+            return "chaos";
         }
 
         return "prestige";
@@ -604,6 +616,7 @@ public static class CupSelectionCalibrationHarness
                 selected.Count == 0 ? 0 : selected.Average(e => (double)e.BonusNorm),
                 selected.Count == 0 ? 0 : selected.Average(e => (double)e.PerfNorm),
                 selected.Count == 0 ? 0 : selected.Average(e => (double)e.FormNorm),
+                selected.Count == 0 ? 0 : selected.Average(e => (double)e.ChaosNorm),
                 selected.Count == 0 ? 0 : selected.Average(e => (double)e.PrestigeNorm)));
         }
 
@@ -646,6 +659,7 @@ public static class CupSelectionCalibrationHarness
         Dictionary<string, double> bonusSum = TierOrder.ToDictionary(t => t, _ => 0.0, StringComparer.Ordinal);
         Dictionary<string, double> perfSum = TierOrder.ToDictionary(t => t, _ => 0.0, StringComparer.Ordinal);
         Dictionary<string, double> formSum = TierOrder.ToDictionary(t => t, _ => 0.0, StringComparer.Ordinal);
+        Dictionary<string, double> chaosSum = TierOrder.ToDictionary(t => t, _ => 0.0, StringComparer.Ordinal);
         Dictionary<string, double> prestigeSum = TierOrder.ToDictionary(t => t, _ => 0.0, StringComparer.Ordinal);
 
         foreach (EditionSummary edition in editions)
@@ -667,6 +681,7 @@ public static class CupSelectionCalibrationHarness
                 bonusSum[stats.Tier] += stats.AvgBonusNorm * stats.Selected;
                 perfSum[stats.Tier] += stats.AvgPerformanceNorm * stats.Selected;
                 formSum[stats.Tier] += stats.AvgFormNorm * stats.Selected;
+                chaosSum[stats.Tier] += stats.AvgChaosNorm * stats.Selected;
                 prestigeSum[stats.Tier] += stats.AvgPrestigeNorm * stats.Selected;
             }
         }
@@ -685,6 +700,7 @@ public static class CupSelectionCalibrationHarness
                 n == 0 ? 0 : bonusSum[tier] / n,
                 n == 0 ? 0 : perfSum[tier] / n,
                 n == 0 ? 0 : formSum[tier] / n,
+                n == 0 ? 0 : chaosSum[tier] / n,
                 n == 0 ? 0 : prestigeSum[tier] / n));
         }
 
@@ -761,7 +777,7 @@ public static class CupSelectionCalibrationHarness
         ArgumentNullException.ThrowIfNull(report);
         StringBuilder builder = new();
         builder.AppendLine(CultureInfo.InvariantCulture, $"Cup selection calibration: seed={report.Seed} stream={report.Stream} seasons={report.SeasonsCompleted} rules=v{report.RulesVersion}");
-        builder.AppendLine(CultureInfo.InvariantCulture, $"Weights: bonus={report.BonusWeightPermille} performance={report.PerformanceWeightPermille} form={report.FormWeightPermille} prestige={report.PrestigeWeightPermille}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Weights: bonus={report.BonusWeightPermille} performance={report.PerformanceWeightPermille} form={report.FormWeightPermille} chaos={report.ChaosWeightPermille} prestige={report.PrestigeWeightPermille}");
         builder.AppendLine(CultureInfo.InvariantCulture, $"Factors: super={report.SuperFactorPermille} f1={report.Feeder1FactorPermille} f2={report.Feeder2FactorPermille} f3={report.Feeder3FactorPermille}");
         builder.AppendLine(CultureInfo.InvariantCulture, $"Editions: {report.Editions.Count} checksum={report.Checksum}");
         foreach (EditionSummary edition in report.Editions)
@@ -770,7 +786,7 @@ public static class CupSelectionCalibrationHarness
             foreach (TierStats stats in edition.ByTier)
             {
                 builder.AppendLine(CultureInfo.InvariantCulture,
-                    $"  {stats.Tier}: candidates={stats.Candidates} selected={stats.Selected} rate={stats.SelectionRate:P1} avgFinal={stats.AvgFinalRating:F1} median={stats.MedianFinalRating:F1} norms(b/p/f/r)={stats.AvgBonusNorm:F0}/{stats.AvgPerformanceNorm:F0}/{stats.AvgFormNorm:F0}/{stats.AvgPrestigeNorm:F0}");
+                    $"  {stats.Tier}: candidates={stats.Candidates} selected={stats.Selected} rate={stats.SelectionRate:P1} avgFinal={stats.AvgFinalRating:F1} median={stats.MedianFinalRating:F1} norms(b/p/f/c/r)={stats.AvgBonusNorm:F0}/{stats.AvgPerformanceNorm:F0}/{stats.AvgFormNorm:F0}/{stats.AvgChaosNorm:F0}/{stats.AvgPrestigeNorm:F0}");
             }
         }
 

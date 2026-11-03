@@ -16,6 +16,7 @@ public sealed class ColorCupIndividualStepTests
     /// MSS-064 re-captured for league-strength-aware selection.
     /// MSS-096 re-captured for career-prestige selection (shared Career Leaders points
     /// through the source season replace win-only prestige; RNG chain unchanged).
+    /// MSS-105 re-captured for 35/30/20/5/10 selection with Chaos form (RNG chain unchanged).
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -24,7 +25,7 @@ public sealed class ColorCupIndividualStepTests
         try
         {
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("53d59dd1e5620b8d6c2001327386e9ae0d7a9ed8af91c6ec38d7ea206598348d");
+            response.Checksum.ShouldBe("495c79fcc0745187b2c908b5314e855fc364d12af72cdda5ca577d0ae1b751ca");
             (await LoadRngAsync(store, saveId)).ShouldBe((5256838557070595265L, 8181L));
         }
         finally

@@ -19,6 +19,7 @@ public sealed record GetTypeCupSelectionReportResponse(
     int BonusWeightPermille,
     int PerformanceWeightPermille,
     int FormWeightPermille,
+    int ChaosWeightPermille,
     int PrestigeWeightPermille,
     IReadOnlyList<GetTypeCupSelectionReportResponse.Team> Teams,
     IReadOnlyList<GetTypeCupSelectionReportResponse.MissedTeam> MissedTeams,
@@ -57,10 +58,12 @@ public sealed record GetTypeCupSelectionReportResponse(
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw,
         string? SourceLeagueName,
         int? SourceLeagueLevel,
@@ -83,7 +86,8 @@ public sealed record GetTypeCupSelectionReportResponse(
         int PrestigeCareerFeeder3Points = 0,
         int PrestigeCareerColorIndividualPoints = 0,
         int PrestigeCareerColorTeamPoints = 0,
-        int PrestigeCareerTypeTeamPoints = 0);
+        int PrestigeCareerTypeTeamPoints = 0,
+        int PrestigeCareerChaosCupIndividualPoints = 0);
 
     public sealed record Alternative(string TeamName, int Rank, bool FieldsTeam);
 

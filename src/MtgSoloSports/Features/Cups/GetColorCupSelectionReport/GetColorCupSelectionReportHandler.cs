@@ -90,10 +90,12 @@ public sealed class GetColorCupSelectionReportHandler
                         r.BonusNormThousandths,
                         r.PerformanceNormThousandths,
                         r.FormNormThousandths,
+                        r.ChaosNormThousandths,
                         r.PrestigeNormThousandths,
                         r.BonusRawThousandths,
                         r.PerformanceRawThousandths,
                         r.FormRaw,
+                        r.ChaosRaw,
                         r.PrestigeRaw))
                     .ToList()))
             .ToList();
@@ -102,6 +104,7 @@ public sealed class GetColorCupSelectionReportHandler
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
+            rules.CupChaosWeightPermille,
             rules.CupPrestigeWeightPermille,
             teams);
     }
@@ -157,6 +160,7 @@ public sealed class GetColorCupSelectionReportHandler
             report.BonusWeightPermille,
             report.PerformanceWeightPermille,
             report.FormWeightPermille,
+            report.ChaosWeightPermille,
             report.PrestigeWeightPermille,
             teams,
             report.PrestigeWeightsVersion);
@@ -187,10 +191,12 @@ public sealed class GetColorCupSelectionReportHandler
             candidate.BonusNormThousandths,
             candidate.PerformanceNormThousandths,
             candidate.FormNormThousandths,
+            candidate.ChaosNormThousandths,
             candidate.PrestigeNormThousandths,
             candidate.BonusRawThousandths,
             candidate.PerformanceRawThousandths,
             candidate.FormRaw,
+            candidate.ChaosRaw,
             candidate.PrestigeRaw,
             candidate.SourceLeagueName,
             candidate.SourceLeagueLevel,
@@ -213,6 +219,7 @@ public sealed class GetColorCupSelectionReportHandler
             candidate.PrestigeCareerFeeder3Points,
             candidate.PrestigeCareerColorIndividualPoints,
             candidate.PrestigeCareerColorTeamPoints,
-            candidate.PrestigeCareerTypeTeamPoints);
+            candidate.PrestigeCareerTypeTeamPoints,
+            candidate.PrestigeCareerChaosCupIndividualPoints);
     }
 }

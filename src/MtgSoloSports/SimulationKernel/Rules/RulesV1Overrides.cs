@@ -68,6 +68,8 @@ public sealed class RulesV1Overrides
 
     public int? CupFormWeightPermille { get; init; }
 
+    public int? CupChaosWeightPermille { get; init; }
+
     public int? CupPrestigeWeightPermille { get; init; }
 
     public int? CupPrestigeFeederTitlePoints { get; init; }

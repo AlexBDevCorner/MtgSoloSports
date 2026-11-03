@@ -17,8 +17,10 @@ public sealed record TypeCupTeamMember(
     int BonusNormThousandths,
     int PerformanceNormThousandths,
     int FormNormThousandths,
+    int ChaosNormThousandths,
     int PrestigeNormThousandths,
     int BonusRawThousandths,
     int PerformanceRawThousandths,
     int FormRaw,
+    int ChaosRaw,
     int PrestigeRaw);

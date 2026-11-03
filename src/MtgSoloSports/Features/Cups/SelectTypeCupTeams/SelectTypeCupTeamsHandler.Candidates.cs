@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared.Careers;
 using MtgSoloSports.SimulationKernel.Careers;
@@ -25,7 +26,8 @@ public sealed partial class SelectTypeCupTeamsHandler
     internal static List<TypeCupAllocation.CandidateRaw> BuildCandidates(
         SelectionInputs inputs,
         RulesV1 rules,
-        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        IReadOnlyDictionary<int, int>? chaosByAthlete = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(rules);
@@ -34,13 +36,67 @@ public sealed partial class SelectTypeCupTeamsHandler
         Dictionary<int, int> bonusByAthlete = ComputeBonusByAthlete(inputs, contributions, rules);
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete = BuildMetricsMap(inputs, rules, stagesByAthlete);
+        IReadOnlyDictionary<int, int> chaos = chaosByAthlete ?? new Dictionary<int, int>();
         List<TypeCupAllocation.CandidateRaw> candidates = new(inputs.ActiveAthletes.Count);
         foreach (SaveAthleteEntity athlete in inputs.ActiveAthletes.OrderBy(e => e.Id))
         {
-            candidates.Add(BuildSingleCandidate(athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete));
+            candidates.Add(BuildSingleCandidate(athlete, inputs, rules, bonusByAthlete, metricsByAthlete, careerByAthlete, chaos));
         }
 
         return candidates;
+    }
+
+    internal static async Task<Dictionary<int, int>> LoadChaosRawsAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        List<ChaosCupGroupStandingEntity> rows = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (rows.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        List<ChaosCupGroupStandingEntity> finals = rows.Where(r => r.StageIndex == 5).ToList();
+        if (finals.Count != SimulationKernel.Cups.ChaosCupFormat.FinalFieldSize)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> byAthlete = rows
+            .GroupBy(r => r.SaveAthleteId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        Dictionary<int, int> raws = new(byAthlete.Count);
+        foreach ((int athleteId, List<ChaosCupGroupStandingEntity> athleteRows) in byAthlete)
+        {
+            ChaosCupGroupStandingEntity peak = athleteRows.MaxBy(r => r.StageIndex)!;
+            if (peak.StageIndex == 5)
+            {
+                if (peak.GroupRank < 1 || peak.GroupRank > SimulationKernel.Cups.ChaosCupFormat.FinalFieldSize)
+                {
+                    throw new InvalidOperationException($"Chaos Cup Final rank {peak.GroupRank} for season {source.SeasonNumber} is corrupt.");
+                }
+
+                raws[athleteId] = SimulationKernel.Cups.ChaosSelectionForm.ForFinal(peak.GroupRank);
+            }
+            else
+            {
+                if (peak.IsAdvanced)
+                {
+                    throw new InvalidOperationException($"Chaos Cup season {source.SeasonNumber} athlete {athleteId} is marked advanced at its last stage {peak.StageIndex}.");
+                }
+
+                raws[athleteId] = SimulationKernel.Cups.ChaosSelectionForm.ForElimination(peak.StageIndex);
+            }
+        }
+
+        return raws;
     }
 
     internal static Dictionary<int, CupSelectionMetrics.CupMetrics> BuildMetricsMap(
@@ -159,7 +215,8 @@ public sealed partial class SelectTypeCupTeamsHandler
         RulesV1 rules,
         Dictionary<int, int> bonusByAthlete,
         Dictionary<int, CupSelectionMetrics.CupMetrics> metricsByAthlete,
-        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete)
+        IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
+        IReadOnlyDictionary<int, int> chaosByAthlete)
     {
         int bonusRaw = bonusByAthlete.TryGetValue(athlete.Id, out int bonus) ? bonus : 0;
         if (!metricsByAthlete.TryGetValue(athlete.Id, out CupSelectionMetrics.CupMetrics? metrics))
@@ -169,6 +226,7 @@ public sealed partial class SelectTypeCupTeamsHandler
 
         int performanceRaw = metrics.AdjustedPerformanceThousandths;
         int formRaw = metrics.AdjustedFormRaw;
+        chaosByAthlete.TryGetValue(athlete.Id, out int chaosRaw);
         int prestigeRaw = SelectionCareerPrestige.PrestigeRawFor(athlete.Id, careerByAthlete);
         return new TypeCupAllocation.CandidateRaw(
             athlete.Id,
@@ -178,6 +236,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             bonusRaw,
             performanceRaw,
             formRaw,
+            chaosRaw,
             prestigeRaw);
     }
 

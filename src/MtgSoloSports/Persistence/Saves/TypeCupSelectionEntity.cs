@@ -48,6 +48,10 @@ public sealed class TypeCupSelectionEntity
 
     public int FormRaw { get; set; }
 
+    public int ChaosRaw { get; set; }
+
+    public int ChaosNormThousandths { get; set; }
+
     public int PrestigeRaw { get; set; }
 
     public int RulesVersion { get; set; }

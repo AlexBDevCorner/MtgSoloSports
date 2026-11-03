@@ -89,6 +89,16 @@ public class RulesV1
 
     public const int DefaultCupFeeder3StrengthPermille = 400;
 
+    public const int DefaultCupBonusWeightPermille = 350;
+
+    public const int DefaultCupPerformanceWeightPermille = 300;
+
+    public const int DefaultCupFormWeightPermille = 200;
+
+    public const int DefaultCupChaosWeightPermille = 50;
+
+    public const int DefaultCupPrestigeWeightPermille = 100;
+
     protected RulesV1(
         int sportingColorCount,
         int athletesPerSportingColor,
@@ -121,6 +131,7 @@ public class RulesV1
         int cupBonusWeightPermille,
         int cupPerformanceWeightPermille,
         int cupFormWeightPermille,
+        int cupChaosWeightPermille,
         int cupPrestigeWeightPermille,
         ColorCupPrestigeConstants prestige,
         int[] scoringTable,
@@ -160,6 +171,7 @@ public class RulesV1
         CupBonusWeightPermille = cupBonusWeightPermille;
         CupPerformanceWeightPermille = cupPerformanceWeightPermille;
         CupFormWeightPermille = cupFormWeightPermille;
+        CupChaosWeightPermille = cupChaosWeightPermille;
         CupPrestigeWeightPermille = cupPrestigeWeightPermille;
         Prestige = prestige ?? throw new ArgumentNullException(nameof(prestige));
         ScoringTable = Array.AsReadOnly(scoringTable);
@@ -385,6 +397,8 @@ public class RulesV1
 
     public int CupFormWeightPermille { get; }
 
+    public int CupChaosWeightPermille { get; }
+
     public int CupPrestigeWeightPermille { get; }
 
     /// <summary>
@@ -481,10 +495,11 @@ public class RulesV1
             active.TypeCupMaxDirectFinalTeams ?? DefaultTypeCupMaxDirectFinalTeams,
             active.TypeCupFinalTeamCount ?? DefaultTypeCupFinalTeamCount,
             active.RecentFormStageCount ?? 10,
-            active.CupBonusWeightPermille ?? 350,
-            active.CupPerformanceWeightPermille ?? 300,
-            active.CupFormWeightPermille ?? 250,
-            active.CupPrestigeWeightPermille ?? 100,
+            active.CupBonusWeightPermille ?? DefaultCupBonusWeightPermille,
+            active.CupPerformanceWeightPermille ?? DefaultCupPerformanceWeightPermille,
+            active.CupFormWeightPermille ?? DefaultCupFormWeightPermille,
+            active.CupChaosWeightPermille ?? DefaultCupChaosWeightPermille,
+            active.CupPrestigeWeightPermille ?? DefaultCupPrestigeWeightPermille,
             prestige,
             resolvedScoring,
             resolvedRoundBonus,
@@ -847,16 +862,23 @@ public class RulesV1
     {
         checked
         {
-            int total = CupBonusWeightPermille + CupPerformanceWeightPermille + CupFormWeightPermille + CupPrestigeWeightPermille;
+            int total = CupBonusWeightPermille + CupPerformanceWeightPermille + CupFormWeightPermille + CupChaosWeightPermille + CupPrestigeWeightPermille;
             if (total != CupWeightScale)
             {
                 throw new InvalidOperationException($"Cup selection weights must sum to {CupWeightScale}, was {total}.");
             }
         }
 
-        if (CupBonusWeightPermille != 350 || CupPerformanceWeightPermille != 300 || CupFormWeightPermille != 250 || CupPrestigeWeightPermille != 100)
+        bool legacy = CupBonusWeightPermille == 350 && CupPerformanceWeightPermille == 300
+            && CupFormWeightPermille == 250 && CupChaosWeightPermille == 0 && CupPrestigeWeightPermille == 100;
+        bool current = CupBonusWeightPermille == DefaultCupBonusWeightPermille
+            && CupPerformanceWeightPermille == DefaultCupPerformanceWeightPermille
+            && CupFormWeightPermille == DefaultCupFormWeightPermille
+            && CupChaosWeightPermille == DefaultCupChaosWeightPermille
+            && CupPrestigeWeightPermille == DefaultCupPrestigeWeightPermille;
+        if (!legacy && !current)
         {
-            throw new InvalidOperationException("Cup selection weights must be 350/300/250/100.");
+            throw new InvalidOperationException("Cup selection weights must be 350/300/200/50/100 (or legacy 350/300/250/0/100).");
         }
     }
 

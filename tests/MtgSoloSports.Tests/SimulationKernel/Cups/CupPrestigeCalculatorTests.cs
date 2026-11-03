@@ -304,7 +304,7 @@ public sealed class CupPrestigeCalculatorTests
     public void ColorCupReport_V3_RoundTrips_WithPrestigeBreakdown_SummingToRaw()
     {
         var candidate = new ColorCupSelectionReportDocument.Candidate(
-            7, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, 1420,
+            7, 1, 900, 1000, 800, 600, 0, 1000, 5000, 8000, 44000, 0, 1420,
             "White League", (int)LeagueLevel.Feeder1, 800, 10_000, 55_000,
             0, 400, 200, 100, 80, 0, 40, 0, 0, 600);
         int sum = candidate.PrestigeSuperTitleRaw + candidate.PrestigeFeeder1TitleRaw
@@ -314,7 +314,7 @@ public sealed class CupPrestigeCalculatorTests
             + candidate.PrestigeFeeder3StageRaw + candidate.PrestigeMajorCupRaw;
         sum.ShouldBe(candidate.PrestigeRaw);
         var report = new ColorCupSelectionReportDocument(
-            3, 350, 300, 250, 100,
+            3, 350, 300, 200, 50, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [candidate])]);
         ColorCupSelectionReportDocument restored = ColorCupSelectionReportDocument.FromStored(report.ToStored());
         restored.Version.ShouldBe(3);
@@ -333,7 +333,8 @@ public sealed class CupPrestigeCalculatorTests
         RulesV3 rules = TieredRules();
         rules.CupBonusWeightPermille.ShouldBe(350);
         rules.CupPerformanceWeightPermille.ShouldBe(300);
-        rules.CupFormWeightPermille.ShouldBe(250);
+        rules.CupFormWeightPermille.ShouldBe(200);
+        rules.CupChaosWeightPermille.ShouldBe(50);
         rules.CupPrestigeWeightPermille.ShouldBe(100);
     }
 

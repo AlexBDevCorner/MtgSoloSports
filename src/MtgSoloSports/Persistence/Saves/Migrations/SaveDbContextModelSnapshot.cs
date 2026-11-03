@@ -268,6 +268,12 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                     b.Property<int>("BonusRawThousandths")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("ChaosNormThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosRaw")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("FinalRatingThousandths")
                         .HasColumnType("INTEGER");
 
@@ -1221,6 +1227,12 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("BonusRawThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosNormThousandths")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosRaw")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("CreatureType")

@@ -21,12 +21,13 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> Rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> Metrics) RankAllColors(
         SelectionInputs inputs,
         IReadOnlyDictionary<int, CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
-        RulesV1 rules)
+        RulesV1 rules,
+        IReadOnlyDictionary<int, int>? chaosByAthlete = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(rules);
-        Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules, careerByAthlete);
+        Dictionary<int, List<ColorCupSelection.CandidateRaw>> byColor = BuildCandidates(inputs, rules, careerByAthlete, chaosByAthlete ?? new Dictionary<int, int>());
         Dictionary<int, List<ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
         Dictionary<int, CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
         ValidateEightColors(byColor, rules);
@@ -82,6 +83,7 @@ public sealed partial class SelectColorCupTeamsHandler
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
+            rules.CupChaosWeightPermille,
             rules.CupPrestigeWeightPermille,
             teams,
             CareerPerformanceScorer.WeightsVersion);
@@ -134,8 +136,9 @@ public sealed partial class SelectColorCupTeamsHandler
         return new ColorCupSelectionReportDocument.Candidate(
             scored.AthleteId, scored.SelectionRank, scored.FinalRatingThousandths,
             scored.BonusNormThousandths, scored.PerformanceNormThousandths, scored.FormNormThousandths,
-            scored.PrestigeNormThousandths, scored.BonusRawThousandths, scored.PerformanceRawThousandths,
-            scored.FormRaw, scored.PrestigeRaw, leagueName, leagueLevel, factor,
+            scored.ChaosNormThousandths, scored.PrestigeNormThousandths,
+            scored.BonusRawThousandths, scored.PerformanceRawThousandths,
+            scored.FormRaw, scored.ChaosRaw, scored.PrestigeRaw, leagueName, leagueLevel, factor,
             unadjustedPerformance, unadjustedForm,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             careerSuper, careerF1, careerF2, careerF3,

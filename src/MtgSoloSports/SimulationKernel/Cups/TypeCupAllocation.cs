@@ -37,6 +37,7 @@ public static class TypeCupAllocation
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw);
 
     public sealed record ScoredCandidate(
@@ -47,10 +48,12 @@ public static class TypeCupAllocation
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw,
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int FinalRatingThousandths);
 
@@ -63,10 +66,12 @@ public static class TypeCupAllocation
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw);
 
     public sealed record AllocatedTeam(
@@ -157,16 +162,17 @@ public static class TypeCupAllocation
             int bonusNorm = ColorCupSelection.Normalize(candidate.BonusRawThousandths, range.BonusMin, range.BonusMax);
             int perfNorm = ColorCupSelection.Normalize(candidate.PerformanceRawThousandths, range.PerformanceMin, range.PerformanceMax);
             int formNorm = ColorCupSelection.Normalize(candidate.FormRaw, range.FormMin, range.FormMax);
+            int chaosNorm = ColorCupSelection.Normalize(candidate.ChaosRaw, range.ChaosMin, range.ChaosMax);
             int prestigeNorm = ColorCupSelection.Normalize(candidate.PrestigeRaw, range.PrestigeMin, range.PrestigeMax);
             SelectionScore final = SelectionScore.Combine(
-                bonusNorm, perfNorm, formNorm, prestigeNorm,
+                bonusNorm, perfNorm, formNorm, chaosNorm, prestigeNorm,
                 rules.CupBonusWeightPermille, rules.CupPerformanceWeightPermille,
-                rules.CupFormWeightPermille, rules.CupPrestigeWeightPermille);
+                rules.CupFormWeightPermille, rules.CupChaosWeightPermille, rules.CupPrestigeWeightPermille);
             scored.Add(new ScoredCandidate(
                 candidate.AthleteId, candidate.Name, eligible,
                 string.IsNullOrWhiteSpace(candidate.CappedNationality) ? null : candidate.CappedNationality.Trim(),
-                candidate.BonusRawThousandths, candidate.PerformanceRawThousandths, candidate.FormRaw, candidate.PrestigeRaw,
-                bonusNorm, perfNorm, formNorm, prestigeNorm, final.Thousandths));
+                candidate.BonusRawThousandths, candidate.PerformanceRawThousandths, candidate.FormRaw, candidate.ChaosRaw, candidate.PrestigeRaw,
+                bonusNorm, perfNorm, formNorm, chaosNorm, prestigeNorm, final.Thousandths));
         }
 
         scored.Sort(CompareScored);
@@ -177,6 +183,7 @@ public static class TypeCupAllocation
         int BonusMin, int BonusMax,
         int PerformanceMin, int PerformanceMax,
         int FormMin, int FormMax,
+        int ChaosMin, int ChaosMax,
         int PrestigeMin, int PrestigeMax);
 
     internal static void ValidateSingleCandidate(CandidateRaw candidate)
@@ -206,7 +213,7 @@ public static class TypeCupAllocation
         }
 
         if (candidate.BonusRawThousandths < 0 || candidate.PerformanceRawThousandths < 0
-            || candidate.FormRaw < 0 || candidate.PrestigeRaw < 0)
+            || candidate.FormRaw < 0 || candidate.ChaosRaw < 0 || candidate.PrestigeRaw < 0)
         {
             throw new InvalidOperationException($"Type Cup candidate '{candidate.Name}' has corrupt negative selection inputs.");
         }
@@ -224,6 +231,7 @@ public static class TypeCupAllocation
             candidates.Min(c => c.BonusRawThousandths), candidates.Max(c => c.BonusRawThousandths),
             candidates.Min(c => c.PerformanceRawThousandths), candidates.Max(c => c.PerformanceRawThousandths),
             candidates.Min(c => c.FormRaw), candidates.Max(c => c.FormRaw),
+            candidates.Min(c => c.ChaosRaw), candidates.Max(c => c.ChaosRaw),
             candidates.Min(c => c.PrestigeRaw), candidates.Max(c => c.PrestigeRaw));
     }
 
@@ -253,6 +261,12 @@ public static class TypeCupAllocation
         if (form != 0)
         {
             return form;
+        }
+
+        int chaos = right.ChaosNormThousandths.CompareTo(left.ChaosNormThousandths);
+        if (chaos != 0)
+        {
+            return chaos;
         }
 
         int prestige = right.PrestigeNormThousandths.CompareTo(left.PrestigeNormThousandths);
@@ -625,9 +639,9 @@ public static class TypeCupAllocation
                 TypeRankOf(type, entry.AthleteId, rankLookup),
                 entry.FinalRatingThousandths,
                 entry.BonusNormThousandths, entry.PerformanceNormThousandths,
-                entry.FormNormThousandths, entry.PrestigeNormThousandths,
+                entry.FormNormThousandths, entry.ChaosNormThousandths, entry.PrestigeNormThousandths,
                 entry.BonusRawThousandths, entry.PerformanceRawThousandths,
-                entry.FormRaw, entry.PrestigeRaw));
+                entry.FormRaw, entry.ChaosRaw, entry.PrestigeRaw));
         }
 
         return members;

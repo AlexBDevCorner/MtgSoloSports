@@ -19,6 +19,7 @@ public sealed class ColorCupTeamStepTests
     /// through the source season replace win-only prestige; RNG chain unchanged).
     /// MSS-097 re-captured for active-only selection (pool athletes never qualify,
     /// matching the Type Cup, so the selected 32 differ from the all-save field).
+    /// MSS-105 re-captured for 35/30/20/5/10 selection with Chaos form (RNG chain unchanged).
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -27,7 +28,7 @@ public sealed class ColorCupTeamStepTests
         try
         {
             RunColorCupTeamResponse response = await new RunColorCupTeamHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("9ab3d6c8d80b1f142d15bcac95dd9ff406ce373511b16aa761e814cd264854ee");
+            response.Checksum.ShouldBe("c084a61ae6878b0fd3dda5be1e0c1a4ef796ba1e31da77f1d9f681b185ef06d5");
             (await LoadRngAsync(store, saveId)).ShouldBe((-3128078357953407831L, 9292L));
         }
         finally

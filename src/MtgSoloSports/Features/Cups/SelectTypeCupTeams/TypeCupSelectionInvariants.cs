@@ -104,18 +104,18 @@ public static class TypeCupSelectionInvariants
         }
 
         if (row.FinalRatingThousandths < 0 || row.BonusNormThousandths < 0 || row.PerformanceNormThousandths < 0
-            || row.FormNormThousandths < 0 || row.PrestigeNormThousandths < 0)
+            || row.FormNormThousandths < 0 || row.ChaosNormThousandths < 0 || row.PrestigeNormThousandths < 0)
         {
             throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt negative scores.");
         }
 
         if (row.BonusNormThousandths > 1000 || row.PerformanceNormThousandths > 1000
-            || row.FormNormThousandths > 1000 || row.PrestigeNormThousandths > 1000)
+            || row.FormNormThousandths > 1000 || row.ChaosNormThousandths > 1000 || row.PrestigeNormThousandths > 1000)
         {
             throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt normalized component above 1000.");
         }
 
-        if (row.BonusRawThousandths < 0 || row.PerformanceRawThousandths < 0 || row.FormRaw < 0 || row.PrestigeRaw < 0)
+        if (row.BonusRawThousandths < 0 || row.PerformanceRawThousandths < 0 || row.FormRaw < 0 || row.ChaosRaw < 0 || row.PrestigeRaw < 0)
         {
             throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt negative raw inputs.");
         }

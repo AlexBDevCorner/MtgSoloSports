@@ -132,7 +132,7 @@ public sealed class CareerPrestigeSelectionTests
         CareerPerformanceScorer.AthleteCareerScore career = scores[21];
 
         var colorCandidate = new ColorCupSelectionReportDocument.Candidate(
-            21, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, career.TotalPoints,
+            21, 1, 900, 1000, 800, 600, 0, 1000, 5000, 8000, 44000, 0, career.TotalPoints,
             "Superleague", (int)LeagueLevel.Superleague, 1000, 10_000, 55_000,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             career.SuperleaguePoints, career.Feeder1Points, career.Feeder2Points, career.Feeder3Points,
@@ -146,7 +146,7 @@ public sealed class CareerPrestigeSelectionTests
         colorSum.ShouldBe(career.TotalPoints);
 
         var typeCandidate = new TypeCupSelectionReportDocument.Candidate(
-            21, 1, 1, "Wizard", false, [], 950, 1000, 900, 800, 1000, 6000, 6000, 33000, career.TotalPoints,
+            21, 1, 1, "Wizard", false, [], 950, 1000, 900, 800, 0, 1000, 6000, 6000, 33000, 0, career.TotalPoints,
             "Superleague", (int)LeagueLevel.Superleague, 1000, 10_000, 55_000,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             career.SuperleaguePoints, career.Feeder1Points, career.Feeder2Points, career.Feeder3Points,
@@ -161,37 +161,39 @@ public sealed class CareerPrestigeSelectionTests
     }
 
     [Fact]
-    public void V4Reports_CarryCareerWeights()
+    public void V5Reports_CarryCareerWeightsAndChaos()
     {
         RulesV3 rules = RulesV3.CreateDefault();
         rules.CupPrestigeWeightPermille.ShouldBe(100);
+        rules.CupChaosWeightPermille.ShouldBe(50);
         ColorCupSelectionReportDocument.Candidate career = BuildV4Candidate();
         int careerSum = SumCareer(copy: career);
         careerSum.ShouldBe(1420);
         careerSum.ShouldBe(career.PrestigeRaw);
 
-        var v4 = new ColorCupSelectionReportDocument(
-            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 250, 100,
+        var v5 = new ColorCupSelectionReportDocument(
+            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 200, 50, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [career])],
             CareerPerformanceScorer.WeightsVersion);
-        v4.Version.ShouldBe(4);
-        v4.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
-        ColorCupSelectionReportDocument restoredV4 = ColorCupSelectionReportDocument.FromStored(v4.ToStored());
-        restoredV4.Version.ShouldBe(4);
-        restoredV4.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
-        ColorCupSelectionReportDocument.Candidate back = restoredV4.Teams[0].Ranking[0];
+        v5.Version.ShouldBe(5);
+        v5.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
+        ColorCupSelectionReportDocument restoredV5 = ColorCupSelectionReportDocument.FromStored(v5.ToStored());
+        restoredV5.Version.ShouldBe(5);
+        restoredV5.PrestigeWeightsVersion.ShouldBe("MSS-104-v1");
+        ColorCupSelectionReportDocument.Candidate back = restoredV5.Teams[0].Ranking[0];
         SumCareer(back).ShouldBe(back.PrestigeRaw);
+        back.ChaosRaw.ShouldBe(0);
     }
 
     [Fact]
     public void V3Reports_RemainReadable()
     {
         var legacy = new ColorCupSelectionReportDocument.Candidate(
-            7, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, 1420,
+            7, 1, 900, 1000, 800, 600, 0, 1000, 5000, 8000, 44000, 0, 1420,
             "White League", (int)LeagueLevel.Feeder1, 800, 10_000, 55_000,
             0, 400, 200, 100, 80, 0, 40, 0, 0, 600);
         var v3 = new ColorCupSelectionReportDocument(
-            3, 350, 300, 250, 100,
+            3, 350, 300, 250, 0, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [legacy])]);
         ColorCupSelectionReportDocument restoredV3 = ColorCupSelectionReportDocument.FromStored(v3.ToStored());
         restoredV3.Version.ShouldBe(3);
@@ -207,7 +209,7 @@ public sealed class CareerPrestigeSelectionTests
     }
 
     private static ColorCupSelectionReportDocument.Candidate BuildV4Candidate() => new(
-        7, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, 1420,
+        7, 1, 900, 1000, 800, 600, 0, 1000, 5000, 8000, 44000, 0, 1420,
         "White League", (int)LeagueLevel.Feeder1, 800, 10_000, 55_000,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         800, 400, 100, 50, 30, 20, 20, 0);
@@ -224,10 +226,10 @@ public sealed class CareerPrestigeSelectionTests
         RulesV3 rules = RulesV3.CreateDefault();
         List<ColorCupSelection.CandidateRaw> colorCandidates =
         [
-            new(1, "Alpha", 0, 1000, 8000, 44000, 4215),
-            new(2, "Beta", 0, 1000, 6400, 35200, 1050),
-            new(3, "Gamma", 0, 1000, 4000, 22000, 0),
-            new(4, "Delta", 0, 1000, 4000, 22000, 0),
+            new(1, "Alpha", 0, 1000, 8000, 44000, 0, 4215),
+            new(2, "Beta", 0, 1000, 6400, 35200, 0, 1050),
+            new(3, "Gamma", 0, 1000, 4000, 22000, 0, 0),
+            new(4, "Delta", 0, 1000, 4000, 22000, 0, 0),
         ];
         IReadOnlyList<ColorCupSelection.ScoredCandidate> first = ColorCupSelection.RankAll(colorCandidates, rules);
         IReadOnlyList<ColorCupSelection.ScoredCandidate> second = ColorCupSelection.RankAll(colorCandidates, rules);
@@ -236,10 +238,10 @@ public sealed class CareerPrestigeSelectionTests
 
         List<TypeCupAllocation.CandidateRaw> typeCandidates =
         [
-            new(1, "Alpha", ["Wizard"], null, 1000, 8000, 44000, 4215),
-            new(2, "Beta", ["Wizard"], null, 1000, 6400, 35200, 1050),
-            new(3, "Gamma", ["Wizard"], null, 1000, 4000, 22000, 0),
-            new(4, "Delta", ["Wizard"], null, 1000, 4000, 22000, 0),
+            new(1, "Alpha", ["Wizard"], null, 1000, 8000, 44000, 0, 4215),
+            new(2, "Beta", ["Wizard"], null, 1000, 6400, 35200, 0, 1050),
+            new(3, "Gamma", ["Wizard"], null, 1000, 4000, 22000, 0, 0),
+            new(4, "Delta", ["Wizard"], null, 1000, 4000, 22000, 0, 0),
         ];
         TypeCupAllocation.AllocationResult firstAlloc = TypeCupAllocation.Allocate(typeCandidates, rules);
         TypeCupAllocation.AllocationResult secondAlloc = TypeCupAllocation.Allocate(typeCandidates, rules);

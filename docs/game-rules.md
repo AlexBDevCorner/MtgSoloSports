@@ -263,16 +263,17 @@ Cups use active bonus but award no championship points and generate no new bonus
 
 All eight sporting colors participate with four selected athletes each. Only currently active athletes (source-season league membership) are eligible; common-pool athletes never participate, matching the Type Cup.
 
-Automatic selection rating:
+Automatic selection rating (MSS-105: 35/30/20/5/10):
 
 - 35% current effective bonus;
 - 30% completed-season performance, adjusted by competition strength;
-- 25% recent form over the completed source season's final 10 league stages, adjusted by competition strength;
+- 20% recent form over the completed source season's final 10 league stages, adjusted by competition strength;
+- 5% Chaos form: one outcome of the relevant completed source-season Chaos Cup edition (reached stage and, for finalists, official Final rank 1..32), not a sum of group scores; legacy source seasons with no Chaos Cup score zero;
 - 10% career prestige.
 
-Each component is normalized within the color. The four highest scores make the team and are ordered #1-#4 by selection rating.
+Each component is normalized within the color (Color Cup) or globally (Type Cup). The four highest scores make the team and are ordered #1-#4 by selection rating. Tie-breaks follow weight order: bonus, performance, form, chaos, prestige, name, id.
 
-Career prestige (MSS-096, shared Career Leaders points, MSS-104-v1 weights, exact integer-only) is the same weighted full-placement career history used by Career Leaders, through the selected source season, including nonpodium league and Cup results. Honours, titles and prestige are different concepts: an honour is any top-three finish shown in career history; a title is a first-place honour; prestige is the weighted career-performance total where competition level and field size matter. Prestige raw is the athlete's total career points; the eight career-category points (Superleague, Feeder 1/2/3, Color Cup individual, Color Cup team, Type Cup team, Chaos Cup individual) sum exactly to prestige raw. Every finalized placement scores positive; medals never add a second bonus beyond the placement itself; a Type Cup finalist never also takes qualification credit. Chaos eliminations share one fixed credit per exit stage (10/7/4/2/1) with no global 33..1024 ranks; the Chaos Final uses weight 450 over 32 places (champion 675, last place 13 strictly above the best exit). The outer prestige weight stays 10% (35/30/25/10 unchanged), normalized per sporting color for Color Cup and globally for Type Cup; normalization removes uniform internal-unit scaling.
+Career prestige (MSS-096, shared Career Leaders points, MSS-104-v1 weights, exact integer-only) is the same weighted full-placement career history used by Career Leaders, through the selected source season, including nonpodium league and Cup results. Honours, titles and prestige are different concepts: an honour is any top-three finish shown in career history; a title is a first-place honour; prestige is the weighted career-performance total where competition level and field size matter. Prestige raw is the athlete's total career points; the eight career-category points (Superleague, Feeder 1/2/3, Color Cup individual, Color Cup team, Type Cup team, Chaos Cup individual) sum exactly to prestige raw. Every finalized placement scores positive; medals never add a second bonus beyond the placement itself; a Type Cup finalist never also takes qualification credit. Chaos eliminations share one fixed credit per exit stage (10/7/4/2/1) with no global 33..1024 ranks; the Chaos Final uses weight 450 over 32 places (champion 675, last place 13 strictly above the best exit). The outer prestige weight stays 10% (35/30/20/5/10 since MSS-105), normalized per sporting color for Color Cup and globally for Type Cup; normalization removes uniform internal-unit scaling.
 
 Historical win-only prestige (Rules v3 tiered model, quarter-prestige-points with scale 4, v1-v3 selection reports) distinguished only titles, Superleague appearances, stage podiums and major Cup titles:
 

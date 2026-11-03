@@ -15,6 +15,7 @@ public sealed record GetColorCupSelectionReportResponse(
     int BonusWeightPermille,
     int PerformanceWeightPermille,
     int FormWeightPermille,
+    int ChaosWeightPermille,
     int PrestigeWeightPermille,
     IReadOnlyList<GetColorCupSelectionReportResponse.Team> Teams,
     string PrestigeWeightsVersion = "")
@@ -36,10 +37,12 @@ public sealed record GetColorCupSelectionReportResponse(
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw,
         string? SourceLeagueName,
         int? SourceLeagueLevel,
@@ -62,5 +65,6 @@ public sealed record GetColorCupSelectionReportResponse(
         int PrestigeCareerFeeder3Points = 0,
         int PrestigeCareerColorIndividualPoints = 0,
         int PrestigeCareerColorTeamPoints = 0,
-        int PrestigeCareerTypeTeamPoints = 0);
+        int PrestigeCareerTypeTeamPoints = 0,
+        int PrestigeCareerChaosCupIndividualPoints = 0);
 }

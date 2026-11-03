@@ -410,14 +410,22 @@ public sealed class TypeCupSelectionApiTests
                 member.CreatureType.ShouldBe(team.CreatureType);
                 member.TypeRank.ShouldBeGreaterThanOrEqualTo(1);
                 member.BonusNormThousandths.ShouldBeInRange(0, 1000);
+                member.PerformanceNormThousandths.ShouldBeInRange(0, 1000);
+                member.FormNormThousandths.ShouldBeInRange(0, 1000);
+                member.ChaosNormThousandths.ShouldBeInRange(0, 1000);
+                member.PrestigeNormThousandths.ShouldBeInRange(0, 1000);
+                member.ChaosRaw.ShouldBe(0);
+                member.ChaosNormThousandths.ShouldBe(1000);
                 int expected = SelectionScore.Combine(
                     member.BonusNormThousandths,
                     member.PerformanceNormThousandths,
                     member.FormNormThousandths,
+                    member.ChaosNormThousandths,
                     member.PrestigeNormThousandths,
                     response.CupBonusWeightPermille,
                     response.CupPerformanceWeightPermille,
                     response.CupFormWeightPermille,
+                    response.CupChaosWeightPermille,
                     response.CupPrestigeWeightPermille).Thousandths;
                 member.FinalRatingThousandths.ShouldBe(expected);
             }
