@@ -50,6 +50,11 @@ export async function openSave(saveId: string, signal?: AbortSignal): Promise<Sa
   return fetchJson<SaveDetail>(`/api/saves/${saveId}`, { signal });
 }
 
+/**
+ * Creates a save. Seed/stream are JSON numbers and must be safe integers
+ * (0 to 9007199254740991) or undefined for random. The form validates this
+ * range so large ulong values are rejected instead of silently rounded.
+ */
 export async function createSave(
   name: string,
   seed?: number,

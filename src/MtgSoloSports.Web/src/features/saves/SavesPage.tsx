@@ -8,6 +8,7 @@ import { CatalogCounts } from '../catalog/CatalogCounts';
 import type { CatalogStats } from '../catalog/catalogApi';
 import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
 import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
+import { MAX_SAFE_SEED_VALUE, parseDeterministicField } from './seedInput';
 import { phaseLabel } from '../../shared/displayLabels';
 import type { SavesState } from './useSaves';
 import './SavesPage.css';
@@ -67,14 +68,8 @@ export function SavesPage({
     setCreating(true);
     setCreateError(null);
     try {
-      const parsedSeed = seed.trim() === '' ? undefined : Number(seed);
-      const parsedStream = stream.trim() === '' ? undefined : Number(stream);
-      if (
-        (parsedSeed !== undefined && (!Number.isInteger(parsedSeed) || parsedSeed < 0)) ||
-        (parsedStream !== undefined && (!Number.isInteger(parsedStream) || parsedStream < 0))
-      ) {
-        throw new Error('Seed and stream must be non-negative integers when provided.');
-      }
+      const parsedSeed = parseDeterministicField(seed, 'Seed');
+      const parsedStream = parseDeterministicField(stream, 'Stream');
       const created = await createSave(trimmed, parsedSeed, parsedStream);
       saves.addCreated(toSaveSummary(created));
       setName('');
@@ -215,7 +210,9 @@ export function SavesPage({
               <summary>Advanced: deterministic seed (optional)</summary>
               <p className="muted small">
                 Leave blank for a random universe. Provide both values only to reproduce an
-                exact universe for testing.
+                exact universe for testing. Each value must be blank or an integer from 0
+                to {MAX_SAFE_SEED_VALUE} exactly as shown; larger numbers cannot be sent
+                exactly as JSON and are rejected instead of rounded.
               </p>
               <div className="field-row">
                 <label className="field">
