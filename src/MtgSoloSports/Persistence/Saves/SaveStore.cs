@@ -71,6 +71,21 @@ public sealed class SaveStore
     private static SemaphoreSlim AcquireMigrationGate(Guid saveId) =>
         MigrationGates.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
 
+    /// <summary>
+    /// Per-save snapshot gates serializing consistent-snapshot capture
+    /// (export/checkpoint via <c>VACUUM INTO</c>) with other save-file
+    /// replacements (import/restore/delete/overwrite). Simulation writes
+    /// coordinate via SQLite snapshot isolation: <c>VACUUM INTO</c> sees only
+    /// committed data even with a pinned WAL reader, so no simulation lock is
+    /// taken here. Ordering is always migration gate then snapshot gate, never
+    /// the reverse, because checkpoint creation is invoked from already-locked
+    /// bulk/migration paths. Per-save, never global.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> SnapshotGates = new();
+
+    private static SemaphoreSlim AcquireSnapshotGate(Guid saveId) =>
+        SnapshotGates.GetOrAdd(saveId, static _ => new SemaphoreSlim(1, 1));
+
     public SaveStore(
         IOptions<SaveStorageOptions> options,
         IHostEnvironment environment,
@@ -711,7 +726,7 @@ public sealed class SaveStore
     /// files (-wal/-shm/-journal) and its technical recovery checkpoints.
     /// The resolved path must stay inside the saves root; nothing else is ever removed.
     /// </summary>
-    public Task DeleteAsync(Guid saveId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
         string root = GetSavesRoot();
         string path = SaveFileNaming.GetSaveFilePath(root, saveId);
@@ -721,10 +736,30 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        File.Delete(path);
-        DeleteCompanionFiles(path);
-        ClearSaveConnections(path);
-        InvalidateMigrationVerified(saveId);
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Re-check under the gate: a concurrent restore/import could have
+            // replaced the file after the pre-gate existence check.
+            if (!File.Exists(path))
+            {
+                throw new SaveNotFoundException(saveId);
+            }
+
+            // Drop pooled handles before removing the file so the delete and
+            // companion cleanup never race open SQLite mappings (Windows share
+            // violations, Linux fd resurrection).
+            ClearSaveConnections(path);
+            File.Delete(path);
+            DeleteCompanionFiles(path);
+            ClearSaveConnections(path);
+            InvalidateMigrationVerified(saveId);
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
 
         string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
         if (Directory.Exists(checkpointDirectory))
@@ -738,15 +773,17 @@ public sealed class SaveStore
                 _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
             }
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
     /// Exports a complete save as a portable artifact: the SQLite save
-    /// database plus manifest/version metadata zipped together. The live save
-    /// is WAL-checkpointed first so the embedded copy is a consistent
-    /// committed snapshot. Never mutates sporting state.
+    /// database plus manifest/version metadata zipped together. The artifact
+    /// is built from one consistent committed snapshot captured with
+    /// <c>VACUUM INTO</c>: embedded database, checksum and manifest all
+    /// describe that same snapshot file, never separate live reads. A busy or
+    /// incomplete WAL checkpoint can no longer silently omit committed frames;
+    /// capture reads through the WAL and fails explicitly without emitting a
+    /// success artifact. Never mutates sporting state or the live file.
     /// </summary>
     public async Task<ExportRecord> ExportAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -762,34 +799,34 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        await CheckpointWalAsync(path, cancellationToken).ConfigureAwait(false);
-        SaveDetailRecord detail = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
-        string sha256 = SaveBundle.ComputeFileSha256Hex(path);
-        DateTimeOffset exportedUtc = _timeProvider.GetUtcNow();
+        string root = GetSavesRoot();
+        string snapshotPath = Path.Combine(root, $".export-{saveId:N}-{Guid.NewGuid():N}.tmp");
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                throw new SaveNotFoundException(saveId);
+            }
 
-        SaveBundleManifest manifest = new(
-            SaveBundleManifest.ExpectedFormat,
-            SaveBundleManifest.CurrentFormatVersion,
-            detail.SaveId,
-            detail.Name,
-            detail.CreatedUtc,
-            detail.SchemaVersion,
-            detail.RulesVersion,
-            detail.RngAlgorithm,
-            detail.RngVersion,
-            detail.CurrentSeason,
-            detail.Phase,
-            SaveBundleManifest.DatabaseEntryName,
-            sha256,
-            exportedUtc,
-            "MtgSoloSports");
-        byte[] zipBytes = SaveBundle.Create(path, manifest);
-        return new ExportRecord(
-            detail.SaveId,
-            $"{saveId:N}.mtgsave.zip",
-            "application/zip",
-            zipBytes,
-            manifest);
+            await CaptureDatabaseSnapshotAsync(path, snapshotPath, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                SaveDetailRecord detail = await ReadDetailFromSnapshotAsync(snapshotPath, saveId, cancellationToken).ConfigureAwait(false);
+                return BuildExportFromSnapshot(snapshotPath, detail, _timeProvider.GetUtcNow());
+            }
+            finally
+            {
+                DeleteFileBestEffort(snapshotPath);
+                DeleteCompanionFiles(snapshotPath);
+                ClearSaveConnections(snapshotPath);
+            }
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
     }
 
     /// <summary>
@@ -842,8 +879,7 @@ public sealed class SaveStore
                 }
 
                 await CreateCheckpointAsync(manifest.SaveId, "pre-import-overwrite", cancellationToken).ConfigureAwait(false);
-                File.Copy(extraction.StagedDatabasePath, target, overwrite: true);
-                DeleteCompanionFiles(target);
+                await ReplaceLiveDatabaseAsync(manifest.SaveId, target, extraction.StagedDatabasePath, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -864,11 +900,13 @@ public sealed class SaveStore
 
     /// <summary>
     /// Creates a verified technical recovery checkpoint of the last known
-    /// valid save boundary: WAL-checkpoint, file copy, checksum comparison,
-    /// identity verification of the copy, and sidecar persistence. Used before
-    /// migrations, import overwrites, and large bulk operations, and for
-    /// restoring after a software bug/failure. This is technical recovery,
-    /// never normal gameplay rewind.
+    /// valid save boundary: one consistent committed snapshot (via
+    /// <c>VACUUM INTO</c>), identity verification of the snapshot, and sidecar
+    /// persistence. Embedded database, checksum and sidecar all describe that
+    /// same snapshot; a busy WAL checkpoint can no longer silently omit
+    /// committed frames. Used before migrations, import overwrites, and large
+    /// bulk operations, and for restoring after a software bug/failure. This
+    /// is technical recovery, never normal gameplay rewind.
     /// </summary>
     public async Task<CheckpointRecord> CreateCheckpointAsync(
         Guid saveId,
@@ -887,24 +925,37 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        SaveDetailRecord detail = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
-        await CheckpointWalAsync(livePath, cancellationToken).ConfigureAwait(false);
-
         string root = GetSavesRoot();
         CheckpointPaths paths = PrepareCheckpointPaths(root, saveId);
         string normalizedReason = SaveCheckpointFiles.NormalizeReason(reason);
-        DateTimeOffset now = _timeProvider.GetUtcNow();
 
-        File.Copy(livePath, paths.TempCopy, overwrite: false);
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await PersistVerifiedCheckpointAsync(
-                livePath, paths, detail, normalizedReason, now, cancellationToken).ConfigureAwait(false);
+            if (!File.Exists(livePath))
+            {
+                throw new SaveNotFoundException(saveId);
+            }
+
+            await CaptureDatabaseSnapshotAsync(livePath, paths.TempCopy, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                SaveDetailRecord detail = await ReadDetailFromSnapshotAsync(paths.TempCopy, saveId, cancellationToken).ConfigureAwait(false);
+                DateTimeOffset now = _timeProvider.GetUtcNow();
+                return await PersistSnapshotCheckpointAsync(paths, detail, normalizedReason, now, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                DeleteFileBestEffort(paths.TempCopy);
+                DeleteCompanionFiles(paths.TempCopy);
+                ClearSaveConnections(paths.TempCopy);
+                throw;
+            }
         }
-        catch
+        finally
         {
-            DeleteFileBestEffort(paths.TempCopy);
-            throw;
+            snapshotGate.Release();
         }
     }
 
@@ -929,23 +980,24 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Verifies the staged copy, moves it into place, persists a verified
-    /// sidecar, prunes old checkpoints and reports the new checkpoint record.
+    /// Verifies the captured snapshot, moves it into place, persists a
+    /// verified sidecar, prunes old checkpoints and reports the new checkpoint
+    /// record. The checksum, embedded database and sidecar all describe the
+    /// same snapshot file. A failure leaves prior verified checkpoints intact.
     /// </summary>
-    private async Task<CheckpointRecord> PersistVerifiedCheckpointAsync(
-        string livePath,
+    private async Task<CheckpointRecord> PersistSnapshotCheckpointAsync(
         CheckpointPaths paths,
         SaveDetailRecord detail,
         string normalizedReason,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(livePath);
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(detail);
         ArgumentException.ThrowIfNullOrWhiteSpace(normalizedReason);
 
-        string copySha = await CopyAndVerifyDatabaseAsync(livePath, paths.TempCopy, detail.SaveId, cancellationToken).ConfigureAwait(false);
+        await VerifyCheckpointCopyAsync(paths.TempCopy, detail.SaveId, cancellationToken).ConfigureAwait(false);
+        string copySha = SaveBundle.ComputeFileSha256Hex(paths.TempCopy);
         File.Move(paths.TempCopy, paths.DatabasePath);
 
         SaveCheckpointSidecar sidecar = new(
@@ -979,26 +1031,179 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Verifies a checkpoint file copy byte-for-byte against its source and
-    /// proves the copy opens with the expected save identity.
-    /// Returns the verified checksum.
+    /// Captures one consistent committed database snapshot with
+    /// <c>VACUUM INTO</c>, which reads through the WAL and includes the latest
+    /// committed data even when a pinned reader blocks a WAL checkpoint. The
+    /// destination is rebuilt with all committed frames, so a later file copy
+    /// cannot silently omit them. The snapshot is set to WAL journal mode to
+    /// match live save files. Any failure deletes the partial destination and
+    /// throws without emitting a success artifact; live data and prior
+    /// verified checkpoints are unchanged.
     /// </summary>
-    private async Task<string> CopyAndVerifyDatabaseAsync(
-        string sourcePath,
-        string copyPath,
+    private static async Task CaptureDatabaseSnapshotAsync(
+        string livePath,
+        string snapshotPath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(livePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
+        DeleteFileBestEffort(snapshotPath);
+        DeleteCompanionFiles(snapshotPath);
+
+        await VacuumLiveIntoSnapshotAsync(livePath, snapshotPath, cancellationToken).ConfigureAwait(false);
+        if (!File.Exists(snapshotPath))
+        {
+            throw new InvalidOperationException(
+                "Save snapshot capture failed; live data and prior verified checkpoints are unchanged.");
+        }
+
+        // VACUUM rebuilds in delete journal mode; restore WAL so exported and
+        // checkpoint databases match the live save format (sporting data is unchanged).
+        await ApplySnapshotWalModeAsync(snapshotPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task VacuumLiveIntoSnapshotAsync(
+        string livePath,
+        string snapshotPath,
+        CancellationToken cancellationToken)
+    {
+        string escaped = snapshotPath.Replace("'", "''", StringComparison.Ordinal);
+        SqliteConnectionStringBuilder sourceBuilder = new()
+        {
+            DataSource = livePath,
+            Pooling = false,
+        };
+        try
+        {
+            using SqliteConnection connection = new(sourceBuilder.ToString());
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            using (DbCommand busy = connection.CreateCommand())
+            {
+                busy.CommandText = "PRAGMA busy_timeout=5000;";
+                _ = await busy.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            using (DbCommand vacuum = connection.CreateCommand())
+            {
+                vacuum.CommandText = $"VACUUM INTO '{escaped}';";
+                _ = await vacuum.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteFileBestEffort(snapshotPath);
+            DeleteCompanionFiles(snapshotPath);
+            throw new InvalidOperationException(
+                "Save snapshot capture failed; live data and prior verified checkpoints are unchanged.", ex);
+        }
+    }
+
+    private static async Task ApplySnapshotWalModeAsync(
+        string snapshotPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            SqliteConnectionStringBuilder destinationBuilder = new()
+            {
+                DataSource = snapshotPath,
+                Pooling = false,
+            };
+            using SqliteConnection destination = new(destinationBuilder.ToString());
+            await destination.OpenAsync(cancellationToken).ConfigureAwait(false);
+            using DbCommand wal = destination.CreateCommand();
+            wal.CommandText = "PRAGMA journal_mode=WAL;";
+            _ = await wal.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteFileBestEffort(snapshotPath);
+            DeleteCompanionFiles(snapshotPath);
+            throw new InvalidOperationException(
+                "Save snapshot capture failed; live data and prior verified checkpoints are unchanged.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Reads the save detail from a captured snapshot file (not the live
+    /// file) so manifest/sidecar and checksum describe the same snapshot.
+    /// </summary>
+    private async Task<SaveDetailRecord> ReadDetailFromSnapshotAsync(
+        string snapshotPath,
         Guid saveId,
         CancellationToken cancellationToken)
     {
-        string sourceSha = SaveBundle.ComputeFileSha256Hex(sourcePath);
-        string copySha = SaveBundle.ComputeFileSha256Hex(copyPath);
-        if (!string.Equals(sourceSha, copySha, StringComparison.OrdinalIgnoreCase))
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
+        try
         {
-            throw new InvalidOperationException(
-                $"Checkpoint copy verification failed for save '{saveId:D}'.");
+            using SaveDbContext context = _factory.Create(snapshotPath);
+            SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
+            return MapDetail(saveId, rows);
         }
+        finally
+        {
+            ClearSaveConnections(snapshotPath);
+        }
+    }
 
-        await VerifyCheckpointCopyAsync(copyPath, saveId, cancellationToken).ConfigureAwait(false);
-        return copySha;
+    private static ExportRecord BuildExportFromSnapshot(
+        string snapshotPath,
+        SaveDetailRecord detail,
+        DateTimeOffset exportedUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
+        ArgumentNullException.ThrowIfNull(detail);
+        string sha256 = SaveBundle.ComputeFileSha256Hex(snapshotPath);
+        SaveBundleManifest manifest = new(
+            SaveBundleManifest.ExpectedFormat,
+            SaveBundleManifest.CurrentFormatVersion,
+            detail.SaveId,
+            detail.Name,
+            detail.CreatedUtc,
+            detail.SchemaVersion,
+            detail.RulesVersion,
+            detail.RngAlgorithm,
+            detail.RngVersion,
+            detail.CurrentSeason,
+            detail.Phase,
+            SaveBundleManifest.DatabaseEntryName,
+            sha256,
+            exportedUtc,
+            "MtgSoloSports");
+        byte[] zipBytes = SaveBundle.Create(snapshotPath, manifest);
+        return new ExportRecord(
+            detail.SaveId,
+            $"{detail.SaveId:N}.mtgsave.zip",
+            "application/zip",
+            zipBytes,
+            manifest);
+    }
+
+    /// <summary>
+    /// Replaces the live save file with a staged database under the per-save
+    /// snapshot gate so a concurrent snapshot capture cannot read a torn file.
+    /// Pooled handles are dropped before the copy so old WAL frames cannot
+    /// resurrect after the replacement when pools close.
+    /// </summary>
+    private static async Task ReplaceLiveDatabaseAsync(
+        Guid saveId,
+        string livePath,
+        string stagedPath,
+        CancellationToken cancellationToken)
+    {
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ClearSaveConnections(livePath);
+            ClearSaveConnections(stagedPath);
+            File.Copy(stagedPath, livePath, overwrite: true);
+            DeleteCompanionFiles(livePath);
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
     }
 
     /// <summary>
@@ -1269,16 +1474,6 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Forces pending WAL frames into the main database file so a subsequent
-    /// file copy is a consistent committed snapshot.
-    /// </summary>
-    private async Task CheckpointWalAsync(string saveFilePath, CancellationToken cancellationToken)
-    {
-        using SaveDbContext context = _factory.Create(saveFilePath);
-        await context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
     /// Validates a staged import database: required rows exist, identity and
     /// schema version match the manifest, and RNG/rules snapshots parse.
     /// Throws before anything live is touched.
@@ -1408,12 +1603,15 @@ public sealed class SaveStore
         finally
         {
             DeleteCompanionFiles(checkpointDatabasePath);
+            ClearSaveConnections(checkpointDatabasePath);
         }
     }
 
     /// <summary>
     /// Overwrites the live save file with a verified checkpoint copy and
     /// verifies the result opens. Used by restore and migration rollback.
+    /// The replacement holds the per-save snapshot gate so a concurrent
+    /// snapshot capture cannot read a torn live file.
     /// </summary>
     private async Task OverwriteLiveFromCheckpointAsync(
         Guid saveId,
@@ -1434,8 +1632,20 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        File.Copy(checkpointPath, livePath, overwrite: true);
-        DeleteCompanionFiles(livePath);
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ClearSaveConnections(livePath);
+            ClearSaveConnections(checkpointPath);
+            File.Copy(checkpointPath, livePath, overwrite: true);
+            DeleteCompanionFiles(livePath);
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
+
         ClearSaveConnections(livePath);
         InvalidateMigrationVerified(saveId);
         _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
