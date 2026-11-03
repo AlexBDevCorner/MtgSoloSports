@@ -28,11 +28,13 @@ public static class ReportContract
 
     public const string UniverseAlmanacReportType = "universe-almanac";
 
+    public const string ChaosCupDossierReportType = "chaos-cup-dossier";
+
     public static string NormalizeCup(string? cup)
     {
         if (string.IsNullOrWhiteSpace(cup))
         {
-            throw new ArgumentException("Cup must be 'color' or 'type'.", nameof(cup));
+            throw new ArgumentException("Cup must be 'color', 'type' or 'chaos'.", nameof(cup));
         }
 
         string normalized = cup.Trim().ToLowerInvariant();
@@ -40,7 +42,8 @@ public static class ReportContract
         {
             "color" => "color",
             "type" => "type",
-            _ => throw new ArgumentException($"Unsupported cup '{cup}'. Use 'color' or 'type'.", nameof(cup)),
+            "chaos" => "chaos",
+            _ => throw new ArgumentException($"Unsupported cup '{cup}'. Use 'color', 'type' or 'chaos'.", nameof(cup)),
         };
     }
 

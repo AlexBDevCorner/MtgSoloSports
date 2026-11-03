@@ -84,11 +84,16 @@ public sealed class GetCupEditionReportHandler
         SimulationKernel.Rules.RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         SeasonEntity source = await LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
 
+        if (string.Equals(normalizedCup, "chaos", StringComparison.Ordinal))
+        {
+            return await HandleChaosAsync(context, transaction, saveId, metadata, rules, source, normalized, normalizedCup, seasonNumber, cancellationToken).ConfigureAwait(false);
+        }
+
         ReportData data = normalizedCup switch
         {
             "color" => await LoadColorAsync(context, saveId, source, cancellationToken).ConfigureAwait(false),
             "type" => await LoadTypeAsync(context, saveId, source, cancellationToken).ConfigureAwait(false),
-            _ => throw new ArgumentException($"Unsupported cup '{cup}'. Use 'color' or 'type'.", nameof(cup)),
+            _ => throw new ArgumentException($"Unsupported cup '{cup}'. Use 'color', 'type' or 'chaos'.", nameof(cup)),
         };
         int seasonCount = await context.Seasons.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -105,6 +110,58 @@ public sealed class GetCupEditionReportHandler
         string json = CupEditionReportJson.Build(saveId, metadata, rules, seasonCount, data);
         return new ReportFile(
             Encoding.UTF8.GetBytes(json),
+            ReportContract.JsonContentType,
+            ReportFilenames.CupEditionFileName(normalizedCup, seasonNumber, "json"));
+    }
+
+    internal static async Task<ReportFile> HandleChaosAsync(
+        SaveDbContext context,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+        Guid saveId,
+        SaveMetadataEntity metadata,
+        SimulationKernel.Rules.RulesV1 rules,
+        SeasonEntity source,
+        string normalized,
+        string normalizedCup,
+        int seasonNumber,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(source);
+        ChaosDossierData chaos = await ChaosDossierData.LoadAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        int chaosSeasonCount = await context.Seasons.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return BuildChaosFile(saveId, metadata, rules, chaosSeasonCount, chaos, normalized, normalizedCup, seasonNumber);
+    }
+
+    internal static ReportFile BuildChaosFile(
+        Guid saveId,
+        SaveMetadataEntity metadata,
+        SimulationKernel.Rules.RulesV1 rules,
+        int seasonCount,
+        ChaosDossierData chaos,
+        string normalized,
+        string normalizedCup,
+        int seasonNumber)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(chaos);
+        if (string.Equals(normalized, "md", StringComparison.Ordinal))
+        {
+            string chaosMarkdown = ChaosDossierMarkdown.Build(saveId, metadata, rules, seasonCount, chaos);
+            return new ReportFile(
+                Encoding.UTF8.GetBytes(chaosMarkdown),
+                ReportContract.MarkdownContentType,
+                ReportFilenames.CupEditionFileName(normalizedCup, seasonNumber, "md"));
+        }
+
+        string chaosJson = ChaosDossierJson.Build(saveId, metadata, rules, seasonCount, chaos);
+        return new ReportFile(
+            Encoding.UTF8.GetBytes(chaosJson),
             ReportContract.JsonContentType,
             ReportFilenames.CupEditionFileName(normalizedCup, seasonNumber, "json"));
     }

@@ -8,7 +8,7 @@ One-click Drive publishing (MSS-089) updates the current dossier + almanac in pl
 
 - `GET /api/saves/{saveId}/athletes/{athleteId}/report?format=json|md`
 - `GET /api/saves/{saveId}/leagues/{leagueId}/seasons/{seasonNumber}/report?format=json|md`
-- `GET /api/saves/{saveId}/cups/{cup}/editions/{seasonNumber}/report?format=json|md` (`cup` = `color` | `type`)
+- `GET /api/saves/{saveId}/cups/{cup}/editions/{seasonNumber}/report?format=json|md` (`cup` = `color` | `type` | `chaos`; `chaos` is the 1024-entrant dossier)
 - `GET /api/saves/{saveId}/cups/{cup}/teams/{teamKey}/report?format=json|md`
 - `GET /api/saves/{saveId}/leagues/{leagueKey}/report?format=json|md`
 - `GET /api/saves/{saveId}/reports/season/{seasonNumber}?format=json|md` — season dossier (MSS-088)
@@ -24,7 +24,7 @@ substitute a synthetic stage value.
 
 ## Contract (v1)
 
-JSON envelope: `schemaVersion: 1`, `reportType` (`athlete-profile` | `standings-table` | `cup-edition` | `cup-team` | `league-profile` | `season-dossier` | `universe-almanac`), `saveId`,
+JSON envelope: `schemaVersion: 1`, `reportType` (`athlete-profile` | `standings-table` | `cup-edition` | `chaos-cup-dossier` | `cup-team` | `league-profile` | `season-dossier` | `universe-almanac`), `saveId`,
 `generatedUtc`, `save { name, currentSeason, phase, schemaVersion, rulesVersion }`,
 scope ids, `snapshot` phase/season/stage info, typed `data`, plus a `units` block.
 Markdown carries the same scope/status/metadata with headings and tables; it never embeds JSON.
