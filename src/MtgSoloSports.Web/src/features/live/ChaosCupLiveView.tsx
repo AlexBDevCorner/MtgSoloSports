@@ -101,6 +101,12 @@ export function ChaosCupLiveView({
   // Once the edition resolves, pin group/round fetches to its season so a
   // latest-edition view never drifts between seasons mid-navigation.
   const resolvedSeason = season ?? edition?.sourceSeasonNumber ?? null;
+  // Only trust the loaded group when it matches the URL selection; the fetch
+  // effect clears stale groups, and this guard covers the render between
+  // selection change and fetch completion.
+  const groupMatchesSelection =
+    group !== null && group.stageIndex === stage && group.groupNumber === groupNumber;
+  const visibleGroup = groupMatchesSelection ? group : null;
 
   useEffect(() => {
     if (!edition || !stageDrawn || resolvedSeason === null) {
@@ -108,14 +114,30 @@ export function ChaosCupLiveView({
       setGroupLoading(false);
       setGroupError(null);
       setGroupMissing(false);
+      setRoundView(null);
+      setRoundError(null);
       return;
     }
+    // Pin this fetch to the requested selection so a slower stale response
+    // can never overwrite a newer group (mirrors the round effect below).
+    const expected = { stage, group: groupNumber };
     const controller = new AbortController();
+    // Clear the previous group/round immediately so the URL, picker and panel
+    // never show different groups while the new selection loads.
+    setGroup(null);
+    setRoundView(null);
+    setRoundError(null);
     setGroupLoading(true);
     setGroupError(null);
     setGroupMissing(false);
     fetchChaosGroup(saveId, stage, groupNumber, resolvedSeason, controller.signal)
       .then((loaded) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (loaded.stageIndex !== expected.stage || loaded.groupNumber !== expected.group) {
+          return;
+        }
         setGroup(loaded);
         setGroupLoading(false);
       })
@@ -123,8 +145,13 @@ export function ChaosCupLiveView({
         if (failure instanceof DOMException && failure.name === 'AbortError') {
           return;
         }
+        if (controller.signal.aborted) {
+          return;
+        }
+        // Never retain the previous group's standings under the new URL.
+        setGroup(null);
+        setRoundView(null);
         if (failure instanceof ApiError && failure.status === 404) {
-          setGroup(null);
           setGroupMissing(true);
         } else {
           setGroupError(apiErrorMessage(failure));
@@ -134,20 +161,20 @@ export function ChaosCupLiveView({
     return () => controller.abort();
   }, [saveId, stage, groupNumber, resolvedSeason, edition, stageDrawn, revision]);
 
-  const wantedRound = selectedChaosRound(urlRound, group?.roundsPlayed ?? null);
+  const wantedRound = selectedChaosRound(urlRound, visibleGroup?.roundsPlayed ?? null);
   useEffect(() => {
-    if (!group || wantedRound === null || resolvedSeason === null) {
+    if (!visibleGroup || wantedRound === null || resolvedSeason === null) {
       setRoundView(null);
       setRoundLoading(false);
       setRoundError(null);
       return;
     }
     // A stale slower response must never overwrite the freshly selected round.
-    const expected = { stage: group.stageIndex, group: group.groupNumber, round: wantedRound };
+    const expected = { stage: visibleGroup.stageIndex, group: visibleGroup.groupNumber, round: wantedRound };
     const controller = new AbortController();
     setRoundLoading(true);
     setRoundError(null);
-    fetchChaosRound(saveId, group.stageIndex, group.groupNumber, wantedRound, resolvedSeason, controller.signal)
+    fetchChaosRound(saveId, visibleGroup.stageIndex, visibleGroup.groupNumber, wantedRound, resolvedSeason, controller.signal)
       .then((loaded) => {
         if (controller.signal.aborted) {
           return;
@@ -174,7 +201,7 @@ export function ChaosCupLiveView({
         setRoundLoading(false);
       });
     return () => controller.abort();
-  }, [saveId, group, wantedRound, resolvedSeason, revision]);
+  }, [saveId, visibleGroup, wantedRound, resolvedSeason, revision]);
 
   function refresh(): void {
     setRevision((value) => value + 1);
@@ -353,19 +380,23 @@ export function ChaosCupLiveView({
                 ))}
               </div>
               <p className="muted small">
-                Group {groupNumber} · {group?.roundsPlayed ?? 0}/{CHAOS_ROUNDS_PER_GROUP} rounds
-                {group?.isComplete ? ' · group complete' : ''}
+                {groupLoading && !visibleGroup ? (
+                  'Loading group…'
+                ) : (
+                  <>
+                    Group {groupNumber} · {visibleGroup?.roundsPlayed ?? 0}/{CHAOS_ROUNDS_PER_GROUP} rounds
+                    {visibleGroup?.isComplete ? ' · group complete' : ''}
+                  </>
+                )}
               </p>
             </>
           )}
         </Card>
 
-        <Card eyebrow="Rounds" title={group ? `Group ${group.groupNumber} · ${group.roundsPlayed}/${group.totalRounds}` : 'Rounds'}>
+        <Card eyebrow="Rounds" title={visibleGroup ? `Group ${visibleGroup.groupNumber} · ${visibleGroup.roundsPlayed}/${visibleGroup.totalRounds}` : 'Rounds'}>
           {!stageDrawn ? (
             <p className="muted small">Draw the stage before rounds can be replayed.</p>
-          ) : groupLoading && !group ? (
-            <Loading label="Loading group…" />
-          ) : groupError && !group ? (
+          ) : groupError ? (
             <Notice tone="error" title="Group unavailable">
               <p>{groupError}</p>
               <p>
@@ -381,16 +412,18 @@ export function ChaosCupLiveView({
                 {edition.sourceSeasonNumber}.
               </p>
             </Notice>
-          ) : !group || group.rounds.length === 0 ? (
+          ) : groupLoading || !visibleGroup ? (
+            <Loading label="Loading group…" />
+          ) : visibleGroup.rounds.length === 0 ? (
             <p className="muted small">No rounds played in this group yet.</p>
           ) : (
-            <div className="round-pills round-pills-compact" role="group" aria-label={`Played rounds in group ${group.groupNumber}`}>
-              {group.rounds.map((round) => (
+            <div className="round-pills round-pills-compact" role="group" aria-label={`Played rounds in group ${visibleGroup.groupNumber}`}>
+              {visibleGroup.rounds.map((round) => (
                 <button
                   key={round.roundNumber}
                   type="button"
-                  className={(wantedRound ?? group.roundsPlayed) === round.roundNumber ? 'nav-item current' : 'nav-item'}
-                  aria-pressed={(wantedRound ?? group.roundsPlayed) === round.roundNumber}
+                  className={(wantedRound ?? visibleGroup.roundsPlayed) === round.roundNumber ? 'nav-item current' : 'nav-item'}
+                  aria-pressed={(wantedRound ?? visibleGroup.roundsPlayed) === round.roundNumber}
                   onClick={() => handleSelectRound(round.roundNumber)}
                 >
                   {round.roundNumber}
@@ -409,9 +442,7 @@ export function ChaosCupLiveView({
               drawn stage above to replay its groups.
             </p>
           </Notice>
-        ) : groupLoading && !group ? (
-          <Loading label="Loading group…" />
-        ) : groupError && !group ? (
+        ) : groupError ? (
           <Notice tone="error" title="Group unavailable">
             <p>{groupError}</p>
             <p>
@@ -420,20 +451,22 @@ export function ChaosCupLiveView({
               </button>
             </p>
           </Notice>
-        ) : groupMissing || !group ? (
+        ) : groupMissing ? (
           <Notice tone="empty" title="Group not drawn">
             <p>
               Stage {stage + 1} group {groupNumber} has no persisted draw yet for Season{' '}
               {edition.sourceSeasonNumber}.
             </p>
           </Notice>
+        ) : groupLoading || !visibleGroup ? (
+          <Loading label="Loading group…" />
         ) : (
           <>
             {wantedRound !== null && roundView && revealKey ? (
               <RoundReveal
                 placements={placements}
                 revealKey={revealKey}
-                roundLabel={`Stage ${stage + 1} · Group ${group.groupNumber} · Round ${roundView.roundNumber} results`}
+                roundLabel={`Stage ${stage + 1} · Group ${visibleGroup.groupNumber} · Round ${roundView.roundNumber} results`}
                 meta={revealMeta}
                 autoPlayOnStart={false}
                 layout="live"
@@ -452,16 +485,16 @@ export function ChaosCupLiveView({
               </Notice>
             ) : (
               <Notice tone="empty" title="No rounds yet">
-                <p>Group {group.groupNumber} is drawn but no rounds have been played yet.</p>
+                <p>Group {visibleGroup.groupNumber} is drawn but no rounds have been played yet.</p>
               </Notice>
             )}
 
             <Card
-              eyebrow={group.standingsProvisional ? 'Provisional standings' : 'Final standings'}
+              eyebrow={visibleGroup.standingsProvisional ? 'Provisional standings' : 'Final standings'}
               title={
-                group.isFinal
-                  ? `Final · Group ${group.groupNumber} — official places 1–32`
-                  : `Stage ${stage + 1} · Group ${group.groupNumber} — ${group.roundsPlayed}/${group.totalRounds} rounds`
+                visibleGroup.isFinal
+                  ? `Final · Group ${visibleGroup.groupNumber} — official places 1–32`
+                  : `Stage ${stage + 1} · Group ${visibleGroup.groupNumber} — ${visibleGroup.roundsPlayed}/${visibleGroup.totalRounds} rounds`
               }
             >
               <div className="table-wrap">
@@ -475,13 +508,13 @@ export function ChaosCupLiveView({
                       <th scope="col" className="numeric">Score</th>
                       <th scope="col" className="numeric">Base</th>
                       <th scope="col" className="numeric">Round W</th>
-                      {!group.isFinal ? <th scope="col">Status</th> : null}
+                      {!visibleGroup.isFinal ? <th scope="col">Status</th> : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {group.standings.map((row, index) => {
-                      const qualifying = !group.isFinal && row.groupRank <= CHAOS_ADVANCING;
-                      const showCut = !group.isFinal && index === CHAOS_ADVANCING - 1;
+                    {visibleGroup.standings.map((row, index) => {
+                      const qualifying = !visibleGroup.isFinal && row.groupRank <= CHAOS_ADVANCING;
+                      const showCut = !visibleGroup.isFinal && index === CHAOS_ADVANCING - 1;
                       return (
                         <Fragment key={row.saveAthleteId}>
                           <tr key={row.saveAthleteId} className={qualifying ? 'live-qualifying-row' : undefined}>
@@ -489,12 +522,12 @@ export function ChaosCupLiveView({
                             <td>
                               <AthleteLink saveId={saveId} athleteId={row.saveAthleteId} name={row.name} />
                             </td>
-                            <td>{group.entrants.find((entry) => entry.saveAthleteId === row.saveAthleteId)?.sportingColorName ?? '—'}</td>
-                            <td>{group.entrants.find((entry) => entry.saveAthleteId === row.saveAthleteId)?.sourceLabel ?? '—'}</td>
+                            <td>{visibleGroup.entrants.find((entry) => entry.saveAthleteId === row.saveAthleteId)?.sportingColorName ?? '—'}</td>
+                            <td>{visibleGroup.entrants.find((entry) => entry.saveAthleteId === row.saveAthleteId)?.sourceLabel ?? '—'}</td>
                             <td className="numeric">{formatChaosPoints(row.groupScoreThousandths)}</td>
                             <td className="numeric">{formatChaosPoints(row.baseScoreThousandths)}</td>
                             <td className="numeric">{row.roundWins}</td>
-                            {!group.isFinal ? (
+                            {!visibleGroup.isFinal ? (
                               <td>
                                 {row.isAdvanced ? (
                                   <span className="badge badge-ready">Advances</span>
@@ -504,15 +537,15 @@ export function ChaosCupLiveView({
                               </td>
                             ) : null}
                           </tr>
-                          {showCut && group.cutoff ? (
+                          {showCut && visibleGroup.cutoff ? (
                             <tr key={`cut-${row.saveAthleteId}`}>
                               <td colSpan={8} className="live-cut-cell">
                                 <span className="live-cut-label">
-                                  {chaosCutLabel(group.cutoff.isProvisional)} · P{CHAOS_ADVANCING}{' '}
-                                  {group.cutoff.p16.name} {formatChaosPoints(group.cutoff.p16.groupScoreThousandths)} vs P
-                                  {CHAOS_ADVANCING + 1} {group.cutoff.p17.name}{' '}
-                                  {formatChaosPoints(group.cutoff.p17.groupScoreThousandths)} (gap{' '}
-                                  {formatChaosPoints(group.cutoff.gapThousandths)})
+                                  {chaosCutLabel(visibleGroup.cutoff.isProvisional)} · P{CHAOS_ADVANCING}{' '}
+                                  {visibleGroup.cutoff.p16.name} {formatChaosPoints(visibleGroup.cutoff.p16.groupScoreThousandths)} vs P
+                                  {CHAOS_ADVANCING + 1} {visibleGroup.cutoff.p17.name}{' '}
+                                  {formatChaosPoints(visibleGroup.cutoff.p17.groupScoreThousandths)} (gap{' '}
+                                  {formatChaosPoints(visibleGroup.cutoff.gapThousandths)})
                                 </span>
                               </td>
                             </tr>
@@ -524,9 +557,9 @@ export function ChaosCupLiveView({
                 </table>
               </div>
               <p className="muted small">
-                {group.isFinal
+                {visibleGroup.isFinal
                   ? 'The Final holds official places 1–32; no further cutoff applies.'
-                  : group.standingsProvisional
+                  : visibleGroup.standingsProvisional
                     ? 'Cutoff is provisional until all 16 rounds complete; the persisted table decides who advances.'
                     : 'Cutoff is official: the top 16 advance to the next stage.'}{' '}
                 Group scores reset every stage.

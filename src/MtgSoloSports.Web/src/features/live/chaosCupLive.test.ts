@@ -56,4 +56,16 @@ describe('MSS-109 Chaos Cup read-only navigation on Live', () => {
     assert.ok(app.includes("route.event === 'chaos-cup'"), 'chaos-cup owns its Live branch');
     assert.ok(!view.includes('Next Round') && !view.includes('Complete Stage') && !view.includes('Run remaining'), 'no simulation buttons');
   });
+
+  it('never shows a stale group under a new selection and always surfaces group errors', () => {
+    // The selected group fetch clears the previous group/round immediately so
+    // the URL, picker and panel cannot disagree while the new group loads.
+    assert.ok(view.includes('visibleGroup'), 'render uses only the selection-matched group');
+    assert.ok(view.includes('groupMatchesSelection'), 'stale groups are gated by URL identity');
+    assert.ok(!view.includes('groupError && !group'), 'group errors surface even when old data exists');
+    assert.ok(!view.includes('groupLoading && !group'), 'group loading surfaces instead of stale standings');
+    // A slow stale response must never overwrite the freshly selected group.
+    assert.ok(view.includes('loaded.stageIndex !== expected.stage'), 'stale group responses are discarded');
+    assert.ok(view.includes('loaded.groupNumber !== expected.group'), 'stale group numbers are discarded');
+  });
 });
