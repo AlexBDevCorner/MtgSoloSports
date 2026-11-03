@@ -49,6 +49,7 @@ describe('MSS-069 qualifier Live identity', () => {
       group: null,
       tournamentPhase: null,
       qualificationGroup: null,
+      stage: null,
       qualifier: 'f1f2-white',
     });
     assert.equal(

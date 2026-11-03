@@ -16,6 +16,7 @@ import { HistoryPage } from './features/history/HistoryPage';
 import { LeagueProfilePage } from './features/leagues/LeagueProfilePage';
 import { LeaguesOverviewPage } from './features/leagues/LeaguesOverviewPage';
 import { LiveEventView } from './features/live/LiveEventView';
+import { ChaosCupLiveView } from './features/live/ChaosCupLiveView';
 import { LiveQualifierView } from './features/live/LiveQualifierView';
 import { LivePage } from './features/live/LivePage';
 import { QualifierDetailPage, QualifiersPage } from './features/qualifiers/QualifiersPage';
@@ -32,6 +33,7 @@ import {
 } from './features/routing/router';
 import {
   athletesPath,
+  chaosLivePath,
   dashboardPath,
   historyPath,
   livePath,
@@ -259,6 +261,27 @@ export default function App() {
                 navigate(livePath(saveId, { event: liveSelection, season: eventSeason }), { replace: true });
               }}
               onMutated={dashboard.refresh}
+            />
+          );
+        }
+        // MSS-109: the Chaos Cup is read-only on Live (no simulation
+        // buttons). An explicit `?season=` replays that edition; absent
+        // follows the latest edition from the read API. The URL keeps the
+        // selected stage/group/round so refresh and Back/Forward replay the
+        // same group without resimulating.
+        if (route.event === 'chaos-cup') {
+          const chaosSeason = route.eventSeason;
+          return (
+            <ChaosCupLiveView
+              key={`chaos-cup:${chaosSeason ?? 'latest'}`}
+              saveId={saveId}
+              season={chaosSeason}
+              urlStage={route.stage}
+              urlGroup={route.group}
+              urlRound={route.round}
+              onSelect={(stage, group, round) => {
+                navigate(chaosLivePath(saveId, chaosSeason, stage, group, round), { replace: true });
+              }}
             />
           );
         }

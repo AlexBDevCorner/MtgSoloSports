@@ -1,11 +1,12 @@
 /** Keys of postseason events that are played in rounds (mirrors backend PostseasonEvents). */
-export type EventKey = 'qualifier' | 'color-cup-individual' | 'color-cup-team' | 'type-cup-team';
+export type EventKey = 'qualifier' | 'color-cup-individual' | 'color-cup-team' | 'type-cup-team' | 'chaos-cup';
 
 export const EVENT_TITLES: Record<EventKey, string> = {
   qualifier: 'Superleague qualifier',
   'color-cup-individual': 'Color Cup — individual',
   'color-cup-team': 'Color Cup — team',
   'type-cup-team': 'Type Cup — team',
+  'chaos-cup': 'Chaos Cup',
 };
 
 export function isEventKey(value: string | null | undefined): value is EventKey {

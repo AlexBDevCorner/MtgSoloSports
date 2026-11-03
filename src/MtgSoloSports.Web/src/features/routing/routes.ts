@@ -105,6 +105,14 @@ export type Route =
       tournamentPhase: number | null;
       qualificationGroup: number | null;
       /**
+       * MSS-109 Chaos Cup stage on Live (`stage` 0..5 for the six 32-athlete
+       * group stages; 5 is the single-group Final). Only meaningful with
+       * `?event=chaos-cup`; absent follows the canonical (active, else latest
+       * drawn) stage. Zero is a valid first stage, unlike the positive-only
+       * league/round ids.
+       */
+      stage: number | null;
+      /**
        * Individual qualifier identity on Live (MSS-069):
        * `superleague` or `f1f2-<color>` / `f2f3-<color>` (color lower-case,
        * e.g. `f1f2-white`). Absent with `event=qualifier` means the
@@ -178,6 +186,7 @@ export function livePath(
     qualifier?: string | null;
     tournamentPhase?: number | null;
     qualificationGroup?: number | null;
+    stage?: number | null;
   },
 ): string {
   const params = new URLSearchParams();
@@ -208,8 +217,27 @@ export function livePath(
   if (query?.qualificationGroup !== undefined && query.qualificationGroup !== null) {
     params.set('qualificationGroup', String(query.qualificationGroup));
   }
+  if (query?.stage !== undefined && query.stage !== null) {
+    params.set('stage', String(query.stage));
+  }
   const suffix = params.size > 0 ? `?${params.toString()}` : '';
   return `/saves/${encodeURIComponent(saveId)}/live${suffix}`;
+}
+
+/**
+ * Live URL for one Chaos Cup group (MSS-109). `stage` is 0..5, `group` is
+ * 1-based within the stage and `round` selects a persisted round (null follows
+ * the latest). Refresh, Back/Forward and reopening history preserve the same
+ * group without simulating anything.
+ */
+export function chaosLivePath(
+  saveId: string,
+  season: number | null,
+  stage: number | null,
+  group: number | null,
+  round?: number | null,
+): string {
+  return livePath(saveId, { event: 'chaos-cup', season, stage, group, round: round ?? null });
 }
 
 /**
@@ -515,6 +543,26 @@ function parseQualificationGroup(params: URLSearchParams): number | null {
   return parsed;
 }
 
+/**
+ * MSS-109 Chaos Cup stage (`stage` 0..5). Zero is the valid first stage, so
+ * the positive-only league/round parser cannot be reused. Unknown or absent
+ * values stay null so legacy Live URLs keep working.
+ */
+function parseChaosStage(params: URLSearchParams): number | null {
+  const raw = params.get('stage');
+  if (raw === null || raw.trim() === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 5) {
+    return null;
+  }
+  if (String(parsed) !== raw.trim()) {
+    return null;
+  }
+  return parsed;
+}
+
 function parseTransition(params: URLSearchParams): TransitionKey | null {
   const value = params.get('transition');
   return isTransitionKey(value) ? value : null;
@@ -604,6 +652,7 @@ export function parseRoute(pathname: string, search: string): Route {
         group: parseEvent(params) ? parseOptionalPositiveInt(params, 'group') : null,
         tournamentPhase: parseEvent(params) ? parseTournamentPhase(params) : null,
         qualificationGroup: parseEvent(params) ? parseQualificationGroup(params) : null,
+        stage: parseEvent(params) ? parseChaosStage(params) : null,
         qualifier: parseQualifier(params),
       };
     case 'history':

@@ -11,6 +11,7 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves` — save management.
 - `/saves/:saveId/dashboard`
 - `/saves/:saveId/live?league=<id>&round=<n>`
+- `/saves/:saveId/live?event=chaos-cup&season=<n>&stage=<0..5>&group=<n>&round=<n>` — read-only Chaos Cup group navigation (MSS-109).
 - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
 - `/saves/:saveId/records`
 - `/saves/:saveId/reports` — ChatGPT source packs (MSS-088): season dossier + universe almanac downloads.
@@ -40,13 +41,17 @@ share them instead of hand-rolling URLs.
   exact view when valid, otherwise the latest available entry at each level.
   Changing a selector pushes the updated history URL.
 - Live event mode: `event` (`qualifier`, `color-cup-individual`,
-  `color-cup-team`, `type-cup-team`), `season` (source season) and `group`
+  `color-cup-team`, `type-cup-team`, `chaos-cup`), `season` (source season) and `group`
   (team events) select a postseason event played round by round; `round`
-  selects a played round (latest when absent). Without `event`, Live shows the
+  selects a played round (latest when absent). `event=chaos-cup` adds `stage`
+  (0..5 for the six 32-athlete group stages; 5 is the single-group Final):
+  absent follows the canonical active, else latest drawn, stage. Without `event`, Live shows the
   event when it is the next lifecycle step, otherwise leagues. The URL keeps
   the event after it completes, so the completed event stays on screen.
   Next Round and Run remaining appear only while the URL's event and season
   are the save's next step; any other event shows its rounds read-only.
+  The Chaos Cup is read-only on Live (MSS-109): no simulation buttons, only
+  the edition overview plus the selected group and one round are fetched.
 - Live selection: `event=color-cup-selection` or `event=type-cup-selection`
   with `season` shows that Cup's squad selection. Without `event`, Live shows
   the selection while it is the save's next lifecycle step; announcing it pins
