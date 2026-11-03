@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Cups;
 
 namespace MtgSoloSports.Features.Cups.ListCupEditions;
 
@@ -64,10 +65,12 @@ public sealed class ListCupEditionsHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         CupRows color = await LoadColorAsync(context, cancellationToken).ConfigureAwait(false);
         CupRows type = await LoadTypeAsync(context, cancellationToken).ConfigureAwait(false);
+        List<ListCupEditionsResponse.Edition> chaos = await LoadChaosAsync(context, cancellationToken).ConfigureAwait(false);
         List<ListCupEditionsResponse.Edition> editions =
         [
             .. BuildEditions(CupTeamKeys.ColorCup, color.Appearances, color.Results, color.PlayedSeasons, color.Champions),
             .. BuildEditions(CupTeamKeys.TypeCup, type.Appearances, type.Results, type.PlayedSeasons, type.Champions),
+            .. chaos,
         ];
         // MSS-081 correction: the individual event resolves before the team
         // event, so persisted individual standings can exist while the edition
@@ -87,7 +90,7 @@ public sealed class ListCupEditionsHandler
         List<ListCupEditionsResponse.ColorMedalRow> colorCombined = BuildCombinedMedals(colorTeams, colorIndividual);
         return new ListCupEditionsResponse(
             saveId,
-            editions.OrderByDescending(e => e.SourceSeasonNumber).ThenBy(e => e.Cup, StringComparer.Ordinal).ToList(),
+            editions.OrderByDescending(e => e.SourceSeasonNumber).ThenBy(CupOrder).ThenBy(e => e.Cup, StringComparer.Ordinal).ToList(),
             colorTeams,
             BuildTeams(type.Appearances, type.Results),
             colorIndividual,
@@ -194,6 +197,207 @@ public sealed class ListCupEditionsHandler
                 s.TeamScoreThousandths))
             .ToList();
         return new CupRows(appearances, results, [.. roundSeasons], null, []);
+    }
+
+    private static int CupOrder(ListCupEditionsResponse.Edition edition)
+    {
+        ArgumentNullException.ThrowIfNull(edition);
+        if (string.Equals(edition.Cup, CupTeamKeys.ColorCup, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        if (string.Equals(edition.Cup, CupTeamKeys.TypeCup, StringComparison.Ordinal))
+        {
+            return 1;
+        }
+
+        if (string.Equals(edition.Cup, CupTeamKeys.ChaosCup, StringComparison.Ordinal))
+        {
+            return 2;
+        }
+
+        return 3;
+    }
+
+    /// <summary>
+    /// Chaos editions from persisted rows only (MSS-111). Empty Chaos tables
+    /// (historic saves without Chaos) yield no editions; nothing is invented.
+    /// State mirrors <c>GetChaosCupEdition</c>: <c>Completed</c> once every
+    /// stage holds its draws, rounds and standings, otherwise
+    /// <c>InProgress</c>. Podium (Final P1..P3) and champion (Final P1) are
+    /// official only when the Final is complete; partial editions carry none.
+    /// </summary>
+    private static async Task<List<ListCupEditionsResponse.Edition>> LoadChaosAsync(
+        SaveDbContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        List<ChaosCupEditionEntity> editions = await context.ChaosCupEditions
+            .AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (editions.Count == 0)
+        {
+            return [];
+        }
+
+        Dictionary<(int SeasonId, int Stage), int> draws = (await context.ChaosCupDraws
+                .AsNoTracking()
+                .GroupBy(e => new { e.SourceSeasonId, e.StageIndex })
+                .Select(g => new { g.Key.SourceSeasonId, g.Key.StageIndex, Count = g.Count() })
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(g => (g.SourceSeasonId, g.StageIndex), g => g.Count);
+        Dictionary<(int SeasonId, int Stage), int> rounds = (await context.ChaosCupRounds
+                .AsNoTracking()
+                .GroupBy(e => new { e.SourceSeasonId, e.StageIndex })
+                .Select(g => new { g.Key.SourceSeasonId, g.Key.StageIndex, Count = g.Count() })
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(g => (g.SourceSeasonId, g.StageIndex), g => g.Count);
+        Dictionary<(int SeasonId, int Stage), int> standings = (await context.ChaosCupGroupStandings
+                .AsNoTracking()
+                .GroupBy(e => new { e.SourceSeasonId, e.StageIndex })
+                .Select(g => new { g.Key.SourceSeasonId, g.Key.StageIndex, Count = g.Count() })
+                .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .ToDictionary(g => (g.SourceSeasonId, g.StageIndex), g => g.Count);
+
+        HashSet<int> completeSeasonIds = editions
+            .Where(e => IsChaosComplete(e.SourceSeasonId, draws, rounds, standings))
+            .Select(e => e.SourceSeasonId)
+            .ToHashSet();
+        Dictionary<int, List<ChaosCupGroupStandingEntity>> finalsBySeason = [];
+        Dictionary<int, SaveAthleteEntity> athletesById = new();
+        if (completeSeasonIds.Count > 0)
+        {
+            List<ChaosCupGroupStandingEntity> finals = await context.ChaosCupGroupStandings
+                .AsNoTracking()
+                .Where(e => e.StageIndex == ChaosCupFormat.StageCount - 1 && completeSeasonIds.Contains(e.SourceSeasonId))
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            finalsBySeason = finals
+                .GroupBy(e => e.SourceSeasonId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(e => e.GroupRank).ToList());
+            List<int> athleteIds = finals.Select(e => e.SaveAthleteId).Distinct().ToList();
+            athletesById = await context.SaveAthletes
+                .AsNoTracking()
+                .Where(e => athleteIds.Contains(e.Id))
+                .ToDictionaryAsync(e => e.Id, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return BuildChaosEditions(editions, draws, rounds, standings, finalsBySeason, athletesById);
+    }
+
+    internal static bool IsChaosComplete(
+        int sourceSeasonId,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> draws,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> rounds,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> standings)
+    {
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(rounds);
+        ArgumentNullException.ThrowIfNull(standings);
+        for (int stage = 0; stage < ChaosCupFormat.StageCount; stage++)
+        {
+            int expectedEntrants = ChaosCupFormat.EntrantCountForStage(stage);
+            int expectedRounds = checked(ChaosCupFormat.GroupCountForStage(stage) * ChaosCupFormat.RoundsPerGroup);
+            draws.TryGetValue((sourceSeasonId, stage), out int drawCount);
+            rounds.TryGetValue((sourceSeasonId, stage), out int roundCount);
+            standings.TryGetValue((sourceSeasonId, stage), out int standingCount);
+            if (drawCount != expectedEntrants || roundCount != expectedRounds || standingCount != expectedEntrants)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Pure Chaos edition mapping for <see cref="LoadChaosAsync"/>. Complete
+    /// editions require Final ranks 1..32 exactly once with known athletes;
+    /// otherwise the mutation aborts instead of inventing a champion.
+    /// </summary>
+    internal static List<ListCupEditionsResponse.Edition> BuildChaosEditions(
+        IReadOnlyList<ChaosCupEditionEntity> editions,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> draws,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> rounds,
+        IReadOnlyDictionary<(int SeasonId, int Stage), int> standings,
+        IReadOnlyDictionary<int, List<ChaosCupGroupStandingEntity>> finalsBySeason,
+        IReadOnlyDictionary<int, SaveAthleteEntity> athletesById)
+    {
+        ArgumentNullException.ThrowIfNull(editions);
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(rounds);
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(finalsBySeason);
+        ArgumentNullException.ThrowIfNull(athletesById);
+        List<ListCupEditionsResponse.Edition> result = new(editions.Count);
+        foreach (ChaosCupEditionEntity edition in editions)
+        {
+            bool complete = IsChaosComplete(edition.SourceSeasonId, draws, rounds, standings);
+            string state = complete ? CupEditionState.Completed : CupEditionState.InProgress;
+            (List<ListCupEditionsResponse.PodiumTeam> Podium, ListCupEditionsResponse.IndividualChampion? Champion) official =
+                complete ? MapChaosOfficial(edition, finalsBySeason, athletesById) : ([], null);
+            result.Add(new ListCupEditionsResponse.Edition(
+                CupTeamKeys.ChaosCup,
+                edition.SourceSeasonNumber,
+                state,
+                edition.FieldSize,
+                official.Podium,
+                official.Champion));
+        }
+
+        return result;
+    }
+
+    private static (List<ListCupEditionsResponse.PodiumTeam> Podium, ListCupEditionsResponse.IndividualChampion? Champion) MapChaosOfficial(
+        ChaosCupEditionEntity edition,
+        IReadOnlyDictionary<int, List<ChaosCupGroupStandingEntity>> finalsBySeason,
+        IReadOnlyDictionary<int, SaveAthleteEntity> athletesById)
+    {
+        ArgumentNullException.ThrowIfNull(edition);
+        ArgumentNullException.ThrowIfNull(finalsBySeason);
+        ArgumentNullException.ThrowIfNull(athletesById);
+        if (!finalsBySeason.TryGetValue(edition.SourceSeasonId, out List<ChaosCupGroupStandingEntity>? finals)
+            || finals.Count != ChaosCupFormat.FinalFieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Chaos Cup for Season {edition.SourceSeasonNumber} is marked complete but misses its 32-athlete Final.");
+        }
+
+        List<ChaosCupGroupStandingEntity> ordered = finals.OrderBy(e => e.GroupRank).ToList();
+        for (int rank = 1; rank <= ordered.Count; rank++)
+        {
+            if (ordered[rank - 1].GroupRank != rank)
+            {
+                throw new InvalidOperationException(
+                    $"Chaos Cup Final for Season {edition.SourceSeasonNumber} must cover ranks 1..{ChaosCupFormat.FinalFieldSize} exactly once.");
+            }
+        }
+
+        List<ListCupEditionsResponse.PodiumTeam> podium = [];
+        foreach (ChaosCupGroupStandingEntity standing in ordered.Where(e => e.GroupRank <= 3))
+        {
+            if (!athletesById.TryGetValue(standing.SaveAthleteId, out SaveAthleteEntity? athlete))
+            {
+                throw new InvalidOperationException(
+                    $"Chaos Cup Final for Season {edition.SourceSeasonNumber} references unknown athlete {standing.SaveAthleteId}.");
+            }
+
+            podium.Add(new ListCupEditionsResponse.PodiumTeam(
+                standing.SaveAthleteId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                athlete.Name,
+                standing.GroupRank,
+                standing.GroupRank == 1 ? "Gold" : standing.GroupRank == 2 ? "Silver" : "Bronze",
+                standing.GroupScoreThousandths));
+        }
+
+        ChaosCupGroupStandingEntity winner = ordered[0];
+        SaveAthleteEntity championAthlete = athletesById[winner.SaveAthleteId];
+        ListCupEditionsResponse.IndividualChampion champion = new(
+            championAthlete.Id,
+            championAthlete.Name,
+            championAthlete.ImageUrl,
+            winner.SaveAthleteId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return (podium, champion);
     }
 
     /// <summary>

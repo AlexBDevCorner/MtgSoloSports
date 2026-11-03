@@ -5,7 +5,7 @@ import { Loading, Notice } from '../../shared/ui/Notice';
 import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi';
 import { SELECTION_TITLES, selectionForAction } from '../events/eventModel';
 import { Link } from '../routing/router';
-import { cupEditionPath, livePath, type CupKind } from '../routing/routes';
+import { chaosLivePath, cupEditionPath, livePath, type CupKind } from '../routing/routes';
 import { fetchCupEditions, type ColorMedalRow, type CupEdition, type CupEditions, type CupTeamSummary } from './cupHistoryApi';
 import { cupKindOf, cupTitle, medalBadge, ordinal, stateLabel } from './cupFormat';
 import {
@@ -79,6 +79,14 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
   const pendingSelection = selectionForAction(status?.legalNextActions[0]);
   const pendingSeason = status?.sourceSeasonNumber ?? null;
   const cupEvent = status?.eventProgress && status.eventProgress.event !== 'qualifier' ? status.eventProgress : null;
+  // MSS-111: Chaos runs on scoped Live endpoints while `RunChaosCup` is legal;
+  // `eventProgress` stays null for it (PostseasonEvents has no chaos shape),
+  // so the hub reads the legal next action directly. `SelectChaosCup` stays a
+  // Dashboard action with no Live entry point.
+  const chaosPendingSeason =
+    status?.legalNextActions[0] === 'RunChaosCup' && status?.sourceSeasonNumber != null
+      ? status.sourceSeasonNumber
+      : null;
 
   return (
     <div className="dashboard">
@@ -98,7 +106,7 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
           </p>
         </Notice>
       ) : null}
-      {pendingSelection || cupEvent ? (
+      {pendingSelection || cupEvent || chaosPendingSeason !== null ? (
         <Card eyebrow="Next step" title={pendingSelection ? SELECTION_TITLES[pendingSelection] : 'Cup event'}>
           {pendingSelection && pendingSeason !== null ? (
             <>
@@ -113,6 +121,16 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
           <EventLiveAction saveId={saveId} eventKey="color-cup-individual" status={status} />
           <EventLiveAction saveId={saveId} eventKey="color-cup-team" status={status} />
           <EventLiveAction saveId={saveId} eventKey="type-cup-team" status={status} />
+          {chaosPendingSeason !== null ? (
+            <>
+              <p className="muted">Season {chaosPendingSeason}: the Chaos Cup is ready to play.</p>
+              <p>
+                <Link to={chaosLivePath(saveId, chaosPendingSeason, null, null)} className="primary-button">
+                  Play on Live
+                </Link>
+              </p>
+            </>
+          ) : null}
         </Card>
       ) : null}
 
@@ -122,7 +140,7 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
         </Notice>
       ) : (
         <>
-          {(['color', 'type'] as const).map((cup) => (
+          {(['color', 'type', 'chaos'] as const).map((cup) => (
             <EditionSection
               key={cup}
               saveId={saveId}
@@ -166,6 +184,11 @@ function EditionSection({ saveId, cup, editions }: { saveId: string; cup: CupKin
 }
 
 function EditionCard({ saveId, cup, edition }: { saveId: string; cup: CupKind; edition: CupEdition }) {
+  // MSS-111: Chaos reuses the same card styles; the count is athletes (never a
+  // 1024-row table) and the official Final P1..P3 plus champion show only when
+  // the backend marks the edition Completed.
+  const countLabel = cup === 'chaos' ? 'athletes' : 'teams';
+  const championLabel = cup === 'chaos' ? 'Champion' : 'Individual';
   return (
     <Link
       to={cupEditionPath(saveId, cup, edition.sourceSeasonNumber)}
@@ -174,7 +197,7 @@ function EditionCard({ saveId, cup, edition }: { saveId: string; cup: CupKind; e
     >
       <span className="edition-card-season">Season {edition.sourceSeasonNumber}</span>
       <span className="edition-card-state">
-        {stateLabel(edition.state)} · {edition.teamCount} teams
+        {stateLabel(edition.state)} · {edition.teamCount} {countLabel}
       </span>
       {edition.podium.length > 0 ? (
         <ol className="edition-card-podium">
@@ -188,7 +211,9 @@ function EditionCard({ saveId, cup, edition }: { saveId: string; cup: CupKind; e
       {edition.individualChampion ? (
         <span className="edition-card-champion">
           <CardArt imageUrl={edition.individualChampion.imageUrl} name={edition.individualChampion.name} small />
-          <span>Individual: {edition.individualChampion.name}</span>
+          <span>
+            {championLabel}: {edition.individualChampion.name}
+          </span>
         </span>
       ) : null}
     </Link>

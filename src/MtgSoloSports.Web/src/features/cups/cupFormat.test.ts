@@ -40,12 +40,16 @@ describe('cup display formatting', () => {
   it('names Cups and maps them to their events', () => {
     assert.equal(cupTitle('color'), 'Color Cup');
     assert.equal(cupTitle('type'), 'Type Cup');
+    assert.equal(cupTitle('chaos'), 'Chaos Cup');
     assert.equal(cupKindOf('Color'), 'color');
     assert.equal(cupKindOf('Type'), 'type');
+    assert.equal(cupKindOf('Chaos'), 'chaos');
     assert.equal(teamEventKey('color'), 'color-cup-team');
     assert.equal(teamEventKey('type'), 'type-cup-team');
+    assert.equal(teamEventKey('chaos'), 'chaos-cup');
     assert.equal(selectionKeyFor('color'), 'color-cup-selection');
     assert.equal(selectionKeyFor('type'), 'type-cup-selection');
+    assert.throws(() => selectionKeyFor('chaos'), /Chaos Cup has no squad-selection/);
   });
 
   it('derives team keys: lower-case for colors, exact for creature types', () => {

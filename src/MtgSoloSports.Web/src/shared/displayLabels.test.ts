@@ -71,9 +71,12 @@ describe('MSS-072 display labels', () => {
   it('maps every Cup kind to its established competition name', () => {
     assert.equal(cupLabel('ColorCup'), 'Color Cup');
     assert.equal(cupLabel('TypeCup'), 'Type Cup');
+    assert.equal(cupLabel('ChaosCup'), 'Chaos Cup');
     assert.equal(cupLabel('Color'), 'Color Cup');
     assert.equal(cupLabel('Type'), 'Type Cup');
-    assert.equal(KNOWN_CUP_KINDS.length, 6);
+    assert.equal(cupLabel('Chaos'), 'Chaos Cup');
+    assert.equal(cupLabel('chaos'), 'Chaos Cup');
+    assert.equal(KNOWN_CUP_KINDS.length, 9);
     for (const kind of KNOWN_CUP_KINDS) {
       assert.ok(isKnownCupKind(kind), `known cup: ${kind}`);
     }

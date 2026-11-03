@@ -16,8 +16,8 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves/:saveId/records`
 - `/saves/:saveId/reports` — ChatGPT source packs (MSS-088): season dossier + universe almanac downloads.
 - `/saves/:saveId/cups`
-- `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type`).
-- `/saves/:saveId/cups/:cup/teams/:teamKey` — one Cup team's history.
+- `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type` | `chaos`; MSS-111 lists Chaos alongside Color/Type with official-only champion/podium).
+- `/saves/:saveId/cups/:cup/teams/:teamKey` — one Cup team's history (`cup` = `color` | `type`; Chaos has no team histories).
 - `/saves/:saveId/athletes/:athleteId`
 - `/saves/:saveId/qualifiers?season=<n>` — qualifier overview (MSS-060): one
   row per qualifier of the transition (1 for v1 saves, 17 for tiered saves:
@@ -87,11 +87,15 @@ share them instead of hand-rolling URLs.
   (`leagueLevel`/`feederDivision`/`boundary`); league names are never parsed,
   and historical v1 rows keep their original single-feeder "Feeder" label.
 - Cups: the path alone identifies the page. `:season` must be a positive
-  integer and `:cup` one of `color`/`type`; anything else is `notFound` (the
-  hub is no longer a catch-all for `/cups/...`). `teams` is a reserved segment.
+  integer and `:cup` one of `color`/`type`/`chaos`; anything else is `notFound` (the
+  hub is no longer a catch-all for `/cups/...`). `teams` is a reserved segment
+  (Chaos has editions but no `/teams/*`: those stay `notFound`).
   A Color team key is the lower-case color name (`red`); a Type team key is
   the creature type, URL-encoded. Whether the edition or team exists is decided
   by the API: an unknown one renders a recoverable notice linking to the hub.
+  The hub lists Chaos editions by season/status with the same card styles and
+  a pending Chaos Live action; only official (Completed) Finals show a
+  champion/podium and no 1024-row table is ever rendered.
 
 No navigation resets the selected persisted Live round unexpectedly and no
 reveal autoplays on navigation; reveal state stays presentation-only.

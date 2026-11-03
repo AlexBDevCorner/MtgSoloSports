@@ -81,21 +81,28 @@ export function phaseLabel(phase: string | null | undefined): string {
 const CUP_LABELS: Record<string, string> = {
   ColorCup: 'Color Cup',
   TypeCup: 'Type Cup',
+  ChaosCup: 'Chaos Cup',
   Color: 'Color Cup',
   Type: 'Type Cup',
+  Chaos: 'Chaos Cup',
   color: 'Color Cup',
   type: 'Type Cup',
+  chaos: 'Chaos Cup',
   'Color Cup': 'Color Cup',
   'Type Cup': 'Type Cup',
+  'Chaos Cup': 'Chaos Cup',
 };
 
 export const KNOWN_CUP_KINDS: readonly string[] = Object.freeze([
   'ColorCup',
   'TypeCup',
+  'ChaosCup',
   'Color',
   'Type',
+  'Chaos',
   'color',
   'type',
+  'chaos',
 ]);
 
 export function isKnownCupKind(value: string | null | undefined): boolean {

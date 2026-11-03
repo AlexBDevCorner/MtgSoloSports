@@ -32,9 +32,17 @@ public sealed class ListCupEditionsApiTests
 
         response.SaveId.ShouldBe(_fixture.SaveId);
         response.Editions.Select(e => $"{e.Cup}:{e.SourceSeasonNumber}:{e.State}")
-            .ShouldBe(["Color:3:Completed", "Type:2:Completed", "Color:1:Completed"]);
+            .ShouldBe(["Color:3:Completed", "Chaos:3:Completed", "Type:2:Completed", "Chaos:2:Completed", "Color:1:Completed", "Chaos:1:Completed"]);
         response.Editions.Where(e => string.Equals(e.Cup, "Color", StringComparison.Ordinal)).ShouldAllBe(e => e.TeamCount == 8 && e.IndividualChampion != null);
         response.Editions.Single(e => string.Equals(e.Cup, "Type", StringComparison.Ordinal)).IndividualChampion.ShouldBeNull();
+        // MSS-111: Chaos editions list alongside Color/Type without changing them.
+        // Each completed Chaos Final holds 1024 entrants with official P1..P3 and champion.
+        List<ListCupEditionsResponse.Edition> chaos = response.Editions
+            .Where(e => string.Equals(e.Cup, "Chaos", StringComparison.Ordinal)).ToList();
+        chaos.Count.ShouldBe(3);
+        chaos.ShouldAllBe(e => e.TeamCount == 1024 && e.State == "Completed" && e.Podium.Count == 3 && e.IndividualChampion != null);
+        chaos.SelectMany(e => e.Podium).Select(p => p.Medal).Distinct(StringComparer.Ordinal).OrderBy(m => m, StringComparer.Ordinal)
+            .ShouldBe(["Bronze", "Gold", "Silver"]);
     }
 
     [Fact]
