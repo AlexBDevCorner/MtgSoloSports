@@ -89,8 +89,9 @@ public sealed class GetAthleteReportHandler
         List<AthleteMovementDto> movements = await GetAthleteProfileHandler.LoadMovementsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await GetAthleteProfileHandler.LoadCupSelectionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupHistoryDto> cupHistory = await GetAthleteProfileHandler.LoadCupHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        List<AthleteChaosHistoryDto> chaosHistory = await GetAthleteProfileHandler.LoadChaosHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         Dictionary<int, (string Level, int Division)> levels = await GetAthleteProfileHandler.LoadLeagueLevelsAsync(context, summaries, cancellationToken).ConfigureAwait(false);
-        return GetAthleteProfileHandler.MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, levels);
+        return GetAthleteProfileHandler.MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, levels);
     }
 
     internal static string BuildJson(

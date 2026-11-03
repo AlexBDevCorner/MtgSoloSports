@@ -101,6 +101,36 @@ export interface AthleteCupHistory {
   tournamentStage?: string | null;
 }
 
+export interface AthleteChaosStage {
+  stageIndex: number;
+  groupCount: number;
+  groupNumber: number;
+  isFinal: boolean;
+  isComplete: boolean;
+  isOfficial: boolean;
+  groupRank: number | null;
+  groupScoreThousandths: number | null;
+  isAdvanced: boolean | null;
+}
+
+export interface AthleteChaosHistory {
+  sourceSeasonNumber: number;
+  isPoolInvite: boolean;
+  sourceLabel: string;
+  sourceLeagueId: number | null;
+  sourceLeagueKind: number;
+  sourceFeederDivision: number;
+  stagesEntered: number;
+  isFinalist: boolean;
+  isEliminated: boolean;
+  eliminatedStageIndex: number | null;
+  exitStage: string | null;
+  finalPlace: number | null;
+  medal: string;
+  isComplete: boolean;
+  stages: AthleteChaosStage[];
+}
+
 export interface AthleteProfile {
   saveId: string;
   athleteId: number;
@@ -111,6 +141,8 @@ export interface AthleteProfile {
   movements: AthleteMovement[];
   cupSelections: AthleteCupSelection[];
   cupHistory: AthleteCupHistory[];
+  /** MSS-113 additive: one entry per participated Chaos edition, newest first. Absent on older payloads. */
+  chaosHistory?: AthleteChaosHistory[];
 }
 
 export interface AthleteRecordHolding {

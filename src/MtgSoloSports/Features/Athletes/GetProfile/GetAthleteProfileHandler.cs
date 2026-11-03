@@ -7,6 +7,8 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Cups;
+using MtgSoloSports.SimulationKernel.Leagues;
 
 namespace MtgSoloSports.Features.Athletes.GetProfile;
 
@@ -58,9 +60,10 @@ public sealed class GetAthleteProfileHandler
         List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         List<AthleteCupHistoryDto> cupHistory = await LoadCupHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
+        List<AthleteChaosHistoryDto> chaosHistory = await LoadChaosHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         Dictionary<int, (string Level, int Division)> levels = await LoadLeagueLevelsAsync(
             context, summaries, cancellationToken).ConfigureAwait(false);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, levels);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, levels);
     }
 
     internal static async Task<SaveAthleteEntity> LoadAthleteAsync(
@@ -137,6 +140,7 @@ public sealed class GetAthleteProfileHandler
         IReadOnlyList<AthleteMovementDto>? movements = null,
         IReadOnlyList<AthleteCupSelectionDto>? selections = null,
         IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null,
+        IReadOnlyList<AthleteChaosHistoryDto>? chaosHistory = null,
         IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null)
     {
         AthleteCardDto card = MapCard(athlete);
@@ -154,7 +158,8 @@ public sealed class GetAthleteProfileHandler
             honours ?? Array.Empty<AthleteHonourDto>(),
             movements ?? Array.Empty<AthleteMovementDto>(),
             selections ?? Array.Empty<AthleteCupSelectionDto>(),
-            cupHistory ?? Array.Empty<AthleteCupHistoryDto>());
+            cupHistory ?? Array.Empty<AthleteCupHistoryDto>(),
+            chaosHistory ?? Array.Empty<AthleteChaosHistoryDto>());
     }
 
     internal static async Task<GetAthleteProfileResponse> BuildFallbackAsync(
@@ -172,7 +177,8 @@ public sealed class GetAthleteProfileHandler
         List<AthleteMovementDto> movements = await LoadMovementsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
         List<AthleteCupSelectionDto> selections = await LoadCupSelectionsAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
         List<AthleteCupHistoryDto> cupHistory = await LoadCupHistoryAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
-        return MapFallback(saveId, athlete, history, snapshot.Rules, honours, movements, selections, cupHistory);
+        List<AthleteChaosHistoryDto> chaosHistory = await LoadChaosHistoryAsync(context, athlete.Id, cancellationToken).ConfigureAwait(false);
+        return MapFallback(saveId, athlete, history, snapshot.Rules, honours, movements, selections, cupHistory, chaosHistory);
     }
 
     internal sealed record RulesV1Snapshot(SimulationKernel.Rules.RulesV1 Rules);
@@ -191,7 +197,8 @@ public sealed class GetAthleteProfileHandler
         IReadOnlyList<AthleteHonourDto>? honours = null,
         IReadOnlyList<AthleteMovementDto>? movements = null,
         IReadOnlyList<AthleteCupSelectionDto>? selections = null,
-        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null)
+        IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null,
+        IReadOnlyList<AthleteChaosHistoryDto>? chaosHistory = null)
     {
         Dictionary<int, SeasonMembershipEntity> membershipBySeason = history.Memberships.ToDictionary(e => e.SeasonId);
         Dictionary<int, SeasonStandingEntity> finalBySeason = history.SeasonRows.ToDictionary(e => e.SeasonId);
@@ -206,7 +213,7 @@ public sealed class GetAthleteProfileHandler
         }
 
         AthleteCareerEntity career = AthleteProjectionUpdater.BuildCareer(athlete.Id, history, rules);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, ToLevels(history.LeaguesById));
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, ToLevels(history.LeaguesById));
     }
 
     internal static async Task<List<AthleteHonourDto>> LoadHonoursAsync(
@@ -942,6 +949,334 @@ public sealed class GetAthleteProfileHandler
             .ThenBy(e => e.QualificationGroup ?? 0)
             .ThenBy(e => e.Place)
             .ToList();
+    }
+
+    /// <summary>
+    /// Chaos Cup editions for one athlete from persisted entrants/draws/standings
+    /// only (no payloads, no RNG). One entry per participated edition with the
+    /// frozen source-tier or Pool attribution plus the complete drawn group
+    /// trajectory. Absent editions have no entry; drawn but incomplete groups
+    /// stay provisional with no rank/score. Corrupt linkage aborts.
+    /// </summary>
+    internal static async Task<List<AthleteChaosHistoryDto>> LoadChaosHistoryAsync(
+        SaveDbContext context,
+        int athleteId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        List<ChaosCupEntrantEntity> entrants = await context.ChaosCupEntrants
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (entrants.Count == 0)
+        {
+            return [];
+        }
+
+        HashSet<int> seasonIds = entrants.Select(e => e.SourceSeasonId).ToHashSet();
+        List<ChaosCupDrawEntity> draws = await context.ChaosCupDraws
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId && seasonIds.Contains(e.SourceSeasonId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        List<ChaosCupGroupStandingEntity> standings = await context.ChaosCupGroupStandings
+            .AsNoTracking()
+            .Where(e => e.SaveAthleteId == athleteId && seasonIds.Contains(e.SourceSeasonId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return BuildChaosHistory(entrants, draws, standings);
+    }
+
+    internal static List<AthleteChaosHistoryDto> BuildChaosHistory(
+        IReadOnlyList<ChaosCupEntrantEntity> entrants,
+        IReadOnlyList<ChaosCupDrawEntity> draws,
+        IReadOnlyList<ChaosCupGroupStandingEntity> standings)
+    {
+        ArgumentNullException.ThrowIfNull(entrants);
+        ArgumentNullException.ThrowIfNull(draws);
+        ArgumentNullException.ThrowIfNull(standings);
+        List<AthleteChaosHistoryDto> history = new(entrants.Count);
+        foreach (ChaosCupEntrantEntity entrant in entrants)
+        {
+            List<ChaosCupDrawEntity> editionDraws = draws
+                .Where(d => d.SourceSeasonId == entrant.SourceSeasonId)
+                .ToList();
+            List<ChaosCupGroupStandingEntity> editionStandings = standings
+                .Where(s => s.SourceSeasonId == entrant.SourceSeasonId)
+                .ToList();
+            history.Add(MapChaosEdition(entrant, editionDraws, editionStandings));
+        }
+
+        return history
+            .OrderByDescending(e => e.SourceSeasonNumber)
+            .ToList();
+    }
+
+    internal static AthleteChaosHistoryDto MapChaosEdition(
+        ChaosCupEntrantEntity entrant,
+        IReadOnlyList<ChaosCupDrawEntity> editionDraws,
+        IReadOnlyList<ChaosCupGroupStandingEntity> editionStandings)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        ArgumentNullException.ThrowIfNull(editionDraws);
+        ArgumentNullException.ThrowIfNull(editionStandings);
+        ValidateChaosEntrant(entrant);
+        Dictionary<int, ChaosCupDrawEntity> drawByStage = ToChaosDrawMap(entrant, editionDraws);
+        Dictionary<int, ChaosCupGroupStandingEntity> standingByStage = ToChaosStandingMap(entrant, editionStandings, drawByStage);
+        (List<AthleteChaosStageDto> stages, int? eliminatedStage) = BuildChaosStages(drawByStage, standingByStage);
+        EnsureNoChaosDrawAfterElimination(drawByStage, eliminatedStage);
+        return MapChaosEditionDto(entrant, drawByStage, standingByStage, stages, eliminatedStage);
+    }
+
+    internal static void ValidateChaosEntrant(ChaosCupEntrantEntity entrant)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        if (entrant.SourceSeasonNumber <= 0)
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} references invalid season number {entrant.SourceSeasonNumber}.");
+        }
+
+        if (!Enum.IsDefined((SportingColor)entrant.SportingColor))
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown sporting color {entrant.SportingColor}.");
+        }
+
+        if (entrant.IsPoolInvite != (entrant.SourceLeagueId is null))
+        {
+            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has inconsistent Pool invitation linkage.");
+        }
+    }
+
+    internal static Dictionary<int, ChaosCupDrawEntity> ToChaosDrawMap(
+        ChaosCupEntrantEntity entrant,
+        IReadOnlyList<ChaosCupDrawEntity> editionDraws)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        ArgumentNullException.ThrowIfNull(editionDraws);
+        Dictionary<int, ChaosCupDrawEntity> drawByStage = new();
+        foreach (ChaosCupDrawEntity draw in editionDraws)
+        {
+            if (draw.SaveAthleteId != entrant.SaveAthleteId
+                || draw.SourceSeasonId != entrant.SourceSeasonId
+                || draw.SourceSeasonNumber != entrant.SourceSeasonNumber)
+            {
+                throw new InvalidOperationException($"Chaos Cup draw for athlete {draw.SaveAthleteId} mismatches entrant linkage.");
+            }
+
+            if (draw.StageIndex < 0 || draw.StageIndex >= ChaosCupFormat.StageCount)
+            {
+                throw new InvalidOperationException($"Chaos Cup journey stage {draw.StageIndex} is out of range.");
+            }
+
+            int groupCount = ChaosCupFormat.GroupCountForStage(draw.StageIndex);
+            if (draw.GroupNumber < 1 || draw.GroupNumber > groupCount)
+            {
+                throw new InvalidOperationException($"Chaos Cup journey stage {draw.StageIndex} group {draw.GroupNumber} is out of range.");
+            }
+
+            if (!drawByStage.TryAdd(draw.StageIndex, draw))
+            {
+                throw new InvalidOperationException($"Chaos Cup journey holds duplicate stage {draw.StageIndex} draw.");
+            }
+        }
+
+        return drawByStage;
+    }
+
+    internal static Dictionary<int, ChaosCupGroupStandingEntity> ToChaosStandingMap(
+        ChaosCupEntrantEntity entrant,
+        IReadOnlyList<ChaosCupGroupStandingEntity> editionStandings,
+        IReadOnlyDictionary<int, ChaosCupDrawEntity> drawByStage)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        ArgumentNullException.ThrowIfNull(editionStandings);
+        ArgumentNullException.ThrowIfNull(drawByStage);
+        Dictionary<int, ChaosCupGroupStandingEntity> standingByStage = new();
+        foreach (ChaosCupGroupStandingEntity standing in editionStandings)
+        {
+            if (standing.SaveAthleteId != entrant.SaveAthleteId
+                || standing.SourceSeasonId != entrant.SourceSeasonId
+                || standing.SourceSeasonNumber != entrant.SourceSeasonNumber)
+            {
+                throw new InvalidOperationException($"Chaos Cup standing for athlete {standing.SaveAthleteId} mismatches entrant linkage.");
+            }
+
+            if (!drawByStage.TryGetValue(standing.StageIndex, out ChaosCupDrawEntity? draw))
+            {
+                throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} ranks an undrawn athlete.");
+            }
+
+            CheckChaosStandingLinkage(standing, draw);
+            if (!standingByStage.TryAdd(standing.StageIndex, standing))
+            {
+                throw new InvalidOperationException($"Chaos Cup journey holds duplicate stage {standing.StageIndex} standing.");
+            }
+        }
+
+        return standingByStage;
+    }
+
+    internal static void CheckChaosStandingLinkage(ChaosCupGroupStandingEntity standing, ChaosCupDrawEntity draw)
+    {
+        ArgumentNullException.ThrowIfNull(standing);
+        ArgumentNullException.ThrowIfNull(draw);
+        if (standing.GroupNumber != draw.GroupNumber)
+        {
+            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} standing group {standing.GroupNumber} mismatches draw group {draw.GroupNumber}.");
+        }
+
+        if (standing.GroupRank < 1 || standing.GroupRank > ChaosCupFormat.GroupSize)
+        {
+            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} is out of range.");
+        }
+
+        bool isFinal = ChaosCupFormat.IsFinalStage(standing.StageIndex);
+        bool shouldAdvance = !isFinal && standing.GroupRank <= ChaosCupFormat.AdvancingPerGroup;
+        if (standing.IsAdvanced != shouldAdvance)
+        {
+            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} has corrupt advancement flag.");
+        }
+    }
+
+    internal static (List<AthleteChaosStageDto> Stages, int? EliminatedStage) BuildChaosStages(
+        IReadOnlyDictionary<int, ChaosCupDrawEntity> drawByStage,
+        IReadOnlyDictionary<int, ChaosCupGroupStandingEntity> standingByStage)
+    {
+        ArgumentNullException.ThrowIfNull(drawByStage);
+        ArgumentNullException.ThrowIfNull(standingByStage);
+        List<AthleteChaosStageDto> stages = new(drawByStage.Count);
+        int? eliminatedStage = null;
+        foreach (int stage in drawByStage.Keys.OrderBy(s => s))
+        {
+            ChaosCupDrawEntity draw = drawByStage[stage];
+            standingByStage.TryGetValue(stage, out ChaosCupGroupStandingEntity? standing);
+            if (standing is not null
+                && !ChaosCupFormat.IsFinalStage(stage)
+                && !standing.IsAdvanced
+                && eliminatedStage is null)
+            {
+                eliminatedStage = stage;
+            }
+
+            stages.Add(MapChaosStage(stage, draw, standing));
+        }
+
+        return (stages, eliminatedStage);
+    }
+
+    internal static void EnsureNoChaosDrawAfterElimination(
+        IReadOnlyDictionary<int, ChaosCupDrawEntity> drawByStage,
+        int? eliminatedStage)
+    {
+        ArgumentNullException.ThrowIfNull(drawByStage);
+        if (!eliminatedStage.HasValue)
+        {
+            return;
+        }
+
+        int eliminated = eliminatedStage.Value;
+        foreach (int later in drawByStage.Keys.Where(s => s > eliminated))
+        {
+            throw new InvalidOperationException($"Chaos Cup journey draws stage {later} after elimination in stage {eliminated}.");
+        }
+    }
+
+    internal static AthleteChaosHistoryDto MapChaosEditionDto(
+        ChaosCupEntrantEntity entrant,
+        IReadOnlyDictionary<int, ChaosCupDrawEntity> drawByStage,
+        IReadOnlyDictionary<int, ChaosCupGroupStandingEntity> standingByStage,
+        IReadOnlyList<AthleteChaosStageDto> stages,
+        int? eliminatedStage)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        ArgumentNullException.ThrowIfNull(drawByStage);
+        ArgumentNullException.ThrowIfNull(standingByStage);
+        ArgumentNullException.ThrowIfNull(stages);
+        bool isFinalist = standingByStage.ContainsKey(ChaosCupFormat.StageCount - 1);
+        int? finalPlace = isFinalist ? standingByStage[ChaosCupFormat.StageCount - 1].GroupRank : null;
+        string? exitStage = isFinalist
+            ? nameof(ChaosCupFormat.ChaosExitStage.Finalist)
+            : eliminatedStage.HasValue
+                ? ChaosCupFormat.ExitStageForElimination(eliminatedStage.Value).ToString()
+                : null;
+        bool isEliminated = eliminatedStage.HasValue;
+        bool isComplete = drawByStage.Count > 0 && drawByStage.Keys.All(s => standingByStage.ContainsKey(s));
+        return new AthleteChaosHistoryDto(
+            entrant.SourceSeasonNumber,
+            entrant.IsPoolInvite,
+            ChaosSourceLabelFor(entrant),
+            entrant.SourceLeagueId,
+            entrant.SourceLeagueKind,
+            entrant.SourceFeederDivision,
+            drawByStage.Count,
+            isFinalist,
+            isEliminated,
+            eliminatedStage,
+            exitStage,
+            finalPlace,
+            ChaosMedalFor(finalPlace),
+            isComplete,
+            stages);
+    }
+
+    internal static AthleteChaosStageDto MapChaosStage(
+        int stage,
+        ChaosCupDrawEntity draw,
+        ChaosCupGroupStandingEntity? standing)
+    {
+        ArgumentNullException.ThrowIfNull(draw);
+        int groupCount = ChaosCupFormat.GroupCountForStage(stage);
+        bool isFinal = ChaosCupFormat.IsFinalStage(stage);
+        if (standing is null)
+        {
+            return new AthleteChaosStageDto(
+                stage,
+                groupCount,
+                draw.GroupNumber,
+                isFinal,
+                false,
+                false,
+                null,
+                null,
+                null);
+        }
+
+        return new AthleteChaosStageDto(
+            stage,
+            groupCount,
+            draw.GroupNumber,
+            isFinal,
+            true,
+            true,
+            standing.GroupRank,
+            standing.GroupScoreThousandths,
+            isFinal ? null : standing.IsAdvanced);
+    }
+
+    internal static string ChaosMedalFor(int? finalPlace) => finalPlace switch
+    {
+        1 => "Gold",
+        2 => "Silver",
+        3 => "Bronze",
+        _ => "None",
+    };
+
+    internal static string ChaosSourceLabelFor(ChaosCupEntrantEntity entrant)
+    {
+        ArgumentNullException.ThrowIfNull(entrant);
+        if (entrant.IsPoolInvite)
+        {
+            return "Pool";
+        }
+
+        if (entrant.SourceLeagueKind == (int)LeagueKind.Superleague)
+        {
+            return "Superleague";
+        }
+
+        return LeagueHierarchy.DisplayName(
+            LeagueHierarchy.LevelForDivision((FeederDivision)entrant.SourceFeederDivision, isSuperleague: false));
     }
 
     internal static AthleteCardDto MapCard(SaveAthleteEntity athlete)

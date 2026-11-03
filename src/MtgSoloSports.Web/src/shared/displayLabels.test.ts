@@ -62,7 +62,10 @@ describe('MSS-072 display labels', () => {
     assert.equal(honourKindLabel('TypeCupTeamChampion'), 'Type Cup team champion');
     assert.equal(honourKindLabel('TypeCupTeamRunnerUp'), 'Type Cup team runner-up');
     assert.equal(honourKindLabel('TypeCupTeamThirdPlace'), 'Type Cup team third place');
-    assert.equal(KNOWN_HONOUR_KINDS.length, 15);
+    assert.equal(honourKindLabel('ChaosCupIndividualChampion'), 'Chaos Cup individual champion');
+    assert.equal(honourKindLabel('ChaosCupIndividualRunnerUp'), 'Chaos Cup individual runner-up');
+    assert.equal(honourKindLabel('ChaosCupIndividualThirdPlace'), 'Chaos Cup individual third place');
+    assert.equal(KNOWN_HONOUR_KINDS.length, 18);
     for (const kind of KNOWN_HONOUR_KINDS) {
       assert.ok(isKnownHonourKind(kind), `known honour: ${kind}`);
     }
