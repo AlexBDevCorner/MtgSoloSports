@@ -1291,11 +1291,10 @@ public sealed class SaveStore
 
     /// <summary>
     /// Restores the last known valid boundary from a verified technical
-    /// recovery checkpoint after a software bug/failure. The checkpoint is
-    /// checksum- and identity-verified before use, a safety checkpoint of the
-    /// current file is created first, and the restored file is verified
-    /// readable afterwards. Technical recovery only; normal gameplay never
-    /// rewinds or resimulates sporting results.
+    /// recovery checkpoint. A corrupt backup never touches live data; a
+    /// healthy live save gains a safety checkpoint first while a damaged or
+    /// missing live file is recovered from the checkpoint with surviving
+    /// damaged bytes preserved for diagnosis.
     /// </summary>
     public async Task<SaveDetailRecord> RestoreCheckpointAsync(
         Guid saveId,
@@ -1320,6 +1319,38 @@ public sealed class SaveStore
             throw new SaveCheckpointNotFoundException(saveId, checkpointId);
         }
 
+        await VerifyCheckpointForRestoreAsync(saveId, checkpointId, databasePath, sidecarPath, cancellationToken).ConfigureAwait(false);
+
+        string livePath = GetSaveFilePath(saveId);
+        if (await IsLiveHealthyAsync(saveId, cancellationToken).ConfigureAwait(false))
+        {
+            await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
+        }
+        else if (File.Exists(livePath))
+        {
+            await PreserveDamagedLiveCopyAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogWarning(
+            "Restored save {SaveId} from technical recovery checkpoint {CheckpointId}.",
+            saveId,
+            checkpointId);
+        return await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Checksum- and identity-verifies one checkpoint before a restore may
+    /// touch live data. Corrupt backups are rejected here, never after.
+    /// </summary>
+    private async Task VerifyCheckpointForRestoreAsync(
+        Guid saveId,
+        Guid checkpointId,
+        string databasePath,
+        string sidecarPath,
+        CancellationToken cancellationToken)
+    {
         SaveCheckpointSidecar sidecar;
         try
         {
@@ -1346,21 +1377,129 @@ public sealed class SaveStore
         }
 
         await VerifyCheckpointCopyAsync(databasePath, saveId, cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Probes whether the live save file opens with all required rows and
+    /// parsable rules/RNG snapshots. Any validation, readability or missing
+    /// file failure reports unhealthy (never throws) so the caller can take
+    /// the damaged/missing recovery path instead of the healthy safety
+    /// checkpoint path.
+    /// </summary>
+    private async Task<bool> IsLiveHealthyAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex) when (ex is SaveNotFoundException
+            or InvalidOperationException
+            or DbException
+            or IOException
+            or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Preserves surviving damaged live bytes beside the checkpoints for
+    /// diagnosis before a recovery restore overwrites them. The copy has no
+    /// sidecar and a distinct <c>damaged-pre-restore-</c> name so it is never
+    /// mistaken for a verified checkpoint. Best effort: preservation failures
+    /// are logged and the restore still proceeds.
+    /// </summary>
+    private async Task PreserveDamagedLiveCopyAsync(
+        Guid saveId,
+        Guid checkpointId,
+        CancellationToken cancellationToken)
+    {
+        string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(GetSavesRoot(), saveId);
         string livePath = GetSaveFilePath(saveId);
         if (!File.Exists(livePath))
         {
-            throw new SaveNotFoundException(saveId);
+            return;
         }
 
-        await CreateCheckpointAsync(saveId, "pre-restore-safety", cancellationToken).ConfigureAwait(false);
-        await OverwriteLiveFromCheckpointAsync(saveId, checkpointId, cancellationToken).ConfigureAwait(false);
+        Directory.CreateDirectory(directory);
+        string damagedPath = SaveCheckpointFiles.GetDamagedLiveBackupPath(directory, checkpointId);
 
-        _logger.LogWarning(
-            "Restored save {SaveId} from technical recovery checkpoint {CheckpointId}.",
-            saveId,
-            checkpointId);
-        return await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(livePath))
+            {
+                return;
+            }
+
+            await WriteDamagedLiveCopyAsync(saveId, checkpointId, livePath, damagedPath, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Writes one damaged-live preservation copy: a WAL-aware snapshot when
+    /// the live file is still a readable database, else a raw byte copy.
+    /// </summary>
+    private async Task WriteDamagedLiveCopyAsync(
+        Guid saveId,
+        Guid checkpointId,
+        string livePath,
+        string damagedPath,
+        CancellationToken cancellationToken)
+    {
+        ClearSaveConnections(livePath);
+        try
+        {
+            await CaptureDatabaseSnapshotAsync(livePath, damagedPath, cancellationToken).ConfigureAwait(false);
+            ClearSaveConnections(damagedPath);
+            DeleteCompanionFiles(damagedPath);
+            _logger.LogWarning(
+                "Preserved damaged live save {SaveId} bytes at {DamagedPath} before restoring checkpoint {CheckpointId}.",
+                saveId,
+                damagedPath,
+                checkpointId);
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or DbException or IOException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(
+                ex,
+                "Snapshot preservation failed for damaged save {SaveId}; falling back to a raw byte copy.",
+                saveId);
+            DeleteFileBestEffort(damagedPath);
+            DeleteCompanionFiles(damagedPath);
+            ClearSaveConnections(damagedPath);
+        }
+
+        try
+        {
+            ClearSaveConnections(livePath);
+            File.Copy(livePath, damagedPath, overwrite: true);
+            ClearSaveConnections(damagedPath);
+            DeleteCompanionFiles(damagedPath);
+            _logger.LogWarning(
+                "Preserved damaged live save {SaveId} raw bytes at {DamagedPath} before restoring checkpoint {CheckpointId}.",
+                saveId,
+                damagedPath,
+                checkpointId);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Could not preserve damaged live save {SaveId} bytes; continuing with checkpoint restore.",
+                saveId);
+        }
     }
 
     private async Task<SaveDetailRecord> ReadDetailAsync(Guid saveId, CancellationToken cancellationToken)
@@ -1565,8 +1704,13 @@ public sealed class SaveStore
     }
 
     /// <summary>
-    /// Verifies a checkpoint database copy opens with required rows and the
-    /// expected save identity. Cleans up SQLite companions opened by the check.
+    /// Verifies a checkpoint database copy opens with required rows, the
+    /// expected save identity, and parsable rules/RNG snapshots (the same
+    /// bar as a live open). Cleans up SQLite companions opened by the check.
+    /// A checkpoint that fails here is rejected before anything live is
+    /// touched. Throws <see cref="InvalidOperationException"/> (or the
+    /// underlying <see cref="DbException"/>/IO failure) without modifying
+    /// live data or other checkpoints.
     /// </summary>
     private async Task VerifyCheckpointCopyAsync(
         string checkpointDatabasePath,
@@ -1576,29 +1720,8 @@ public sealed class SaveStore
         try
         {
             using SaveDbContext context = _factory.Create(checkpointDatabasePath);
-            SaveMetadataEntity? metadata = await context.SaveMetadata
-                .AsNoTracking()
-                .SingleOrDefaultAsync(e => e.Id == 1, cancellationToken)
-                .ConfigureAwait(false);
-            bool hasRules = await context.RulesSnapshots
-                .AsNoTracking()
-                .AnyAsync(e => e.Id == 1, cancellationToken)
-                .ConfigureAwait(false);
-            bool hasRng = await context.RngStates
-                .AsNoTracking()
-                .AnyAsync(e => e.Id == 1, cancellationToken)
-                .ConfigureAwait(false);
-            if (metadata is null || !hasRules || !hasRng)
-            {
-                throw new InvalidOperationException(
-                    $"Checkpoint for save '{saveId:D}' is missing required metadata, rules, or RNG rows.");
-            }
-
-            if (metadata.SaveId != saveId)
-            {
-                throw new InvalidOperationException(
-                    $"Checkpoint save identity '{metadata.SaveId:D}' does not match save '{saveId:D}'.");
-            }
+            SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
+            _ = MapDetail(saveId, rows);
         }
         finally
         {
@@ -1609,9 +1732,9 @@ public sealed class SaveStore
 
     /// <summary>
     /// Overwrites the live save file with a verified checkpoint copy and
-    /// verifies the result opens. Used by restore and migration rollback.
-    /// The replacement holds the per-save snapshot gate so a concurrent
-    /// snapshot capture cannot read a torn live file.
+    /// verifies the result opens. The checkpoint stages through a temp file
+    /// so a failed replacement leaves prior live bytes in place; the
+    /// checkpoint itself is only read. A missing live file is recreated.
     /// </summary>
     private async Task OverwriteLiveFromCheckpointAsync(
         Guid saveId,
@@ -1626,29 +1749,72 @@ public sealed class SaveStore
         }
 
         string livePath = GetSaveFilePath(saveId);
-        if (!File.Exists(livePath))
-        {
-            throw new SaveNotFoundException(saveId);
-        }
 
         cancellationToken.ThrowIfCancellationRequested();
         SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
         await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        string? stagingPath = null;
         try
         {
-            ClearSaveConnections(livePath);
-            ClearSaveConnections(checkpointPath);
-            File.Copy(checkpointPath, livePath, overwrite: true);
-            DeleteCompanionFiles(livePath);
+            if (!File.Exists(checkpointPath))
+            {
+                throw new SaveCheckpointNotFoundException(saveId, checkpointId);
+            }
+
+            stagingPath = PrepareRestoreStagingPath(livePath, saveId);
+            ReplaceLiveWithStagedCopy(checkpointPath, livePath, stagingPath);
+            stagingPath = null;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            if (!File.Exists(checkpointPath))
+            {
+                throw new SaveCheckpointNotFoundException(saveId, checkpointId);
+            }
+
+            throw;
         }
         finally
         {
+            if (stagingPath is not null)
+            {
+                DeleteFileBestEffort(stagingPath);
+                DeleteCompanionFiles(stagingPath);
+                ClearSaveConnections(stagingPath);
+            }
+
             snapshotGate.Release();
         }
 
         ClearSaveConnections(livePath);
         InvalidateMigrationVerified(saveId);
         _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private string PrepareRestoreStagingPath(string livePath, Guid saveId)
+    {
+        string? liveDirectory = Path.GetDirectoryName(livePath);
+        if (!string.IsNullOrEmpty(liveDirectory))
+        {
+            Directory.CreateDirectory(liveDirectory);
+        }
+
+        string stagingPath = Path.Combine(
+            liveDirectory ?? GetSavesRoot(),
+            $".restore-{saveId:N}-{Guid.NewGuid():N}.tmp");
+        DeleteFileBestEffort(stagingPath);
+        DeleteCompanionFiles(stagingPath);
+        return stagingPath;
+    }
+
+    private static void ReplaceLiveWithStagedCopy(string checkpointPath, string livePath, string stagingPath)
+    {
+        ClearSaveConnections(livePath);
+        ClearSaveConnections(checkpointPath);
+        File.Copy(checkpointPath, stagingPath);
+        ClearSaveConnections(stagingPath);
+        File.Move(stagingPath, livePath, overwrite: true);
+        DeleteCompanionFiles(livePath);
     }
 
     /// <summary>

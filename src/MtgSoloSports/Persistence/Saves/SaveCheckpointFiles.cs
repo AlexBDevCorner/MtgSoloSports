@@ -65,6 +65,28 @@ public static class SaveCheckpointFiles
         return combined;
     }
 
+    /// <summary>
+    /// Path for a best-effort copy of damaged live bytes preserved when a
+    /// checkpoint restore recovers an unreadable live save. The
+    /// <c>damaged-pre-restore-</c> prefix keeps it distinct from verified
+    /// technical recovery checkpoints: it has no sidecar, so listing and
+    /// retention (which enumerate sidecars) never mistake it for a verified
+    /// healthy boundary, and restore verification never reads it.
+    /// </summary>
+    public static string GetDamagedLiveBackupPath(string saveCheckpointDirectory, Guid checkpointId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(saveCheckpointDirectory);
+        if (checkpointId == Guid.Empty)
+        {
+            throw new ArgumentException("Checkpoint id must not be empty.", nameof(checkpointId));
+        }
+
+        string directoryFull = Path.GetFullPath(saveCheckpointDirectory);
+        string combined = Path.GetFullPath(Path.Combine(directoryFull, $"damaged-pre-restore-{checkpointId:N}.db"));
+        SaveFileNaming.EnsureInsideRoot(directoryFull, combined);
+        return combined;
+    }
+
     public static string NormalizeReason(string? reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
