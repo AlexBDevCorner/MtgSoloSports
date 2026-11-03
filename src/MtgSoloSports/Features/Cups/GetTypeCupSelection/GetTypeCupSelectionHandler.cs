@@ -162,10 +162,12 @@ public sealed class GetTypeCupSelectionHandler
                 row.BonusNormThousandths,
                 row.PerformanceNormThousandths,
                 row.FormNormThousandths,
+                row.ChaosNormThousandths,
                 row.PrestigeNormThousandths,
                 row.BonusRawThousandths,
                 row.PerformanceRawThousandths,
                 row.FormRaw,
+                row.ChaosRaw,
                 row.PrestigeRaw));
         }
 

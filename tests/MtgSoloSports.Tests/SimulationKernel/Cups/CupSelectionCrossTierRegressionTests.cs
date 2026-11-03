@@ -11,7 +11,7 @@ namespace MtgSoloSports.Tests.SimulationKernel.Cups;
 /// Protects the intended league-strength hierarchy while allowing legitimate
 /// lower-tier upsets. All scenarios are pure kernel, integer-only and
 /// deterministic: no RNG, clock, database or wall-clock.
-/// Outer weights stay 35/30/25/10 and strength factors stay 1000/800/600/400.
+/// Outer weights stay 35/30/20/5/10 and strength factors stay 1000/800/600/400.
 /// No tier quota or absolute tier-priority rule is introduced: ordering is by
 /// final selection rating only, so an exceptional lower-tier season can beat a
 /// weak higher-tier season, but an identical F3 season never equals an F1 one.
@@ -46,11 +46,12 @@ public sealed class CupSelectionCrossTierRegressionTests
         string name,
         int bonusRaw,
         CupSelectionMetrics.CupMetrics metrics,
-        int prestigeRaw)
+        int prestigeRaw,
+        int chaosRaw = 0)
     {
         return new ColorCupSelection.CandidateRaw(
             id, name, 0, bonusRaw,
-            metrics.AdjustedPerformanceThousandths, metrics.AdjustedFormRaw, prestigeRaw);
+            metrics.AdjustedPerformanceThousandths, metrics.AdjustedFormRaw, chaosRaw, prestigeRaw);
     }
 
     private static bool IsName(ColorCupSelection.ScoredCandidate candidate, string name)
@@ -71,17 +72,18 @@ public sealed class CupSelectionCrossTierRegressionTests
     }
 
     [Fact]
-    public void OuterWeights_Remain_35_30_25_10()
+    public void OuterWeights_Remain_35_30_20_5_10()
     {
         RulesV3 rules = TieredRules();
         rules.CupBonusWeightPermille.ShouldBe(350);
         rules.CupPerformanceWeightPermille.ShouldBe(300);
-        rules.CupFormWeightPermille.ShouldBe(250);
+        rules.CupFormWeightPermille.ShouldBe(200);
+        rules.CupChaosWeightPermille.ShouldBe(50);
         rules.CupPrestigeWeightPermille.ShouldBe(100);
         checked
         {
             int total = rules.CupBonusWeightPermille + rules.CupPerformanceWeightPermille
-                + rules.CupFormWeightPermille + rules.CupPrestigeWeightPermille;
+                + rules.CupFormWeightPermille + rules.CupChaosWeightPermille + rules.CupPrestigeWeightPermille;
             total.ShouldBe(1000);
         }
     }
@@ -149,8 +151,8 @@ public sealed class CupSelectionCrossTierRegressionTests
             ColorCandidate(1, "F1 Champ", 5000, f1, 0),
             ColorCandidate(2, "F3 Champ", 5000, f3, 0),
             // Anchors keep normalization bounded without changing the pairwise gap.
-            new(3, "Anchor Low", 0, 5000, 4_000, 22_000, 0),
-            new(4, "Anchor High", 0, 5000, 8_000, 44_000, 0),
+            new(3, "Anchor Low", 0, 5000, 4_000, 22_000, 0, 0),
+            new(4, "Anchor High", 0, 5000, 8_000, 44_000, 0, 0),
         ];
         IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);
         ColorCupSelection.ScoredCandidate f1Ranked = ranking.Single(c => IsName(c, "F1 Champ"));
@@ -237,10 +239,10 @@ public sealed class CupSelectionCrossTierRegressionTests
         CupSelectionMetrics.CupMetrics grinderMetrics = MetricsFor(8_000, 800, 1, LeagueLevel.Feeder1, rules);
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Star F3", 0, 9000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, starPrestige.TotalRaw),
-            new(2, "Grinder F1", 0, 1000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, grinderPrestige.TotalRaw),
-            new(3, "Anchor Low", 0, 1000, 1_000, 5_000, 0),
-            new(4, "Anchor High", 0, 9000, 8_000, 44_000, starPrestige.TotalRaw),
+            new(1, "Star F3", 0, 9000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, 0, starPrestige.TotalRaw),
+            new(2, "Grinder F1", 0, 1000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, 0, grinderPrestige.TotalRaw),
+            new(3, "Anchor Low", 0, 1000, 1_000, 5_000, 0, 0),
+            new(4, "Anchor High", 0, 9000, 8_000, 44_000, 0, starPrestige.TotalRaw),
         ];
         IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);
         ColorCupSelection.ScoredCandidate star = ranking.Single(c => IsName(c, "Star F3"));
@@ -260,10 +262,10 @@ public sealed class CupSelectionCrossTierRegressionTests
         const int starPrestige = 1200;
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Star Faded", 0, 1000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, starPrestige),
-            new(2, "Grinder F1", 0, 1000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, 0),
-            new(3, "Anchor Low", 0, 1000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, 0),
-            new(4, "Anchor High", 0, 9000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, starPrestige),
+            new(1, "Star Faded", 0, 1000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, 0, starPrestige),
+            new(2, "Grinder F1", 0, 1000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, 0, 0),
+            new(3, "Anchor Low", 0, 1000, starMetrics.AdjustedPerformanceThousandths, starMetrics.AdjustedFormRaw, 0, 0),
+            new(4, "Anchor High", 0, 9000, grinderMetrics.AdjustedPerformanceThousandths, grinderMetrics.AdjustedFormRaw, 0, starPrestige),
         ];
         IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);
         ColorCupSelection.ScoredCandidate star = ranking.Single(c => IsName(c, "Star Faded"));
@@ -291,7 +293,7 @@ public sealed class CupSelectionCrossTierRegressionTests
         CupSelectionMetrics.CupMetrics f3 = MetricsFor(4_000, 400, 1, LeagueLevel.Feeder3, rules);
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Pool Veteran", 0, 1000, pool.AdjustedPerformanceThousandths, pool.AdjustedFormRaw, 0),
+            new(1, "Pool Veteran", 0, 1000, pool.AdjustedPerformanceThousandths, pool.AdjustedFormRaw, 0, 0),
             ColorCandidate(2, "F3 Active", 1000, f3, 0),
             ColorCandidate(3, "F2 Active", 1000, MetricsFor(5_000, 500, 1, LeagueLevel.Feeder2, rules), 0),
             ColorCandidate(4, "F1 Active", 1000, MetricsFor(6_000, 600, 1, LeagueLevel.Feeder1, rules), 0),
@@ -313,10 +315,10 @@ public sealed class CupSelectionCrossTierRegressionTests
 
         List<TypeCupAllocation.CandidateRaw> identical =
         [
-            new(1, "Super Wizard", ["Wizard"], null, 1000, super.AdjustedPerformanceThousandths, super.AdjustedFormRaw, 0),
-            new(2, "F1 Wizard", ["Wizard"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0),
-            new(3, "F2 Wizard", ["Wizard"], null, 1000, f2.AdjustedPerformanceThousandths, f2.AdjustedFormRaw, 0),
-            new(4, "F3 Wizard", ["Wizard"], null, 1000, f3.AdjustedPerformanceThousandths, f3.AdjustedFormRaw, 0),
+            new(1, "Super Wizard", ["Wizard"], null, 1000, super.AdjustedPerformanceThousandths, super.AdjustedFormRaw, 0, 0),
+            new(2, "F1 Wizard", ["Wizard"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0, 0),
+            new(3, "F2 Wizard", ["Wizard"], null, 1000, f2.AdjustedPerformanceThousandths, f2.AdjustedFormRaw, 0, 0),
+            new(4, "F3 Wizard", ["Wizard"], null, 1000, f3.AdjustedPerformanceThousandths, f3.AdjustedFormRaw, 0, 0),
         ];
         TypeCupAllocation.AllocationResult hierarchy = TypeCupAllocation.Allocate(identical, rules);
         hierarchy.Teams.Count.ShouldBe(1);
@@ -329,12 +331,12 @@ public sealed class CupSelectionCrossTierRegressionTests
         CupSelectionMetrics.CupMetrics f2Mid = MetricsFor(8_000, 800, 2, LeagueLevel.Feeder2, rules);
         List<TypeCupAllocation.CandidateRaw> upset =
         [
-            new(11, "Super Weak", ["Elf"], null, 1000, superWeak.AdjustedPerformanceThousandths, superWeak.AdjustedFormRaw, 0),
-            new(12, "F3 Strong", ["Elf"], null, 1000, f3Strong.AdjustedPerformanceThousandths, f3Strong.AdjustedFormRaw, 0),
-            new(13, "F1 Mid A", ["Elf"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0),
-            new(14, "F1 Mid B", ["Elf"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0),
+            new(11, "Super Weak", ["Elf"], null, 1000, superWeak.AdjustedPerformanceThousandths, superWeak.AdjustedFormRaw, 0, 0),
+            new(12, "F3 Strong", ["Elf"], null, 1000, f3Strong.AdjustedPerformanceThousandths, f3Strong.AdjustedFormRaw, 0, 0),
+            new(13, "F1 Mid A", ["Elf"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0, 0),
+            new(14, "F1 Mid B", ["Elf"], null, 1000, f1.AdjustedPerformanceThousandths, f1.AdjustedFormRaw, 0, 0),
             // Fifth candidate forces one athlete out: the weak higher-tier one.
-            new(15, "F2 Mid", ["Elf"], null, 1000, f2Mid.AdjustedPerformanceThousandths, f2Mid.AdjustedFormRaw, 0),
+            new(15, "F2 Mid", ["Elf"], null, 1000, f2Mid.AdjustedPerformanceThousandths, f2Mid.AdjustedFormRaw, 0, 0),
         ];
         TypeCupAllocation.AllocationResult upsetResult = TypeCupAllocation.Allocate(upset, rules);
         upsetResult.Teams.Count.ShouldBe(1);
@@ -349,11 +351,11 @@ public sealed class CupSelectionCrossTierRegressionTests
         CupSelectionMetrics.CupMetrics active = MetricsFor(6_000, 600, 2, LeagueLevel.Feeder1, rules);
         List<TypeCupAllocation.CandidateRaw> candidates =
         [
-            new(21, "Stale Pool", ["Goblin"], null, 1000, 0, 0, 0),
-            new(22, "Active A", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0),
-            new(23, "Active B", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0),
-            new(24, "Active C", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0),
-            new(25, "Active D", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0),
+            new(21, "Stale Pool", ["Goblin"], null, 1000, 0, 0, 0, 0),
+            new(22, "Active A", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0, 0),
+            new(23, "Active B", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0, 0),
+            new(24, "Active C", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0, 0),
+            new(25, "Active D", ["Goblin"], null, 1000, active.AdjustedPerformanceThousandths, active.AdjustedFormRaw, 0, 0),
         ];
         TypeCupAllocation.AllocationResult result = TypeCupAllocation.Allocate(candidates, rules);
         result.Teams.Count.ShouldBe(1);

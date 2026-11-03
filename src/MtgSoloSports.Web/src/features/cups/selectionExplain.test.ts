@@ -36,10 +36,12 @@ function candidate(overrides: Partial<SelectionCandidate>): SelectionCandidate {
     bonusNormThousandths: 1000,
     performanceNormThousandths: 1000,
     formNormThousandths: 1000,
+    chaosNormThousandths: 1000,
     prestigeNormThousandths: 1000,
     bonusRawThousandths: 0,
     performanceRawThousandths: 0,
     formRaw: 0,
+    chaosRaw: 0,
     prestigeRaw: 0,
     ...overrides,
   };
@@ -54,7 +56,8 @@ function report(teams: SelectionTeam[], overrides: Partial<SelectionReport> = {}
     teamSize: 4,
     bonusWeightPermille: 350,
     performanceWeightPermille: 300,
-    formWeightPermille: 250,
+    formWeightPermille: 200,
+    chaosWeightPermille: 50,
     prestigeWeightPermille: 100,
     teams,
     ...overrides,
@@ -101,13 +104,14 @@ describe('selection explanation', () => {
       [
         ['bonus', 350, 175],
         ['performance', 300, 300],
-        ['form', 250, 100],
+        ['form', 200, 80],
+        ['chaos', 50, 50],
         ['prestige', 100, 25],
       ],
     );
     assert.equal(
       formulaLabel(report([red])),
-      '35% active bonus + 30% season performance + 25% recent form + 10% career prestige',
+      '35% active bonus + 30% season performance + 20% recent form + 5% chaos form + 10% career prestige',
     );
   });
 

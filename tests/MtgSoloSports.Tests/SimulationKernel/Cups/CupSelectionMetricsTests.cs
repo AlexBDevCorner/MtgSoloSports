@@ -209,10 +209,10 @@ public sealed class CupSelectionMetricsTests
     public void ColorCupReport_V2_RoundTrips_WithAdjustedValues()
     {
         var candidate = new ColorCupSelectionReportDocument.Candidate(
-            7, 1, 900, 1000, 800, 600, 1000, 5000, 8000, 44000, 300,
+            7, 1, 900, 1000, 800, 600, 0, 1000, 5000, 8000, 44000, 0, 300,
             "White League", (int)LeagueLevel.Feeder1, 800, 10_000, 55_000);
         var report = new ColorCupSelectionReportDocument(
-            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 250, 100,
+            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 200, 50, 100,
             [new ColorCupSelectionReportDocument.Team(0, 1, [candidate])]);
         ColorCupSelectionReportDocument restored = ColorCupSelectionReportDocument.FromStored(report.ToStored());
         restored.Version.ShouldBe(ColorCupSelectionReportDocument.PayloadVersion);
@@ -241,10 +241,10 @@ public sealed class CupSelectionMetricsTests
     public void TypeCupReport_V2_RoundTrips_WithAdjustedValues()
     {
         var candidate = new TypeCupSelectionReportDocument.Candidate(
-            11, 1, 1, "Wizard", false, [], 950, 1000, 900, 800, 1000, 6000, 6000, 33000, 200,
+            11, 1, 1, "Wizard", false, [], 950, 1000, 900, 800, 0, 1000, 6000, 6000, 33000, 0, 200,
             "White League F2", (int)LeagueLevel.Feeder2, 600, 10_000, 55_000);
         var report = new TypeCupSelectionReportDocument(
-            TypeCupSelectionReportDocument.PayloadVersion, 1, 350, 300, 250, 100,
+            TypeCupSelectionReportDocument.PayloadVersion, 1, 350, 300, 200, 50, 100,
             [new TypeCupSelectionReportDocument.Team("Wizard", 1, [candidate])], []);
         TypeCupSelectionReportDocument restored = TypeCupSelectionReportDocument.FromStored(report.ToStored());
         restored.Version.ShouldBe(TypeCupSelectionReportDocument.PayloadVersion);
@@ -263,10 +263,10 @@ public sealed class CupSelectionMetricsTests
         // Per-color normalization operates on adjusted raws.
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Alpha", 0, 0, 10_000, 55_000, 0),
-            new(2, "Beta", 0, 0, 8_000, 44_000, 0),
-            new(3, "Gamma", 0, 0, 6_000, 33_000, 0),
-            new(4, "Delta", 0, 0, 4_000, 22_000, 0),
+            new(1, "Alpha", 0, 0, 10_000, 55_000, 0, 0),
+            new(2, "Beta", 0, 0, 8_000, 44_000, 0, 0),
+            new(3, "Gamma", 0, 0, 6_000, 33_000, 0, 0),
+            new(4, "Delta", 0, 0, 4_000, 22_000, 0, 0),
         ];
         IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);
         ranking[0].Name.ShouldBe("Alpha");
@@ -274,7 +274,7 @@ public sealed class CupSelectionMetricsTests
         ranking[3].PerformanceNormThousandths.ShouldBe(0);
         // Global normalization for Type Cup uses the same adjusted raws.
         List<TypeCupAllocation.CandidateRaw> typeCandidates = candidates
-            .Select(c => new TypeCupAllocation.CandidateRaw(c.AthleteId, c.Name, ["Wizard"], null, c.BonusRawThousandths, c.PerformanceRawThousandths, c.FormRaw, c.PrestigeRaw))
+            .Select(c => new TypeCupAllocation.CandidateRaw(c.AthleteId, c.Name, ["Wizard"], null, c.BonusRawThousandths, c.PerformanceRawThousandths, c.FormRaw, 0, c.PrestigeRaw))
             .ToList();
         TypeCupAllocation.AllocationResult allocation = TypeCupAllocation.Allocate(typeCandidates, rules);
         allocation.Teams.Count.ShouldBe(1);

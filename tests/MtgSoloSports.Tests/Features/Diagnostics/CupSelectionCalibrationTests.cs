@@ -164,7 +164,8 @@ public sealed class CupSelectionCalibrationTests
         RulesV3 rules = RulesV3.CreateDefault();
         rules.CupBonusWeightPermille.ShouldBe(350);
         rules.CupPerformanceWeightPermille.ShouldBe(300);
-        rules.CupFormWeightPermille.ShouldBe(250);
+        rules.CupFormWeightPermille.ShouldBe(200);
+        rules.CupChaosWeightPermille.ShouldBe(50);
         rules.CupPrestigeWeightPermille.ShouldBe(100);
         rules.GetCupStrengthFactor(MtgSoloSports.SimulationKernel.Leagues.LeagueLevel.Superleague).ShouldBe(1000);
         rules.GetCupStrengthFactor(MtgSoloSports.SimulationKernel.Leagues.LeagueLevel.Feeder1).ShouldBe(800);
@@ -198,7 +199,8 @@ public sealed class CupSelectionCalibrationTests
             report.Editions.Count.ShouldBe(options.Seasons);
             report.BonusWeightPermille.ShouldBe(350);
             report.PerformanceWeightPermille.ShouldBe(300);
-            report.FormWeightPermille.ShouldBe(250);
+            report.FormWeightPermille.ShouldBe(200);
+            report.ChaosWeightPermille.ShouldBe(50);
             report.PrestigeWeightPermille.ShouldBe(100);
             report.SuperFactorPermille.ShouldBe(1000);
             report.Feeder1FactorPermille.ShouldBe(800);
@@ -230,7 +232,7 @@ public sealed class CupSelectionCalibrationTests
         ColorCupSelectionReportDocument.Candidate super = Candidate(1, 4, 750, 500, 600, 600, 200, 0, 1000);
         ColorCupSelectionReportDocument.Candidate superOut = Candidate(5, 5, 700, 400, 500, 500, 100, 0, 1000);
         return new ColorCupSelectionReportDocument(
-            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 250, 100,
+            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 200, 50, 100,
             [new ColorCupSelectionReportDocument.Team(0, 5, [f2, f3, f1, super, superOut])]);
 
         static ColorCupSelectionReportDocument.Candidate Candidate(
@@ -244,8 +246,8 @@ public sealed class CupSelectionCalibrationTests
                 _ => "White League F3",
             };
             return new ColorCupSelectionReportDocument.Candidate(
-                id, rank, final, bonusNorm, perfNorm, formNorm, prestigeNorm,
-                1000, 5000, 20000, 100,
+                id, rank, final, bonusNorm, perfNorm, formNorm, 0, prestigeNorm,
+                1000, 5000, 20000, 0, 100,
                 league, level, factor, 8000, 30000,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
@@ -259,7 +261,7 @@ public sealed class CupSelectionCalibrationTests
         TypeCupSelectionReportDocument.Candidate f2 = TypeCandidate(15, 4, 4, 750, 2, 600);
         TypeCupSelectionReportDocument.Candidate superOut = TypeCandidate(11, 5, 0, 700, 0, 1000);
         return new TypeCupSelectionReportDocument(
-            TypeCupSelectionReportDocument.PayloadVersion, 5, 350, 300, 250, 100,
+            TypeCupSelectionReportDocument.PayloadVersion, 5, 350, 300, 200, 50, 100,
             [new TypeCupSelectionReportDocument.Team("Elf", 5, [f3, f1a, f1b, f2, superOut])], []);
 
         static TypeCupSelectionReportDocument.Candidate TypeCandidate(
@@ -274,7 +276,7 @@ public sealed class CupSelectionCalibrationTests
             };
             return new TypeCupSelectionReportDocument.Candidate(
                 id, typeRank, selectionRank, "Elf", false, [],
-                final, 600, 800, 700, 300, 1000, 5000, 20000, 100,
+                final, 600, 800, 700, 0, 300, 1000, 5000, 20000, 0, 100,
                 league, level, factor, 8000, 30000,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }

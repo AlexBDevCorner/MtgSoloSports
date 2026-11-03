@@ -222,12 +222,13 @@ public static class ScoringCalculator
     }
 
     /// <summary>
-    /// Computes a Color Cup selection rating from normalized components using snapshot weights.
+    /// Computes a Color Cup selection rating from normalized components using snapshot weights (MSS-105: 35/30/20/5/10).
     /// </summary>
     public static SelectionScore SelectionRating(
         int bonusNormThousandths,
         int performanceNormThousandths,
         int formNormThousandths,
+        int chaosNormThousandths,
         int prestigeNormThousandths,
         RulesV1 rules)
     {
@@ -236,10 +237,12 @@ public static class ScoringCalculator
             bonusNormThousandths,
             performanceNormThousandths,
             formNormThousandths,
+            chaosNormThousandths,
             prestigeNormThousandths,
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
+            rules.CupChaosWeightPermille,
             rules.CupPrestigeWeightPermille);
     }
 }

@@ -86,11 +86,11 @@ public sealed class ColorCupSelectionTests
         RulesV1 rules = RulesV1.CreateDefault();
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Bravo", 0, 500, 500, 500, 500),
-            new(2, "Alpha", 0, 500, 500, 500, 500),
-            new(3, "Charlie", 0, 0, 0, 0, 0),
-            new(4, "Delta", 0, 0, 0, 0, 0),
-            new(5, "Echo", 0, 0, 0, 0, 0),
+            new(1, "Bravo", 0, 500, 500, 500, 0, 500),
+            new(2, "Alpha", 0, 500, 500, 500, 0, 500),
+            new(3, "Charlie", 0, 0, 0, 0, 0, 0),
+            new(4, "Delta", 0, 0, 0, 0, 0, 0),
+            new(5, "Echo", 0, 0, 0, 0, 0, 0),
         ];
 
         IReadOnlyList<ColorCupSelection.ScoredCandidate> team = ColorCupSelection.SelectTeam(candidates, rules);
@@ -111,11 +111,11 @@ public sealed class ColorCupSelectionTests
         // so only bonus (35%) and form (25%) decide.
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "FormA", 0, 1000, 500, 0, 0),
-            new(2, "FormB", 0, 990, 500, 0, 0),
-            new(3, "FormC", 0, 980, 500, 0, 0),
-            new(4, "FormD", 0, 970, 500, 0, 0),
-            new(5, "FormE", 0, 960, 500, 10_000, 0),
+            new(1, "FormA", 0, 1000, 500, 0, 0, 0),
+            new(2, "FormB", 0, 990, 500, 0, 0, 0),
+            new(3, "FormC", 0, 980, 500, 0, 0, 0),
+            new(4, "FormD", 0, 970, 500, 0, 0, 0),
+            new(5, "FormE", 0, 960, 500, 10_000, 0, 0),
         ];
 
         List<string> bonusOrder = candidates
@@ -141,11 +141,11 @@ public sealed class ColorCupSelectionTests
         // only bonus (35%) and prestige (10%) decide. Prestige flips the fourth slot.
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "PrestigeA", 0, 1000, 500, 500, 0),
-            new(2, "PrestigeB", 0, 999, 500, 500, 0),
-            new(3, "PrestigeC", 0, 998, 500, 500, 0),
-            new(4, "PrestigeD", 0, 997, 500, 500, 0),
-            new(5, "PrestigeE", 0, 996, 500, 500, 1000),
+            new(1, "PrestigeA", 0, 1000, 500, 500, 0, 0),
+            new(2, "PrestigeB", 0, 999, 500, 500, 0, 0),
+            new(3, "PrestigeC", 0, 998, 500, 500, 0, 0),
+            new(4, "PrestigeD", 0, 997, 500, 500, 0, 0),
+            new(5, "PrestigeE", 0, 996, 500, 500, 0, 1000),
         ];
 
         List<string> bonusOrder = candidates
@@ -167,12 +167,12 @@ public sealed class ColorCupSelectionTests
         RulesV1 rules = RulesV1.CreateDefault();
         List<ColorCupSelection.CandidateRaw> candidates =
         [
-            new(1, "Bravo", 0, 500, 500, 500, 500),
-            new(2, "Alpha", 0, 500, 500, 500, 500),
-            new(3, "Charlie", 0, 400, 0, 0, 0),
-            new(4, "Delta", 0, 300, 0, 0, 0),
-            new(5, "Echo", 0, 200, 0, 0, 0),
-            new(6, "Foxtrot", 0, 0, 0, 0, 0),
+            new(1, "Bravo", 0, 500, 500, 500, 0, 500),
+            new(2, "Alpha", 0, 500, 500, 500, 0, 500),
+            new(3, "Charlie", 0, 400, 0, 0, 0, 0),
+            new(4, "Delta", 0, 300, 0, 0, 0, 0),
+            new(5, "Echo", 0, 200, 0, 0, 0, 0),
+            new(6, "Foxtrot", 0, 0, 0, 0, 0, 0),
         ];
 
         IReadOnlyList<ColorCupSelection.ScoredCandidate> ranking = ColorCupSelection.RankAll(candidates, rules);

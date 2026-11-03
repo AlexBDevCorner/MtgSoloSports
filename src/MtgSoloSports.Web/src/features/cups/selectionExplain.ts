@@ -7,7 +7,7 @@ import type { SelectionCandidate, SelectionReport, SelectionTeam } from './selec
  */
 
 export interface ComponentShare {
-  key: 'bonus' | 'performance' | 'form' | 'prestige';
+  key: 'bonus' | 'performance' | 'form' | 'chaos' | 'prestige';
   label: string;
   weightPermille: number;
   /** Athlete's standing on this component, 0..1000 within the compared field. */
@@ -65,6 +65,13 @@ export function componentShares(report: SelectionReport, candidate: SelectionCan
       `${formatRating(candidate.formRaw)} weighted pts, last 10 stages`,
     ),
     share(
+      'chaos',
+      'Chaos form',
+      report.chaosWeightPermille ?? 0,
+      candidate.chaosNormThousandths ?? 0,
+      `Chaos outcome ${candidate.chaosRaw ?? 0}`,
+    ),
+    share(
       'prestige',
       'Career prestige',
       report.prestigeWeightPermille,
@@ -74,14 +81,19 @@ export function componentShares(report: SelectionReport, candidate: SelectionCan
   ];
 }
 
-/** "35% bonus + 30% season + 25% form + 10% prestige" from the stored weights. */
+/** "35% bonus + 30% season + 20% form + 5% chaos + 10% prestige" from the stored weights. */
 export function formulaLabel(report: SelectionReport): string {
-  return [
+  const chaos = report.chaosWeightPermille ?? 0;
+  const parts = [
     `${percent(report.bonusWeightPermille)} active bonus`,
     `${percent(report.performanceWeightPermille)} season performance`,
     `${percent(report.formWeightPermille)} recent form`,
-    `${percent(report.prestigeWeightPermille)} career prestige`,
-  ].join(' + ');
+  ];
+  if (chaos > 0) {
+    parts.push(`${percent(chaos)} chaos form`);
+  }
+  parts.push(`${percent(report.prestigeWeightPermille)} career prestige`);
+  return parts.join(' + ');
 }
 
 export function selectedMembers(team: SelectionTeam): SelectionCandidate[] {
@@ -104,6 +116,7 @@ const TIE_ORDER: { label: string; pick: (c: SelectionCandidate) => number }[] = 
   { label: 'active bonus', pick: (c) => c.bonusNormThousandths },
   { label: 'season performance', pick: (c) => c.performanceNormThousandths },
   { label: 'recent form', pick: (c) => c.formNormThousandths },
+  { label: 'chaos form', pick: (c) => c.chaosNormThousandths ?? 0 },
   { label: 'career prestige', pick: (c) => c.prestigeNormThousandths },
 ];
 

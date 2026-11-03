@@ -102,14 +102,16 @@ public sealed class ScoringCalculatorTests
     [Fact]
     public void SelectionRating_UsesIntegerCupWeights()
     {
-        SelectionScore full = ScoringCalculator.SelectionRating(1000, 1000, 1000, 1000, Rules);
+        SelectionScore full = ScoringCalculator.SelectionRating(1000, 1000, 1000, 1000, 1000, Rules);
         full.Thousandths.ShouldBe(1000);
 
-        SelectionScore bonusOnly = ScoringCalculator.SelectionRating(1000, 0, 0, 0, Rules);
+        SelectionScore bonusOnly = ScoringCalculator.SelectionRating(1000, 0, 0, 0, 0, Rules);
         bonusOnly.Thousandths.ShouldBe(350);
 
-        SelectionScore mixed = ScoringCalculator.SelectionRating(1000, 500, 200, 0, Rules);
-        mixed.Thousandths.ShouldBe(350 + 150 + 50);
+        SelectionScore mixed = ScoringCalculator.SelectionRating(1000, 500, 200, 400, 0, Rules);
+
+        // 35% bonus + 30% performance + 20% form + 5% chaos: 350 + 150 + 40 + 20 = 560.
+        mixed.Thousandths.ShouldBe(350 + 150 + 40 + 20);
     }
 
     [Fact]

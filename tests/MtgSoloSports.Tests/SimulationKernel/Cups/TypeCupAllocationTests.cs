@@ -18,10 +18,11 @@ public sealed class TypeCupAllocationTests
         int bonus = 0,
         int performance = 0,
         int form = 0,
+        int chaos = 0,
         int prestige = 0)
     {
         return new TypeCupAllocation.CandidateRaw(
-            id, name, types, capped, bonus, performance, form, prestige);
+            id, name, types, capped, bonus, performance, form, chaos, prestige);
     }
 
     [Fact]
@@ -230,10 +231,12 @@ public sealed class TypeCupAllocationTests
                 member.BonusNormThousandths,
                 member.PerformanceNormThousandths,
                 member.FormNormThousandths,
+                member.ChaosNormThousandths,
                 member.PrestigeNormThousandths,
                 rules.CupBonusWeightPermille,
                 rules.CupPerformanceWeightPermille,
                 rules.CupFormWeightPermille,
+                rules.CupChaosWeightPermille,
                 rules.CupPrestigeWeightPermille).Thousandths;
             member.FinalRatingThousandths.ShouldBe(expected);
             member.TypeRank.ShouldBeGreaterThanOrEqualTo(1);

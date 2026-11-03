@@ -49,15 +49,20 @@ public sealed class ColorCupSelectionApiTests
                     member.BonusNormThousandths.ShouldBeInRange(0, 1000);
                     member.PerformanceNormThousandths.ShouldBeInRange(0, 1000);
                     member.FormNormThousandths.ShouldBeInRange(0, 1000);
+                    member.ChaosNormThousandths.ShouldBeInRange(0, 1000);
                     member.PrestigeNormThousandths.ShouldBeInRange(0, 1000);
+                    member.ChaosRaw.ShouldBe(0);
+                    member.ChaosNormThousandths.ShouldBe(1000);
                     int expected = SelectionScore.Combine(
                         member.BonusNormThousandths,
                         member.PerformanceNormThousandths,
                         member.FormNormThousandths,
+                        member.ChaosNormThousandths,
                         member.PrestigeNormThousandths,
                         response.CupBonusWeightPermille,
                         response.CupPerformanceWeightPermille,
                         response.CupFormWeightPermille,
+                        response.CupChaosWeightPermille,
                         response.CupPrestigeWeightPermille).Thousandths;
                     member.FinalRatingThousandths.ShouldBe(expected);
                 }
@@ -195,8 +200,7 @@ public sealed class ColorCupSelectionApiTests
             report.SourceSeasonNumber.ShouldBe(1);
             report.HasFullRanking.ShouldBeTrue();
             report.TeamSize.ShouldBe(4);
-            (report.BonusWeightPermille + report.PerformanceWeightPermille
-                + report.FormWeightPermille + report.PrestigeWeightPermille).ShouldBe(1000);
+            (report.BonusWeightPermille + report.PerformanceWeightPermille + report.FormWeightPermille + report.ChaosWeightPermille + report.PrestigeWeightPermille).ShouldBe(1000);
             report.Teams.Count.ShouldBe(8);
             foreach (GetColorCupSelectionReportResponse.Team team in report.Teams)
             {
@@ -215,15 +219,18 @@ public sealed class ColorCupSelectionApiTests
                 foreach (GetColorCupSelectionReportResponse.Candidate candidate in team.Ranking)
                 {
                     candidate.Name.ShouldNotBeNullOrWhiteSpace();
+                    candidate.BonusNormThousandths.ShouldBeInRange(0, 1000);
+                    candidate.PerformanceNormThousandths.ShouldBeInRange(0, 1000);
+                    candidate.FormNormThousandths.ShouldBeInRange(0, 1000);
+                    candidate.ChaosNormThousandths.ShouldBeInRange(0, 1000);
+                    candidate.PrestigeNormThousandths.ShouldBeInRange(0, 1000);
+                    candidate.ChaosRaw.ShouldBe(0);
+                    candidate.ChaosNormThousandths.ShouldBe(1000);
                     candidate.FinalRatingThousandths.ShouldBe(SelectionScore.Combine(
-                        candidate.BonusNormThousandths,
-                        candidate.PerformanceNormThousandths,
-                        candidate.FormNormThousandths,
-                        candidate.PrestigeNormThousandths,
-                        report.BonusWeightPermille,
-                        report.PerformanceWeightPermille,
-                        report.FormWeightPermille,
-                        report.PrestigeWeightPermille).Thousandths);
+                        candidate.BonusNormThousandths, candidate.PerformanceNormThousandths, candidate.FormNormThousandths,
+                        candidate.ChaosNormThousandths, candidate.PrestigeNormThousandths,
+                        report.BonusWeightPermille, report.PerformanceWeightPermille, report.FormWeightPermille,
+                        report.ChaosWeightPermille, report.PrestigeWeightPermille).Thousandths);
                 }
             }
 
@@ -302,6 +309,8 @@ public sealed class ColorCupSelectionApiTests
                 row.BonusNormThousandths.ShouldBe(member.BonusNormThousandths);
                 row.PerformanceNormThousandths.ShouldBe(member.PerformanceNormThousandths);
                 row.FormNormThousandths.ShouldBe(member.FormNormThousandths);
+                row.ChaosNormThousandths.ShouldBe(member.ChaosNormThousandths);
+                row.ChaosRaw.ShouldBe(member.ChaosRaw);
                 row.PrestigeNormThousandths.ShouldBe(member.PrestigeNormThousandths);
             }
         }

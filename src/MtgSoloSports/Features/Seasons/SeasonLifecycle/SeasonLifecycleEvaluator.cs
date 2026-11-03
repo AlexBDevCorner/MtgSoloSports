@@ -549,7 +549,7 @@ public static class SeasonLifecycleEvaluator
     {
         string action = isColor ? SeasonLifecycleActions.SelectColorCup : SeasonLifecycleActions.SelectTypeCup;
         string detail = isColor
-            ? $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step selects the Color Cup field for Season {source.SeasonNumber} (8 colors x 4, 35/30/25/10 formula) before any Cup event."
+            ? $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step selects the Color Cup field for Season {source.SeasonNumber} (8 colors x 4, 35/30/20/5/10 formula) before any Cup event."
             : $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step allocates Type Cup teams for Season {source.SeasonNumber} (four-athlete creature-type teams) before the team event.";
         return new SeasonLifecycleSnapshot(
             saveId,

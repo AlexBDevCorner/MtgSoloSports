@@ -5,8 +5,10 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 
 /// <summary>
 /// Pure deterministic Color Cup team selection (Game Rules §14, Technical Design §16).
-/// Four normalized fixed-point components per sporting color: 35% effective bonus,
-/// 30% completed-season performance, 25% recent form, 10% career prestige.
+/// Five normalized fixed-point components per sporting color: 35% effective bonus,
+/// 30% completed-season performance, 20% recent form, 5% Chaos form (MSS-105),
+/// 10% career prestige. Legacy saves with 35/30/25/10 weights keep chaos weight
+/// zero so the tied chaos component cannot distort ranking.
 /// Recent form uses the athlete's most recent ten league stages with recency
 /// weights 1..10 oldest-to-newest, newest-aligned (fewer than ten stages occupy
 /// the newest weight slots; missing slots contribute zero).
@@ -14,8 +16,8 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 /// component (max == min) normalizes to 1000 for every candidate so it cannot
 /// distort ranking. Final rating uses <see cref="SelectionScore.Combine"/> with
 /// the snapshot permille weights. Ordering is fully deterministic with no RNG:
-/// final desc, bonus norm desc, performance norm desc, form norm desc, prestige
-/// norm desc, name ordinal ascending, athlete id ascending.
+/// final desc, bonus norm desc, performance norm desc, form norm desc, chaos
+/// norm desc, prestige norm desc, name ordinal ascending, athlete id ascending.
 /// All arithmetic is checked integer-only; no double/float, clock or RNG.
 /// </summary>
 public static class ColorCupSelection
@@ -29,6 +31,7 @@ public static class ColorCupSelection
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw);
 
     public sealed record ScoredCandidate(
@@ -38,10 +41,12 @@ public static class ColorCupSelection
         int BonusRawThousandths,
         int PerformanceRawThousandths,
         int FormRaw,
+        int ChaosRaw,
         int PrestigeRaw,
         int BonusNormThousandths,
         int PerformanceNormThousandths,
         int FormNormThousandths,
+        int ChaosNormThousandths,
         int PrestigeNormThousandths,
         int FinalRatingThousandths,
         int SelectionRank);
@@ -198,7 +203,7 @@ public static class ColorCupSelection
         return ranked;
     }
 
-    internal sealed record ColorRange(int BonusMin, int BonusMax, int PerformanceMin, int PerformanceMax, int FormMin, int FormMax, int PrestigeMin, int PrestigeMax);
+    internal sealed record ColorRange(int BonusMin, int BonusMax, int PerformanceMin, int PerformanceMax, int FormMin, int FormMax, int ChaosMin, int ChaosMax, int PrestigeMin, int PrestigeMax);
 
     internal static void ValidateCandidates(IReadOnlyList<CandidateRaw> candidates, RulesV1 rules)
     {
@@ -236,7 +241,7 @@ public static class ColorCupSelection
             throw new InvalidOperationException($"Color Cup selection mixes sporting colors {color} and {candidate.SportingColor}.");
         }
 
-        if (candidate.BonusRawThousandths < 0 || candidate.PerformanceRawThousandths < 0 || candidate.FormRaw < 0 || candidate.PrestigeRaw < 0)
+        if (candidate.BonusRawThousandths < 0 || candidate.PerformanceRawThousandths < 0 || candidate.FormRaw < 0 || candidate.ChaosRaw < 0 || candidate.PrestigeRaw < 0)
         {
             throw new InvalidOperationException($"Color Cup candidate '{candidate.Name}' has corrupt negative selection inputs.");
         }
@@ -261,9 +266,11 @@ public static class ColorCupSelection
         int perfMax = candidates.Max(c => c.PerformanceRawThousandths);
         int formMin = candidates.Min(c => c.FormRaw);
         int formMax = candidates.Max(c => c.FormRaw);
+        int chaosMin = candidates.Min(c => c.ChaosRaw);
+        int chaosMax = candidates.Max(c => c.ChaosRaw);
         int prestigeMin = candidates.Min(c => c.PrestigeRaw);
         int prestigeMax = candidates.Max(c => c.PrestigeRaw);
-        return new ColorRange(bonusMin, bonusMax, perfMin, perfMax, formMin, formMax, prestigeMin, prestigeMax);
+        return new ColorRange(bonusMin, bonusMax, perfMin, perfMax, formMin, formMax, chaosMin, chaosMax, prestigeMin, prestigeMax);
     }
 
     internal static List<ScoredCandidate> ScoreAll(IReadOnlyList<CandidateRaw> candidates, ColorRange range, RulesV1 rules)
@@ -289,15 +296,16 @@ public static class ColorCupSelection
         int bonusNorm = Normalize(candidate.BonusRawThousandths, range.BonusMin, range.BonusMax);
         int perfNorm = Normalize(candidate.PerformanceRawThousandths, range.PerformanceMin, range.PerformanceMax);
         int formNorm = Normalize(candidate.FormRaw, range.FormMin, range.FormMax);
+        int chaosNorm = Normalize(candidate.ChaosRaw, range.ChaosMin, range.ChaosMax);
         int prestigeNorm = Normalize(candidate.PrestigeRaw, range.PrestigeMin, range.PrestigeMax);
         SelectionScore final = SelectionScore.Combine(
-            bonusNorm, perfNorm, formNorm, prestigeNorm,
+            bonusNorm, perfNorm, formNorm, chaosNorm, prestigeNorm,
             rules.CupBonusWeightPermille, rules.CupPerformanceWeightPermille,
-            rules.CupFormWeightPermille, rules.CupPrestigeWeightPermille);
+            rules.CupFormWeightPermille, rules.CupChaosWeightPermille, rules.CupPrestigeWeightPermille);
         return new ScoredCandidate(
             candidate.AthleteId, candidate.Name, candidate.SportingColor,
-            candidate.BonusRawThousandths, candidate.PerformanceRawThousandths, candidate.FormRaw, candidate.PrestigeRaw,
-            bonusNorm, perfNorm, formNorm, prestigeNorm, final.Thousandths, SelectionRank: 0);
+            candidate.BonusRawThousandths, candidate.PerformanceRawThousandths, candidate.FormRaw, candidate.ChaosRaw, candidate.PrestigeRaw,
+            bonusNorm, perfNorm, formNorm, chaosNorm, prestigeNorm, final.Thousandths, SelectionRank: 0);
     }
 
     internal static int CompareScored(ScoredCandidate left, ScoredCandidate right)
@@ -326,6 +334,12 @@ public static class ColorCupSelection
         if (form != 0)
         {
             return form;
+        }
+
+        int chaos = right.ChaosNormThousandths.CompareTo(left.ChaosNormThousandths);
+        if (chaos != 0)
+        {
+            return chaos;
         }
 
         int prestige = right.PrestigeNormThousandths.CompareTo(left.PrestigeNormThousandths);

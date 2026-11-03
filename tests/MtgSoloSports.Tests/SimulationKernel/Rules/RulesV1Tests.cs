@@ -57,7 +57,8 @@ public sealed class RulesV1Tests
 
         rules.CupBonusWeightPermille.ShouldBe(350);
         rules.CupPerformanceWeightPermille.ShouldBe(300);
-        rules.CupFormWeightPermille.ShouldBe(250);
+        rules.CupFormWeightPermille.ShouldBe(200);
+        rules.CupChaosWeightPermille.ShouldBe(50);
         rules.CupPrestigeWeightPermille.ShouldBe(100);
     }
 

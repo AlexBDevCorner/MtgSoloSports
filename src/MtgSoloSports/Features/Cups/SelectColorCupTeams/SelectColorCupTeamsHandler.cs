@@ -11,9 +11,9 @@ namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Selects four Color Cup
 /// representatives per sporting color for one completed odd source season using
-/// the 35/30/25/10 formula (effective bonus, completed-season performance,
+/// the 35/30/20/5/10 formula (effective bonus, completed-season performance,
 /// recent form over the latest ten league stages weighted 1..10 oldest-newest,
-/// career prestige). Candidates are currently active athletes only
+/// Chaos form, career prestige). Candidates are currently active athletes only
 /// (source-season membership with a league) grouped by their permanent
 /// sporting color, so Superleague athletes represent their original color;
 /// common-pool athletes never participate. All normalized/weighted math is
@@ -80,8 +80,9 @@ public sealed partial class SelectColorCupTeamsHandler
                 source.SeasonNumber,
                 inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
+        Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
         (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics) =
-            RankAllColors(inputs, career, rules);
+            RankAllColors(inputs, career, rules, chaos);
         IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, rules);
         AddReport(context, source, BuildReport(rankings, metrics, career, inputs, rules), rules);
         await PersistSelectionsAsync(context, source, all, rules, cancellationToken).ConfigureAwait(false);
@@ -318,12 +319,13 @@ public sealed partial class SelectColorCupTeamsHandler
     internal static IReadOnlyList<ColorCupSelection.ScoredCandidate> ScoreAllColors(
         SelectionInputs inputs,
         IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> careerByAthlete,
-        RulesV1 rules)
+        RulesV1 rules,
+        IReadOnlyDictionary<int, int>? chaosByAthlete = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         ArgumentNullException.ThrowIfNull(careerByAthlete);
         ArgumentNullException.ThrowIfNull(rules);
-        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, _) = RankAllColors(inputs, careerByAthlete, rules);
+        (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, _) = RankAllColors(inputs, careerByAthlete, rules, chaosByAthlete);
         return TakeTeams(rankings, rules);
     }
 

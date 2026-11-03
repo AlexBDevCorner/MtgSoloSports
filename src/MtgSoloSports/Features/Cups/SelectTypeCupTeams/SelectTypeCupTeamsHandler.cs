@@ -18,11 +18,11 @@ namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 /// allocation with backtracking maximizes the number of valid
 /// four-distinct-athlete teams with ordinal tie-breaking; only types that
 /// actually receive four participate and
-/// there is no artificial maximum. Ratings reuse the 35/30/25/10 Cup formula
+/// there is no artificial maximum. Ratings reuse the 35/30/20/5/10 Cup formula
 /// (effective bonus, completed-season performance, recent form over the latest
-/// ten league stages weighted 1..10 oldest-newest, career prestige) normalized
-/// globally across active candidates with fixed-point integer-only math and no
-/// sporting RNG. Persists one row per allocated athlete with raw inputs plus
+/// ten league stages weighted 1..10 oldest-newest, Chaos form, career prestige)
+/// normalized globally across active candidates with fixed-point integer-only
+/// math and no sporting RNG. Persists one row per allocated athlete with raw inputs plus
 /// normalized components plus final rating plus selection/type ranks in one
 /// transaction. Persisting the allocation never sets
 /// <c>SaveAthletes.TypeCupNationality</c>; nationality becomes permanent only
@@ -99,7 +99,8 @@ public sealed partial class SelectTypeCupTeamsHandler
                 source.SeasonNumber,
                 inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
-        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career);
+        Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
+        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career, chaos);
         TypeCupAllocation.AllocationResult allocation = TypeCupAllocation.Allocate(candidates, rules);
         Dictionary<int, string> names = inputs.ActiveAthletes.ToDictionary(e => e.Id, e => e.Name);
         return MapResponse(saveId, source, rules, allocation, names);
@@ -127,7 +128,8 @@ public sealed partial class SelectTypeCupTeamsHandler
                 source.SeasonNumber,
                 inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
-        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career);
+        Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
+        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career, chaos);
         TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
         TypeCupAllocation.AllocationResult allocation = insight.Allocation;
         Dictionary<int, List<MtgSoloSports.SimulationKernel.Cups.ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
@@ -411,10 +413,12 @@ public sealed partial class SelectTypeCupTeamsHandler
                     member.BonusNormThousandths,
                     member.PerformanceNormThousandths,
                     member.FormNormThousandths,
+                    member.ChaosNormThousandths,
                     member.PrestigeNormThousandths,
                     member.BonusRawThousandths,
                     member.PerformanceRawThousandths,
                     member.FormRaw,
+                    member.ChaosRaw,
                     member.PrestigeRaw));
             }
 
@@ -431,6 +435,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
+            rules.CupChaosWeightPermille,
             rules.CupPrestigeWeightPermille,
             teams);
     }

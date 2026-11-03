@@ -34,10 +34,12 @@ public sealed partial class SelectTypeCupTeamsHandler
                     BonusNormThousandths = member.BonusNormThousandths,
                     PerformanceNormThousandths = member.PerformanceNormThousandths,
                     FormNormThousandths = member.FormNormThousandths,
+                    ChaosNormThousandths = member.ChaosNormThousandths,
                     PrestigeNormThousandths = member.PrestigeNormThousandths,
                     BonusRawThousandths = member.BonusRawThousandths,
                     PerformanceRawThousandths = member.PerformanceRawThousandths,
                     FormRaw = member.FormRaw,
+                    ChaosRaw = member.ChaosRaw,
                     PrestigeRaw = member.PrestigeRaw,
                     RulesVersion = rules.Version,
                 });
@@ -105,6 +107,7 @@ public sealed partial class SelectTypeCupTeamsHandler
             rules.CupBonusWeightPermille,
             rules.CupPerformanceWeightPermille,
             rules.CupFormWeightPermille,
+            rules.CupChaosWeightPermille,
             rules.CupPrestigeWeightPermille,
             teams);
     }
@@ -130,10 +133,12 @@ public sealed partial class SelectTypeCupTeamsHandler
                 row.BonusNormThousandths,
                 row.PerformanceNormThousandths,
                 row.FormNormThousandths,
+                row.ChaosNormThousandths,
                 row.PrestigeNormThousandths,
                 row.BonusRawThousandths,
                 row.PerformanceRawThousandths,
                 row.FormRaw,
+                row.ChaosRaw,
                 row.PrestigeRaw));
         }
 

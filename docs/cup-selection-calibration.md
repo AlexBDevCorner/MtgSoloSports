@@ -9,6 +9,8 @@ Fixed inputs under test (unchanged by this task):
 
 - Outer weights: 35% effective bonus / 30% league-adjusted performance /
   25% league-adjusted form / 10% league-aware prestige.
+  (MSS-105 changes new selections to 35/30/20/5/10 with a separate Chaos form component;
+  the 20-season run below remains historical evidence under the old weights and is never rewritten.)
 - Performance/form strength factors: Super/F1/F2/F3 = 1000/800/600/400.
 - Bonus generation tiers: Super/F1/F2/F3 = 2/1/1/2/1/4 (unchanged).
 - Prestige: tiered v3 quarter-point model (unchanged).

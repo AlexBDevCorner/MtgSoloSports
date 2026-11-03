@@ -13,5 +13,6 @@ public sealed record SelectColorCupTeamsResponse(
     int CupBonusWeightPermille,
     int CupPerformanceWeightPermille,
     int CupFormWeightPermille,
+    int CupChaosWeightPermille,
     int CupPrestigeWeightPermille,
     IReadOnlyList<ColorCupTeamResult> Teams);
