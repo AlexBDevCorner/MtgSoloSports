@@ -4,8 +4,8 @@ import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { cupEditionReportUrl, downloadReport } from '../reports/reportApi';
 import { AthleteLink, Link } from '../routing/router';
-import { chaosLivePath, cupEditionPath, cupsPath, historyPath, livePath, type CupKind } from '../routing/routes';
-import { fetchChaosEdition, type ChaosCupEdition } from './chaosCupApi';
+import { cupEditionPath, cupsPath, historyPath, livePath, type CupKind } from '../routing/routes';
+import { ChaosCupEditionPage } from './ChaosCupEditionPage';
 import { fetchColorCupIndividual, fetchColorCupTeam, type ColorCupIndividualResult } from './colorCupApi';
 import { fetchCupEditions, optional, type CupEdition } from './cupHistoryApi';
 import { TypeCupTournamentSection } from './TypeCupTournamentSection';
@@ -83,12 +83,13 @@ async function loadEdition(
  * One Cup edition: champion, team table, every squad, the four group legs and,
  * for the Color Cup, the individual event. Read-only over stored results;
  * rounds are replayed in History and the Cup itself is played on Live.
- * Chaos editions render a compact stub (status plus official champion only);
- * the full stage/group page arrives in MSS-112.
+ * Chaos editions render the compact read-only season page (MSS-112) with the
+ * 1024→…→32 strip, on-demand groups, survival analytics and the official
+ * Final only.
  */
 export function CupEditionPage({ saveId, cup, season }: { saveId: string; cup: CupKind; season: number }) {
   if (cup === 'chaos') {
-    return <ChaosEditionStub saveId={saveId} season={season} />;
+    return <ChaosCupEditionPage saveId={saveId} season={season} />;
   }
   return <ColorTypeEditionPage saveId={saveId} cup={cup} season={season} />;
 }
@@ -511,129 +512,6 @@ function ColorTypeEditionPage({
             <p className="muted">The individual event has not finished yet.</p>
           )}
         </section>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * MSS-111 compact Chaos edition: season/status plus the official champion and
- * podium from the Cups listing, with links to the hub and to scoped Live
- * replay. No 1024-row entrant table and no stage/group breakdown; the full
- * read-only edition page arrives in MSS-112.
- */
-function ChaosEditionStub({ saveId, season }: { saveId: string; season: number }) {
-  const [edition, setEdition] = useState<ChaosCupEdition | null>(null);
-  const [listing, setListing] = useState<CupEdition | null>(null);
-  const [chaosSeasons, setChaosSeasons] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [missing, setMissing] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setEdition(null);
-    setListing(null);
-    setError(null);
-    setMissing(false);
-    Promise.all([fetchChaosEdition(saveId, season, controller.signal), fetchCupEditions(saveId, controller.signal)])
-      .then(([chaos, cups]) => {
-        setEdition(chaos);
-        const chaosEditions = cups.editions.filter((entry) => cupKindOf(entry.cup) === 'chaos');
-        setChaosSeasons(chaosEditions.map((entry) => entry.sourceSeasonNumber).sort((a, b) => a - b));
-        setListing(chaosEditions.find((entry) => entry.sourceSeasonNumber === season) ?? null);
-      })
-      .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          return;
-        }
-        if (failure instanceof ApiError && failure.status === 404) {
-          setMissing(true);
-          return;
-        }
-        setError(apiErrorMessage(failure));
-      });
-    return () => controller.abort();
-  }, [saveId, season]);
-
-  if (missing) {
-    return (
-      <Notice tone="warn" title="This Cup has not been played">
-        <p>
-          There is no Chaos Cup for Season {season} in this save.
-        </p>
-        <p>
-          <Link to={cupsPath(saveId)} className="ghost-button">
-            All Cups
-          </Link>
-        </p>
-      </Notice>
-    );
-  }
-  if (error) {
-    return (
-      <Notice tone="error" title="Chaos Cup unavailable">
-        <p>{error}</p>
-      </Notice>
-    );
-  }
-  if (!edition) {
-    return <Loading label="Loading Chaos Cup…" />;
-  }
-
-  const previous = chaosSeasons.filter((value) => value < season).at(-1) ?? null;
-  const next = chaosSeasons.find((value) => value > season) ?? null;
-  const champion = listing?.individualChampion ?? null;
-  const podium = listing?.podium ?? [];
-
-  return (
-    <div className="dashboard">
-      <header className="cup-banner">
-        <div className="cup-banner-head">
-          <h1 className="cup-banner-title">Chaos Cup · Season {season}</h1>
-          <nav className="cup-nav" aria-label="Cup editions">
-            {previous !== null ? (
-              <Link to={cupEditionPath(saveId, 'chaos', previous)} className="ghost-button">
-                ← Season {previous}
-              </Link>
-            ) : null}
-            <Link to={cupsPath(saveId)} className="ghost-button">
-              All Cups
-            </Link>
-            {next !== null ? (
-              <Link to={cupEditionPath(saveId, 'chaos', next)} className="ghost-button">
-                Season {next} →
-              </Link>
-            ) : null}
-          </nav>
-        </div>
-        <p className="muted">
-          {stateLabel(edition.isComplete ? 'Completed' : 'InProgress')} · {edition.fieldSize} athletes ·{' '}
-          {edition.roundsPlayed}/{edition.totalRounds} rounds · {edition.groupsCompleted}/{edition.totalGroups} groups
-        </p>
-        {champion && edition.isComplete ? (
-          <p>
-            Champion: {champion.name}
-          </p>
-        ) : (
-          <p className="muted">The Final has not finished yet; no official champion.</p>
-        )}
-        <p>
-          <Link to={chaosLivePath(saveId, season, null, null)} className="primary-button">
-            {edition.isComplete ? 'Replay on Live' : 'Continue on Live'}
-          </Link>
-        </p>
-      </header>
-
-      {podium.length > 0 && edition.isComplete ? (
-        <Card eyebrow="Final" title="Official podium — top 3 of 32">
-          <ol className="edition-card-podium">
-            {podium.map((row) => (
-              <li key={row.teamKey}>
-                {row.teamRank}. {row.teamName}
-              </li>
-            ))}
-          </ol>
-        </Card>
       ) : null}
     </div>
   );

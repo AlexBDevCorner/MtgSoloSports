@@ -128,6 +128,44 @@ export interface ChaosCupRound {
   placements: ChaosCupRoundPlacement[];
 }
 
+export interface ChaosSurvivalBucket {
+  key: string;
+  label: string;
+  initial: number;
+  advanced: number;
+  eliminated: number;
+  pending: number;
+  finalists: number;
+}
+
+export interface ChaosSurvivalStage {
+  stageIndex: number;
+  groupCount: number;
+  entrantCount: number;
+  isFinal: boolean;
+  isDrawn: boolean;
+  isComplete: boolean;
+  isProvisional: boolean;
+  initialCount: number;
+  advancedCount: number;
+  eliminatedCount: number;
+  pendingCount: number;
+  finalistCount: number;
+  byColor: ChaosSurvivalBucket[];
+  byDivision: ChaosSurvivalBucket[];
+}
+
+export interface ChaosCupSurvival {
+  saveId: string;
+  sourceSeasonNumber: number;
+  sourceSeasonId: number;
+  rulesVersion: number;
+  chaosFormatVersion: number;
+  fieldSize: number;
+  isComplete: boolean;
+  stages: ChaosSurvivalStage[];
+}
+
 function seasonQuery(season: number | null): string {
   return season !== null ? `?sourceSeason=${season}` : '';
 }
@@ -193,6 +231,18 @@ export function finishChaosGroup(
   return fetchJson<unknown>(
     `/api/saves/${saveId}/cups/chaos/stages/${stageIndex}/groups/${groupNumber}/complete${seasonQuery(season)}`,
     { method: 'POST' },
+  );
+}
+
+/** Color/division survival analytics per stage; 404 while no field is selected. */
+export function fetchChaosSurvival(
+  saveId: string,
+  season: number | null,
+  signal?: AbortSignal,
+): Promise<ChaosCupSurvival> {
+  return fetchJson<ChaosCupSurvival>(
+    `/api/saves/${saveId}/cups/chaos/survival${seasonQuery(season)}`,
+    { signal },
   );
 }
 
