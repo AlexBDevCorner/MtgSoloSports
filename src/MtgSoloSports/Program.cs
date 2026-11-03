@@ -6,6 +6,8 @@ using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Catalog.ImportFromScryfall;
 using MtgSoloSports.Features.Cups.DrawTypeCupQualificationGroups;
 using MtgSoloSports.Features.Cups.FinishTypeCupTeamStage;
+using MtgSoloSports.Features.Cups.GetChaosCupEdition;
+using MtgSoloSports.Features.Cups.GetChaosCupGroup;
 using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.GetColorCupSelection;
 using MtgSoloSports.Features.Cups.GetColorCupSelectionReport;
@@ -166,6 +168,8 @@ builder.Services.AddScoped<SelectChaosCupFieldHandler>();
 builder.Services.AddScoped<RunChaosCupGroupHandler>();
 builder.Services.AddScoped<MtgSoloSports.Features.Cups.AdvanceChaosCupStage.AdvanceChaosCupStageHandler>();
 builder.Services.AddScoped<MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler>();
+builder.Services.AddScoped<GetChaosCupEditionHandler>();
+builder.Services.AddScoped<GetChaosCupGroupHandler>();
 builder.Services.AddScoped<SelectColorCupTeamsHandler>();
 builder.Services.AddScoped<GetColorCupSelectionHandler>();
 builder.Services.AddScoped<GetColorCupSelectionReportHandler>();
@@ -281,6 +285,10 @@ GetRebalanceResultEndpoint.Map(app);
 // MSS-100: Chaos field handler stays DI-registered but its HTTP route is deferred
 // to MSS-106, which owns forward-only postseason activation and season/phase gating.
 // Do not map the Chaos field endpoint here.
+// MSS-107: read-only Chaos browsing (edition, group, round replay). Mutation
+// routes stay unmapped; GETs never simulate or draw.
+GetChaosCupEditionEndpoint.Map(app);
+GetChaosCupGroupEndpoint.Map(app);
 SelectColorCupTeamsEndpoint.Map(app);
 GetColorCupSelectionEndpoint.Map(app);
 GetColorCupSelectionReportEndpoint.Map(app);
