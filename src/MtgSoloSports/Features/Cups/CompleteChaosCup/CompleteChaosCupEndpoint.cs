@@ -3,11 +3,9 @@ using MtgSoloSports.Persistence.Saves;
 namespace MtgSoloSports.Features.Cups.CompleteChaosCup;
 
 /// <summary>
-/// Chaos Cup bulk simulation routes (MSS-103, deferred).
-/// MSS-106 owns forward-only postseason activation and season/phase gating, so
-/// these routes stay unmapped until that lifecycle integration lands. Handlers
-/// remain available via DI for direct calls and regression tests. Do not map
-/// this endpoint in <c>Program.cs</c> before MSS-106.
+/// Chaos Cup bulk simulation routes (MSS-103, MSS-110 Live controls).
+/// Stage-scoped and tournament-wide fast-forwards reuse the canonical one-group
+/// complete action and the persisted stage-draw action.
 /// </summary>
 public static class CompleteChaosCupEndpoint
 {

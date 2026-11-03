@@ -22,7 +22,6 @@ describe('MSS-109 Chaos Cup read-only navigation on Live', () => {
     assert.ok(api.includes('fetchChaosEdition'), 'edition overview without payloads');
     assert.ok(api.includes('fetchChaosGroup'), 'one 32-athlete group on demand');
     assert.ok(api.includes('fetchChaosRound'), 'one persisted round for replay');
-    assert.ok(!/PlayNext|FinishGroup|RunChaos|advance-next|complete-season/i.test(view), 'no simulation endpoints on this view');
     assert.ok(!/new Random|Random\.Shared|Math\.random/.test(view), 'never simulates here');
   });
 
@@ -51,10 +50,37 @@ describe('MSS-109 Chaos Cup read-only navigation on Live', () => {
     assert.ok(view.includes('Retry'), 'failed reads can be retried');
   });
 
-  it('is reachable from a stable Live URL without simulation controls', () => {
+  it('is reachable from a stable Live URL with scoped controls (MSS-110)', () => {
     assert.ok(app.includes('ChaosCupLiveView'), 'App renders the Chaos view on Live');
     assert.ok(app.includes("route.event === 'chaos-cup'"), 'chaos-cup owns its Live branch');
-    assert.ok(!view.includes('Next Round') && !view.includes('Complete Stage') && !view.includes('Run remaining'), 'no simulation buttons');
+    assert.ok(app.includes('onMutated={dashboard.refresh}'), 'mutations refresh the Dashboard status');
+  });
+
+  it('offers scoped game/group/stage/draw/full-Cup controls with guards (MSS-110)', () => {
+    for (const token of [
+      'Play next round',
+      'Finish group',
+      'Finish Stage',
+      'Draw Stage',
+      'Draw Final',
+      'Finish entire Cup',
+      'Yes, finish entire Cup',
+      'Keep stage scope',
+      'Live controls',
+      'Not the next event',
+    ]) {
+      assert.ok(view.includes(token), token);
+    }
+    assert.ok(api.includes('playChaosRound'), 'one game round posts to the scoped rounds route');
+    assert.ok(api.includes('finishChaosGroup'), 'one group posts to the scoped complete route');
+    assert.ok(api.includes('completeChaosStage'), 'current stage posts to the scoped stage route');
+    assert.ok(api.includes('drawChaosStage'), 'explicit draw posts to the scoped draw route');
+    assert.ok(api.includes('completeChaosCup'), 'full Cup posts to the scoped complete route');
+    assert.ok(view.includes('isChaosLivePlayable'), 'Dashboard legal action gates the controls');
+    assert.ok(view.includes('nextDrawableChaosStage'), 'explicit draw unlocks only after stage completion');
+    assert.ok(view.includes("aria-busy={pending ==="), 'concurrency guard is announced');
+    assert.ok(view.includes('confirmEntire'), 'full Cup needs an explicit second click');
+    assert.ok(view.includes('be undone'), 'destructive scope warns before running');
   });
 
   it('never shows a stale group under a new selection and always surfaces group errors', () => {

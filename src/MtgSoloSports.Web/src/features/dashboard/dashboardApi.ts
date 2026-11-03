@@ -56,6 +56,11 @@ export interface SeasonStatus {
   /** MSS-075 correction: authoritative qualifier totals, present for normal
    * pending transitions even after completion when eventProgress is null. */
   qualifierProgress?: QualifierProgress | null;
+  /** MSS-110: Chaos eligibility/selection/completion so the Dashboard and
+   * the scoped Chaos Live controls agree on the legal next event. */
+  chaosEligible?: boolean | null;
+  chaosSelectionResolved?: boolean | null;
+  chaosComplete?: boolean | null;
 }
 
 export interface AdvanceNextEventResult {
@@ -84,6 +89,9 @@ export interface AdvanceNextEventResult {
   nextActionDetail: string;
   eventProgress: EventProgress | null;
   qualifierProgress?: QualifierProgress | null;
+  chaosEligible?: boolean | null;
+  chaosSelectionResolved?: boolean | null;
+  chaosComplete?: boolean | null;
 }
 
 export interface CompleteSeasonProgress {

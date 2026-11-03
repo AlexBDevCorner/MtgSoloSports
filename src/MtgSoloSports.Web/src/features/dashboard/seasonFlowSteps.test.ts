@@ -246,6 +246,46 @@ describe('executed step summary', () => {
   });
 });
 
+describe('chaos flow (MSS-110)', () => {
+  it('inserts Chaos steps between league play and movement and links them to Live', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 2, isSeasonComplete: true }),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        expectedCup: 'TypeCup',
+        legalNextActions: ['RunChaosCup'],
+        chaosEligible: true,
+        chaosSelectionResolved: true,
+        chaosComplete: false,
+      }),
+    );
+    assert.deepEqual(
+      flow.steps.map((step) => step.key),
+      ['league', 'chaosField', 'chaosCup', 'movement', 'qualifier', 'rebalance', 'cupField', 'cupTeam', 'nextSeason'],
+    );
+    assert.equal(flow.next?.kind, 'event');
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : null, 'chaos-cup');
+    assert.equal(flow.next?.label, 'Run Chaos Cup');
+  });
+
+  it('keeps the previous chain when Chaos is ineligible', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 2, isSeasonComplete: true }),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        movementResolved: true,
+        expectedCup: 'TypeCup',
+        legalNextActions: ['RunQualifier'],
+      }),
+    );
+    assert.ok(!flow.steps.some((step) => step.key.startsWith('chaos')), 'no Chaos steps for old saves');
+  });
+});
+
 describe('tiered pyramid flow (MSS-060)', () => {
   function tieredProgress(): SeasonProgress {
     const leagues: SeasonProgress['leagues'] = [];

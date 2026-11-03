@@ -3,11 +3,9 @@ using MtgSoloSports.Persistence.Saves;
 namespace MtgSoloSports.Features.Cups.AdvanceChaosCupStage;
 
 /// <summary>
-/// Chaos Cup next-stage draw routes (MSS-102, deferred).
-/// MSS-106 owns forward-only postseason activation and season/phase gating, so
-/// these routes stay unmapped until that lifecycle integration lands. Handlers
-/// remain available via DI for direct calls and regression tests. Do not map
-/// this endpoint in <c>Program.cs</c> before MSS-106.
+/// Chaos Cup next-stage draw routes (MSS-102, MSS-110 Live controls).
+/// The explicit POST draw runs once every group of the previous stage completes;
+/// the GET re-reads the persisted draw without rerolling.
 /// </summary>
 public static class AdvanceChaosCupStageEndpoint
 {

@@ -264,11 +264,11 @@ export default function App() {
             />
           );
         }
-        // MSS-109: the Chaos Cup is read-only on Live (no simulation
-        // buttons). An explicit `?season=` replays that edition; absent
-        // follows the latest edition from the read API. The URL keeps the
-        // selected stage/group/round so refresh and Back/Forward replay the
-        // same group without resimulating.
+        // MSS-109/110: Chaos Cup group navigation with scoped Live controls.
+        // An explicit `?season=` replays that edition; absent follows the
+        // latest edition from the read API. The URL keeps the selected
+        // stage/group/round so refresh and Back/Forward replay the same group;
+        // scoped POSTs re-read only the affected edition/group/round.
         if (route.event === 'chaos-cup') {
           const chaosSeason = route.eventSeason;
           return (
@@ -282,6 +282,7 @@ export default function App() {
               onSelect={(stage, group, round) => {
                 navigate(chaosLivePath(saveId, chaosSeason, stage, group, round), { replace: true });
               }}
+              onMutated={dashboard.refresh}
             />
           );
         }

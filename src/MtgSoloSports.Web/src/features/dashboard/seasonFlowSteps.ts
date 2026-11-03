@@ -117,6 +117,22 @@ function actionCopy(
         summary: 'Global stage completed for every league.',
         target: 'live',
       };
+    case 'SelectChaosCup':
+      return {
+        label: 'Select Chaos Cup field',
+        explanation:
+          'Selects the 1024-entrant Chaos Cup field (league athletes plus Pool invites) with a balanced 4-per-color first draw — then run the tournament on Live.',
+        summary: 'Chaos Cup field selected.',
+        target: 'live',
+      };
+    case 'RunChaosCup':
+      return {
+        label: 'Run Chaos Cup',
+        explanation:
+          'Six 32-athlete group stages with 16 rounds per group; the top 16 advance and the Final holds official places — play scoped rounds on Live or fast-forward the rest.',
+        summary: 'Chaos Cup finished.',
+        target: 'live',
+      };
     case 'ResolveInauguralMovement':
       return {
         label: 'Form Superleague & reveal',
@@ -220,15 +236,35 @@ function stepDefinitions(progress: SeasonProgress, status: SeasonStatus | null, 
   const colorCup = status.expectedCup === 'TypeCup' ? false : status.expectedCup === 'ColorCup' || season % 2 === 1;
   const cupName = colorCup ? 'Color Cup' : 'Type Cup';
   const nextSeason = status.nextSeasonNumber ?? season + 1;
-  const steps: StepDefinition[] = [
-    league,
-    {
-      key: 'movement',
-      label: inaugural ? 'Form Superleague' : 'Promotion & relegation',
-      actions: ['ResolveInauguralMovement', 'ResolveAutomaticMovement'],
-      done: status.movementResolved,
-    },
-  ];
+  // MSS-110: Chaos runs between completed league tables and promotion
+  // movement for eligible seasons only; older saves keep the previous chain.
+  const chaosActive =
+    status.chaosEligible === true ||
+    (status.legalNextActions[0] ?? null) === 'SelectChaosCup' ||
+    (status.legalNextActions[0] ?? null) === 'RunChaosCup';
+  const steps: StepDefinition[] = [league];
+  if (chaosActive) {
+    steps.push(
+      {
+        key: 'chaosField',
+        label: 'Chaos Cup field',
+        actions: ['SelectChaosCup'],
+        done: status.chaosSelectionResolved === true,
+      },
+      {
+        key: 'chaosCup',
+        label: 'Chaos Cup',
+        actions: ['RunChaosCup'],
+        done: status.chaosComplete === true,
+      },
+    );
+  }
+  steps.push({
+    key: 'movement',
+    label: inaugural ? 'Form Superleague' : 'Promotion & relegation',
+    actions: ['ResolveInauguralMovement', 'ResolveAutomaticMovement'],
+    done: status.movementResolved,
+  });
   if (!inaugural) {
     steps.push({ key: 'qualifier', label: 'Qualifier', actions: ['RunQualifier'], done: status.qualifierResolved });
   }
@@ -322,7 +358,13 @@ function nextFor(
   if (!status || !legalAction) {
     return null;
   }
-  const liveEvent = status.eventProgress ? status.eventProgress.event : null;
+  // MSS-110: Chaos is not a round-cursor `eventProgress` event, but its
+  // scoped rounds live on the chaos-cup Live branch, so the Dashboard links
+  // there while `RunChaosCup` (or field selection) is the legal next action.
+  const liveEvent =
+    legalAction === 'RunChaosCup' || legalAction === 'SelectChaosCup'
+      ? ('chaos-cup' as const)
+      : (status.eventProgress ? status.eventProgress.event : null);
   const qualifierTotal = status.qualifierProgress?.totalEvents ?? status.eventProgress?.totalEvents ?? null;
   const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered, qualifierTotal);
   if (!copy) {

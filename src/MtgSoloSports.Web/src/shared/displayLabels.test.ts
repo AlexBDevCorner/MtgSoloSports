@@ -129,10 +129,12 @@ describe('MSS-072 display labels', () => {
 
   it('maps every lifecycle action to a short human label', () => {
     assert.equal(lifecycleActionLabel('CompleteNextGlobalStage'), 'Complete global stage');
+    assert.equal(lifecycleActionLabel('SelectChaosCup'), 'Select Chaos Cup field');
+    assert.equal(lifecycleActionLabel('RunChaosCup'), 'Run Chaos Cup');
     assert.equal(lifecycleActionLabel('SelectColorCup'), 'Select Color Cup squads');
     assert.equal(lifecycleActionLabel('SelectTypeCup'), 'Select Type Cup squads');
     assert.equal(lifecycleActionLabel('StartNextSeason'), 'Start next season');
-    assert.equal(KNOWN_LIFECYCLE_ACTIONS.length, 11);
+    assert.equal(KNOWN_LIFECYCLE_ACTIONS.length, 13);
     for (const action of KNOWN_LIFECYCLE_ACTIONS) {
       assert.ok(isKnownLifecycleAction(action), `known action: ${action}`);
     }
