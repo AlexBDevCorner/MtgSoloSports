@@ -478,3 +478,165 @@ describe('MSS-112 Chaos edition page', () => {
     assert.ok(rows.length < 20, `partial page stays compact, saw ${rows.length} rows`);
   });
 });
+
+describe('MSS-129 Chaos standings reload after cancellation', () => {
+  let groupCallCount = 0;
+  let groupResolvers: Array<(data: Record<string, unknown>) => void> = [];
+
+  function installDeferredGlobals(): void {
+    installGlobals({ edition: completedEdition(), listing: completedListing() });
+    const g = globalThis as unknown as Record<string, unknown>;
+    const baseFetch = g['fetch'] as (input: unknown, init?: RequestInit) => Promise<unknown>;
+    groupCallCount = 0;
+    groupResolvers = [];
+    g['fetch'] = (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/cups/chaos/stages/0/groups/1')) {
+        groupCallCount += 1;
+        const signal = init?.signal as AbortSignal | undefined;
+        if (signal?.aborted) {
+          return Promise.reject(new DOMException('This operation was aborted', 'AbortError'));
+        }
+        return new Promise<unknown>((resolve, reject) => {
+          const onAbort = (): void => {
+            reject(new DOMException('This operation was aborted', 'AbortError'));
+          };
+          signal?.addEventListener('abort', onAbort, { once: true });
+          groupResolvers.push((data: Record<string, unknown>) => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve(okJson(data));
+          });
+        });
+      }
+      return baseFetch(input, init);
+    };
+  }
+
+  function resolveGroupAt(index: number, data: Record<string, unknown>): void {
+    const resolve = groupResolvers[index];
+    assert.ok(resolve, `deferred group request ${index} exists`);
+    resolve(data);
+  }
+
+  function staleGroupPayload(): Record<string, unknown> {
+    const base = stageZeroGroupOne();
+    const standings = (base['standings'] as Array<Record<string, unknown>>).map((row) => ({
+      ...row,
+      name: `StaleAthlete ${String(row['saveAthleteId'])}`,
+    }));
+    return { ...base, standings };
+  }
+
+  it('reopening after cancellation issues a fresh request and exits loading', async () => {
+    installDeferredGlobals();
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(ChaosCupEditionPage, { saveId: SAVE, season: SEASON }));
+    });
+    await flush();
+    assert.ok(clickButtonByText(renderer!, 'Show groups (32)'), 'groups expand first');
+    await flush(4);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'standings open starts a request');
+    await flush(2);
+    assert.equal(groupCallCount, 1, 'first request started');
+    assert.ok(textOf(renderer!).includes('Loading Group 1'), 'loading visible while pending');
+    assert.ok(clickButtonByText(renderer!, 'Hide standings'), 'close before completion cancels safely');
+    await flush(2);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'reopen after cancellation');
+    await flush(2);
+    assert.equal(groupCallCount, 2, 'reopen issues a fresh request, expected 2 vs 1');
+    assert.ok(textOf(renderer!).includes('Loading Group 1'), 'loading visible again after reopen');
+    resolveGroupAt(1, stageZeroGroupOne());
+    await flush(6);
+    const text = textOf(renderer!);
+    assert.ok(!text.includes('Loading Group 1'), 'exits loading when the fresh request resolves');
+    assert.ok(text.includes('top 16 advance'), 'standings render after reopen');
+    assert.ok(text.includes('GroupAthlete'), 'group athletes render');
+    assert.ok(clickButtonByText(renderer!, 'Hide standings'), 'hide after success');
+    await flush(2);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'reopen cached standings');
+    await flush(4);
+    assert.equal(groupCallCount, 2, 'cached success does not refetch');
+    assert.ok(textOf(renderer!).includes('GroupAthlete'), 'cached standings still render');
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('rapid toggles cannot leave a spinner and cancelled requests cannot populate stale standings', async () => {
+    installDeferredGlobals();
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(ChaosCupEditionPage, { saveId: SAVE, season: SEASON }));
+    });
+    await flush();
+    assert.ok(clickButtonByText(renderer!, 'Show groups (32)'), 'groups expand first');
+    await flush(4);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'standings open starts a request');
+    await flush(2);
+    assert.equal(groupCallCount, 1, 'first request started');
+    assert.ok(clickButtonByText(renderer!, 'Hide standings'), 'rapid close');
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'rapid reopen without settling');
+    await flush(2);
+    assert.equal(groupCallCount, 2, 'rapid reopen starts a fresh request');
+    assert.ok(textOf(renderer!).includes('Loading Group 1'), 'stale abort does not clear the newer loading');
+    resolveGroupAt(1, stageZeroGroupOne());
+    await flush(6);
+    const text = textOf(renderer!);
+    assert.ok(!text.includes('Loading Group 1'), 'no permanent spinner after rapid toggles');
+    assert.ok(text.includes('GroupAthlete'), 'newest request populates standings');
+    assert.ok(!text.includes('StaleAthlete'), 'cancelled request does not populate stale standings');
+    resolveGroupAt(0, staleGroupPayload());
+    await flush(4);
+    const afterStale = textOf(renderer!);
+    assert.ok(afterStale.includes('GroupAthlete'), 'cancelled stale resolve keeps newest standings');
+    assert.ok(!afterStale.includes('StaleAthlete'), 'stale payload never replaces the newer state');
+    assert.ok(!afterStale.includes('Loading Group 1'), 'stale resolve does not restart loading');
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('preserves error rendering and retry without refetch loops', async () => {
+    installGlobals({ edition: completedEdition(), listing: completedListing() });
+    const g = globalThis as unknown as Record<string, unknown>;
+    const baseFetch = g['fetch'] as (input: unknown, init?: RequestInit) => Promise<unknown>;
+    let errorCalls = 0;
+    g['fetch'] = (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/cups/chaos/stages/0/groups/1')) {
+        errorCalls += 1;
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: 'Server Error',
+          json: () => Promise.resolve({ error: 'boom' }),
+          text: () => Promise.resolve('boom'),
+        });
+      }
+      return baseFetch(input, init);
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(ChaosCupEditionPage, { saveId: SAVE, season: SEASON }));
+    });
+    await flush();
+    assert.ok(clickButtonByText(renderer!, 'Show groups (32)'), 'groups expand first');
+    await flush(4);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'standings open reports errors');
+    await flush(6);
+    const text = textOf(renderer!);
+    assert.ok(!text.includes('Loading Group 1'), 'error exits loading');
+    assert.ok(text.includes('boom'), 'visible error rendering still works');
+    assert.ok(!text.includes('GroupAthlete'), 'failed request does not populate standings');
+    assert.equal(errorCalls, 1, 'single error request without refetch loops');
+    assert.ok(clickButtonByText(renderer!, 'Hide standings'), 'hide after error');
+    await flush(2);
+    assert.ok(clickButtonByText(renderer!, 'Show standings'), 'reopen retries after error');
+    await flush(6);
+    assert.equal(errorCalls, 2, 'retry issues a fresh request');
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+});
