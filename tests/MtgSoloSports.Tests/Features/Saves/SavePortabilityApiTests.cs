@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
@@ -203,6 +204,112 @@ public sealed class SavePortabilityApiTests
     }
 
     [Fact]
+    public async Task Restore_MissingLiveFile_ViaApi()
+    {
+        // MSS-127: losing the live database file must not block recovery
+        // over HTTP when a verified checkpoint still exists.
+        var (factory, root) = CreateFactory();
+        try
+        {
+            using HttpClient client = factory.CreateClient();
+            await SeedCatalogAsync(client);
+
+            using HttpResponseMessage created = await client.PostAsJsonAsync(
+                "/api/saves",
+                new { name = "Recoverable", seed = 9001UL, stream = 9002UL });
+            created.StatusCode.ShouldBe(HttpStatusCode.Created);
+            CreatedPayload? createdPayload = await created.Content.ReadFromJsonAsync<CreatedPayload>();
+            createdPayload.ShouldNotBeNull();
+
+            using HttpResponseMessage checkpointed = await client.PostAsJsonAsync(
+                $"/api/saves/{createdPayload.SaveId:D}/checkpoints",
+                new { reason = "pre-loss" });
+            checkpointed.StatusCode.ShouldBe(HttpStatusCode.Created);
+            CheckpointPayload? checkpoint = await checkpointed.Content.ReadFromJsonAsync<CheckpointPayload>();
+            checkpoint.ShouldNotBeNull();
+
+            string livePath = Path.Combine(root, "saves", $"{createdPayload.SaveId:N}.db");
+            SqliteConnection.ClearAllPools();
+            File.Delete(livePath);
+            DeleteCompanions(livePath);
+            SqliteConnection.ClearAllPools();
+
+            using HttpContent empty = new StringContent(string.Empty);
+            using HttpResponseMessage restored = await client.PostAsync(
+                $"/api/saves/{createdPayload.SaveId:D}/checkpoints/{checkpoint.CheckpointId:D}/restore", empty);
+            restored.StatusCode.ShouldBe(HttpStatusCode.OK);
+            RestorePayload? restoredPayload = await restored.Content.ReadFromJsonAsync<RestorePayload>();
+            restoredPayload.ShouldNotBeNull();
+            restoredPayload.SaveId.ShouldBe(createdPayload.SaveId);
+
+            using HttpResponseMessage opened = await client.GetAsync($"/api/saves/{createdPayload.SaveId:D}");
+            opened.StatusCode.ShouldBe(HttpStatusCode.OK);
+            DetailPayload? detail = await opened.Content.ReadFromJsonAsync<DetailPayload>();
+            detail.ShouldNotBeNull();
+            detail.RngState.ShouldBe(createdPayload.RngState);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Restore_TamperedCheckpoint_ViaApi_ReturnsBadRequest_LiveUntouched()
+    {
+        // MSS-127: a corrupt checkpoint is rejected over HTTP without
+        // touching the healthy live save.
+        var (factory, root) = CreateFactory();
+        try
+        {
+            using HttpClient client = factory.CreateClient();
+            await SeedCatalogAsync(client);
+
+            using HttpResponseMessage created = await client.PostAsJsonAsync(
+                "/api/saves",
+                new { name = "GuardedApi", seed = 9003UL, stream = 9004UL });
+            created.StatusCode.ShouldBe(HttpStatusCode.Created);
+            CreatedPayload? createdPayload = await created.Content.ReadFromJsonAsync<CreatedPayload>();
+            createdPayload.ShouldNotBeNull();
+
+            using HttpResponseMessage checkpointed = await client.PostAsJsonAsync(
+                $"/api/saves/{createdPayload.SaveId:D}/checkpoints",
+                new { reason = "pre-tamper" });
+            checkpointed.StatusCode.ShouldBe(HttpStatusCode.Created);
+            CheckpointPayload? checkpoint = await checkpointed.Content.ReadFromJsonAsync<CheckpointPayload>();
+            checkpoint.ShouldNotBeNull();
+
+            string directory = SaveCheckpointFiles.GetSaveCheckpointDirectory(
+                Path.Combine(root, "saves"), createdPayload.SaveId);
+            string databasePath = SaveCheckpointFiles.GetCheckpointDatabasePath(directory, checkpoint.CheckpointId);
+            SqliteConnection.ClearAllPools();
+            byte[] bytes = await File.ReadAllBytesAsync(databasePath);
+            bytes[200] ^= 0xFF;
+            await File.WriteAllBytesAsync(databasePath, bytes);
+            SqliteConnection.ClearAllPools();
+
+            using HttpContent empty = new StringContent(string.Empty);
+            using HttpResponseMessage rejected = await client.PostAsync(
+                $"/api/saves/{createdPayload.SaveId:D}/checkpoints/{checkpoint.CheckpointId:D}/restore", empty);
+            rejected.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+
+            using HttpResponseMessage opened = await client.GetAsync($"/api/saves/{createdPayload.SaveId:D}");
+            opened.StatusCode.ShouldBe(HttpStatusCode.OK);
+            DetailPayload? detail = await opened.Content.ReadFromJsonAsync<DetailPayload>();
+            detail.ShouldNotBeNull();
+            detail.RngState.ShouldBe(createdPayload.RngState);
+        }
+        finally
+        {
+            factory.Dispose();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ExportAndCheckpoint_UnknownSave_ReturnsNotFound()
     {
         var (factory, root) = CreateFactory();
@@ -237,6 +344,18 @@ public sealed class SavePortabilityApiTests
         using HttpResponseMessage exported = await client.GetAsync($"/api/saves/{saveId:D}/export").ConfigureAwait(false);
         exported.StatusCode.ShouldBe(HttpStatusCode.OK);
         return await exported.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+    }
+
+    private static void DeleteCompanions(string saveFilePath)
+    {
+        foreach (string suffix in new[] { "-wal", "-shm", "-journal" })
+        {
+            string companion = saveFilePath + suffix;
+            if (File.Exists(companion))
+            {
+                File.Delete(companion);
+            }
+        }
     }
 
     private static async Task<HttpResponseMessage> PostBundleAsync(HttpClient client, string url, byte[] bundle)
