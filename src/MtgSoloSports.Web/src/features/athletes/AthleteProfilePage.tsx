@@ -12,10 +12,32 @@ import {
   storyEventLabel,
 } from '../../shared/displayLabels';
 import { Link } from '../routing/router';
-import { dashboardPath, livePath, savesPath } from '../routing/routes';
+import { chaosLivePath, cupEditionPath, dashboardPath, livePath, savesPath } from '../routing/routes';
 import { medalBadge } from '../cups/cupFormat';
 import { summarizeCareer } from './athleteCareerSummary';
+import type { AthleteChaosHistory } from './athleteApi';
 import type { AthleteProfileState } from './useAthleteProfile';
+
+/** Attained-stage wording for one Chaos edition (display only, no sporting math). */
+export function chaosAttainedLabel(edition: AthleteChaosHistory): string {
+  if (edition.isFinalist) {
+    return edition.finalPlace !== null && edition.finalPlace !== undefined
+      ? `Finalist · P${edition.finalPlace}`
+      : 'Finalist';
+  }
+  if (edition.isEliminated && edition.eliminatedStageIndex !== null && edition.eliminatedStageIndex !== undefined) {
+    return `Eliminated · Stage ${edition.eliminatedStageIndex + 1}`;
+  }
+  if (!edition.isComplete) {
+    return 'In progress';
+  }
+  return 'Participated';
+}
+
+/** Stage-cell wording for one Chaos trajectory row (display only). */
+export function chaosStageCell(stageIndex: number, isFinal: boolean): string {
+  return isFinal ? 'Final' : `Stage ${stageIndex + 1}`;
+}
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -117,6 +139,7 @@ export function AthleteProfilePage({
 
   const { card, career, seasons, honours, movements, cupSelections } = profile;
   const cupHistory = profile.cupHistory ?? [];
+  const chaosHistory = profile.chaosHistory ?? [];
   // At-a-glance career totals derived from the same persisted payload the
   // detailed panes render (one season summary = one season; one selection
   // = one cap; one history row = one medal chance). No resimulation.
@@ -671,6 +694,107 @@ export function AthleteProfilePage({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </Card>
+
+        <Card
+          eyebrow="Chaos"
+          title={`Chaos Cup — ${chaosHistory.length} edition(s)`}
+          className="span-wide"
+          info={
+            <p>
+              Each Chaos edition is its own 1024-athlete tournament: attained stage, Final place
+              when applicable, medal and the complete group trajectory for persisted replay.
+              Attribution is the frozen edition-time tier or Pool, so a former Pool champion keeps
+              the historic title after promotion. Incomplete editions stay provisional with no
+              fabricated ranks. Newest seasons first.
+            </p>
+          }
+        >
+          {chaosHistory.length === 0 ? (
+            <p className="muted">
+              No Chaos Cup appearances yet. Chaos runs after league play for eligible new seasons,
+              including Pool invitations.
+            </p>
+          ) : (
+            <div className="chaos-history">
+              {chaosHistory.map((edition) => (
+                <section
+                  key={edition.sourceSeasonNumber}
+                  aria-label={`Chaos Cup Season ${edition.sourceSeasonNumber}`}
+                >
+                  <h4 className="chaos-edition-heading">
+                    <Link to={cupEditionPath(saveId, 'chaos', edition.sourceSeasonNumber)}>
+                      Season {edition.sourceSeasonNumber}
+                    </Link>{' '}
+                    <span className="badge badge-wait">{edition.sourceLabel}</span>{' '}
+                    <span className="badge badge-wait">{chaosAttainedLabel(edition)}</span>{' '}
+                    {!edition.isComplete ? <span className="badge badge-wait">In progress</span> : null}{' '}
+                    <span className="card-sub">
+                      {edition.isPoolInvite ? 'Pool invite' : 'League athlete'} · {edition.stagesEntered}{' '}
+                      stage(s)
+                      {edition.finalPlace !== null && edition.finalPlace !== undefined
+                        ? ` · Final P${edition.finalPlace}`
+                        : ''}
+                    </span>{' '}
+                    <span>{medalBadge(edition.medal)}</span>
+                  </h4>
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Stage</th>
+                          <th scope="col" className="numeric">Group</th>
+                          <th scope="col" className="numeric">Place</th>
+                          <th scope="col">Status</th>
+                          <th scope="col">Replay</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {edition.stages.map((stage) => (
+                          <tr key={`${edition.sourceSeasonNumber}-${stage.stageIndex}`}>
+                            <td>{chaosStageCell(stage.stageIndex, stage.isFinal)}</td>
+                            <td className="numeric">
+                              {stage.groupNumber} of {stage.groupCount}
+                            </td>
+                            <td className="numeric">
+                              {stage.groupRank !== null && stage.groupRank !== undefined
+                                ? `P${stage.groupRank}`
+                                : '—'}
+                              {stage.isAdvanced === true ? (
+                                <span className="card-sub"> · advanced</span>
+                              ) : null}
+                              {stage.isAdvanced === false && !stage.isFinal ? (
+                                <span className="card-sub"> · eliminated</span>
+                              ) : null}
+                            </td>
+                            <td>
+                              {stage.isComplete ? (
+                                <span className="badge badge-ready">Official</span>
+                              ) : (
+                                <span className="badge badge-wait">Provisional</span>
+                              )}
+                            </td>
+                            <td>
+                              <Link
+                                to={chaosLivePath(
+                                  saveId,
+                                  edition.sourceSeasonNumber,
+                                  stage.stageIndex,
+                                  stage.groupNumber,
+                                )}
+                              >
+                                Group {stage.groupNumber}
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </Card>

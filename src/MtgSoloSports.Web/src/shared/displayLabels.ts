@@ -136,6 +136,7 @@ const HONOUR_LABELS: Record<string, string> = {
   ColorCupIndividualChampion: 'Color Cup individual champion',
   ColorCupTeamChampion: 'Color Cup team champion',
   TypeCupTeamChampion: 'Type Cup team champion',
+  ChaosCupIndividualChampion: 'Chaos Cup individual champion',
   FeederRunnerUp: 'Feeder runner-up',
   FeederThirdPlace: 'Feeder third place',
   SuperleagueRunnerUp: 'Superleague runner-up',
@@ -146,6 +147,8 @@ const HONOUR_LABELS: Record<string, string> = {
   ColorCupTeamThirdPlace: 'Color Cup team third place',
   TypeCupTeamRunnerUp: 'Type Cup team runner-up',
   TypeCupTeamThirdPlace: 'Type Cup team third place',
+  ChaosCupIndividualRunnerUp: 'Chaos Cup individual runner-up',
+  ChaosCupIndividualThirdPlace: 'Chaos Cup individual third place',
 };
 
 export const KNOWN_HONOUR_KINDS: readonly string[] = Object.freeze(Object.keys(HONOUR_LABELS));
