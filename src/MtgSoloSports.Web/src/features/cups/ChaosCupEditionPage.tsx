@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -582,34 +582,57 @@ function GroupDetailToggle({
   const [group, setGroup] = useState<ChaosCupGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const requestRef = useRef(0);
+  const currentGroup =
+    group !== null &&
+    group.saveId === saveId &&
+    group.sourceSeasonNumber === season &&
+    group.stageIndex === stageIndex &&
+    group.groupNumber === groupNumber
+      ? group
+      : null;
 
   useEffect(() => {
-    if (!open || group || loading) {
+    if (!open) {
       return;
     }
+    if (currentGroup !== null) {
+      return;
+    }
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
     fetchChaosGroup(saveId, stageIndex, groupNumber, season, controller.signal)
       .then((loaded) => {
-        if (!controller.signal.aborted) {
-          setGroup(loaded);
-          setLoading(false);
-        }
-      })
-      .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (requestRef.current !== requestId || controller.signal.aborted) {
           return;
         }
-        if (!controller.signal.aborted) {
-          setError(apiErrorMessage(failure));
-          setLoading(false);
+        setGroup(loaded);
+        setError(null);
+        setLoading(false);
+      })
+      .catch((failure: unknown) => {
+        if (requestRef.current !== requestId) {
+          // Superseded by a newer request: never clear or replace the newer's state.
+          return;
         }
+        if (controller.signal.aborted) {
+          // Cancelled while still the latest (panel closed without reopen):
+          // exit loading so reopening can start a fresh request.
+          setLoading(false);
+          return;
+        }
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          setLoading(false);
+          return;
+        }
+        setError(apiErrorMessage(failure));
+        setLoading(false);
       });
     return () => controller.abort();
-    // Fetch once per group toggle; identity props are stable per toggle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, saveId, stageIndex, groupNumber, season]);
+  }, [open, saveId, stageIndex, groupNumber, season, currentGroup]);
 
   return (
     <span>
@@ -624,7 +647,7 @@ function GroupDetailToggle({
             {' '}
             {error}
           </span>
-        ) : group ? (
+        ) : currentGroup ? (
           <span className="table-wrap">
             <table className="data-table" aria-label={isFinalChaosStage(stageIndex) ? 'Final standings' : `Group ${groupNumber} standings`}>
               <thead>
@@ -636,13 +659,13 @@ function GroupDetailToggle({
                 </tr>
               </thead>
               <tbody>
-                {[...group.standings]
+                {[...currentGroup.standings]
                   .sort((a, b) => a.groupRank - b.groupRank)
                   .map((row) => (
                     <GroupStandingRow
                       key={row.saveAthleteId}
                       saveId={saveId}
-                      group={group}
+                      group={currentGroup}
                       athleteId={row.saveAthleteId}
                       name={row.name}
                       rank={row.groupRank}
@@ -652,13 +675,13 @@ function GroupDetailToggle({
                   ))}
               </tbody>
             </table>
-            {group.cutoff ? (
+            {currentGroup.cutoff ? (
               <span className="muted small">
                 {' '}
-                {chaosCutLabel(group.cutoff.isProvisional)} · P16 {group.cutoff.p16.name} (
-                {formatChaosPoints(group.cutoff.p16.groupScoreThousandths)}) vs P17 {group.cutoff.p17.name} (
-                {formatChaosPoints(group.cutoff.p17.groupScoreThousandths)}) · gap{' '}
-                {formatChaosPoints(group.cutoff.gapThousandths)}.
+                {chaosCutLabel(currentGroup.cutoff.isProvisional)} · P16 {currentGroup.cutoff.p16.name} (
+                {formatChaosPoints(currentGroup.cutoff.p16.groupScoreThousandths)}) vs P17 {currentGroup.cutoff.p17.name} (
+                {formatChaosPoints(currentGroup.cutoff.p17.groupScoreThousandths)}) · gap{' '}
+                {formatChaosPoints(currentGroup.cutoff.gapThousandths)}.
               </span>
             ) : (
               <span className="muted small"> Final ranks every athlete 1..32; no cut.</span>
