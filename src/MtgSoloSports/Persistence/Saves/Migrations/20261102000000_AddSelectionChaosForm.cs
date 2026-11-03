@@ -46,9 +46,13 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // SQLite does not support DROP COLUMN in downgrades used by the
-            // healing test; leave the additive columns (harmless extra storage,
-            // ignored by older models) so downgrade/upgrade still heals.
+            // SQLite DROP COLUMN via raw SQL (EF Core DropColumnOperation is
+            // not supported by the SQLite generator; raw ALTER TABLE works on
+            // modern SQLite and keeps downgrade/upgrade healing intact).
+            migrationBuilder.Sql("ALTER TABLE ColorCupSelections DROP COLUMN ChaosRaw;");
+            migrationBuilder.Sql("ALTER TABLE ColorCupSelections DROP COLUMN ChaosNormThousandths;");
+            migrationBuilder.Sql("ALTER TABLE TypeCupSelections DROP COLUMN ChaosRaw;");
+            migrationBuilder.Sql("ALTER TABLE TypeCupSelections DROP COLUMN ChaosNormThousandths;");
         }
     }
 }
