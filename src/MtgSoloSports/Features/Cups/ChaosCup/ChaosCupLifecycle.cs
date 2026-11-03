@@ -33,6 +33,9 @@ public static class ChaosCupLifecycle
         SaveDbContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        // A previous failed attempt on this context may leave an uncommitted duplicate
+        // tracked; drop it so the persisted row wins for ordinary retries.
+        DetachUncommittedActivation(context);
         ChaosCupActivationEntity? existing = await context.ChaosCupActivations
             .SingleOrDefaultAsync(e => e.Id == ActivationId, cancellationToken)
             .ConfigureAwait(false);
@@ -47,23 +50,30 @@ public static class ChaosCupLifecycle
         // started league play, so it stays eligible; max-persisted-season + 1 would
         // permanently skip it depending on upgrade timing. New saves already seed
         // EffectiveFrom = 1 at creation, so this path only runs for pre-MSS-106 saves.
-        int effectiveFrom;
+        int effectiveFrom = await ComputeLegacyEffectiveFromAsync(context, cancellationToken).ConfigureAwait(false);
+        return await InsertActivationAsync(context, effectiveFrom, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<int> ComputeLegacyEffectiveFromAsync(SaveDbContext context, CancellationToken cancellationToken)
+    {
         SaveMetadataEntity? metadata = await context.SaveMetadata
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == 1, cancellationToken)
             .ConfigureAwait(false);
         if (metadata is not null && await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false))
         {
-            effectiveFrom = checked(metadata.CurrentSeason + 1);
-        }
-        else
-        {
-            int maxSeason = await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false)
-                ? await context.Seasons.MaxAsync(e => e.SeasonNumber, cancellationToken).ConfigureAwait(false)
-                : 0;
-            effectiveFrom = checked(maxSeason + 1);
+            return checked(metadata.CurrentSeason + 1);
         }
 
+        int maxSeason = await context.Seasons.AnyAsync(cancellationToken).ConfigureAwait(false)
+            ? await context.Seasons.MaxAsync(e => e.SeasonNumber, cancellationToken).ConfigureAwait(false)
+            : 0;
+        return checked(maxSeason + 1);
+    }
+
+    private static async Task<ChaosCupActivationEntity> InsertActivationAsync(
+        SaveDbContext context, int effectiveFrom, CancellationToken cancellationToken)
+    {
         var created = new ChaosCupActivationEntity
         {
             Id = ActivationId,
@@ -72,8 +82,53 @@ public static class ChaosCupLifecycle
         };
         ValidateActivation(created);
         context.ChaosCupActivations.Add(created);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return created;
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return created;
+        }
+        catch (DbUpdateException ex) when (IsActivationUniqueViolation(ex))
+        {
+            // Concurrent first-use backfill: the other reader committed Id=1 first.
+            // Detach the loser so it can never overwrite the winner on a later
+            // SaveChanges, then return the persisted (validated) row.
+            context.Entry(created).State = EntityState.Detached;
+            ChaosCupActivationEntity? winner = await context.ChaosCupActivations
+                .SingleOrDefaultAsync(e => e.Id == ActivationId, cancellationToken)
+                .ConfigureAwait(false);
+            if (winner is not null)
+            {
+                ValidateActivation(winner);
+                return winner;
+            }
+
+            throw;
+        }
+    }
+
+    private static void DetachUncommittedActivation(SaveDbContext context)
+    {
+        ChaosCupActivationEntity? staged = context.ChaosCupActivations.Local
+            .FirstOrDefault(e => e.Id == ActivationId);
+        if (staged is not null && context.Entry(staged).State == EntityState.Added)
+        {
+            context.Entry(staged).State = EntityState.Detached;
+        }
+    }
+
+    private static bool IsActivationUniqueViolation(DbUpdateException ex)
+    {
+        for (Exception? current = ex.InnerException; current is not null; current = current.InnerException)
+        {
+            if (current is Microsoft.Data.Sqlite.SqliteException sqlite
+                && (sqlite.SqliteErrorCode == 19
+                    || sqlite.Message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static void ValidateActivation(ChaosCupActivationEntity activation)
