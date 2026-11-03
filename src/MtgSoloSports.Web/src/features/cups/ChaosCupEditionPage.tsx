@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
+import { cupEditionReportUrl, downloadReport } from '../reports/reportApi';
 import { AthleteLink, Link } from '../routing/router';
 import { chaosLivePath, cupEditionPath, cupsPath } from '../routing/routes';
 import {
@@ -41,7 +42,8 @@ import './CupHistory.css';
  * color/division survival counts from the backend, and the official Final
  * P1..P32 with podium. Detailed group standings load on demand per group so
  * the page never builds a 1024-row table; partial editions never show a
- * premature champion. No simulation, no RNG, no exports.
+ * premature champion. No simulation, no RNG. Dossier downloads (MSS-114) read
+ * the persisted backend report; they never scrape React.
  */
 export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season: number }) {
   const [edition, setEdition] = useState<ChaosCupEdition | null>(null);
@@ -54,6 +56,26 @@ export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season
   const [missing, setMissing] = useState(false);
   const [openStages, setOpenStages] = useState<ReadonlySet<number>>(() => new Set());
   const [openSurvival, setOpenSurvival] = useState<ReadonlySet<number>>(() => new Set());
+  const [downloading, setDownloading] = useState<'json' | 'md' | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownload(format: 'json' | 'md'): Promise<void> {
+    if (downloading !== null) {
+      return;
+    }
+    setDownloading(format);
+    setDownloadError(null);
+    try {
+      await downloadReport(
+        cupEditionReportUrl(saveId, 'chaos', season, format),
+        `cup-chaos-season-${season}-edition.${format}`,
+      );
+    } catch (failure) {
+      setDownloadError(apiErrorMessage(failure));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -176,7 +198,28 @@ export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season
                 Season {next} →
               </Link>
             ) : null}
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('md')}
+            >
+              {downloading === 'md' ? 'Preparing…' : 'Report .md'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={downloading !== null}
+              onClick={() => void handleDownload('json')}
+            >
+              {downloading === 'json' ? 'Preparing…' : 'Report .json'}
+            </button>
           </nav>
+          {downloadError ? (
+            <p className="muted" role="alert">
+              Download failed: {downloadError}
+            </p>
+          ) : null}
         </div>
         <p className="muted">
           {stateLabel(edition.state)} · {edition.fieldSize} athletes · {edition.roundsPlayed}/{edition.totalRounds}{' '}

@@ -15,7 +15,7 @@ export function standingsReportUrl(
   return `/api/saves/${saveId}/leagues/${leagueId}/seasons/${seasonNumber}/report?format=${format}`;
 }
 
-export type CupReportKind = 'color' | 'type';
+export type CupReportKind = 'color' | 'type' | 'chaos';
 
 export function cupEditionReportUrl(
   saveId: string,
