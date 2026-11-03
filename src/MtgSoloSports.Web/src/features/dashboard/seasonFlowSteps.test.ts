@@ -270,6 +270,30 @@ describe('chaos flow (MSS-110)', () => {
     assert.equal(flow.next?.label, 'Run Chaos Cup');
   });
 
+  it('keeps field selection as a direct Dashboard action, not a Live round page', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 2, isSeasonComplete: true }),
+      status({
+        sourceSeasonNumber: 2,
+        nextSeasonNumber: 3,
+        isCurrentSeasonComplete: true,
+        expectedCup: 'TypeCup',
+        legalNextActions: ['SelectChaosCup'],
+        chaosEligible: true,
+        chaosSelectionResolved: false,
+        chaosComplete: false,
+      }),
+    );
+    assert.equal(flow.next?.kind, 'event');
+    assert.equal(flow.next?.kind === 'event' ? flow.next.action : null, 'SelectChaosCup');
+    // No edition exists before selection, so Live could only render
+    // "unavailable": keep the Dashboard button direct instead of linking out.
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveEvent : null, null);
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveSelection : null, null);
+    assert.equal(flow.next?.kind === 'event' ? flow.next.liveTransition : null, null);
+    assert.equal(flow.next?.label, 'Select Chaos Cup field');
+  });
+
   it('keeps the previous chain when Chaos is ineligible', () => {
     const flow = seasonFlow(
       progress({ seasonNumber: 2, isSeasonComplete: true }),

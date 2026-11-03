@@ -358,11 +358,12 @@ function nextFor(
   if (!status || !legalAction) {
     return null;
   }
-  // MSS-110: Chaos is not a round-cursor `eventProgress` event, but its
-  // scoped rounds live on the chaos-cup Live branch, so the Dashboard links
-  // there while `RunChaosCup` (or field selection) is the legal next action.
+  // MSS-110: Chaos rounds live on the chaos-cup Live branch while
+  // `RunChaosCup` is the legal next action. `SelectChaosCup` stays a direct
+  // Dashboard action: no edition exists before selection, so the chaos-cup
+  // Live page could only render "unavailable".
   const liveEvent =
-    legalAction === 'RunChaosCup' || legalAction === 'SelectChaosCup'
+    legalAction === 'RunChaosCup'
       ? ('chaos-cup' as const)
       : (status.eventProgress ? status.eventProgress.event : null);
   const qualifierTotal = status.qualifierProgress?.totalEvents ?? status.eventProgress?.totalEvents ?? null;
