@@ -135,9 +135,12 @@ public sealed class SeasonLifecycleTests
         StartNextSeasonHandler starter = new(store);
         GetSeasonStatusResponse completed = await status.HandleAsync(saveId).ConfigureAwait(false);
         completed.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonComplete));
-        completed.LegalNextActions.ShouldBe([SeasonLifecycleActions.ResolveInauguralMovement]);
+        completed.LegalNextActions.ShouldBe([SeasonLifecycleActions.SelectChaosCup]);
         completed.IsInauguralTransition.ShouldBeTrue();
         completed.ExpectedCup.ShouldBe(CupExtensionPoint.ColorCup);
+        completed.ChaosEligible.ShouldBeTrue();
+        completed.ChaosSelectionResolved.ShouldBeFalse();
+        completed.ChaosComplete.ShouldBeFalse();
         completed.PersistedPhase.ShouldBe(completed.ComputedPhase);
         await Should.ThrowAsync<StartNextSeasonConflictException>(() => starter.HandleAsync(saveId)).ConfigureAwait(false);
     }
@@ -147,6 +150,20 @@ public sealed class SeasonLifecycleTests
         GetSeasonStatusHandler status = new(store);
         StartNextSeasonHandler starter = new(store);
         AdvanceToNextEventHandler advance = new(store);
+
+        AdvanceToNextEventResponse selectChaos = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selectChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectChaosCup);
+
+        GetSeasonStatusResponse afterSelect = await status.HandleAsync(saveId).ConfigureAwait(false);
+        afterSelect.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.ChaosSelectionResolved));
+        afterSelect.LegalNextActions.ShouldBe([SeasonLifecycleActions.RunChaosCup]);
+
+        AdvanceToNextEventResponse runChaos = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        runChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunChaosCup);
+
+        GetSeasonStatusResponse afterChaos = await status.HandleAsync(saveId).ConfigureAwait(false);
+        afterChaos.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.ChaosComplete));
+        afterChaos.LegalNextActions.ShouldBe([SeasonLifecycleActions.ResolveInauguralMovement]);
 
         AdvanceToNextEventResponse inaugural = await advance.HandleAsync(saveId).ConfigureAwait(false);
         inaugural.ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveInauguralMovement);
@@ -226,6 +243,12 @@ public sealed class SeasonLifecycleTests
         GetSeasonStatusResponse seasonComplete = await status.HandleAsync(saveId).ConfigureAwait(false);
         seasonComplete.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonComplete));
 
+        AdvanceToNextEventResponse selectChaos = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selectChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectChaosCup);
+
+        AdvanceToNextEventResponse runChaos = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        runChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunChaosCup);
+
         AdvanceToNextEventResponse inaugural = await advance.HandleAsync(saveId).ConfigureAwait(false);
         inaugural.ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveInauguralMovement);
         await AssertInauguralInspectableAsync(store, saveId, inaugural).ConfigureAwait(false);
@@ -263,8 +286,14 @@ public sealed class SeasonLifecycleTests
 
         GetSeasonStatusResponse seasonTwoComplete = await status.HandleAsync(saveId).ConfigureAwait(false);
         seasonTwoComplete.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonComplete));
-        seasonTwoComplete.LegalNextActions.ShouldBe([SeasonLifecycleActions.ResolveAutomaticMovement]);
+        seasonTwoComplete.LegalNextActions.ShouldBe([SeasonLifecycleActions.SelectChaosCup]);
         seasonTwoComplete.ExpectedCup.ShouldBe(CupExtensionPoint.TypeCup);
+
+        AdvanceToNextEventResponse selectChaos2 = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        selectChaos2.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectChaosCup);
+
+        AdvanceToNextEventResponse runChaos2 = await advance.HandleAsync(saveId).ConfigureAwait(false);
+        runChaos2.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunChaosCup);
 
         AdvanceToNextEventResponse automatic = await advance.HandleAsync(saveId).ConfigureAwait(false);
         automatic.ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveAutomaticMovement);

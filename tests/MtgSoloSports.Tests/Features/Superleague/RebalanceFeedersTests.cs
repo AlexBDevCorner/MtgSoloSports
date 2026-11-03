@@ -62,6 +62,7 @@ public sealed class RebalanceFeedersTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);
@@ -109,6 +110,7 @@ public sealed class RebalanceFeedersTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);
@@ -168,6 +170,7 @@ public sealed class RebalanceFeedersTests
         // MSS-122: shared Season 1 template fork plus inaugural (same canonical seed);
         // both rebalance runs still execute independently from bit-identical starting state.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-det-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId);
         var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(store, saveId, "mtgsolosports-rebalance-det-");
         try
@@ -817,6 +820,7 @@ public sealed class RebalanceFeedersTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-rebalance-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);

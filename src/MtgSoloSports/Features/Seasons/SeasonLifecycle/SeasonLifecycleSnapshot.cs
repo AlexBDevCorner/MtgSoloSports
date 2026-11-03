@@ -30,4 +30,7 @@ public sealed record SeasonLifecycleSnapshot(
     IReadOnlyList<string> LegalNextActions,
     string NextActionDetail,
     PostseasonEvents.SeasonEventProgress? EventProgress = null,
-    PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null);
+    PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null,
+    bool ChaosEligible = false,
+    bool ChaosSelectionResolved = false,
+    bool ChaosComplete = false);

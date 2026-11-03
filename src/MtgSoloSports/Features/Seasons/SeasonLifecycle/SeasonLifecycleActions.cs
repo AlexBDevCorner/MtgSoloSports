@@ -8,6 +8,8 @@ namespace MtgSoloSports.Features.Seasons.SeasonLifecycle;
 public static class SeasonLifecycleActions
 {
     public const string CompleteNextGlobalStage = "CompleteNextGlobalStage";
+    public const string SelectChaosCup = "SelectChaosCup";
+    public const string RunChaosCup = "RunChaosCup";
     public const string ResolveInauguralMovement = "ResolveInauguralMovement";
     public const string ResolveAutomaticMovement = "ResolveAutomaticMovement";
     public const string RunQualifier = "RunQualifier";

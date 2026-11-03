@@ -22,7 +22,8 @@ namespace MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 /// lifecycle event so users progress without knowing internal command ordering.
 /// The orchestration slice calls focused feature operations and is behaviorally
 /// equivalent to executing the same underlying operation directly with the
-/// identical RNG and mathematics sequence. Order after Stage 32 is movement,
+/// identical RNG and mathematics sequence. Order after Stage 32 is Chaos Cup
+/// field plus tournament Final for eligible seasons, then movement,
 /// qualifier (normal seasons only), rebalancing, Cup selection, Cup individual
 /// (Color only), Cup team, then next-season start; each step exposes its
 /// inspectable event boundary and illegal transitions are rejected rather than
@@ -111,7 +112,10 @@ public sealed class AdvanceToNextEventHandler
             after.LegalNextActions,
             after.NextActionDetail,
             after.EventProgress,
-            after.QualifierProgress);
+            after.QualifierProgress,
+            after.ChaosEligible,
+            after.ChaosSelectionResolved,
+            after.ChaosComplete);
     }
 
     internal async Task<string> ResolveNextActionAsync(Guid saveId, CancellationToken cancellationToken)
@@ -135,8 +139,14 @@ public sealed class AdvanceToNextEventHandler
         bool legal = action switch
         {
             SeasonLifecycleActions.CompleteNextGlobalStage => !status.IsCurrentSeasonComplete,
-            SeasonLifecycleActions.ResolveInauguralMovement => status is { IsCurrentSeasonComplete: true, IsInauguralTransition: true, MovementResolved: false },
-            SeasonLifecycleActions.ResolveAutomaticMovement => status is { IsCurrentSeasonComplete: true, IsInauguralTransition: false, MovementResolved: false },
+            SeasonLifecycleActions.SelectChaosCup => status is { IsCurrentSeasonComplete: true, MovementResolved: false }
+                && status.ChaosEligible && !status.ChaosSelectionResolved,
+            SeasonLifecycleActions.RunChaosCup => status is { IsCurrentSeasonComplete: true, MovementResolved: false }
+                && status.ChaosEligible && status.ChaosSelectionResolved && !status.ChaosComplete,
+            SeasonLifecycleActions.ResolveInauguralMovement => status is { IsCurrentSeasonComplete: true, IsInauguralTransition: true, MovementResolved: false }
+                && (!status.ChaosEligible || status.ChaosComplete),
+            SeasonLifecycleActions.ResolveAutomaticMovement => status is { IsCurrentSeasonComplete: true, IsInauguralTransition: false, MovementResolved: false }
+                && (!status.ChaosEligible || status.ChaosComplete),
             SeasonLifecycleActions.RunQualifier => status is { MovementResolved: true, QualifierResolved: false, IsInauguralTransition: false },
             SeasonLifecycleActions.RebalanceFeeders => status is { MovementResolved: true, Rebalanced: false }
                 && (status.IsInauguralTransition || status.QualifierResolved),
@@ -167,6 +177,8 @@ public sealed class AdvanceToNextEventHandler
         return action switch
         {
             SeasonLifecycleActions.CompleteNextGlobalStage => await ExecuteCompleteStageAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.SelectChaosCup => await ExecuteSelectChaosAsync(saveId, cancellationToken).ConfigureAwait(false),
+            SeasonLifecycleActions.RunChaosCup => await ExecuteRunChaosAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.ResolveInauguralMovement => await ExecuteInauguralAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.ResolveAutomaticMovement => await ExecuteAutomaticAsync(saveId, cancellationToken).ConfigureAwait(false),
             SeasonLifecycleActions.RunQualifier => await ExecuteQualifierAsync(saveId, cancellationToken).ConfigureAwait(false),
@@ -253,6 +265,36 @@ public sealed class AdvanceToNextEventHandler
             .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
             .ConfigureAwait(false);
         return $"Selected Color Cup field for Season {response.SourceSeasonNumber} ({response.TotalSelected} athletes across {response.Teams.Count} colors).";
+    }
+
+    internal async Task<string> ExecuteSelectChaosAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Chaos Cup selection requires a completed source season.");
+        }
+
+        var handler = new Cups.SelectChaosCupField.SelectChaosCupFieldHandler(_store);
+        var response = await handler
+            .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Selected Chaos Cup field for Season {response.SourceSeasonNumber} ({response.FieldSize} entrants, {response.Groups.Count} balanced groups).";
+    }
+
+    internal async Task<string> ExecuteRunChaosAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        GetSeasonStatusResponse status = await LoadStatusAsync(saveId, cancellationToken).ConfigureAwait(false);
+        if (status.SourceSeasonNumber is null)
+        {
+            throw new AdvanceToNextEventConflictException("Chaos Cup run requires a completed source season.");
+        }
+
+        var handler = new Cups.CompleteChaosCup.CompleteChaosCupHandler(_store);
+        var response = await handler
+            .CompleteCupUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+            .ConfigureAwait(false);
+        return $"Ran Chaos Cup for Season {response.SourceSeasonNumber} ({response.StagesCompleted}/{response.StagesTotal} stages, {response.GroupsCompleted}/{response.TotalGroups} groups to the Final).";
     }
 
     internal async Task<string> ExecuteRunColorCupIndividualAsync(Guid saveId, CancellationToken cancellationToken)

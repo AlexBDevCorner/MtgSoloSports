@@ -792,6 +792,25 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         });
                 });
 
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.ChaosCupActivationEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ChaosFormatVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EffectiveFromSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ChaosCupActivations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ChaosCupActivations_SingleRow", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("MtgSoloSports.Persistence.Saves.RoundEntity", b =>
                 {
                     b.Property<int>("Id")

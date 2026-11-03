@@ -57,6 +57,7 @@ public sealed class AutomaticMovementTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);
@@ -90,6 +91,7 @@ public sealed class AutomaticMovementTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);
@@ -117,6 +119,7 @@ public sealed class AutomaticMovementTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save; local postseason steps unchanged.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-auto-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);

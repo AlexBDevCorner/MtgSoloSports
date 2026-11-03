@@ -24,10 +24,11 @@ namespace MtgSoloSports.Features.Simulation.SimulateSeasons;
 /// Endpoint -&gt; Handler direct call (no mediator). Simulates an explicit
 /// number of seasons with the identical sporting kernel, RNG consumption and
 /// state transitions as manual round-by-round progression plus the canonical
-/// postseason chain (inaugural movement for Season 1; automatic movement,
+/// postseason chain (Chaos Cup field plus tournament Final for eligible seasons;
+/// inaugural movement for Season 1; automatic movement,
 /// qualifier, rebalancing, alternating post-season Cup, then next-season start).
 /// Odd seasons run the Color Cup (selection, individual, team); even seasons run
-/// the Type Cup (selection, team). Cups use the completed source season plus
+/// the Type Cup (selection, team). Chaos and Cups use the completed source season plus
 /// current-season effective bonus values before season aging, in the same order
 /// and RNG sequence as manual <c>AdvanceToNextEvent</c> progression.
 ///
@@ -142,6 +143,8 @@ public sealed class SimulateSeasonsHandler
 
     internal sealed record BulkStepHandlers(
         CompleteStageForAllLeaguesHandler BulkStages,
+        Cups.SelectChaosCupField.SelectChaosCupFieldHandler SelectChaos,
+        Cups.CompleteChaosCup.CompleteChaosCupHandler RunChaos,
         CreateInauguralSuperleagueHandler Inaugural,
         ResolveAutomaticMovementHandler Automatic,
         RunAllQualifiersHandler Qualifier,
@@ -163,6 +166,8 @@ public sealed class SimulateSeasonsHandler
         // postseason steps are covered by the per-iteration note in the loop.
         return new BulkStepHandlers(
             new CompleteStageForAllLeaguesHandler(_store, _autoPublish),
+            new Cups.SelectChaosCupField.SelectChaosCupFieldHandler(_store),
+            new Cups.CompleteChaosCup.CompleteChaosCupHandler(_store),
             new CreateInauguralSuperleagueHandler(_store),
             new ResolveAutomaticMovementHandler(_store),
             new RunAllQualifiersHandler(_store),
@@ -185,8 +190,8 @@ public sealed class SimulateSeasonsHandler
         int stagesCompleted = 0;
         int postseasonSteps = 0;
 
-        // Each season needs at most 32 global stages plus at most 8 postseason
-        // steps (movement, qualifier, rebalance, up to 3 Cup steps, start);
+        // Each season needs at most 32 global stages plus at most 10 postseason
+        // steps (Chaos selection, Chaos run, movement, qualifier, rebalance, up to 3 Cup steps, start);
         // bound total iterations so corrupted state cannot spin forever.
         int maxSteps = checked((seasonsRequested * 45) + 45);
         int steps = 0;
@@ -255,6 +260,16 @@ public sealed class SimulateSeasonsHandler
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
         ArgumentNullException.ThrowIfNull(status);
         ArgumentNullException.ThrowIfNull(handlers);
+        if (await TryExecuteChaosAsync(saveId, action, status, handlers, cancellationToken).ConfigureAwait(false) is (bool, bool) chaos)
+        {
+            return chaos;
+        }
+
+        if (await TryExecutePostseasonAsync(saveId, action, status, handlers, cancellationToken).ConfigureAwait(false) is (bool, bool) post)
+        {
+            return post;
+        }
+
         switch (action)
         {
             case SeasonLifecycleActions.CompleteNextGlobalStage:
@@ -262,48 +277,6 @@ public sealed class SimulateSeasonsHandler
                     .CompleteGlobalStageUnderLockAsync(saveId, cancellationToken)
                     .ConfigureAwait(false);
                 return (false, true);
-            case SeasonLifecycleActions.ResolveInauguralMovement:
-                _ = await handlers.Inaugural.CreateUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.ResolveAutomaticMovement:
-                _ = await handlers.Automatic.ResolveUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.RunQualifier:
-                _ = await handlers.Qualifier.RunRemainingUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.RebalanceFeeders:
-                _ = await handlers.Rebalance.RebalanceUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.SelectColorCup:
-                EnsureSource(status);
-                _ = await handlers.SelectColorCup
-                    .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.RunColorCupIndividual:
-                EnsureSource(status);
-                _ = await handlers.RunColorCupIndividual
-                    .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.RunColorCupTeam:
-                EnsureSource(status);
-                _ = await handlers.RunColorCupTeam
-                    .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.SelectTypeCup:
-                EnsureSource(status);
-                _ = await handlers.SelectTypeCup
-                    .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                return (false, false);
-            case SeasonLifecycleActions.RunTypeCupTeam:
-                EnsureSource(status);
-                _ = await handlers.RunTypeCupTeam
-                    .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                return (false, false);
             case SeasonLifecycleActions.StartNextSeason:
                 _ = await handlers.Starter.StartUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
                 return (true, false);
@@ -319,6 +292,128 @@ public sealed class SimulateSeasonsHandler
         {
             throw new SimulateSeasonsConflictException("Cup step requires a completed source season.");
         }
+    }
+
+    internal static async Task<(bool SeasonDone, bool StageDone)?> TryExecuteChaosAsync(
+        Guid saveId,
+        string action,
+        GetSeasonStatusResponse status,
+        BulkStepHandlers handlers,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(action, SeasonLifecycleActions.SelectChaosCup, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.SelectChaos
+                .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RunChaosCup, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.RunChaos
+                .CompleteCupUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        return null;
+    }
+
+    internal static async Task<(bool SeasonDone, bool StageDone)?> TryExecutePostseasonAsync(
+        Guid saveId,
+        string action,
+        GetSeasonStatusResponse status,
+        BulkStepHandlers handlers,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(action, SeasonLifecycleActions.ResolveInauguralMovement, StringComparison.Ordinal))
+        {
+            _ = await handlers.Inaugural.CreateUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.ResolveAutomaticMovement, StringComparison.Ordinal))
+        {
+            _ = await handlers.Automatic.ResolveUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RunQualifier, StringComparison.Ordinal))
+        {
+            _ = await handlers.Qualifier.RunRemainingUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RebalanceFeeders, StringComparison.Ordinal))
+        {
+            _ = await handlers.Rebalance.RebalanceUnderLockAsync(saveId, cancellationToken).ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (await TryExecuteCupsAsync(saveId, action, status, handlers, cancellationToken).ConfigureAwait(false) is (bool, bool) cups)
+        {
+            return cups;
+        }
+
+        return null;
+    }
+
+    internal static async Task<(bool SeasonDone, bool StageDone)?> TryExecuteCupsAsync(
+        Guid saveId,
+        string action,
+        GetSeasonStatusResponse status,
+        BulkStepHandlers handlers,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(action, SeasonLifecycleActions.SelectColorCup, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.SelectColorCup
+                .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RunColorCupIndividual, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.RunColorCupIndividual
+                .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RunColorCupTeam, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.RunColorCupTeam
+                .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.SelectTypeCup, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.SelectTypeCup
+                .SelectUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        if (string.Equals(action, SeasonLifecycleActions.RunTypeCupTeam, StringComparison.Ordinal))
+        {
+            EnsureSource(status);
+            _ = await handlers.RunTypeCupTeam
+                .RunUnderLockAsync(saveId, status.SourceSeasonNumber, cancellationToken)
+                .ConfigureAwait(false);
+            return (false, false);
+        }
+
+        return null;
     }
 
     internal async Task<SimulateSeasonsResponse> BuildResponseAsync(

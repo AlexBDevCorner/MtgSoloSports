@@ -127,7 +127,41 @@ public sealed partial class SelectChaosCupFieldHandler
         SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         EnsureComplete(source);
         ChaosCupFormat.ValidateFormatAgainstRules(rules);
+        await EnsureEligibleAsync(context, source, cancellationToken).ConfigureAwait(false);
         return new InitialState(rules, source, rngRow.ToState());
+    }
+
+    internal static async Task EnsureEligibleAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ChaosCupActivationEntity activation;
+        try
+        {
+            activation = await ChaosCup.ChaosCupLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Chaos", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SelectChaosCupFieldConflictException(
+                $"Chaos Cup is not enabled for Season {source.SeasonNumber}; save predates Chaos activation.");
+        }
+
+        if (!ChaosCup.ChaosCupLifecycle.IsEligible(activation, source.SeasonNumber))
+        {
+            throw new SelectChaosCupFieldConflictException(
+                $"Chaos Cup starts with Season {activation.EffectiveFromSeasonNumber}; Season {source.SeasonNumber} keeps previous rules.");
+        }
+
+        bool hasSuccessor = await context.Seasons.AnyAsync(
+            e => e.SeasonNumber == source.SeasonNumber + 1, cancellationToken).ConfigureAwait(false);
+        if (hasSuccessor)
+        {
+            throw new SelectChaosCupFieldConflictException(
+                $"Chaos Cup for Season {source.SeasonNumber} must freeze before promotion movement; movement already started.");
+        }
     }
 
     private static async Task<SelectChaosCupFieldResponse?> TryReturnExistingAsync(

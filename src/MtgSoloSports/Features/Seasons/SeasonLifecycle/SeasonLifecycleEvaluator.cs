@@ -10,12 +10,14 @@ namespace MtgSoloSports.Features.Seasons.SeasonLifecycle;
 /// Pure lifecycle computation shared by the season-status read model, the
 /// AdvanceToNextEvent orchestrator and the StartNextSeason gate. Derives the
 /// authoritative phase from persisted seasons, standings, movements, qualifier,
-/// roster and Cup rows; fundamental invariant failures throw and abort, never
-/// silently repair. Season 1 uses the special inaugural chain (no qualifier);
+/// roster, Chaos and Cup rows; fundamental invariant failures throw and abort, never
+/// silently repair. Eligible seasons run Chaos (field plus tournament Final) between
+/// completed league tables and promotion qualifiers; ineligible pre-Chaos seasons
+/// keep the previous chain. Season 1 uses the special inaugural chain (no qualifier);
 /// Season 2+ uses automatic movement plus qualifier. Both converge on
 /// Rebalanced, then run the alternating post-season Cup (odd seasons Color Cup
 /// with selection, individual and team; even seasons Type Cup with selection
-/// and team) before StartNextSeason. Each Cup step is an explicit inspectable
+/// and team) before StartNextSeason. Each Chaos and Cup step is an explicit inspectable
 /// Next Event boundary with deterministic fast/manual equivalence.
 /// </summary>
 public static class SeasonLifecycleEvaluator
@@ -178,7 +180,7 @@ public static class SeasonLifecycleEvaluator
         SeasonEntity? successor = allSeasons.SingleOrDefault(s => s.SeasonNumber == current.SeasonNumber + 1);
         if (successor is null)
         {
-            return EvaluateSeasonCompleteNoSuccessor(context, saveId, current, rules, persistedPhase);
+            return await EvaluateSeasonCompleteNoSuccessorAsync(context, saveId, current, rules, persistedPhase, cancellationToken).ConfigureAwait(false);
         }
 
         if (!successor.HasSuperleague || successor.IsComplete)
@@ -201,6 +203,49 @@ public static class SeasonLifecycleEvaluator
         return await EvaluateNormalPendingAsync(context, saveId, current, successor, rules, persistedPhase, cancellationToken).ConfigureAwait(false);
     }
 
+    internal static async Task<SeasonLifecycleSnapshot> EvaluateSeasonCompleteNoSuccessorAsync(
+        SaveDbContext context,
+        Guid saveId,
+        SeasonEntity current,
+        RulesV1 rules,
+        string persistedPhase,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        bool isInaugural = current.SeasonNumber == 1 && !current.HasSuperleague;
+        string expectedCup = CupExtensionPoint.ExpectedCupForSource(current.SeasonNumber);
+
+        ChaosCupActivationEntity activation;
+        try
+        {
+            activation = await Cups.ChaosCup.ChaosCupLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Chaos", StringComparison.OrdinalIgnoreCase))
+        {
+            return EvaluateSeasonCompleteLegacy(saveId, current, rules, persistedPhase, isInaugural, expectedCup);
+        }
+
+        bool eligible = Cups.ChaosCup.ChaosCupLifecycle.IsEligible(activation, current.SeasonNumber);
+        if (!eligible)
+        {
+            return EvaluateSeasonCompleteLegacy(saveId, current, rules, persistedPhase, isInaugural, expectedCup);
+        }
+
+        Cups.ChaosCup.ChaosCupLifecycle.ChaosState chaos =
+            await Cups.ChaosCup.ChaosCupLifecycle.LoadStateAsync(context, current, rules, cancellationToken).ConfigureAwait(false);
+        if (!chaos.SelectionResolved)
+        {
+            return SnapshotChaosSelectionPending(saveId, current, rules, persistedPhase, expectedCup, isInaugural);
+        }
+
+        if (!chaos.Complete)
+        {
+            return SnapshotChaosRunPending(saveId, current, rules, persistedPhase, expectedCup, isInaugural);
+        }
+
+        return EvaluateSeasonCompleteLegacy(saveId, current, rules, persistedPhase, isInaugural, expectedCup, chaosEligible: true);
+    }
+
     internal static SeasonLifecycleSnapshot EvaluateSeasonCompleteNoSuccessor(
         SaveDbContext context,
         Guid saveId,
@@ -208,16 +253,75 @@ public static class SeasonLifecycleEvaluator
         RulesV1 rules,
         string persistedPhase)
     {
+        // Legacy sync entry kept for existing callers/tests; treats Chaos as ineligible.
         ArgumentNullException.ThrowIfNull(context);
         bool isInaugural = current.SeasonNumber == 1 && !current.HasSuperleague;
+        string expectedCup = CupExtensionPoint.ExpectedCupForSource(current.SeasonNumber);
+        return EvaluateSeasonCompleteLegacy(saveId, current, rules, persistedPhase, isInaugural, expectedCup);
+    }
+
+    internal static SeasonLifecycleSnapshot EvaluateSeasonCompleteLegacy(
+        Guid saveId,
+        SeasonEntity current,
+        RulesV1 rules,
+        string persistedPhase,
+        bool isInaugural,
+        string expectedCup,
+        bool chaosEligible = false,
+        bool chaosSelectionResolved = false,
+        bool chaosComplete = false)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(rules);
         string action = isInaugural
             ? SeasonLifecycleActions.ResolveInauguralMovement
             : SeasonLifecycleActions.ResolveAutomaticMovement;
-        string expectedCup = CupExtensionPoint.ExpectedCupForSource(current.SeasonNumber);
         string detail = isInaugural
             ? $"Season 1 final tables are persisted. Next backend step creates the inaugural Superleague (8 x 4 = 32) for Season 2."
             : $"Season {current.SeasonNumber} final tables are persisted. Next backend step resolves automatic Superleague movement (16 safe + 8 champions + 8 qualifier incumbents provisional) for Season {current.SeasonNumber + 1}.";
-        _ = rules;
+        if (chaosEligible)
+        {
+            detail = $"Chaos Cup for Season {current.SeasonNumber} is complete. " + detail;
+        }
+
+        string computed = chaosEligible
+            ? SavePhaseParser.ToText(SavePhase.ChaosComplete)
+            : SavePhaseParser.ToText(SavePhase.SeasonComplete);
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            current.SeasonNumber,
+            persistedPhase,
+            computed,
+            current.SeasonNumber,
+            current.SeasonNumber + 1,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: false,
+            QualifierResolved: false,
+            Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [action],
+            detail,
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotChaosSelectionPending(
+        Guid saveId,
+        SeasonEntity current,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural)
+    {
         return new SeasonLifecycleSnapshot(
             saveId,
             current.SeasonNumber,
@@ -238,8 +342,46 @@ public static class SeasonLifecycleEvaluator
             CupComplete: false,
             ReadyToStartNextSeason: false,
             expectedCup,
-            [action],
-            detail);
+            [SeasonLifecycleActions.SelectChaosCup],
+            $"Season {current.SeasonNumber} final tables are persisted. Next backend step selects the Chaos Cup field (1024 entrants, 32 balanced groups) before promotion movement.",
+            ChaosEligible: true,
+            ChaosSelectionResolved: false,
+            ChaosComplete: false);
+    }
+
+    internal static SeasonLifecycleSnapshot SnapshotChaosRunPending(
+        Guid saveId,
+        SeasonEntity current,
+        RulesV1 rules,
+        string persistedPhase,
+        string expectedCup,
+        bool isInaugural)
+    {
+        return new SeasonLifecycleSnapshot(
+            saveId,
+            current.SeasonNumber,
+            persistedPhase,
+            SavePhaseParser.ToText(SavePhase.ChaosSelectionResolved),
+            current.SeasonNumber,
+            current.SeasonNumber + 1,
+            isInaugural,
+            rules.StagesPerSeason + 1,
+            IsCurrentSeasonComplete: true,
+            SeasonComplete: true,
+            MovementResolved: false,
+            QualifierResolved: false,
+            Rebalanced: false,
+            CupSelectionResolved: false,
+            CupIndividualResolved: false,
+            CupTeamResolved: false,
+            CupComplete: false,
+            ReadyToStartNextSeason: false,
+            expectedCup,
+            [SeasonLifecycleActions.RunChaosCup],
+            $"Chaos Cup field for Season {current.SeasonNumber} is selected (1024 entrants, first draw persisted). Next backend step runs the tournament to the 32-athlete Final before promotion movement.",
+            ChaosEligible: true,
+            ChaosSelectionResolved: true,
+            ChaosComplete: false);
     }
 
     internal static async Task<SeasonLifecycleSnapshot> EvaluateInauguralPendingAsync(
@@ -251,6 +393,7 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         CancellationToken cancellationToken)
     {
+        bool chaosEligible = await EnsureChaosCompleteForPendingAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         int inaugural = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.InauguralPromotion,
             cancellationToken).ConfigureAwait(false);
@@ -290,14 +433,17 @@ public static class SeasonLifecycleEvaluator
                 ReadyToStartNextSeason: false,
                 expectedCup,
                 [SeasonLifecycleActions.RebalanceFeeders],
-                "Inaugural Superleague (32) is persisted with feeders at 28 each. Next backend step rebalances every feeder to 32 from its color pool.");
+                "Inaugural Superleague (32) is persisted with feeders at 28 each. Next backend step rebalances every feeder to 32 from its color pool.",
+                ChaosEligible: chaosEligible,
+                ChaosSelectionResolved: chaosEligible,
+                ChaosComplete: chaosEligible);
         }
 
         await EnsureRebalancedRosterAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         CupExtensionPoint.CupState cup = await CupExtensionPoint
             .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
             .ConfigureAwait(false);
-        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: true, cup);
+        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: true, cup, chaosEligible);
     }
 
     internal static async Task<SeasonLifecycleSnapshot> EvaluateNormalPendingAsync(
@@ -309,6 +455,7 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         CancellationToken cancellationToken)
     {
+        bool chaosEligible = await EnsureChaosCompleteForPendingAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         await EnsureAutomaticMovementCompleteAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         Qualifiers.QualifierProgress progress = await Qualifiers.QualifierProgressEvaluator
             .LoadAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
@@ -316,23 +463,58 @@ public static class SeasonLifecycleEvaluator
 
         if (!progress.IsComplete)
         {
-            return SnapshotAutomaticResolved(saveId, source, next, rules, persistedPhase, expectedCup);
+            return SnapshotAutomaticResolved(saveId, source, next, rules, persistedPhase, expectedCup, chaosEligible);
         }
 
         int rebalance = await LoadRebalanceCountAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         if (rebalance == 0)
         {
-            return SnapshotQualifierResolved(saveId, source, next, rules, persistedPhase, expectedCup);
+            return SnapshotQualifierResolved(saveId, source, next, rules, persistedPhase, expectedCup, chaosEligible);
         }
 
         await EnsureRebalancedRosterAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         CupExtensionPoint.CupState cup = await CupExtensionPoint
             .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
             .ConfigureAwait(false);
-        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: false, cup);
+        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: false, cup, chaosEligible);
     }
 
     internal sealed record MovementCounts(int Promotions, int Relegations, int Incumbents, int Challengers);
+
+    internal static async Task<bool> EnsureChaosCompleteForPendingAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        ChaosCupActivationEntity activation;
+        try
+        {
+            activation = await Cups.ChaosCup.ChaosCupLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Chaos", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!Cups.ChaosCup.ChaosCupLifecycle.IsEligible(activation, source.SeasonNumber))
+        {
+            return false;
+        }
+
+        Cups.ChaosCup.ChaosCupLifecycle.ChaosState state =
+            await Cups.ChaosCup.ChaosCupLifecycle.LoadStateAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        if (!state.Complete)
+        {
+            throw new InvalidOperationException(
+                $"Season {source.SeasonNumber + 1} exists but Chaos Cup for Season {source.SeasonNumber} is incomplete (selection {state.SelectionResolved}, complete {state.Complete}); Chaos must finish before promotion movement.");
+        }
+
+        return true;
+    }
 
     internal static async Task EnsureAutomaticMovementCompleteAsync(
         SaveDbContext context,
@@ -443,7 +625,8 @@ public static class SeasonLifecycleEvaluator
         SeasonEntity next,
         RulesV1 rules,
         string persistedPhase,
-        string expectedCup)
+        string expectedCup,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -466,7 +649,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RunQualifier],
-            "Automatic movement (16 safe + 8 champions + 8 incumbents provisional) is persisted. Next backend step runs the 32-athlete qualifier (8 winners) for Season " + next.SeasonNumber + ".");
+            "Automatic movement (16 safe + 8 champions + 8 incumbents provisional) is persisted. Next backend step runs the 32-athlete qualifier (8 winners) for Season " + next.SeasonNumber + ".",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotQualifierResolved(
@@ -475,7 +661,8 @@ public static class SeasonLifecycleEvaluator
         SeasonEntity next,
         RulesV1 rules,
         string persistedPhase,
-        string expectedCup)
+        string expectedCup,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -498,7 +685,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RebalanceFeeders],
-            "Qualifier winners (8) are applied to the next Superleague (16 safe + 8 champions + 8 winners). Next backend step rebalances every feeder to 32 from its color pool.");
+            "Qualifier winners (8) are applied to the next Superleague (16 safe + 8 champions + 8 winners). Next backend step rebalances every feeder to 32 from its color pool.",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotPostRebalance(
@@ -509,7 +699,8 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         string expectedCup,
         bool isInaugural,
-        CupExtensionPoint.CupState cup)
+        CupExtensionPoint.CupState cup,
+        bool chaosEligible = false)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(next);
@@ -521,20 +712,20 @@ public static class SeasonLifecycleEvaluator
         bool isColor = string.Equals(expectedCup, CupExtensionPoint.ColorCup, StringComparison.Ordinal);
         if (!cup.SelectionResolved)
         {
-            return SnapshotCupSelectionPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor);
+            return SnapshotCupSelectionPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor, chaosEligible);
         }
 
         if (isColor && !cup.IndividualResolved)
         {
-            return SnapshotColorIndividualPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+            return SnapshotColorIndividualPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, chaosEligible);
         }
 
         if (!cup.TeamResolved)
         {
-            return SnapshotTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor);
+            return SnapshotTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, isColor, chaosEligible);
         }
 
-        return SnapshotCupComplete(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, cup);
+        return SnapshotCupComplete(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, cup, chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotCupSelectionPending(
@@ -545,7 +736,8 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         string expectedCup,
         bool isInaugural,
-        bool isColor)
+        bool isColor,
+        bool chaosEligible = false)
     {
         string action = isColor ? SeasonLifecycleActions.SelectColorCup : SeasonLifecycleActions.SelectTypeCup;
         string detail = isColor
@@ -572,7 +764,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [action],
-            detail);
+            detail,
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotColorIndividualPending(
@@ -582,7 +777,8 @@ public static class SeasonLifecycleEvaluator
         RulesV1 rules,
         string persistedPhase,
         string expectedCup,
-        bool isInaugural)
+        bool isInaugural,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -605,7 +801,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RunColorCupIndividual],
-            $"Color Cup field for Season {source.SeasonNumber} is selected (32 athletes). Next backend step runs the 16-round individual event (Gold/Silver/Bronze plus official title) before the team event.");
+            $"Color Cup field for Season {source.SeasonNumber} is selected (32 athletes). Next backend step runs the 16-round individual event (Gold/Silver/Bronze plus official title) before the team event.",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotTeamPending(
@@ -616,14 +815,15 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         string expectedCup,
         bool isInaugural,
-        bool isColor)
+        bool isColor,
+        bool chaosEligible = false)
     {
         if (isColor)
         {
-            return SnapshotColorTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+            return SnapshotColorTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, chaosEligible);
         }
 
-        return SnapshotTypeTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural);
+        return SnapshotTypeTeamPending(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural, chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotColorTeamPending(
@@ -633,7 +833,8 @@ public static class SeasonLifecycleEvaluator
         RulesV1 rules,
         string persistedPhase,
         string expectedCup,
-        bool isInaugural)
+        bool isInaugural,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -656,7 +857,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RunColorCupTeam],
-            $"Color Cup individual for Season {source.SeasonNumber} is complete and inspectable. Next backend step runs the four 8-round rank groups for the team championship.");
+            $"Color Cup individual for Season {source.SeasonNumber} is complete and inspectable. Next backend step runs the four 8-round rank groups for the team championship.",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotTypeTeamPending(
@@ -666,7 +870,8 @@ public static class SeasonLifecycleEvaluator
         RulesV1 rules,
         string persistedPhase,
         string expectedCup,
-        bool isInaugural)
+        bool isInaugural,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -689,7 +894,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             expectedCup,
             [SeasonLifecycleActions.RunTypeCupTeam],
-            $"Type Cup field for Season {source.SeasonNumber} is allocated. Next backend step runs the four 8-round rank groups for the team championship.");
+            $"Type Cup field for Season {source.SeasonNumber} is allocated. Next backend step runs the four 8-round rank groups for the team championship.",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static SeasonLifecycleSnapshot SnapshotCupComplete(
@@ -700,7 +908,8 @@ public static class SeasonLifecycleEvaluator
         string persistedPhase,
         string expectedCup,
         bool isInaugural,
-        CupExtensionPoint.CupState cup)
+        CupExtensionPoint.CupState cup,
+        bool chaosEligible = false)
     {
         return new SeasonLifecycleSnapshot(
             saveId,
@@ -723,7 +932,10 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: true,
             expectedCup,
             [SeasonLifecycleActions.StartNextSeason],
-            $"Post-season {expectedCup} for Season {source.SeasonNumber} is complete and inspectable (field plus all events). Next backend step finalizes bonus aging and starts Season {next.SeasonNumber}.");
+            $"Post-season {expectedCup} for Season {source.SeasonNumber} is complete and inspectable (field plus all events). Next backend step finalizes bonus aging and starts Season {next.SeasonNumber}.",
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: chaosEligible,
+            ChaosComplete: chaosEligible);
     }
 
     internal static async Task EnsureRebalancedRosterAsync(

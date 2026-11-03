@@ -59,6 +59,9 @@ public sealed class GetSeasonStatusHandler
             snapshot.LegalNextActions,
             snapshot.NextActionDetail,
             snapshot.EventProgress,
-            snapshot.QualifierProgress);
+            snapshot.QualifierProgress,
+            snapshot.ChaosEligible,
+            snapshot.ChaosSelectionResolved,
+            snapshot.ChaosComplete);
     }
 }

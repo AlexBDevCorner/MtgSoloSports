@@ -214,6 +214,7 @@ public sealed class BoundaryQualifierRunner
 
         (SeasonEntity source, SeasonEntity next) = await LoadPendingTransitionAsync(context, cancellationToken).ConfigureAwait(false);
         await EnsureAutomaticMovementResolvedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
+        await EnsureChaosCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         await EnsureQualifierUnresolvedAsync(context, source, next, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
         await EnsureCanonicalOrderAsync(context, source, next, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
         await EnsureNoSuperleagueInProgressAsync(context, source, next, cancellationToken).ConfigureAwait(false);
@@ -874,6 +875,22 @@ public sealed class BoundaryQualifierRunner
         {
             throw new RunFeederQualifierConflictException(
                 $"Feeder qualifier {boundary} color {sportingColor} for Season {source.SeasonNumber} has already been resolved.");
+        }
+    }
+
+    internal static async Task EnsureChaosCompleteAsync(
+        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RunFeederQualifierConflictException(ex.Message);
         }
     }
 

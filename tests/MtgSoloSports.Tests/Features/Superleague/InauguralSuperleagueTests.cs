@@ -54,6 +54,7 @@ public sealed class InauguralSuperleagueTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             (int stageCount, int seasonCount, long lifetimeBonus, ulong rngState) = await CapturePreTransitionAsync(store, saveId);
@@ -107,6 +108,8 @@ public sealed class InauguralSuperleagueTests
         // transitions still execute independently (determinism holds for any seed).
         var (firstStore, firstRoot, firstId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
         var (secondStore, secondRoot, secondId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-inaugural-");
+        await SharedSaveTemplates.DisableChaosAsync(firstStore, firstId);
+        await SharedSaveTemplates.DisableChaosAsync(secondStore, secondId);
         try
         {
             CreateInauguralSuperleagueHandler firstHandler = new(firstStore);

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
@@ -127,6 +128,20 @@ internal static class SharedSaveTemplates
         return SeedSavesRootAsync(savesRoot, "Season1PlusCups", BuildSeason1PlusCupsAsync);
     }
 
+    /// <summary>
+    /// Disables Chaos for one forked save by pushing the activation past any real season.
+    /// Isolated movement/qualifier/rebalance tests use this to keep the previous chain
+    /// when Chaos history is incidental setup; lifecycle tests keep eligible saves.
+    /// </summary>
+    internal static async Task DisableChaosAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        var activation = await context.ChaosCupActivations.SingleAsync(e => e.Id == 1).ConfigureAwait(false);
+        activation.EffectiveFromSeasonNumber = 9999;
+        await context.SaveChangesAsync().ConfigureAwait(false);
+        store.InvalidateMigrationVerified(saveId);
+    }
+
     private static async Task<(SaveStore Store, string Root, Guid SaveId)> ForkAsync(
         string key,
         Func<Task<Template>> build,
@@ -184,6 +199,8 @@ internal static class SharedSaveTemplates
     {
         var (store, root, saveId) = await ForkAsync(
             "Season1Complete", BuildSeason1CompleteAsync, "mtgsolosports-shared-qualpre-").ConfigureAwait(false);
+        await new MtgSoloSports.Features.Cups.SelectChaosCupField.SelectChaosCupFieldHandler(store).HandleAsync(saveId).ConfigureAwait(false);
+        await new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(store).CompleteCupAsync(saveId).ConfigureAwait(false);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, saveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, saveId).ConfigureAwait(false);

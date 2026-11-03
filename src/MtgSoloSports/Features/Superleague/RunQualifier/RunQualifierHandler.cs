@@ -100,6 +100,7 @@ public sealed class RunQualifierHandler
 
         (SeasonEntity source, SeasonEntity next) = await LoadPendingTransitionAsync(context, cancellationToken).ConfigureAwait(false);
         await EnsureAutomaticMovementResolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        await EnsureChaosCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         await EnsureQualifierUnresolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
         List<LeagueEntity> sourceFeeders = await LoadSourceFeedersAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
@@ -1072,6 +1073,22 @@ public sealed class RunQualifierHandler
         {
             throw new RunQualifierConflictException(
                 $"{other} is partly played; finish it before playing the {PostseasonEvents.Title(PostseasonEvents.Qualifier)}.");
+        }
+    }
+
+    internal static async Task EnsureChaosCompleteAsync(
+        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RunQualifierConflictException(ex.Message);
         }
     }
 
