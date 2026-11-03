@@ -244,7 +244,7 @@ export function CupSelectionView({
               <p className="muted small">Rating = {formulaLabel(report)}.</p>
               <p className="muted small">
                 {selection === 'color-cup-selection'
-                  ? 'Each part is measured against the other athletes of the same sporting color. Ties fall to bonus, then season, form, prestige and name.'
+                  ? 'Each part is measured against the other athletes of the same sporting color. Ties fall to bonus, then season, form, chaos, prestige and name.'
                   : 'Each part is measured against every active athlete. A capped athlete can only play for its type; the others go where they rank best, as long as the most full teams take part.'}
               </p>
               <p className="muted small">
@@ -425,6 +425,7 @@ function RankingTable({ saveId, report, team }: { saveId: string; report: Select
             <th scope="col" className="numeric">Bonus</th>
             <th scope="col" className="numeric">Season</th>
             <th scope="col" className="numeric">Form</th>
+            <th scope="col" className="numeric">Chaos</th>
             <th scope="col" className="numeric">Prestige</th>
             <th scope="col">Outcome</th>
           </tr>
@@ -450,8 +451,8 @@ function RankingTable({ saveId, report, team }: { saveId: string; report: Select
         </tbody>
       </table>
       <p className="muted small">
-        Bonus, Season, Form and Prestige run from 0.000 (lowest in the compared field) to 1.000 (highest); hover a value
-        for the measured figure.
+        Bonus, Season, Form, Chaos and Prestige run from 0.000 (lowest in the compared field) to 1.000 (highest);
+        hover a value for the measured figure.
         {report.hasFullRanking && team.candidateCount > team.ranking.length
           ? ` Showing the top ${team.ranking.length} of ${team.candidateCount}.`
           : ''}
