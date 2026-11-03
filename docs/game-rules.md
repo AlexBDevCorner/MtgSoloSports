@@ -322,16 +322,22 @@ Competition uses the same #1/#2/#3/#4 team-group model as the Color Cup team eve
 
 1. Stages 1-32
 2. Final league standings
-3. Automatic Superleague movement
-4. Qualifiers (17 events × 16 rounds: 1 Superleague + 8 F1↔F2 + 8 F2↔F3; 272 rounds total)
-5. Next Superleague roster
-6. Feeder rebalancing/common-pool draws
-7. Color Cup or Type Cup
-8. Season finalization
-9. Bonus aging/decay
-10. Next season
+3. Chaos Cup (eligible seasons only: field plus 32/16/8/4/2/1-group tournament Final with 16 rounds per group)
+4. Automatic Superleague movement (Season 1 inaugural creation has no qualifier)
+5. Qualifiers (17 events × 16 rounds: 1 Superleague + 8 F1↔F2 + 8 F2↔F3; 272 rounds total; Season 1 has none)
+6. Next Superleague roster
+7. Feeder rebalancing/common-pool draws
+8. Color Cup or Type Cup
+9. Season finalization
+10. Bonus aging/decay
+11. Next season
 
-Season 1 includes the special inaugural-Superleague creation.
+Season 1 includes the special inaugural-Superleague creation. Chaos eligibility is
+save-specific: new saves run Chaos from Season 1; saves created before MSS-106
+backfill activation to max persisted season + 1 so current/historic seasons keep
+the previous chain and only later seasons run Chaos. Chaos freezes eligibility
+before movement, uses pre-aging effective bonus (Stage 32 at 80%) and isolated
+group RNG plus versioned save RNG for draws, preserving manual/fast equivalence.
 
 ## 17. History and presentation
 
@@ -368,6 +374,6 @@ color per group; later draws are pure random with no color/tier seeding.
 Eliminated athletes carry only an exit-stage category (32/16/8/4/2-group
 stage); only the 32 Finalists hold official places 1..32, with no fabricated
 global ranks. Runs after the 32 league stages and before promotion qualifiers,
-only for a new season after deployment; odd/even Color/Type Cups keep
-alternating and existing sporting history is unchanged. Draw, simulator,
-lifecycle and frontend are follow-ups.
+only for seasons started after activation (MSS-106 lifecycle integration);
+odd/even Color/Type Cups keep alternating and existing sporting history is
+unchanged. Frontend remains out of scope.

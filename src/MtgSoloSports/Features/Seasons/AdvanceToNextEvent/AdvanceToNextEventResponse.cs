@@ -35,4 +35,7 @@ public sealed record AdvanceToNextEventResponse(
     IReadOnlyList<string> LegalNextActions,
     string NextActionDetail,
     PostseasonEvents.SeasonEventProgress? EventProgress,
-    PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null);
+    PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null,
+    bool ChaosEligible = false,
+    bool ChaosSelectionResolved = false,
+    bool ChaosComplete = false);

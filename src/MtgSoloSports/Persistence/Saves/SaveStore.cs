@@ -210,6 +210,7 @@ public sealed class SaveStore
                 .ConfigureAwait(false);
             if (pending.Count == 0)
             {
+                await EnsureChaosActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
                 MarkMigrationVerified(path, saveId);
                 return;
             }
@@ -232,6 +233,7 @@ public sealed class SaveStore
             string rulesAfter = await ReadRulesJsonByPathAsync(path, cancellationToken).ConfigureAwait(false);
             SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
             _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await EnsureChaosActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
             InvalidateMigrationVerified(saveId);
             MarkMigrationVerified(path, saveId);
         }
@@ -287,6 +289,28 @@ public sealed class SaveStore
     public void InvalidateMigrationVerified(Guid saveId)
     {
         _migrationVerified.TryRemove(saveId, out _);
+    }
+
+    internal async Task EnsureChaosActivationAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        // Backfills the single-row Chaos activation for pre-MSS-106 saves: first source
+        // season at SaveMetadata.CurrentSeason + 1 so current/historic seasons never gain an
+        // injected tournament while a pending not-yet-started successor stays eligible.
+        // New saves already carry EffectiveFrom=1 from creation.
+        // Idempotent; consumes no sporting RNG.
+        using SaveDbContext context = OpenDbContext(saveId);
+        try
+        {
+            _ = await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("ChaosCupActivations", StringComparison.OrdinalIgnoreCase))
+        {
+            // Table predates the Chaos activation migration; the pending-migration path
+            // applies it before this backfill runs again.
+            return;
+        }
+
+        InvalidateMigrationVerified(saveId);
     }
 
     /// <summary>
@@ -433,6 +457,12 @@ public sealed class SaveStore
             RulesJson = preparation.RulesJson,
         });
         context.RngStates.Add(RngStateEntity.FromState(preparation.AdvancedRng));
+        context.ChaosCupActivations.Add(new ChaosCupActivationEntity
+        {
+            Id = 1,
+            EffectiveFromSeasonNumber = InitialSeason,
+            ChaosFormatVersion = SimulationKernel.Cups.ChaosCupFormat.ChaosFormatVersion,
+        });
 
         foreach (CatalogAthlete athlete in preparation.Selection.Selected)
         {

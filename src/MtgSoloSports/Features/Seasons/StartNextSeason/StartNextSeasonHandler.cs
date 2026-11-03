@@ -11,7 +11,8 @@ namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 
 /// <summary>
 /// Endpoint -&gt; Handler direct call (no mediator). Starts the next season only
-/// from a fully valid 32-per-league roster after movement, qualifier,
+/// from a fully valid 32-per-league roster after Chaos (eligible seasons),
+/// movement, qualifier,
 /// rebalancing and the required post-season Cup (odd Color with selection,
 /// individual and team; even Type with selection and team) have resolved in
 /// canonical order. Season 1 uses the special inaugural chain (no qualifier);
@@ -204,50 +205,15 @@ public sealed class StartNextSeasonHandler
         RulesV1 rules,
         CancellationToken cancellationToken)
     {
+        await EnsureChaosCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+
         if (isInaugural)
         {
-            int inaugural = await context.Movements.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.InauguralPromotion,
-                cancellationToken).ConfigureAwait(false);
-            if (inaugural != rules.SuperleagueSize)
-            {
-                throw new StartNextSeasonConflictException(
-                    "The inaugural Superleague must be resolved before the next season can start.");
-            }
+            await EnsureInauguralResolvedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            int promotions = await context.Movements.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticPromotion,
-                cancellationToken).ConfigureAwait(false);
-            int relegations = await context.Movements.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticRelegation,
-                cancellationToken).ConfigureAwait(false);
-            int incumbents = await context.Movements.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.QualifierIncumbent,
-                cancellationToken).ConfigureAwait(false);
-            int challengers = await context.Movements.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.QualifierChallenger,
-                cancellationToken).ConfigureAwait(false);
-            if (promotions != rules.FeederAutoPromotedCount
-                || relegations != rules.SuperleagueRelegatedCount
-                || incumbents != rules.SuperleagueQualifierIncumbentCount
-                || challengers != rules.FeederQualifierCount)
-            {
-                throw new StartNextSeasonConflictException(
-                    "Automatic Superleague movement must be resolved before the next season can start.");
-            }
-
-            int qualifierStandings = await context.QualifierStandings.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-            int qualifierRounds = await context.QualifierRounds.CountAsync(
-                e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-            (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
-            if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
-            {
-                throw new StartNextSeasonConflictException(
-                    "All qualifiers (Superleague plus feeder boundaries) must be resolved before the next season can start.");
-            }
+            await EnsureMovementAndQualifiersResolvedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         }
 
         int rebalance = await context.Movements.CountAsync(
@@ -258,6 +224,68 @@ public sealed class StartNextSeasonHandler
         if (rebalance == 0)
         {
             await EnsureBalancedRosterWithoutRowsAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    internal static async Task EnsureChaosCompleteAsync(
+        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new StartNextSeasonConflictException(ex.Message);
+        }
+    }
+
+    internal static async Task EnsureInauguralResolvedAsync(
+        SaveDbContext context, SeasonEntity source, SeasonEntity next, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        int inaugural = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.InauguralPromotion,
+            cancellationToken).ConfigureAwait(false);
+        if (inaugural != rules.SuperleagueSize)
+        {
+            throw new StartNextSeasonConflictException(
+                "The inaugural Superleague must be resolved before the next season can start.");
+        }
+    }
+
+    internal static async Task EnsureMovementAndQualifiersResolvedAsync(
+        SaveDbContext context, SeasonEntity source, SeasonEntity next, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        int promotions = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticPromotion,
+            cancellationToken).ConfigureAwait(false);
+        int relegations = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticRelegation,
+            cancellationToken).ConfigureAwait(false);
+        int incumbents = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.QualifierIncumbent,
+            cancellationToken).ConfigureAwait(false);
+        int challengers = await context.Movements.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.QualifierChallenger,
+            cancellationToken).ConfigureAwait(false);
+        if (promotions != rules.FeederAutoPromotedCount
+            || relegations != rules.SuperleagueRelegatedCount
+            || incumbents != rules.SuperleagueQualifierIncumbentCount
+            || challengers != rules.FeederQualifierCount)
+        {
+            throw new StartNextSeasonConflictException(
+                "Automatic Superleague movement must be resolved before the next season can start.");
+        }
+
+        int qualifierStandings = await context.QualifierStandings.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
+        int qualifierRounds = await context.QualifierRounds.CountAsync(
+            e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
+        (int expectedStandings, int expectedRounds) = ExpectedQualifierTotals(rules);
+        if (qualifierStandings != expectedStandings || qualifierRounds != expectedRounds)
+        {
+            throw new StartNextSeasonConflictException(
+                "All qualifiers (Superleague plus feeder boundaries) must be resolved before the next season can start.");
         }
     }
 

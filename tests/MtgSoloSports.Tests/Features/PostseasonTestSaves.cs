@@ -44,6 +44,7 @@ internal static class PostseasonTestSaves
         SaveStore.CreationRecord created = await store.CreateAsync("Qual Step", seed, stream, UniverseTestCatalog.Build()).ConfigureAwait(false);
         Guid saveId = created.Detail.SaveId;
         await CompleteSeasonOneAsync(store, saveId).ConfigureAwait(false);
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId).ConfigureAwait(false);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         await FillSeasonTwoFeedersAsync(store, saveId).ConfigureAwait(false);
         await InsertSyntheticSeasonTwoStandingsAsync(store, saveId).ConfigureAwait(false);

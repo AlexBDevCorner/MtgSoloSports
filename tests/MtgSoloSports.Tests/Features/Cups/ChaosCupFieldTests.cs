@@ -172,8 +172,12 @@ public sealed class ChaosCupFieldTests
                 frozen[athleteId].ShouldBe(want, $"frozen bonus for athlete {athleteId} must match edition-time effective bonus");
             }
 
-            // Subsequent season progression (inaugural + feeders + synthetic standings)
+            // Subsequent season progression (Chaos completion, inaugural + feeders + synthetic standings)
             // must not rewrite the frozen edition-time bonus context.
+            // Idempotent reselect before movement must not reroll.
+            SelectChaosCupFieldResponse retryBefore = await handler.HandleAsync(saveId, sourceSeasonNumber: 1);
+            retryBefore.EditionChecksum.ShouldBe(response.EditionChecksum);
+            await new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(store).CompleteCupAsync(saveId);
             await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId);
             await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, saveId);
             await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, saveId);
@@ -184,7 +188,7 @@ public sealed class ChaosCupFieldTests
                 reloaded[athleteId].ShouldBe(want, $"frozen bonus for athlete {athleteId} must survive season progression");
             }
 
-            SelectChaosCupFieldResponse retry = await handler.HandleAsync(saveId, sourceSeasonNumber: 1);
+            SelectChaosCupFieldResponse retry = await handler.GetAsync(saveId, sourceSeasonNumber: 1);
             retry.EditionChecksum.ShouldBe(response.EditionChecksum);
             Dictionary<int, int> afterRetry = await LoadFrozenBonusesAsync(store, saveId, 1);
             foreach ((int athleteId, int want) in frozen)
@@ -201,6 +205,8 @@ public sealed class ChaosCupFieldTests
     private static async Task<(SaveStore Store, string Root, Guid SaveId)> PrepareSeasonTwoAsync(string prefix)
     {
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync(prefix).ConfigureAwait(false);
+        await new SelectChaosCupFieldHandler(store).HandleAsync(saveId).ConfigureAwait(false);
+        await new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(store).CompleteCupAsync(saveId).ConfigureAwait(false);
         await new CreateInauguralSuperleagueHandler(store).HandleAsync(saveId).ConfigureAwait(false);
         await PostseasonTestSaves.FillSeasonTwoFeedersAsync(store, saveId).ConfigureAwait(false);
         await PostseasonTestSaves.InsertSyntheticSeasonTwoStandingsAsync(store, saveId).ConfigureAwait(false);

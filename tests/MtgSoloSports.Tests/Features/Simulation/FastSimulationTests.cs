@@ -96,7 +96,7 @@ public sealed class FastSimulationTests
             GetSeasonStatusResponse after = await status.HandleAsync(saveId);
             after.IsCurrentSeasonComplete.ShouldBeTrue();
             after.ComputedPhase.ShouldBe(SavePhaseParser.ToText(SavePhase.SeasonComplete));
-            after.LegalNextActions.ShouldBe([SeasonLifecycleActions.ResolveInauguralMovement]);
+            after.LegalNextActions.ShouldBe([SeasonLifecycleActions.SelectChaosCup]);
         }
         finally
         {

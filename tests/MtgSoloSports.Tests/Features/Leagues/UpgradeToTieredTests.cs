@@ -30,6 +30,8 @@ public sealed class UpgradeToTieredTests
         try
         {
             Guid saveId = await CreateV1FixtureAsync(store, 4242UL, 5656UL);
+            // V1 legacy save keeps the previous chain (no Chaos) for the tier upgrade boundary.
+            await MtgSoloSports.Tests.Features.SharedSaveTemplates.DisableChaosAsync(store, saveId);
             await CompleteSeasonOneAsync(store, saveId);
             await DriveToCupCompleteAsync(store, saveId);
 

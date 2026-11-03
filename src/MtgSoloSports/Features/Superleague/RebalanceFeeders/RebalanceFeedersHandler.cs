@@ -356,6 +356,15 @@ public sealed class RebalanceFeedersHandler
         RulesV1 rules,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RebalanceFeedersConflictException(ex.Message);
+        }
+
         if (isInaugural)
         {
             int inaugural = await context.Movements.CountAsync(

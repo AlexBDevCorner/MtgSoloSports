@@ -132,9 +132,9 @@ Aggregate bonus per athlete per season rather than persisting every +0.01 contri
 
 The backend owns legal progression. Representative states/transitions:
 
-`SeasonInProgress -> StageCompleted -> NextStage/SeasonCompleted -> SuperleagueMovement -> Qualifier -> Rebalance -> Cup -> SeasonFinalization -> NextSeason`
+`SeasonInProgress -> StageCompleted -> NextStage/SeasonCompleted -> ChaosCup (eligible seasons: SelectChaosCup -> RunChaosCup) -> SuperleagueMovement -> Qualifier -> Rebalance -> Cup -> SeasonFinalization -> NextSeason`
 
-Season 1 has a special inaugural-Superleague transition.
+Season 1 has a special inaugural-Superleague transition. Chaos activation is save-specific (new saves from Season 1; pre-Chaos saves backfill to max season + 1) with format version 1.
 
 Canonical commands:
 

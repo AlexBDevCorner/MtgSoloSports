@@ -213,6 +213,7 @@ public sealed class StoryEventsTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stories-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
 
@@ -272,6 +273,7 @@ public sealed class StoryEventsTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-stories-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
 

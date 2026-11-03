@@ -85,6 +85,7 @@ public sealed class ColorCupSelectionApiTests
     {
         // MSS-067: shared Season 1 template forked into an isolated save.
         var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-cupsel-");
+        await SharedSaveTemplates.DisableChaosAsync(store, saveId);
         try
         {
             CreateInauguralSuperleagueHandler inaugural = new(store);

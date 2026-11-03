@@ -51,6 +51,7 @@ public sealed class RunAllQualifiersHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         RulesV1 rules = await LoadRulesAsync(saveId, cancellationToken).ConfigureAwait(false);
         (int sourceNumber, int nextNumber) = await LoadTransitionNumbersAsync(saveId, cancellationToken).ConfigureAwait(false);
+        await EnsureChaosCompleteAsync(saveId, sourceNumber, rules, cancellationToken).ConfigureAwait(false);
 
         List<string> completed = new();
         List<string> executed = new();
@@ -217,5 +218,26 @@ public sealed class RunAllQualifiersHandler
         return new RunAllQualifiersResponse(
             saveId, sourceNumber, nextNumber, standings, rounds,
             alreadyCompleted, executedNow);
+    }
+
+    internal async Task EnsureChaosCompleteAsync(
+        Guid saveId, int sourceNumber, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        using SaveDbContext context = _store.OpenDbContext(saveId);
+        SeasonEntity? source = await context.Seasons.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.SeasonNumber == sourceNumber, cancellationToken).ConfigureAwait(false);
+        if (source is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new RunFeederQualifierConflictException(ex.Message);
+        }
     }
 }

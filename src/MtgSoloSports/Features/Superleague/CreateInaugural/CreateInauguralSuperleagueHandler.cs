@@ -63,6 +63,7 @@ public sealed class CreateInauguralSuperleagueHandler
         SeasonEntity seasonOne = await LoadSeasonOneAsync(context, cancellationToken).ConfigureAwait(false);
         await EnsureSeasonOneCompleteAsync(seasonOne).ConfigureAwait(false);
         await EnsureSeasonTwoAbsentAsync(context, cancellationToken).ConfigureAwait(false);
+        await EnsureChaosCompleteAsync(context, seasonOne, rules, cancellationToken).ConfigureAwait(false);
 
         List<LeagueEntity> feedersOne = await LoadFeedersOneAsync(context, seasonOne, rules, cancellationToken).ConfigureAwait(false);
         List<SeasonStandingEntity> standings = await LoadStandingsAsync(context, seasonOne, feedersOne, rules, cancellationToken).ConfigureAwait(false);
@@ -236,6 +237,22 @@ public sealed class CreateInauguralSuperleagueHandler
         {
             throw new CreateInauguralSuperleagueConflictException(
                 "The inaugural Superleague has already been created for Season 2.");
+        }
+    }
+
+    internal static async Task EnsureChaosCompleteAsync(
+        SaveDbContext context, SeasonEntity seasonOne, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(seasonOne);
+        ArgumentNullException.ThrowIfNull(rules);
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, seasonOne, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new CreateInauguralSuperleagueConflictException(ex.Message);
         }
     }
 

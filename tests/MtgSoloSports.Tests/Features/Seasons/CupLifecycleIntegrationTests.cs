@@ -90,6 +90,12 @@ public sealed class CupLifecycleIntegrationTests
             AdvanceToNextEventHandler advance = new(store);
             StartNextSeasonHandler starter = new(store);
 
+            // Chaos runs before movement for eligible seasons.
+            AdvanceToNextEventResponse selectChaos = await advance.HandleAsync(saveId);
+            selectChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.SelectChaosCup);
+            AdvanceToNextEventResponse runChaos = await advance.HandleAsync(saveId);
+            runChaos.ExecutedAction.ShouldBe(SeasonLifecycleActions.RunChaosCup);
+
             // Movement + rebalance without Cups.
             AdvanceToNextEventResponse inauguralStep = await advance.HandleAsync(saveId);
             inauguralStep.ExecutedAction.ShouldBe(SeasonLifecycleActions.ResolveInauguralMovement);
@@ -189,8 +195,8 @@ public sealed class CupLifecycleIntegrationTests
         GetSeasonStatusResponse after = await status.HandleAsync(saveId).ConfigureAwait(false);
         after.IsCurrentSeasonComplete.ShouldBeTrue();
 
-        // Drain movement/qualifier/rebalance until the Cup selection is next.
-        // Season 1 needs 2 steps (inaugural + rebalance); Season 2+ needs 3.
+        // Drain Chaos plus movement/qualifier/rebalance until the Cup selection is next.
+        // Season 1 needs 4 steps (Chaos select/run + inaugural + rebalance); Season 2+ needs 5.
         while (after.LegalNextActions.Count == 1
             && !string.Equals(after.LegalNextActions[0], SeasonLifecycleActions.SelectColorCup, StringComparison.Ordinal)
             && !string.Equals(after.LegalNextActions[0], SeasonLifecycleActions.SelectTypeCup, StringComparison.Ordinal))

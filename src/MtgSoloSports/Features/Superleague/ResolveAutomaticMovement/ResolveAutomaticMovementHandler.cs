@@ -64,6 +64,7 @@ public sealed class ResolveAutomaticMovementHandler
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         var metadata = await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         ResolutionInputs inputs = await LoadResolutionInputsAsync(context, rules, cancellationToken).ConfigureAwait(false);
+        await EnsureChaosCompleteAsync(context, inputs.Source, rules, cancellationToken).ConfigureAwait(false);
         ResolutionOutput output = await PersistResolutionAsync(context, inputs, rules, cancellationToken).ConfigureAwait(false);
 
         await EmitAutomaticStoriesAsync(context, inputs, output, cancellationToken).ConfigureAwait(false);
@@ -287,6 +288,22 @@ public sealed class ResolveAutomaticMovementHandler
         }
 
         return new ResolutionInputs(source, feeders, superleague, super, feederMap, memberships, plan, feederPlan, rngBefore, stages, seasons);
+    }
+
+    internal static async Task EnsureChaosCompleteAsync(
+        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        try
+        {
+            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new ResolveAutomaticMovementConflictException(ex.Message);
+        }
     }
 
     internal static FeederMovementSelection.FeederPlan SelectFeederPlan(
