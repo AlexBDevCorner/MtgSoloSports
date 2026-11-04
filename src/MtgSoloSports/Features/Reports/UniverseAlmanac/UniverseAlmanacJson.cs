@@ -30,6 +30,9 @@ internal static class UniverseAlmanacJson
             superleaguePodiums = data.SuperleaguePodiums,
             feederTitles = data.FeederTitles,
             cupEditions = data.CupEditions,
+            chaosEditions = data.ChaosEditions,
+            chaosMedals = data.ChaosMedals,
+            chaosColorMedals = data.ChaosColorMedals,
             colorTeamTable = data.ColorTeamTable,
             colorIndividualMedals = data.ColorIndividualMedals,
             colorCombinedMedals = data.ColorCombinedMedals,
@@ -78,7 +81,8 @@ internal static class UniverseAlmanacJson
         {
             careerPoints = "weighted Hall of Fame career points (weights version labelled); higher is better across leagues and major Cups",
             leaguePoints = "official Total league points in fixed-point thousandths: sum of final season championship points earned while competing in that league (divide by 1000); never mixed with weighted career points",
-            qualification = "Type Cup qualification never awards titles; only Final ranks 1-3 hold official medals. Color individual and team events are separate titles.",
+            qualification = "Type Cup qualification never awards titles; only Final ranks 1-3 hold official medals. Color individual and team events are separate titles. Chaos Final ranks 1-3 hold official individual medals; Chaos group scores award no league points and never substitute season totals or weighted career points.",
+            chaos = "Chaos group scores are isolated per 32-athlete group, reset every stage; pending/incomplete editions omit podiums, never inferred; medals count only from Completed editions",
             missing = "null means unavailable/not-applicable; 0 is an exact zero, never a placeholder",
         };
     }

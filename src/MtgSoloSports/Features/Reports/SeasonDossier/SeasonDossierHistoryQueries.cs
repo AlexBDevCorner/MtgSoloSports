@@ -15,6 +15,7 @@ internal static class SeasonDossierHistoryQueries
         GetStandingsReportHandler.ReportData standings,
         CupSummaryEntry? color,
         CupSummaryEntry? type,
+        ChaosSummaryEntry? chaos,
         Dictionary<int, string> names,
         CancellationToken cancellationToken)
     {
@@ -22,7 +23,7 @@ internal static class SeasonDossierHistoryQueries
         IReadOnlyList<ChampionSeasonEntry> lastFive = await LoadChampionsAsync(context, window, names, cancellationToken).ConfigureAwait(false);
         (PodiumEntry? previous, PodiumEntry? defending) = PickPreviousAndDefending(window, lastFive);
         IReadOnlyList<LeaderCareerEntry> leaders = await LoadLeaderCareersAsync(context, standings, names, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<LeaderCareerEntry> performers = await LoadPerformerCareersAsync(context, color, type, leaders, names, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<LeaderCareerEntry> performers = await LoadPerformerCareersAsync(context, color, type, chaos, leaders, names, cancellationToken).ConfigureAwait(false);
         return new HistorySection(season.SeasonNumber - 1 <= 0 ? null : season.SeasonNumber - 1, previous, defending, lastFive, leaders, performers);
     }
 
@@ -137,12 +138,13 @@ internal static class SeasonDossierHistoryQueries
         SaveDbContext context,
         CupSummaryEntry? color,
         CupSummaryEntry? type,
+        ChaosSummaryEntry? chaos,
         IReadOnlyList<LeaderCareerEntry> leaders,
         Dictionary<int, string> names,
         CancellationToken cancellationToken)
     {
         HashSet<int> leaderIds = leaders.Select(l => l.AthleteId).ToHashSet();
-        List<int> performerIds = CollectPerformerIds(color, type).Where(id => !leaderIds.Contains(id)).Take(12).ToList();
+        List<int> performerIds = CollectPerformerIds(color, type, chaos).Where(id => !leaderIds.Contains(id)).Take(12).ToList();
         if (performerIds.Count == 0)
         {
             return [];
@@ -151,7 +153,7 @@ internal static class SeasonDossierHistoryQueries
         return await LoadCareerEntriesAsync(context, performerIds, null, names, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static List<int> CollectPerformerIds(CupSummaryEntry? color, CupSummaryEntry? type)
+    internal static List<int> CollectPerformerIds(CupSummaryEntry? color, CupSummaryEntry? type, ChaosSummaryEntry? chaos)
     {
         List<int> ids = [];
         if (color?.Individual?.ChampionAthleteId is int individualId)
@@ -167,6 +169,16 @@ internal static class SeasonDossierHistoryQueries
         if (type?.Tournament?.WinningRoster is { Count: > 0 } typeRoster)
         {
             ids.AddRange(typeRoster.Select(r => r.AthleteId));
+        }
+
+        if (chaos?.Champion is not null)
+        {
+            ids.Add(chaos.Champion.AthleteId);
+        }
+
+        if (chaos?.FinalTopThree is { Count: > 0 } chaosPodium)
+        {
+            ids.AddRange(chaosPodium.Where(p => p.AthleteId.HasValue).Select(p => p.AthleteId!.Value));
         }
 
         return ids.Distinct().ToList();

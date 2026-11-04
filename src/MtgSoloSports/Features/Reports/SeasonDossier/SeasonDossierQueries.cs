@@ -29,7 +29,8 @@ internal static class SeasonDossierQueries
         IReadOnlyList<FeederSummaryEntry> feeders = await LoadFeederSummariesAsync(context, season, leagues, superleague, global, names, cancellationToken).ConfigureAwait(false);
         PostseasonSection postseason = await LoadPostseasonAsync(context, season, cancellationToken).ConfigureAwait(false);
         (CupSummaryEntry? color, CupSummaryEntry? type) = await SeasonDossierCupQueries.LoadCupsAsync(context, saveId, season, cancellationToken).ConfigureAwait(false);
-        HistorySection history = await SeasonDossierHistoryQueries.LoadHistoryAsync(context, season, superleague, standings, color, type, names, cancellationToken).ConfigureAwait(false);
+        ChaosSummaryEntry? chaos = await SeasonDossierChaosQueries.TryLoadChaosAsync(context, season, rules, cancellationToken).ConfigureAwait(false);
+        HistorySection history = await SeasonDossierHistoryQueries.LoadHistoryAsync(context, season, superleague, standings, color, type, chaos, names, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<CareerRecordEntry> records = await SeasonDossierHistoryQueries.LoadCareerRecordsAsync(context, cancellationToken).ConfigureAwait(false);
         return new SeasonDossierData(
             season.SeasonNumber,
@@ -48,6 +49,7 @@ internal static class SeasonDossierQueries
             postseason,
             color,
             type,
+            chaos,
             history,
             records);
     }
