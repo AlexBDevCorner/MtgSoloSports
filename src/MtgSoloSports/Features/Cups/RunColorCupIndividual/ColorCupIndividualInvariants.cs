@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
 
@@ -8,12 +9,15 @@ namespace MtgSoloSports.Features.Cups.RunColorCupIndividual;
 
 /// <summary>
 /// Structural invariants for the 32-athlete Color Cup individual event
-/// (MSS-024). Fundamental failures throw and abort the mutation; corrupted
+/// (MSS-024, MSS-119). Fundamental failures throw and abort the mutation; corrupted
 /// sporting state is never silently repaired. The Cup reuses pure round/stage
 /// scoring primitives but never creates league <c>StageStanding</c>,
 /// <c>SeasonStanding</c> or <c>Round</c> rows and never writes
 /// <c>StageStandings.EarnedBonusThousandths</c>, so normal league championship
 /// totals and career bonus are untouched.
+/// MSS-119 adds the edition format discriminator: legacy 16x32 (version 0)
+/// versus phased 16x32 + 16x16 (version 1). Legacy overloads keep their exact
+/// behavior; format-aware overloads support both shapes for future MSS-120.
 /// </summary>
 public static class ColorCupIndividualInvariants
 {
@@ -42,10 +46,10 @@ public static class ColorCupIndividualInvariants
     }
 
     /// <summary>
-    /// Validates one freshly simulated Cup round before commit: exact 32
-    /// placements, positions 1..32 exactly once, unique athletes, base points
-    /// matching the snapshot scoring table, final points matching base plus
-    /// active bonus, cumulative totals chaining and RNG advancement.
+    /// Validates one freshly simulated Cup round before commit. The expected
+    /// shape comes from the payload's own <c>formatVersion</c> (missing
+    /// pre-MSS-119 payloads read as legacy 0), so old rounds keep their exact
+    /// legacy behavior while phased rounds validate their 32/16 shapes.
     /// </summary>
     public static void ValidateRound(
         ColorCupIndividualRoundPayloadDocument payload,
@@ -55,13 +59,39 @@ public static class ColorCupIndividualInvariants
     {
         ArgumentNullException.ThrowIfNull(payload);
         ArgumentNullException.ThrowIfNull(rules);
-        CheckRoundIdentity(payload, rules);
-        CheckRoundRng(payload, rngBeforeState, rngBeforeStream);
-        EnsurePlacements(payload, rules);
+        int formatVersion = ColorCupIndividualFormat.ResolveStored(payload.FormatVersion);
+        ValidateRoundForFormat(payload, rules, rngBeforeState, rngBeforeStream, formatVersion);
     }
 
     /// <summary>
-    /// Validates a freshly completed Cup stage before commit: exactly 32
+    /// Format-explicit round validation: the payload must carry
+    /// <paramref name="formatVersion"/>, the round number must be legal for
+    /// that format, and placements must match the format's field size
+    /// (32 for rounds 1-16, 16 for phased rounds 17-32).
+    /// </summary>
+    public static void ValidateRoundForFormat(
+        ColorCupIndividualRoundPayloadDocument payload,
+        RulesV1 rules,
+        ulong rngBeforeState,
+        ulong rngBeforeStream,
+        int formatVersion)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(rules);
+        ColorCupIndividualFormat.ValidateFormatVersion(formatVersion);
+        if (ColorCupIndividualFormat.ResolveStored(payload.FormatVersion) != formatVersion)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup payload format version must be {formatVersion}, was {payload.FormatVersion}.");
+        }
+
+        CheckRoundIdentity(payload, rules, formatVersion);
+        CheckRoundRng(payload, rngBeforeState, rngBeforeStream);
+        EnsurePlacements(payload, rules, formatVersion);
+    }
+
+    /// <summary>
+    /// Validates a freshly completed legacy Cup stage before commit: exactly 32
     /// ranked athletes, ranks 1..32 exactly once, scores chaining from round
     /// payloads and round-place counts summing to 16 per athlete.
     /// Championship/earned values from the pure kernel are intentionally not
@@ -73,17 +103,35 @@ public static class ColorCupIndividualInvariants
         IReadOnlyList<StageAthleteTotals> totals,
         RulesV1 rules)
     {
-        ArgumentNullException.ThrowIfNull(ranked);
-        ArgumentNullException.ThrowIfNull(totals);
-        ArgumentNullException.ThrowIfNull(rules);
-        CheckCompletedCounts(ranked, totals, rules);
-        CheckCompletedStandings(ranked, totals, rules);
+        ValidateCompletedCupForFormat(ranked, totals, rules, ColorCupIndividualFormat.LegacyFormatVersion);
     }
 
     /// <summary>
-    /// Validates persisted Cup state: 16 round rows plus 32 standing rows for
-    /// the source season, ranks 1..32 exactly once, medals exactly on ranks
-    /// 1..3, no duplicate athletes and three podium honours (ranks 1/2/3).
+    /// Format-explicit completed-cup validation. Legacy expects 16 appearances
+    /// per athlete; phased expects 32 for finalists (ranks 1-16) and 16 for
+    /// eliminated athletes (ranks 17-32), so MSS-120 can preserve full
+    /// qualifying totals at the cutoff.
+    /// </summary>
+    public static void ValidateCompletedCupForFormat(
+        IReadOnlyList<StageRankedAthlete> ranked,
+        IReadOnlyList<StageAthleteTotals> totals,
+        RulesV1 rules,
+        int formatVersion)
+    {
+        ArgumentNullException.ThrowIfNull(ranked);
+        ArgumentNullException.ThrowIfNull(totals);
+        ArgumentNullException.ThrowIfNull(rules);
+        ColorCupIndividualFormat.ValidateFormatVersion(formatVersion);
+        CheckCompletedCounts(ranked, totals, rules);
+        CheckCompletedStandings(ranked, totals, rules, formatVersion);
+    }
+
+    /// <summary>
+    /// Validates persisted Cup state. The edition format is resolved from the
+    /// stored round rows (missing pre-MSS-119 values read as legacy 0); all
+    /// rows must agree and each payload's format must match its row, so a
+    /// partial run can never silently change format. Legacy editions keep
+    /// their exact 16x32 behavior.
     /// </summary>
     public static void ValidatePersisted(
         SeasonEntity source,
@@ -97,11 +145,88 @@ public static class ColorCupIndividualInvariants
         ArgumentNullException.ThrowIfNull(standings);
         ArgumentNullException.ThrowIfNull(honours);
         ArgumentNullException.ThrowIfNull(rules);
+        int formatVersion = ResolvePersistedFormat(rounds);
+        ValidatePersistedForFormat(source, rounds, standings, honours, rules, formatVersion);
+    }
+
+    /// <summary>
+    /// Format-explicit persisted validation for tests and future MSS-120
+    /// replay: requires every stored round to carry
+    /// <paramref name="formatVersion"/> and validates round coverage, field
+    /// sizes and per-rank appearances for that format.
+    /// </summary>
+    public static void ValidatePersistedForFormat(
+        SeasonEntity source,
+        IReadOnlyList<ColorCupIndividualRoundEntity> rounds,
+        IReadOnlyList<ColorCupIndividualStandingEntity> standings,
+        IReadOnlyList<HonourEntity> honours,
+        RulesV1 rules,
+        int formatVersion)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rounds);
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(honours);
+        ArgumentNullException.ThrowIfNull(rules);
+        ColorCupIndividualFormat.ValidateFormatVersion(formatVersion);
         CheckPersistedSeasons(source);
-        CheckPersistedCounts(rounds, standings, rules);
-        CheckPersistedRounds(rounds, source, rules);
-        CheckPersistedStandings(standings, source, rules);
+        CheckPersistedCounts(rounds, standings, rules, formatVersion);
+        CheckPersistedRounds(rounds, source, rules, formatVersion);
+        CheckPersistedStandings(standings, source, rules, formatVersion);
         CheckPersistedHonour(source, standings, honours);
+    }
+
+    /// <summary>
+    /// Resolves the edition format from stored round rows. Empty means no Cup
+    /// started (caller defaults to legacy); otherwise every row must share one
+    /// known format version. Never infers from runtime default rules.
+    /// </summary>
+    public static int ResolvePersistedFormat(IReadOnlyList<ColorCupIndividualRoundEntity> rounds)
+    {
+        ArgumentNullException.ThrowIfNull(rounds);
+        if (rounds.Count == 0)
+        {
+            return ColorCupIndividualFormat.LegacyFormatVersion;
+        }
+
+        int first = ColorCupIndividualFormat.ResolveStored(rounds[0].FormatVersion);
+        foreach (ColorCupIndividualRoundEntity round in rounds)
+        {
+            int current = ColorCupIndividualFormat.ResolveStored(round.FormatVersion);
+            if (current != first)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup edition mixes format versions {first} and {current}; sporting state is corrupt.");
+            }
+        }
+
+        return first;
+    }
+
+    /// <summary>
+    /// Resolves the edition format from decoded payloads. Empty means no Cup
+    /// started; otherwise every payload must share one known format version.
+    /// </summary>
+    public static int ResolvePayloadFormat(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> payloads)
+    {
+        ArgumentNullException.ThrowIfNull(payloads);
+        if (payloads.Count == 0)
+        {
+            return ColorCupIndividualFormat.LegacyFormatVersion;
+        }
+
+        int first = ColorCupIndividualFormat.ResolveStored(payloads[0].FormatVersion);
+        foreach (ColorCupIndividualRoundPayloadDocument payload in payloads)
+        {
+            int current = ColorCupIndividualFormat.ResolveStored(payload.FormatVersion);
+            if (current != first)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup edition mixes format versions {first} and {current}; sporting state is corrupt.");
+            }
+        }
+
+        return first;
     }
 
     private static void CheckFieldRow(ColorCupSelectionEntity row, HashSet<int> athleteIds, RulesV1 rules)
@@ -143,14 +268,15 @@ public static class ColorCupIndividualInvariants
     private static void CheckCompletedStandings(
         IReadOnlyList<StageRankedAthlete> ranked,
         IReadOnlyList<StageAthleteTotals> totals,
-        RulesV1 rules)
+        RulesV1 rules,
+        int formatVersion)
     {
         Dictionary<int, StageAthleteTotals> totalsById = totals.ToDictionary(t => t.AthleteId);
         CompletedAccumulator accumulator = new();
         foreach (StageRankedAthlete entry in ranked)
         {
             CheckCompletedIdentity(entry, accumulator, rules);
-            CheckCompletedTotals(entry, totalsById, rules);
+            CheckCompletedTotals(entry, totalsById, rules, formatVersion);
         }
 
         if (!accumulator.Ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount * rules.ColorCupTeamSize)))
@@ -204,7 +330,8 @@ public static class ColorCupIndividualInvariants
     private static void CheckCompletedTotals(
         StageRankedAthlete entry,
         Dictionary<int, StageAthleteTotals> totalsById,
-        RulesV1 rules)
+        RulesV1 rules,
+        int formatVersion)
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out StageAthleteTotals? accumulated))
         {
@@ -226,12 +353,12 @@ public static class ColorCupIndividualInvariants
             throw new InvalidOperationException($"Completed Color Cup base score for '{entry.Name}' does not match accumulated round base points.");
         }
 
-        CheckCompletedCountsRow(entry, rules);
+        CheckCompletedCountsRow(entry, formatVersion);
     }
 
-    private static void CheckCompletedCountsRow(StageRankedAthlete entry, RulesV1 rules)
+    private static void CheckCompletedCountsRow(StageRankedAthlete entry, int formatVersion)
     {
-        if (entry.RoundPlaceCounts.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        if (entry.RoundPlaceCounts.Count != ColorCupIndividualFormat.FieldSize)
         {
             throw new InvalidOperationException($"Completed Color Cup round-place counts for '{entry.Name}' must cover 32 positions.");
         }
@@ -250,10 +377,11 @@ public static class ColorCupIndividualInvariants
             }
         }
 
-        if (sum != rules.ColorCupIndividualRounds)
+        int expected = ColorCupIndividualFormat.ExpectedAppearancesForRank(entry.StageRank, formatVersion);
+        if (sum != expected)
         {
             throw new InvalidOperationException(
-                $"Completed Color Cup totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.ColorCupIndividualRounds}.");
+                $"Completed Color Cup totals for '{entry.Name}' sum to {sum} round appearances, expected {expected}.");
         }
     }
 
@@ -273,12 +401,14 @@ public static class ColorCupIndividualInvariants
     private static void CheckPersistedCounts(
         IReadOnlyList<ColorCupIndividualRoundEntity> rounds,
         IReadOnlyList<ColorCupIndividualStandingEntity> standings,
-        RulesV1 rules)
+        RulesV1 rules,
+        int formatVersion)
     {
-        if (rounds.Count != rules.ColorCupIndividualRounds)
+        int expectedRounds = ColorCupIndividualFormat.TotalRounds(formatVersion);
+        if (rounds.Count != expectedRounds)
         {
             throw new InvalidOperationException(
-                $"Color Cup must persist exactly {rules.ColorCupIndividualRounds} rounds, was {rounds.Count}.");
+                $"Color Cup must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
         }
 
         if (standings.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
@@ -291,17 +421,22 @@ public static class ColorCupIndividualInvariants
     private static void CheckPersistedRounds(
         IReadOnlyList<ColorCupIndividualRoundEntity> rounds,
         SeasonEntity source,
-        RulesV1 rules)
+        RulesV1 rules,
+        int formatVersion)
     {
         HashSet<int> seenRounds = new();
         foreach (ColorCupIndividualRoundEntity round in rounds)
         {
-            CheckSinglePersistedRound(round, source, rules, seenRounds);
+            CheckSinglePersistedRound(round, source, rules, seenRounds, formatVersion);
         }
 
-        if (!seenRounds.SetEquals(Enumerable.Range(1, rules.ColorCupIndividualRounds)))
+        int total = ColorCupIndividualFormat.TotalRounds(formatVersion);
+        if (!seenRounds.SetEquals(Enumerable.Range(1, total)))
         {
-            throw new InvalidOperationException("Color Cup must cover rounds 1..16 exactly once.");
+            throw new InvalidOperationException(
+                formatVersion == ColorCupIndividualFormat.LegacyFormatVersion
+                    ? "Color Cup must cover rounds 1..16 exactly once."
+                    : $"Color Cup must cover rounds 1..{total} exactly once.");
         }
     }
 
@@ -309,14 +444,16 @@ public static class ColorCupIndividualInvariants
         ColorCupIndividualRoundEntity round,
         SeasonEntity source,
         RulesV1 rules,
-        HashSet<int> seenRounds)
+        HashSet<int> seenRounds,
+        int formatVersion)
     {
         if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
         {
             throw new InvalidOperationException($"Color Cup round {round.Id} has corrupt source linkage.");
         }
 
-        if (round.RoundNumber < 1 || round.RoundNumber > rules.ColorCupIndividualRounds)
+        int total = ColorCupIndividualFormat.TotalRounds(formatVersion);
+        if (round.RoundNumber < 1 || round.RoundNumber > total)
         {
             throw new InvalidOperationException($"Color Cup round number {round.RoundNumber} is out of range.");
         }
@@ -329,6 +466,13 @@ public static class ColorCupIndividualInvariants
         if (round.RulesVersion != rules.Version)
         {
             throw new InvalidOperationException($"Color Cup round {round.RoundNumber} has corrupt rules version.");
+        }
+
+        int rowFormat = ColorCupIndividualFormat.ResolveStored(round.FormatVersion);
+        if (rowFormat != formatVersion)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup round {round.RoundNumber} format version must be {formatVersion}, was {rowFormat}.");
         }
 
         if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
@@ -346,18 +490,33 @@ public static class ColorCupIndividualInvariants
         {
             throw new InvalidOperationException($"Color Cup round {round.RoundNumber} payload identity is corrupt.");
         }
+
+        int payloadFormat = ColorCupIndividualFormat.ResolveStored(document.FormatVersion);
+        if (payloadFormat != formatVersion)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup round {round.RoundNumber} payload format version must be {formatVersion}, was {payloadFormat}.");
+        }
+
+        int expectedField = ColorCupIndividualFormat.ExpectedFieldSize(round.RoundNumber, formatVersion);
+        if (document.Placements.Count != expectedField)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup round {round.RoundNumber} must contain exactly {expectedField} placements, was {document.Placements.Count}.");
+        }
     }
 
     private static void CheckPersistedStandings(
         IReadOnlyList<ColorCupIndividualStandingEntity> standings,
         SeasonEntity source,
-        RulesV1 rules)
+        RulesV1 rules,
+        int formatVersion)
     {
         HashSet<int> ranks = new();
         HashSet<int> athleteIds = new();
         foreach (ColorCupIndividualStandingEntity standing in standings)
         {
-            CheckSinglePersistedStanding(standing, source, rules, ranks, athleteIds);
+            CheckSinglePersistedStanding(standing, source, rules, ranks, athleteIds, formatVersion);
         }
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount * rules.ColorCupTeamSize)))
@@ -371,7 +530,8 @@ public static class ColorCupIndividualInvariants
         SeasonEntity source,
         RulesV1 rules,
         HashSet<int> ranks,
-        HashSet<int> athleteIds)
+        HashSet<int> athleteIds,
+        int formatVersion)
     {
         if (standing.SourceSeasonId != source.Id || standing.SourceSeasonNumber != source.SeasonNumber)
         {
@@ -394,7 +554,7 @@ public static class ColorCupIndividualInvariants
         }
 
         CheckStandingMedal(standing);
-        CheckStandingPlaceCounts(standing, rules);
+        CheckStandingPlaceCounts(standing, formatVersion);
     }
 
     private static void CheckStandingMedal(ColorCupIndividualStandingEntity standing)
@@ -417,10 +577,10 @@ public static class ColorCupIndividualInvariants
         }
     }
 
-    private static void CheckStandingPlaceCounts(ColorCupIndividualStandingEntity standing, RulesV1 rules)
+    private static void CheckStandingPlaceCounts(ColorCupIndividualStandingEntity standing, int formatVersion)
     {
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
-        if (counts is null || counts.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        if (counts is null || counts.Count != ColorCupIndividualFormat.FieldSize)
         {
             throw new InvalidOperationException($"Color Cup standing {standing.Id} has corrupt round-place counts.");
         }
@@ -439,9 +599,10 @@ public static class ColorCupIndividualInvariants
             }
         }
 
-        if (sum != rules.ColorCupIndividualRounds)
+        int expected = ColorCupIndividualFormat.ExpectedAppearancesForRank(standing.CupRank, formatVersion);
+        if (sum != expected)
         {
-            throw new InvalidOperationException($"Color Cup standing {standing.Id} sums to {sum} rounds, expected {rules.ColorCupIndividualRounds}.");
+            throw new InvalidOperationException($"Color Cup standing {standing.Id} sums to {sum} rounds, expected {expected}.");
         }
     }
 
@@ -474,7 +635,7 @@ public static class ColorCupIndividualInvariants
         }
     }
 
-    private static void CheckRoundIdentity(ColorCupIndividualRoundPayloadDocument payload, RulesV1 rules)
+    private static void CheckRoundIdentity(ColorCupIndividualRoundPayloadDocument payload, RulesV1 rules, int formatVersion)
     {
         if (payload.Version != ColorCupIndividualRoundPayloadDocument.PayloadVersion)
         {
@@ -491,14 +652,16 @@ public static class ColorCupIndividualInvariants
             throw new InvalidOperationException($"Color Cup source season must be a positive odd season, was {payload.SourceSeasonNumber}.");
         }
 
-        if (payload.RoundNumber < 1 || payload.RoundNumber > rules.ColorCupIndividualRounds)
+        int total = ColorCupIndividualFormat.TotalRounds(formatVersion);
+        if (payload.RoundNumber < 1 || payload.RoundNumber > total)
         {
-            throw new InvalidOperationException($"Color Cup round must be 1..{rules.ColorCupIndividualRounds}, was {payload.RoundNumber}.");
+            throw new InvalidOperationException($"Color Cup round must be 1..{total}, was {payload.RoundNumber}.");
         }
 
-        if (payload.Placements.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        int expectedField = ColorCupIndividualFormat.ExpectedFieldSize(payload.RoundNumber, formatVersion);
+        if (payload.Placements.Count != expectedField)
         {
-            throw new InvalidOperationException($"Color Cup round must contain exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} placements, was {payload.Placements.Count}.");
+            throw new InvalidOperationException($"Color Cup round must contain exactly {expectedField} placements, was {payload.Placements.Count}.");
         }
     }
 
@@ -515,19 +678,23 @@ public static class ColorCupIndividualInvariants
         }
     }
 
-    private static void EnsurePlacements(ColorCupIndividualRoundPayloadDocument payload, RulesV1 rules)
+    private static void EnsurePlacements(ColorCupIndividualRoundPayloadDocument payload, RulesV1 rules, int formatVersion)
     {
+        int fieldSize = ColorCupIndividualFormat.ExpectedFieldSize(payload.RoundNumber, formatVersion);
         PlacementAccumulator accumulator = new();
         foreach (RoundPayloadEntry entry in payload.Placements)
         {
             CheckPlacementIdentity(entry, accumulator);
-            CheckPlacementPoints(entry, rules);
-            CheckPlacementRanks(entry, rules);
+            CheckPlacementPoints(entry, rules, fieldSize);
+            CheckPlacementRanks(entry, fieldSize);
         }
 
-        if (!accumulator.Positions.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount * rules.ColorCupTeamSize)))
+        if (!accumulator.Positions.SetEquals(Enumerable.Range(1, fieldSize)))
         {
-            throw new InvalidOperationException("Color Cup payload must cover positions 1..32 exactly once.");
+            throw new InvalidOperationException(
+                fieldSize == ColorCupIndividualFormat.FieldSize
+                    ? "Color Cup payload must cover positions 1..32 exactly once."
+                    : $"Color Cup payload must cover positions 1..{fieldSize} exactly once.");
         }
 
         EnsureRankConsistency(payload);
@@ -570,9 +737,9 @@ public static class ColorCupIndividualInvariants
         }
     }
 
-    private static void CheckPlacementPoints(RoundPayloadEntry entry, RulesV1 rules)
+    private static void CheckPlacementPoints(RoundPayloadEntry entry, RulesV1 rules, int fieldSize)
     {
-        if (entry.Position < 1 || entry.Position > rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        if (entry.Position < 1 || entry.Position > fieldSize)
         {
             throw new InvalidOperationException($"Color Cup payload position {entry.Position} is out of range.");
         }
@@ -601,14 +768,14 @@ public static class ColorCupIndividualInvariants
         }
     }
 
-    private static void CheckPlacementRanks(RoundPayloadEntry entry, RulesV1 rules)
+    private static void CheckPlacementRanks(RoundPayloadEntry entry, int fieldSize)
     {
-        if (entry.RankBefore < 1 || entry.RankBefore > rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        if (entry.RankBefore < 1 || entry.RankBefore > fieldSize)
         {
             throw new InvalidOperationException($"Color Cup payload rank-before for '{entry.Name}' is out of range.");
         }
 
-        if (entry.RankAfter < 1 || entry.RankAfter > rules.ColorCupColorCount * rules.ColorCupTeamSize)
+        if (entry.RankAfter < 1 || entry.RankAfter > fieldSize)
         {
             throw new InvalidOperationException($"Color Cup payload rank-after for '{entry.Name}' is out of range.");
         }

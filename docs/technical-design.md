@@ -186,7 +186,9 @@ The core identity is always `16 safe + 8 champions + 8 qualifier = 32`.
 ### Postseason events played round by round
 
 The qualifier (`qualifier`, 32 × 16 rounds), Color Cup individual
-(`color-cup-individual`, 32 × 16), Color Cup team (`color-cup-team`, 4 groups ×
+(`color-cup-individual`, legacy 32 × 16; MSS-119 persists a per-round
+`FormatVersion` 0 legacy versus 1 phased 16×32 + 16×16 without changing the
+current 16-round flow), Color Cup team (`color-cup-team`, 4 groups ×
 8 rounds) and Type Cup team (`type-cup-team`, 4 groups × 8 rounds) can be
 played one round at a time, exactly like league rounds. The Type Cup team event
 uses explicit tournament identity (`TournamentPhase` 0/1/2 plus

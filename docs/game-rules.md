@@ -328,6 +328,8 @@ with its effective season; each selection report shows its edition's formula.
 
 All 32 selected athletes compete in one standard 16-round stage. The event awards Gold/Silver/Bronze and an official individual Color Cup title. No bonus is earned.
 
+MSS-119 format foundation: each edition persists its format version. Legacy editions (version 0) are 16 rounds of 32 athletes. The approved future phased edition (version 1, MSS-120) plays 16 qualifying rounds of 32 followed by 16 final rounds of the top-16 qualifiers, keeping 100% of qualifying points; places 17–32 are final at the round-16 cutoff. The format is fixed at the start of a new Cup; historical 16-round editions keep their original rules and results.
+
 ### Team event
 
 Four groups exist: all team #1 athletes compete against each other, then all #2, #3 and #4 athletes. Each group has **8 rounds**. Team score is the sum of the four athletes' scores. Active bonus applies; no bonus is earned. Team medals/titles and individual leg statistics are recorded.

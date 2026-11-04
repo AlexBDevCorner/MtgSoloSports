@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Features.Cups.PlayColorCupIndividualRound;
@@ -57,7 +58,7 @@ public sealed class PlayColorCupIndividualRoundHandler
             .LoadStateAsync(context, saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         ColorCupIndividualRoundPayloadDocument payload = RunColorCupIndividualHandler.PlayRound(state, state.Played, state.Rng);
         List<ColorCupIndividualRoundPayloadDocument> payloads = [.. state.Played, payload];
-        int total = state.Rules.ColorCupIndividualRounds;
+        int total = ColorCupIndividualFormat.TotalRounds(state.FormatVersion);
         bool complete = payloads.Count == total;
 
         if (complete)
@@ -72,6 +73,7 @@ public sealed class PlayColorCupIndividualRoundHandler
                 SourceSeasonNumber = state.Source.SeasonNumber,
                 RoundNumber = payload.RoundNumber,
                 RulesVersion = payload.RulesVersion,
+                FormatVersion = ColorCupIndividualFormat.ResolveStored(payload.FormatVersion),
                 RngBeforeState = unchecked((long)payload.RngBeforeState),
                 RngBeforeStream = unchecked((long)payload.RngBeforeStream),
                 RngAfterState = unchecked((long)payload.RngAfterState),

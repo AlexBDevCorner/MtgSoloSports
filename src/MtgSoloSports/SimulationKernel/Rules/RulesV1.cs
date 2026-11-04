@@ -806,9 +806,9 @@ public class RulesV1
             throw new InvalidOperationException("Color Cup field must be 8 x 4 = 32 athletes.");
         }
 
-        if (ColorCupIndividualRounds != RoundsPerStage)
+        if (ColorCupIndividualRounds != 16)
         {
-            throw new InvalidOperationException($"ColorCupIndividualRounds must equal RoundsPerStage ({RoundsPerStage}), was {ColorCupIndividualRounds}.");
+            throw new InvalidOperationException($"ColorCupIndividualRounds must be 16 qualifying rounds, was {ColorCupIndividualRounds}.");
         }
 
         if (ColorCupTeamGroupRounds != 8)

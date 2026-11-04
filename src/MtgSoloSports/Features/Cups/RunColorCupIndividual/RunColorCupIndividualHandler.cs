@@ -6,6 +6,7 @@ using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -79,7 +80,10 @@ public sealed class RunColorCupIndividualHandler
         CupState state = await LoadStateAsync(context, saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         List<ColorCupIndividualRoundPayloadDocument> payloads = new(state.Played);
         Pcg32State current = state.Rng;
-        while (payloads.Count < state.Rules.ColorCupIndividualRounds)
+        // MSS-119: total comes from the resolved edition format (legacy 16).
+        // MSS-120 switches newly started Cups to the phased 32-round format.
+        int totalRounds = ColorCupIndividualFormat.TotalRounds(state.FormatVersion);
+        while (payloads.Count < totalRounds)
         {
             ColorCupIndividualRoundPayloadDocument payload = PlayRound(state, payloads, current);
             payloads.Add(payload);
@@ -129,6 +133,10 @@ public sealed class RunColorCupIndividualHandler
         List<ColorCupIndividualRoundPayloadDocument> played = rows
             .Select(r => ColorCupIndividualRoundPayloadDocument.FromStored(r.PayloadJson))
             .ToList();
+        // MSS-119: the edition format is fixed at the first persisted round and
+        // never inferred from today's defaults. Historical rows without a format
+        // (column 0, missing payload field) resolve to legacy.
+        int formatVersion = ResolveEditionFormat(rows, played);
         Pcg32State rng = rngRow.ToState();
         foreach (ColorCupIndividualRoundPayloadDocument payload in played)
         {
@@ -142,13 +150,46 @@ public sealed class RunColorCupIndividualHandler
                 p.RoundNumber,
                 new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
                 new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
-            PostseasonEvents.Shape(PostseasonEvents.ColorCupIndividual, rules),
+            new PostseasonEvents.EventShape(1, ColorCupIndividualFormat.TotalRounds(formatVersion)),
             _ => throw new InvalidOperationException("The Color Cup individual event has a single stage."),
             rng);
 
         return new CupState(
-            rules, metadata, source, selection, roster, activeBonuses, played, rng,
+            rules, metadata, source, selection, roster, activeBonuses, played, rng, formatVersion,
             stageCountBefore, seasonCountBefore, roundCountBefore, lifetimeBefore, effectiveBefore, championshipBefore);
+    }
+
+    /// <summary>
+    /// Resolves the edition format from stored rows plus decoded payloads.
+    /// Empty means no Cup started (legacy default in MSS-119; MSS-120 selects
+    /// phased for new Cups). A partly played edition fixes its format at the
+    /// first round: mixed versions abort instead of silently switching.
+    /// </summary>
+    internal static int ResolveEditionFormat(
+        IReadOnlyList<ColorCupIndividualRoundEntity> rows,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> payloads)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(payloads);
+        if (rows.Count == 0 && payloads.Count == 0)
+        {
+            return ColorCupIndividualFormat.LegacyFormatVersion;
+        }
+
+        if (rows.Count != payloads.Count)
+        {
+            throw new InvalidOperationException("Color Cup round rows and payloads are out of sync.");
+        }
+
+        int rowFormat = ColorCupIndividualInvariants.ResolvePersistedFormat(rows);
+        int payloadFormat = ColorCupIndividualInvariants.ResolvePayloadFormat(payloads);
+        if (rowFormat != payloadFormat)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup edition mixes stored format versions {rowFormat} and {payloadFormat}; sporting state is corrupt.");
+        }
+
+        return rowFormat;
     }
 
     /// <summary>Simulates exactly one Color Cup individual round from <paramref name="rngBefore"/>.</summary>
@@ -167,11 +208,13 @@ public sealed class RunColorCupIndividualHandler
         }
 
         int roundNumber = played.Count + 1;
+        ColorCupIndividualFormat.ValidateRoundNumber(roundNumber, state.FormatVersion);
         RoundSimulationResult simulation = AdvanceRoundHandler.SimulateRound(
             state.Roster, cumulative, state.ActiveBonuses, rngBefore, state.Rules);
         ColorCupIndividualRoundPayloadDocument payload = new(
             ColorCupIndividualRoundPayloadDocument.PayloadVersion,
             state.Rules.Version,
+            state.FormatVersion,
             state.Source.SeasonNumber,
             roundNumber,
             rngBefore.State,
@@ -185,7 +228,7 @@ public sealed class RunColorCupIndividualHandler
     }
 
     /// <summary>
-    /// Completes the event from all 16 payloads (the source of truth) in the
+    /// Completes the event from all payloads (the source of truth) in the
     /// caller's transaction, in the same order as the one-shot run.
     /// </summary>
     internal static async Task<CupSimulation> CompleteAsync(
@@ -211,6 +254,7 @@ public sealed class RunColorCupIndividualHandler
 
     internal static CupSimulation Finish(List<ColorCupIndividualRoundPayloadDocument> payloads, RulesV1 rules)
     {
+        int formatVersion = ColorCupIndividualInvariants.ResolvePayloadFormat(payloads);
         List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
         IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
         ColorCupIndividualRoundPayloadDocument last = payloads[^1];
@@ -218,7 +262,7 @@ public sealed class RunColorCupIndividualHandler
         // Cups award no new bonus; the kernel still reports earned at the
         // baseline Feeder 1 scale, which cup invariants intentionally ignore.
         IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
-        ColorCupIndividualInvariants.ValidateCompletedCup(ranked, totals, rules);
+        ColorCupIndividualInvariants.ValidateCompletedCupForFormat(ranked, totals, rules, formatVersion);
         Pcg32State rngAfter = tieBreakRng.Snapshot();
         string checksum = ComputeChecksum(ranked);
         return new CupSimulation(payloads, totals, ranked, rngAfter, checksum);
@@ -233,6 +277,7 @@ public sealed class RunColorCupIndividualHandler
         Dictionary<int, Bonus> ActiveBonuses,
         List<ColorCupIndividualRoundPayloadDocument> Played,
         Pcg32State Rng,
+        int FormatVersion,
         int StageCountBefore,
         int SeasonCountBefore,
         int RoundCountBefore,
@@ -511,6 +556,7 @@ public sealed class RunColorCupIndividualHandler
                 SourceSeasonNumber = source.SeasonNumber,
                 RoundNumber = payload.RoundNumber,
                 RulesVersion = payload.RulesVersion,
+                FormatVersion = ColorCupIndividualFormat.ResolveStored(payload.FormatVersion),
                 RngBeforeState = unchecked((long)payload.RngBeforeState),
                 RngBeforeStream = unchecked((long)payload.RngBeforeStream),
                 RngAfterState = unchecked((long)payload.RngAfterState),

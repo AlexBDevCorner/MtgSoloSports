@@ -19,6 +19,10 @@ namespace MtgSoloSports.Features.Cups.RunColorCupIndividual;
 public sealed record ColorCupIndividualRoundPayloadDocument(
     [property: JsonPropertyName("version")] int Version,
     [property: JsonPropertyName("rulesVersion")] int RulesVersion,
+    // MSS-119: edition format discriminator. Legacy rows written before this
+    // field existed deserialize to 0, which is the legacy 16x32 format, so old
+    // payloads stay readable without edits. New phased editions store 1.
+    [property: JsonPropertyName("formatVersion")] int FormatVersion,
     [property: JsonPropertyName("sourceSeasonNumber")] int SourceSeasonNumber,
     [property: JsonPropertyName("roundNumber")] int RoundNumber,
     [property: JsonPropertyName("rngBeforeState")] ulong RngBeforeState,
