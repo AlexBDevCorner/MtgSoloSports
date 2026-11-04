@@ -14,7 +14,8 @@ const live = readFileSync(join(here, '..', 'live', 'LivePage.tsx'), 'utf8');
 describe('season flow panel', () => {
   it('runs the next lifecycle event through the existing endpoint, once at a time', () => {
     assert.ok(component.includes('advanceToNextEvent(saveId)'), 'uses the lifecycle endpoint');
-    assert.ok(component.includes('if (running)'), 'duplicate submissions are blocked');
+    // MSS-123: synchronous ref guard blocks rapid double-clicks before `running` re-renders.
+    assert.ok(component.includes('runningRef.current'), 'duplicate submissions are blocked');
     assert.ok(component.includes('aria-busy={running}'), 'running state is announced');
     assert.ok(component.includes('onAdvanced()'), 'dashboard refreshes after each step');
     assert.ok(component.includes('Try again'), 'failures offer a retry');

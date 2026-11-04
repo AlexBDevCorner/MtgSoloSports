@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -92,6 +92,10 @@ export function ChaosCupLiveView({
   const [pending, setPending] = useState<'round' | 'group' | 'stage' | 'draw' | 'cup' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmEntire, setConfirmEntire] = useState(false);
+  // MSS-123: synchronous in-flight guard so a rapid double-click cannot issue
+  // two scoped POSTs before the `pending` state re-renders. Scoped replay and
+  // selection never set this ref.
+  const pendingRef = useRef<'round' | 'group' | 'stage' | 'draw' | 'cup' | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -284,9 +288,10 @@ export function ChaosCupLiveView({
   }
 
   async function runScoped(kind: 'round' | 'group' | 'stage' | 'draw' | 'cup', call: () => Promise<unknown>): Promise<boolean> {
-    if (busy) {
+    if (busy || pendingRef.current !== null) {
       return false;
     }
+    pendingRef.current = kind;
     setPending(kind);
     setActionError(null);
     try {
@@ -297,6 +302,7 @@ export function ChaosCupLiveView({
       setActionError(friendlyActionMessage(apiErrorMessage(failure)));
       return false;
     } finally {
+      pendingRef.current = null;
       setPending(null);
     }
   }
@@ -354,12 +360,18 @@ export function ChaosCupLiveView({
     });
   }
 
-  function handleFinishCup(): void {
-    if (!canFinishCup || resolvedSeason === null) {
+  // MSS-123: the request control only reveals the confirmation. While the
+  // confirmation is open the original trigger is disabled, so only the
+  // dedicated affirmative control can run the tournament-wide mutation.
+  function handleRequestFinishCup(): void {
+    if (!canFinishCup || confirmEntire || resolvedSeason === null) {
       return;
     }
-    if (!confirmEntire) {
-      setConfirmEntire(true);
+    setConfirmEntire(true);
+  }
+
+  function handleConfirmFinishCup(): void {
+    if (!canFinishCup || !confirmEntire || resolvedSeason === null) {
       return;
     }
     void runScoped('cup', () => completeChaosCup(saveId, resolvedSeason));
@@ -569,10 +581,10 @@ export function ChaosCupLiveView({
                 <button
                   type="button"
                   className="ghost-button"
-                  disabled={!canFinishCup}
+                  disabled={!canFinishCup || confirmEntire}
                   aria-busy={pending === 'cup'}
                   title="Tournament-wide fast-forward: plays every remaining group and the Final."
-                  onClick={handleFinishCup}
+                  onClick={handleRequestFinishCup}
                 >
                   {pending === 'cup' ? 'Finishing…' : 'Finish entire Cup'}
                 </button>
@@ -595,7 +607,7 @@ export function ChaosCupLiveView({
                       type="button"
                       className="ghost-button"
                       disabled={busy}
-                      onClick={handleFinishCup}
+                      onClick={handleConfirmFinishCup}
                     >
                       {pending === 'cup' ? 'Finishing…' : 'Yes, finish entire Cup'}
                     </button>

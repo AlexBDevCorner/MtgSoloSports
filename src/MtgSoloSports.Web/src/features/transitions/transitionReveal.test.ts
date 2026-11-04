@@ -123,7 +123,9 @@ describe('MSS-053 manual lifecycle integration', () => {
     const flow = read('features/dashboard/SeasonFlow.tsx');
     assert.ok(flow.includes('transitionForAction(result.executedAction)'), 'the executed action names the reveal');
     assert.ok(flow.includes('next.liveTransition'), 'the pending step carries its transition reveal');
-    assert.ok(flow.includes('if (running || next?.kind !== \'event\' || !next.liveTransition)'), 'duplicate submissions are blocked');
+    // MSS-123: the transition fast-forward keeps its duplicate guard plus a sync ref.
+    assert.ok(flow.includes("next?.kind !== 'event'"), 'duplicate submissions are blocked');
+    assert.ok(flow.includes('runningRef.current'), 'rapid double-clicks are blocked synchronously');
   });
 
   it('labels transition steps as reveal presentations, not silent mutations', () => {
