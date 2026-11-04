@@ -17,6 +17,8 @@ public sealed class ColorCupIndividualStepTests
     /// MSS-096 re-captured for career-prestige selection (shared Career Leaders points
     /// through the source season replace win-only prestige; RNG chain unchanged).
     /// MSS-105 re-captured for 35/30/20/5/10 selection with Chaos form (RNG chain unchanged).
+    /// MSS-120 re-captured for the phased 32-to-16 Color Cup with full carryover
+    /// (16 qualifying rounds of 32 plus 16 final rounds of 16).
     /// </summary>
     [Fact]
     public async Task OneShot_MatchesPreRefactorGolden()
@@ -25,8 +27,8 @@ public sealed class ColorCupIndividualStepTests
         try
         {
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
-            response.Checksum.ShouldBe("495c79fcc0745187b2c908b5314e855fc364d12af72cdda5ca577d0ae1b751ca");
-            (await LoadRngAsync(store, saveId)).ShouldBe((5256838557070595265L, 8181L));
+            response.Checksum.ShouldBe("8eefc64ef09b91021246205b698544596db444de523d21285106df46d2b0b20f");
+            (await LoadRngAsync(store, saveId)).ShouldBe((327258154710602225L, 8181L));
         }
         finally
         {
@@ -38,21 +40,23 @@ public sealed class ColorCupIndividualStepTests
     public async Task Step_AllRounds_EqualsOneShot()
     {
         // MSS-122: shared template forks (equivalence holds for any seed; pinned seed stays in golden test).
+        // MSS-120: phased 32-round event (16x32 qualifying plus 16x16 final).
         var (oneShotStore, oneShotRoot, oneShotId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         var (stepStore, stepRoot, stepId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-step-");
         try
         {
             await new RunColorCupIndividualHandler(oneShotStore).HandleAsync(oneShotId);
             PlayColorCupIndividualRoundHandler step = new(stepStore);
-            for (int round = 1; round <= 16; round++)
+            for (int round = 1; round <= 32; round++)
             {
                 PlayColorCupIndividualRoundResponse response = await step.HandleAsync(stepId);
                 response.Round.RoundNumber.ShouldBe(round);
                 response.Round.Group.ShouldBeNull();
-                response.Round.Placements.Count.ShouldBe(32);
+                int expectedPlacements = round <= 16 ? 32 : 16;
+                response.Round.Placements.Count.ShouldBe(expectedPlacements);
                 response.RoundsPlayed.ShouldBe(round);
-                response.TotalRounds.ShouldBe(16);
-                response.IsComplete.ShouldBe(round == 16);
+                response.TotalRounds.ShouldBe(32);
+                response.IsComplete.ShouldBe(round == 32);
             }
 
             (await SnapshotAsync(stepStore, stepId)).ShouldBe(await SnapshotAsync(oneShotStore, oneShotId));

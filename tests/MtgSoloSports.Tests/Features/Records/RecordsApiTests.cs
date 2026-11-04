@@ -47,8 +47,11 @@ public sealed class RecordsApiTests
             // winners shift; the points leader is a consistent high placer across
             // league/Chaos/Cup events (0 titles, 0 majors) rather than the pre-Chaos
             // cup double winner.
+            // MSS-120: the phased 32-to-16 Color Cup with full carryover shifts the
+            // individual champion again; the points leader now holds that major
+            // (0 league titles, 1 major).
             fame.Leaders[0].TotalTitles.ShouldBe(0);
-            fame.Leaders[0].MajorWins.ShouldBe(0);
+            fame.Leaders[0].MajorWins.ShouldBe(1);
 
             int anyAthlete = honours.Honours[0].AthleteId;
             HonoursPayload filtered = await FetchHonoursByAthleteAsync(client, saveId, anyAthlete);

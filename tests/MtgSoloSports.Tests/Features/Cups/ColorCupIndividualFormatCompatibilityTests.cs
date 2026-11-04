@@ -24,10 +24,14 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
     [Fact]
     public async Task LegacyCompletedCup_ResolvesLegacyAndStaysReplayable()
     {
-        // Incidental S1 + selection history is forked; the Cup run below still executes.
+        // MSS-120: new Cups are phased; historical legacy editions are simulated
+        // by fixing the first persisted round to legacy (identical 32-person
+        // round-1 shape) and completing as legacy. Incidental history forked.
         var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup119-legacy-");
         try
         {
+            await new PlayColorCupIndividualRoundHandler(store).HandleAsync(saveId);
+            await RewriteEditionToLegacyAsync(store, saveId);
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
             response.Rounds.ShouldBe(16);
             response.Standings.Count.ShouldBe(32);
@@ -62,13 +66,15 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
     [Fact]
     public async Task LegacyPartialCup_FixesFormatAtStartAndRejectsMixedVersions()
     {
-        // Incidental history forked; the two step rounds below still execute.
+        // MSS-120: new Cups are phased; force the two step rounds to legacy to
+        // prove already-started legacy editions fix their format at the start.
         var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup119-partial-");
         try
         {
             PlayColorCupIndividualRoundHandler step = new(store);
             await step.HandleAsync(saveId);
             await step.HandleAsync(saveId);
+            await RewriteEditionToLegacyAsync(store, saveId);
 
             using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1);
@@ -108,12 +114,13 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
     [Fact]
     public async Task OldPayloadWithoutFormatVersion_ReadsAsLegacy()
     {
-        // Incidental history forked; the Cup run below still executes.
+        // MSS-120: new Cups are phased (32 rounds); pre-MSS-119 payloads without
+        // a format still read as legacy. Incidental history forked.
         var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup119-oldjson-");
         try
         {
             RunColorCupIndividualResponse response = await new RunColorCupIndividualHandler(store).HandleAsync(saveId);
-            response.Rounds.ShouldBe(16);
+            response.Rounds.ShouldBe(32);
 
             using SaveDbContext context = store.OpenDbContext(saveId);
             SeasonEntity source = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 1);
@@ -139,7 +146,8 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
     [Fact]
     public async Task PhasedRoundValidation_SupportsBothShapesAndRejectsWrongSizes()
     {
-        // Incidental history forked; the Cup run provides authentic placements.
+        // MSS-120: new Cups are phased; both formats still accept 32-placement
+        // rounds 1-16 (legacy copy re-tagged to 0). Incidental history forked.
         var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup119-shapes-");
         try
         {
@@ -154,9 +162,9 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
             var rules = await AdvanceRoundHandler.LoadRulesAsync(context, CancellationToken.None);
 
             // Rounds 1-16 hold 32 placements in both formats.
-            ColorCupIndividualInvariants.ValidateRoundForFormat(qualifying, rules, qualifying.RngBeforeState, qualifying.RngBeforeStream, ColorCupIndividualFormat.LegacyFormatVersion);
-            ColorCupIndividualRoundPayloadDocument phasedQualifying = qualifying with { FormatVersion = ColorCupIndividualFormat.PhasedFormatVersion };
-            ColorCupIndividualInvariants.ValidateRoundForFormat(phasedQualifying, rules, phasedQualifying.RngBeforeState, phasedQualifying.RngBeforeStream, ColorCupIndividualFormat.PhasedFormatVersion);
+            ColorCupIndividualRoundPayloadDocument legacyQualifying = qualifying with { FormatVersion = ColorCupIndividualFormat.LegacyFormatVersion };
+            ColorCupIndividualInvariants.ValidateRoundForFormat(legacyQualifying, rules, legacyQualifying.RngBeforeState, legacyQualifying.RngBeforeStream, ColorCupIndividualFormat.LegacyFormatVersion);
+            ColorCupIndividualInvariants.ValidateRoundForFormat(qualifying, rules, qualifying.RngBeforeState, qualifying.RngBeforeStream, ColorCupIndividualFormat.PhasedFormatVersion);
 
             // A 32-placement payload cannot satisfy a phased final round (expects 16).
             ColorCupIndividualRoundPayloadDocument wrongSize = qualifying with
@@ -234,6 +242,22 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
         {
             TestSaveStores.DeleteRoot(root);
         }
+    }
+
+    private static async Task RewriteEditionToLegacyAsync(SaveStore store, Guid saveId)
+    {
+        using SaveDbContext context = store.OpenDbContext(saveId);
+        List<ColorCupIndividualRoundEntity> rows = await context.ColorCupIndividualRounds.ToListAsync().ConfigureAwait(false);
+        foreach (ColorCupIndividualRoundEntity row in rows)
+        {
+            ColorCupIndividualRoundPayloadDocument payload = ColorCupIndividualRoundPayloadDocument.FromStored(row.PayloadJson);
+            ColorCupIndividualRoundPayloadDocument legacy = payload with { FormatVersion = ColorCupIndividualFormat.LegacyFormatVersion };
+            row.FormatVersion = ColorCupIndividualFormat.LegacyFormatVersion;
+            row.PayloadJson = legacy.ToStored();
+            row.PayloadChecksum = legacy.Checksum;
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
     private static string StripFormatVersion(string json)

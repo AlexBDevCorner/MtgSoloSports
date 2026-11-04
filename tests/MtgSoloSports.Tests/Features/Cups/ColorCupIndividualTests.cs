@@ -79,6 +79,7 @@ public sealed class ColorCupIndividualTests
     public async Task Run_AfterSelection_Produces32And16WithMedalsHonourAndPreservesHistory()
     {
         // MSS-067: shared Color Cup template forked into an isolated save.
+        // MSS-120: new Cups use the phased 32-to-16 format (16x32 + 16x16).
         var (store, root, saveId) = await SharedSaveTemplates.ForkColorCupSelectedAsync("mtgsolosports-cup-ind-");
         try
         {
@@ -93,7 +94,7 @@ public sealed class ColorCupIndividualTests
 
             response.SourceSeasonNumber.ShouldBe(1);
             response.CupSize.ShouldBe(32);
-            response.Rounds.ShouldBe(16);
+            response.Rounds.ShouldBe(32);
             response.Standings.Count.ShouldBe(32);
             response.Standings.Select(m => m.CupRank).OrderBy(r => r).ShouldBe(Enumerable.Range(1, 32).ToList());
             response.Checksum.ShouldNotBeNullOrWhiteSpace();
@@ -198,13 +199,14 @@ public sealed class ColorCupIndividualTests
         List<ColorCupIndividualRoundEntity> rounds = await context.ColorCupIndividualRounds.AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.RoundNumber).ToListAsync().ConfigureAwait(false);
-        rounds.Count.ShouldBe(16);
-        rounds.Select(r => r.RoundNumber).ShouldBe(Enumerable.Range(1, 16).ToList());
+        rounds.Count.ShouldBe(32);
+        rounds.Select(r => r.RoundNumber).ShouldBe(Enumerable.Range(1, 32).ToList());
         foreach (ColorCupIndividualRoundEntity round in rounds)
         {
             round.PayloadJson.StartsWith(RoundPayloadCodec.BrotliPrefix, StringComparison.Ordinal).ShouldBeTrue();
             ColorCupIndividualRoundPayloadDocument document = ColorCupIndividualRoundPayloadDocument.FromStored(round.PayloadJson);
-            document.Placements.Count.ShouldBe(32);
+            int expectedPlacements = round.RoundNumber <= 16 ? 32 : 16;
+            document.Placements.Count.ShouldBe(expectedPlacements);
             document.Checksum.ShouldBe(round.PayloadChecksum);
             document.SourceSeasonNumber.ShouldBe(response.SourceSeasonNumber);
         }
@@ -306,7 +308,7 @@ public sealed class ColorCupIndividualTests
         GetColorCupIndividualResultResponse summary = await query.HandleAsync(saveId).ConfigureAwait(false);
         summary.SourceSeasonNumber.ShouldBe(response.SourceSeasonNumber);
         summary.CupSize.ShouldBe(32);
-        summary.Rounds.ShouldBe(16);
+        summary.Rounds.ShouldBe(32);
         summary.Checksum.ShouldNotBeNullOrWhiteSpace();
         summary.ChampionAthleteId.ShouldBe(response.ChampionAthleteId);
         summary.Standings.Count.ShouldBe(32);
@@ -316,7 +318,7 @@ public sealed class ColorCupIndividualTests
 
         GetColorCupIndividualResultResponse again = await query.HandleAsync(saveId, sourceSeasonNumber: response.SourceSeasonNumber).ConfigureAwait(false);
         again.ChampionAthleteId.ShouldBe(response.ChampionAthleteId);
-        again.Rounds.ShouldBe(16);
+        again.Rounds.ShouldBe(32);
     }
 
     private static async Task AssertReplayAsync(SaveStore store, Guid saveId, RunColorCupIndividualResponse response)

@@ -215,6 +215,11 @@ public static class PostseasonEvents
 
         int played = await CountPlayedAsync(context, key, source, cancellationToken).ConfigureAwait(false);
         EventShape shape = Shape(key, rules);
+        if (string.Equals(key, ColorCupIndividual, StringComparison.Ordinal))
+        {
+            shape = await IndividualShapeAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        }
+
         (int group, int round) = Cursor(Math.Min(played, shape.TotalRounds - 1), shape);
         (int? completedEvents, int? totalEvents) = await LoadQualifierEventCountsAsync(
             context, key, source, sourceNumber, rules, cancellationToken).ConfigureAwait(false);
@@ -302,6 +307,39 @@ public static class PostseasonEvents
             ColorCupIndividual => await context.ColorCupIndividualRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
             _ => await context.ColorCupTeamRounds.CountAsync(e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false),
         };
+    }
+
+    /// <summary>
+    /// MSS-120: edition-aware shape for the individual Color Cup. New editions
+    /// (no persisted rounds) default to the phased 32-round total; persisted
+    /// editions resolve their total from stored format versions (legacy 16,
+    /// phased 32) via the pure kernel, never from runtime defaults. Read-only;
+    /// mixed versions fall back to the first row so progress never hides the
+    /// runner's corruption abort.
+    /// </summary>
+    internal static async Task<EventShape> IndividualShapeAsync(
+        SaveDbContext context,
+        SeasonEntity source,
+        RulesV1 rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(rules);
+        List<int> formats = await context.ColorCupIndividualRounds
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonId == source.Id)
+            .Select(e => e.FormatVersion)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (formats.Count == 0)
+        {
+            return new EventShape(1, SimulationKernel.Cups.ColorCupIndividualFormat.TotalRounds(
+                SimulationKernel.Cups.ColorCupIndividualFormat.PhasedFormatVersion));
+        }
+
+        int first = SimulationKernel.Cups.ColorCupIndividualFormat.ResolveStored(formats[0]);
+        return new EventShape(1, SimulationKernel.Cups.ColorCupIndividualFormat.TotalRounds(first));
     }
 
     internal static async Task<(int? CompletedEvents, int? TotalEvents)> LoadQualifierEventCountsAsync(

@@ -143,16 +143,23 @@ public sealed class RunColorCupIndividualHandler
             ColorCupIndividualInvariants.ValidateRound(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
         }
 
-        PostseasonEvents.ValidateInProgress(
-            PostseasonEvents.ColorCupIndividual,
-            played.Select(p => new PostseasonEvents.PlayedRoundLink(
-                1,
-                p.RoundNumber,
-                new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
-                new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
-            new PostseasonEvents.EventShape(1, ColorCupIndividualFormat.TotalRounds(formatVersion)),
-            _ => throw new InvalidOperationException("The Color Cup individual event has a single stage."),
-            rng);
+        if (ColorCupIndividualFormat.IsPhased(formatVersion) && played.Count > ColorCupIndividualFormat.QualifyingRounds)
+        {
+            ValidatePhasedInProgress(played, rules, rng);
+        }
+        else
+        {
+            PostseasonEvents.ValidateInProgress(
+                PostseasonEvents.ColorCupIndividual,
+                played.Select(p => new PostseasonEvents.PlayedRoundLink(
+                    1,
+                    p.RoundNumber,
+                    new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
+                    new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
+                new PostseasonEvents.EventShape(1, ColorCupIndividualFormat.TotalRounds(formatVersion)),
+                _ => throw new InvalidOperationException("The Color Cup individual event has a single stage."),
+                rng);
+        }
 
         return new CupState(
             rules, metadata, source, selection, roster, activeBonuses, played, rng, formatVersion,
@@ -161,9 +168,10 @@ public sealed class RunColorCupIndividualHandler
 
     /// <summary>
     /// Resolves the edition format from stored rows plus decoded payloads.
-    /// Empty means no Cup started (legacy default in MSS-119; MSS-120 selects
-    /// phased for new Cups). A partly played edition fixes its format at the
-    /// first round: mixed versions abort instead of silently switching.
+    /// Empty means no Cup started (MSS-120 selects phased for new Cups;
+    /// legacy is retained only for already-started historical editions).
+    /// A partly played edition fixes its format at the first round: mixed
+    /// versions abort instead of silently switching.
     /// </summary>
     internal static int ResolveEditionFormat(
         IReadOnlyList<ColorCupIndividualRoundEntity> rows,
@@ -173,7 +181,7 @@ public sealed class RunColorCupIndividualHandler
         ArgumentNullException.ThrowIfNull(payloads);
         if (rows.Count == 0 && payloads.Count == 0)
         {
-            return ColorCupIndividualFormat.LegacyFormatVersion;
+            return ColorCupIndividualFormat.PhasedFormatVersion;
         }
 
         if (rows.Count != payloads.Count)
@@ -192,23 +200,163 @@ public sealed class RunColorCupIndividualHandler
         return rowFormat;
     }
 
-    /// <summary>Simulates exactly one Color Cup individual round from <paramref name="rngBefore"/>.</summary>
+    /// <summary>
+    /// Validates a partly played phased edition that already started its final
+    /// (17+ rounds persisted). Rounds must be contiguous 1..N, qualifying
+    /// rounds 1–16 chain contiguously, round 17 must start from the
+    /// deterministically derived cutoff-advanced RNG (recomputed from the
+    /// persisted round-16 RNG-after, never from the post-final RNG row) with
+    /// exactly the derived qualifiers, later final rounds chain contiguously
+    /// with the same roster, and the save RNG row must equal the last round's
+    /// RNG-after. Aborts on any corruption; never repairs or rerolls.
+    /// </summary>
+    internal static void ValidatePhasedInProgress(
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        RulesV1 rules,
+        Pcg32State rngRow)
+    {
+        ArgumentNullException.ThrowIfNull(played);
+        ArgumentNullException.ThrowIfNull(rules);
+        CheckPhasedCount(played);
+        CheckRoundSequence(played);
+        CheckQualifyingChain(played);
+        HashSet<int> expectedQualifiers = CheckCutoffAndRound17(played, rules);
+        CheckFinalChain(played, expectedQualifiers);
+        CheckPhasedRngRow(played, rngRow);
+    }
+
+    private static void CheckPhasedCount(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played)
+    {
+        int total = ColorCupIndividualFormat.TotalRounds(ColorCupIndividualFormat.PhasedFormatVersion);
+        if (played.Count <= ColorCupIndividualFormat.QualifyingRounds || played.Count >= total)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup phased in-progress validation requires 17..{total - 1} rounds, was {played.Count}.");
+        }
+    }
+
+    private static void CheckRoundSequence(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played)
+    {
+        for (int index = 0; index < played.Count; index++)
+        {
+            if (played[index].RoundNumber != index + 1)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup — individual round sequence is corrupt: expected round {index + 1}, found {played[index].RoundNumber}.");
+            }
+        }
+    }
+
+    private static void CheckQualifyingChain(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played)
+    {
+        for (int index = 1; index < ColorCupIndividualFormat.QualifyingRounds; index++)
+        {
+            Pcg32State before = new(played[index].RngBeforeState, played[index].RngBeforeStream);
+            Pcg32State prevAfter = new(played[index - 1].RngAfterState, played[index - 1].RngAfterStream);
+            if (before != prevAfter)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup — individual RNG chain is broken before round {played[index].RoundNumber}.");
+            }
+        }
+    }
+
+    private static HashSet<int> CheckCutoffAndRound17(
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        RulesV1 rules)
+    {
+        List<ColorCupIndividualRoundPayloadDocument> qualifying = played.Take(ColorCupIndividualFormat.QualifyingRounds).ToList();
+        Pcg32State round16After = new(qualifying[^1].RngAfterState, qualifying[^1].RngAfterStream);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoff(qualifying, rules, round16After);
+        ColorCupIndividualRoundPayloadDocument round17 = played[ColorCupIndividualFormat.QualifyingRounds];
+        Pcg32State round17Before = new(round17.RngBeforeState, round17.RngBeforeStream);
+        if (round17Before != cutoff.RngAfterCutoff)
+        {
+            throw new InvalidOperationException(
+                "Color Cup — individual RNG chain is broken before round 17 (cutoff advancement).");
+        }
+
+        HashSet<int> expectedQualifiers = new(cutoff.QualifierAthleteIds);
+        HashSet<int> round17Ids = round17.Placements.Select(p => p.AthleteId).ToHashSet();
+        if (!round17Ids.SetEquals(expectedQualifiers))
+        {
+            throw new InvalidOperationException(
+                "Color Cup — individual final roster does not match the round-16 cutoff.");
+        }
+
+        return expectedQualifiers;
+    }
+
+    private static void CheckFinalChain(
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        HashSet<int> expectedQualifiers)
+    {
+        for (int index = ColorCupIndividualFormat.QualifyingRounds + 1; index < played.Count; index++)
+        {
+            Pcg32State before = new(played[index].RngBeforeState, played[index].RngBeforeStream);
+            Pcg32State prevAfter = new(played[index - 1].RngAfterState, played[index - 1].RngAfterStream);
+            if (before != prevAfter)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup — individual RNG chain is broken before round {played[index].RoundNumber}.");
+            }
+
+            HashSet<int> roundIds = played[index].Placements.Select(p => p.AthleteId).ToHashSet();
+            if (!roundIds.SetEquals(expectedQualifiers))
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup — individual final round {played[index].RoundNumber} roster does not match the round-17 qualifiers.");
+            }
+        }
+    }
+
+    private static void CheckPhasedRngRow(
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngRow)
+    {
+        Pcg32State lastAfter = new(played[^1].RngAfterState, played[^1].RngAfterStream);
+        if (rngRow != lastAfter)
+        {
+            throw new InvalidOperationException(
+                "Color Cup — individual is in progress but the save RNG moved since its last round; sporting state is corrupt.");
+        }
+    }
+
+    /// <summary>
+    /// Simulates exactly one Color Cup individual round from <paramref name="rngBefore"/>.
+    /// Legacy and qualifying rounds (1–16) use the full 32-person roster.
+    /// Phased final rounds (17–32) use only the 16 qualifiers with full
+    /// carryover: round-17 cumulative equals round-16 cumulative. The first
+    /// final round resolves the cutoff from the 16 qualifying payloads plus
+    /// <paramref name="rngBefore"/> (round-16 RNG-after) and starts from the
+    /// cutoff-advanced RNG (single seeded draw only when the cutoff splits an
+    /// exact tie); later final rounds recover the immutable roster from the
+    /// persisted first-final payload so reopen never rerolls a tied cutoff.
+    /// </summary>
     internal static ColorCupIndividualRoundPayloadDocument PlayRound(
         CupState state,
         IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
         Pcg32State rngBefore)
     {
-        Dictionary<int, Points> cumulative = new(state.Roster.Count);
-        if (played.Count > 0)
-        {
-            foreach (RoundPayloadEntry entry in played[^1].Placements)
-            {
-                cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
-            }
-        }
-
         int roundNumber = played.Count + 1;
         ColorCupIndividualFormat.ValidateRoundNumber(roundNumber, state.FormatVersion);
+        if (!ColorCupIndividualFormat.IsPhased(state.FormatVersion) ||
+            ColorCupIndividualFormat.IsQualifyingRound(roundNumber, state.FormatVersion))
+        {
+            return PlayQualifyingRound(state, played, rngBefore, roundNumber);
+        }
+
+        return PlayFinalRound(state, played, rngBefore, roundNumber);
+    }
+
+    private static ColorCupIndividualRoundPayloadDocument PlayQualifyingRound(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore,
+        int roundNumber)
+    {
+        Dictionary<int, Points> cumulative = BuildQualifyingCumulative(played, state.Roster.Count);
         RoundSimulationResult simulation = AdvanceRoundHandler.SimulateRound(
             state.Roster, cumulative, state.ActiveBonuses, rngBefore, state.Rules);
         ColorCupIndividualRoundPayloadDocument payload = new(
@@ -225,6 +373,175 @@ public sealed class RunColorCupIndividualHandler
             ToPayloadEntries(simulation));
         ColorCupIndividualInvariants.ValidateRound(payload, state.Rules, rngBefore.State, rngBefore.Stream);
         return payload;
+    }
+
+    private static Dictionary<int, Points> BuildQualifyingCumulative(
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        int rosterCount)
+    {
+        Dictionary<int, Points> cumulative = new(rosterCount);
+        if (played.Count > 0)
+        {
+            foreach (RoundPayloadEntry entry in played[^1].Placements)
+            {
+                cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
+            }
+        }
+
+        return cumulative;
+    }
+
+    private static ColorCupIndividualRoundPayloadDocument PlayFinalRound(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore,
+        int roundNumber)
+    {
+        (List<AdvanceRoundHandler.MemberRow> finalRoster, Pcg32State rngForSim, Dictionary<int, Points> finalCumulative) =
+            ResolveFinalInputs(state, played, rngBefore);
+        RoundSimulationResult finalSimulation = SimulateCupRoundWithFieldSize(
+            finalRoster, finalCumulative, state.ActiveBonuses, rngForSim, state.Rules, ColorCupIndividualFormat.FinalFieldSize);
+        ColorCupIndividualRoundPayloadDocument finalPayload = new(
+            ColorCupIndividualRoundPayloadDocument.PayloadVersion,
+            state.Rules.Version,
+            state.FormatVersion,
+            state.Source.SeasonNumber,
+            roundNumber,
+            rngForSim.State,
+            rngForSim.Stream,
+            finalSimulation.RngAfter.State,
+            finalSimulation.RngAfter.Stream,
+            finalSimulation.Checksum,
+            ToPayloadEntries(finalSimulation));
+        ColorCupIndividualInvariants.ValidateRound(finalPayload, state.Rules, rngForSim.State, rngForSim.Stream);
+        return finalPayload;
+    }
+
+    private static (List<AdvanceRoundHandler.MemberRow> Roster, Pcg32State RngForSim, Dictionary<int, Points> Cumulative) ResolveFinalInputs(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore)
+    {
+        if (played.Count == ColorCupIndividualFormat.QualifyingRounds)
+        {
+            return ResolveFirstFinalInputs(state, played, rngBefore);
+        }
+
+        return ResolveLaterFinalInputs(state, played, rngBefore);
+    }
+
+    private static (List<AdvanceRoundHandler.MemberRow> Roster, Pcg32State RngForSim, Dictionary<int, Points> Cumulative) ResolveFirstFinalInputs(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore)
+    {
+        List<ColorCupIndividualRoundPayloadDocument> qualifying = played.Take(ColorCupIndividualFormat.QualifyingRounds).ToList();
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoff(qualifying, state.Rules, rngBefore);
+        List<AdvanceRoundHandler.MemberRow> finalRoster = BuildFinalRoster(state.Roster, cutoff.QualifierAthleteIds);
+        Dictionary<int, Points> finalCumulative = BuildFinalCumulative(played[^1], finalRoster);
+        return (finalRoster, cutoff.RngAfterCutoff, finalCumulative);
+    }
+
+    private static (List<AdvanceRoundHandler.MemberRow> Roster, Pcg32State RngForSim, Dictionary<int, Points> Cumulative) ResolveLaterFinalInputs(
+        CupState state,
+        IReadOnlyList<ColorCupIndividualRoundPayloadDocument> played,
+        Pcg32State rngBefore)
+    {
+        ColorCupIndividualRoundPayloadDocument firstFinal = played[ColorCupIndividualFormat.QualifyingRounds];
+        IReadOnlyList<int> qualifierIds =
+            ColorCupIndividualPhasedOrchestrator.RecoverQualifiersFromFinalPayload(firstFinal);
+        List<AdvanceRoundHandler.MemberRow> finalRoster = BuildFinalRoster(state.Roster, qualifierIds);
+        Dictionary<int, Points> finalCumulative = BuildFinalCumulative(played[^1], finalRoster);
+        return (finalRoster, rngBefore, finalCumulative);
+    }
+
+    internal static List<AdvanceRoundHandler.MemberRow> BuildFinalRoster(
+        IReadOnlyList<AdvanceRoundHandler.MemberRow> fullRoster,
+        IReadOnlyList<int> qualifierAthleteIds)
+    {
+        ArgumentNullException.ThrowIfNull(fullRoster);
+        ArgumentNullException.ThrowIfNull(qualifierAthleteIds);
+        if (qualifierAthleteIds.Count != ColorCupIndividualFormat.FinalFieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup final roster must hold exactly {ColorCupIndividualFormat.FinalFieldSize} qualifiers, was {qualifierAthleteIds.Count}.");
+        }
+
+        HashSet<int> qualifiers = new(qualifierAthleteIds);
+        if (qualifiers.Count != ColorCupIndividualFormat.FinalFieldSize)
+        {
+            throw new InvalidOperationException("Color Cup final roster contains duplicate qualifiers.");
+        }
+
+        Dictionary<int, AdvanceRoundHandler.MemberRow> byId = fullRoster.ToDictionary(r => r.AthleteId);
+        List<AdvanceRoundHandler.MemberRow> roster = new(ColorCupIndividualFormat.FinalFieldSize);
+        foreach (int id in qualifiers)
+        {
+            if (!byId.TryGetValue(id, out AdvanceRoundHandler.MemberRow? row))
+            {
+                throw new InvalidOperationException($"Color Cup final roster references unknown athlete {id}.");
+            }
+
+            roster.Add(row);
+        }
+
+        roster.Sort(static (left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
+        return roster;
+    }
+
+    internal static Dictionary<int, Points> BuildFinalCumulative(
+        ColorCupIndividualRoundPayloadDocument lastPayload,
+        IReadOnlyList<AdvanceRoundHandler.MemberRow> finalRoster)
+    {
+        ArgumentNullException.ThrowIfNull(lastPayload);
+        ArgumentNullException.ThrowIfNull(finalRoster);
+        Dictionary<int, Points> carried = new(lastPayload.Placements.Count);
+        foreach (RoundPayloadEntry entry in lastPayload.Placements)
+        {
+            carried[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
+        }
+
+        Dictionary<int, Points> cumulative = new(finalRoster.Count);
+        foreach (AdvanceRoundHandler.MemberRow row in finalRoster)
+        {
+            if (!carried.TryGetValue(row.AthleteId, out Points before))
+            {
+                throw new InvalidOperationException($"Color Cup finalist '{row.Name}' has no carried qualifying total.");
+            }
+
+            cumulative[row.AthleteId] = before;
+        }
+
+        return cumulative;
+    }
+
+    internal static RoundSimulationResult SimulateCupRoundWithFieldSize(
+        List<AdvanceRoundHandler.MemberRow> roster,
+        Dictionary<int, Points> cumulativeBefore,
+        Dictionary<int, Bonus> activeBonuses,
+        Pcg32State rngBefore,
+        RulesV1 rules,
+        int fieldSize)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(cumulativeBefore);
+        ArgumentNullException.ThrowIfNull(activeBonuses);
+        ArgumentNullException.ThrowIfNull(rules);
+        List<RoundAthleteInput> inputs = new(roster.Count);
+        foreach (AdvanceRoundHandler.MemberRow row in roster)
+        {
+            Points before = cumulativeBefore.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
+            if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
+            {
+                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+            }
+
+            inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
+        }
+
+        Pcg32V1 rng = Pcg32V1.Restore(rngBefore);
+        return RoundSimulator.SimulateWithFieldSize(inputs, rng, rules, fieldSize);
     }
 
     /// <summary>
@@ -255,17 +572,101 @@ public sealed class RunColorCupIndividualHandler
     internal static CupSimulation Finish(List<ColorCupIndividualRoundPayloadDocument> payloads, RulesV1 rules)
     {
         int formatVersion = ColorCupIndividualInvariants.ResolvePayloadFormat(payloads);
-        List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
-        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
-        ColorCupIndividualRoundPayloadDocument last = payloads[^1];
-        Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
-        // Cups award no new bonus; the kernel still reports earned at the
-        // baseline Feeder 1 scale, which cup invariants intentionally ignore.
-        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
-        ColorCupIndividualInvariants.ValidateCompletedCupForFormat(ranked, totals, rules, formatVersion);
-        Pcg32State rngAfter = tieBreakRng.Snapshot();
-        string checksum = ComputeChecksum(ranked);
-        return new CupSimulation(payloads, totals, ranked, rngAfter, checksum);
+        if (!ColorCupIndividualFormat.IsPhased(formatVersion))
+        {
+            List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
+            IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
+            ColorCupIndividualRoundPayloadDocument last = payloads[^1];
+            Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
+            // Cups award no new bonus; the kernel still reports earned at the
+            // baseline Feeder 1 scale, which cup invariants intentionally ignore.
+            IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
+            ColorCupIndividualInvariants.ValidateCompletedCupForFormat(ranked, totals, rules, formatVersion);
+            Pcg32State rngAfter = tieBreakRng.Snapshot();
+            string checksum = ComputeChecksum(ranked);
+            return new CupSimulation(payloads, totals, ranked, rngAfter, checksum);
+        }
+
+        // Phased 16+16 with full carryover via the Cup-specific two-phase
+        // orchestrator (never a mixed-size Accumulate). Finalists 1–16 rank by
+        // combined totals; eliminated 17–32 are frozen by round-16 qualifying
+        // rank (final points are strictly positive so finalists always outrank
+        // eliminated athletes).
+        IReadOnlyList<StageAthleteTotals> phasedTotals =
+            ColorCupIndividualPhasedOrchestrator.AccumulatePhasedTotals(payloads, rules);
+        ValidatePhasedCarryover(payloads);
+        List<ColorCupIndividualRoundPayloadDocument> qualifyingForRank = payloads.Take(ColorCupIndividualFormat.QualifyingRounds).ToList();
+        Pcg32State round16AfterForRank = new(qualifyingForRank[^1].RngAfterState, qualifyingForRank[^1].RngAfterStream);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoffForRank =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoff(qualifyingForRank, rules, round16AfterForRank);
+        ColorCupIndividualRoundPayloadDocument phasedLast = payloads[^1];
+        Pcg32V1 phasedTieBreakRng = Pcg32V1.Restore(new Pcg32State(phasedLast.RngAfterState, phasedLast.RngAfterStream));
+        IReadOnlyList<StageRankedAthlete> phasedRanked =
+            ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(
+                phasedTotals, cutoffForRank.QualifyingOrderAthleteIds, phasedTieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
+        ColorCupIndividualInvariants.ValidateCompletedCupForFormat(phasedRanked, phasedTotals, rules, formatVersion);
+        Pcg32State phasedRngAfter = phasedTieBreakRng.Snapshot();
+        string phasedChecksum = ComputeChecksum(phasedRanked);
+        return new CupSimulation(payloads, phasedTotals, phasedRanked, phasedRngAfter, phasedChecksum);
+    }
+
+    /// <summary>
+    /// Validates full score carryover and roster integrity for phased payloads:
+    /// every final round holds exactly the 16 qualifiers, no eliminated athlete
+    /// ever reappears, and each finalist's round-17 cumulative-before equals
+    /// their round-16 cumulative-after.
+    /// </summary>
+    internal static void ValidatePhasedCarryover(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> payloads)
+    {
+        ArgumentNullException.ThrowIfNull(payloads);
+        if (payloads.Count != ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup phased completion requires exactly {ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds} rounds, was {payloads.Count}.");
+        }
+
+        ColorCupIndividualRoundPayloadDocument round16 = payloads[ColorCupIndividualFormat.QualifyingRounds - 1];
+        ColorCupIndividualRoundPayloadDocument round17 = payloads[ColorCupIndividualFormat.QualifyingRounds];
+        Dictionary<int, int> carried = round16.Placements.ToDictionary(p => p.AthleteId, p => p.CumulativeAfterThousandths);
+        HashSet<int> finalists = new();
+        foreach (RoundPayloadEntry entry in round17.Placements)
+        {
+            finalists.Add(entry.AthleteId);
+            if (!carried.TryGetValue(entry.AthleteId, out int expectedBefore))
+            {
+                throw new InvalidOperationException($"Color Cup finalist '{entry.Name}' has no qualifying total to carry over.");
+            }
+
+            if (entry.CumulativeBeforeThousandths != expectedBefore)
+            {
+                throw new InvalidOperationException(
+                    $"Color Cup finalist '{entry.Name}' must carry 100% of qualifying points into round 17.");
+            }
+        }
+
+        if (finalists.Count != ColorCupIndividualFormat.FinalFieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup final must hold exactly {ColorCupIndividualFormat.FinalFieldSize} qualifiers, was {finalists.Count}.");
+        }
+
+        for (int i = ColorCupIndividualFormat.QualifyingRounds + 1; i < payloads.Count; i++)
+        {
+            foreach (RoundPayloadEntry entry in payloads[i].Placements)
+            {
+                if (!finalists.Contains(entry.AthleteId))
+                {
+                    throw new InvalidOperationException(
+                        $"Color Cup eliminated athlete '{entry.Name}' must never reappear in final rounds.");
+                }
+            }
+
+            HashSet<int> roundIds = payloads[i].Placements.Select(p => p.AthleteId).ToHashSet();
+            if (!roundIds.SetEquals(finalists))
+            {
+                throw new InvalidOperationException($"Color Cup final round {payloads[i].RoundNumber} roster does not match the round-17 qualifiers.");
+            }
+        }
     }
 
     internal sealed record CupState(

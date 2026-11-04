@@ -37,37 +37,22 @@ public sealed class GetHistoryEventRoundHandler
         HistoryEventRows.ValidateRequest(saveId, seasonNumber, eventKey);
         using SaveDbContext context = _store.OpenDbContext(saveId);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
-        PostseasonEvents.EventShape shape = string.Equals(eventKey, PostseasonEvents.Qualifier, StringComparison.Ordinal)
-            ? new PostseasonEvents.EventShape(1, rules.QualifierRounds)
-            : PostseasonEvents.Shape(eventKey, rules);
-        if (shape.IsGrouped && (group is null || group < 1 || group > shape.GroupCount))
+        bool isIndividual = string.Equals(eventKey, PostseasonEvents.ColorCupIndividual, StringComparison.Ordinal);
+        if (!isIndividual)
         {
-            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} rounds need a group between 1 and {shape.GroupCount}.", nameof(group));
+            PostseasonEvents.EventShape shape = ResolveNonIndividualShape(eventKey, rules);
+            ValidateGroupAndRound(eventKey, shape, group, round);
         }
 
-        if (!shape.IsGrouped && group is not null)
-        {
-            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no groups.", nameof(group));
-        }
-
-        if (round < 1 || round > shape.RoundsPerGroup)
-        {
-            throw new ArgumentException($"Round must be between 1 and {shape.RoundsPerGroup}.", nameof(round));
-        }
-
-        bool isTypeCup = string.Equals(eventKey, PostseasonEvents.TypeCupTeam, StringComparison.Ordinal);
-        if (!isTypeCup && (tournamentPhase is not null || qualificationGroup is not null))
-        {
-            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no tournament stages.", nameof(tournamentPhase));
-        }
-
-        if (isTypeCup)
-        {
-            ValidateTypeCupStage(tournamentPhase, qualificationGroup);
-        }
-
+        ValidateStage(eventKey, tournamentPhase, qualificationGroup);
         SeasonEntity season = await HistoryEventRows.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         List<HistoryEventRows.StoredRound> rows = await HistoryEventRows.LoadAsync(context, season, eventKey, cancellationToken).ConfigureAwait(false);
+        if (isIndividual)
+        {
+            PostseasonEvents.EventShape individualShape = ResolveIndividualShape(rows);
+            ValidateGroupAndRound(eventKey, individualShape, group, round);
+        }
+
         HistoryEventRows.StoredRound row = ResolveRow(eventKey, rows, group, round, tournamentPhase, qualificationGroup);
         return await EventRoundViews.BuildAsync(
             context,
@@ -83,6 +68,70 @@ public sealed class GetHistoryEventRoundHandler
             cancellationToken,
             row.TournamentPhase,
             row.QualificationGroup).ConfigureAwait(false);
+    }
+
+    internal static PostseasonEvents.EventShape ResolveNonIndividualShape(string eventKey, RulesV1 rules)
+    {
+        return string.Equals(eventKey, PostseasonEvents.Qualifier, StringComparison.Ordinal)
+            ? new PostseasonEvents.EventShape(1, rules.QualifierRounds)
+            : PostseasonEvents.Shape(eventKey, rules);
+    }
+
+    internal static void ValidateGroupAndRound(
+        string eventKey,
+        PostseasonEvents.EventShape shape,
+        int? group,
+        int round)
+    {
+        if (shape.IsGrouped && (group is null || group < 1 || group > shape.GroupCount))
+        {
+            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} rounds need a group between 1 and {shape.GroupCount}.", nameof(group));
+        }
+
+        if (!shape.IsGrouped && group is not null)
+        {
+            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no groups.", nameof(group));
+        }
+
+        if (round < 1 || round > shape.RoundsPerGroup)
+        {
+            throw new ArgumentException($"Round must be between 1 and {shape.RoundsPerGroup}.", nameof(round));
+        }
+    }
+
+    internal static void ValidateStage(string eventKey, int? tournamentPhase, int? qualificationGroup)
+    {
+        bool isTypeCup = string.Equals(eventKey, PostseasonEvents.TypeCupTeam, StringComparison.Ordinal);
+        if (!isTypeCup && (tournamentPhase is not null || qualificationGroup is not null))
+        {
+            throw new ArgumentException($"{PostseasonEvents.Title(eventKey)} has no tournament stages.", nameof(tournamentPhase));
+        }
+
+        if (isTypeCup)
+        {
+            ValidateTypeCupStage(tournamentPhase, qualificationGroup);
+        }
+    }
+
+    internal static PostseasonEvents.EventShape ResolveIndividualShape(List<HistoryEventRows.StoredRound> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (rows.Count == 0)
+        {
+            return new PostseasonEvents.EventShape(1, SimulationKernel.Cups.ColorCupIndividualFormat.TotalRounds(
+                SimulationKernel.Cups.ColorCupIndividualFormat.PhasedFormatVersion));
+        }
+
+        try
+        {
+            var first = Cups.RunColorCupIndividual.ColorCupIndividualRoundPayloadDocument.FromStored(rows[0].PayloadJson);
+            int format = SimulationKernel.Cups.ColorCupIndividualFormat.ResolveStored(first.FormatVersion);
+            return new PostseasonEvents.EventShape(1, SimulationKernel.Cups.ColorCupIndividualFormat.TotalRounds(format));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is ArgumentException)
+        {
+            return PostseasonEvents.Shape(PostseasonEvents.ColorCupIndividual, SimulationKernel.Rules.RulesV1.CreateDefault());
+        }
     }
 
     internal static void ValidateTypeCupStage(int? tournamentPhase, int? qualificationGroup)
