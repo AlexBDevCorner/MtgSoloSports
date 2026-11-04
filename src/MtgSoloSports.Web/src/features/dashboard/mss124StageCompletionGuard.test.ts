@@ -9,6 +9,7 @@ import { SeasonFlow } from './SeasonFlow.tsx';
 import { DashboardPage } from './DashboardPage.tsx';
 import { FastForwardSeason } from './FastForwardSeason.tsx';
 import { StageCompletionBarrier } from './StageCompletionBarrier.tsx';
+import { useStageCompletionGuard } from './useStageCompletionGuard.ts';
 import {
   isUncertainStageMutationError,
   stageCompletionBusyLabel,
@@ -774,11 +775,342 @@ describe('MSS-124 navigation, shell and keyboard guard', () => {
 
   it('keeps the App guard through Back/Forward and restores the guarded URL', () => {
     const app = readFileSync(join(here, '..', '..', 'App.tsx'), 'utf8');
-    assert.ok(app.includes("addEventListener('popstate'"), 'Back/Forward is observed while pending');
-    assert.ok(app.includes('stageGuardedUrlRef'), 'the guarded URL survives navigation attempts');
-    assert.ok(app.includes('setNavigationBlocked(stageLocked)'), 'SPA navigation follows the same guard');
+    const guard = readFileSync(join(here, 'useStageCompletionGuard.ts'), 'utf8');
+    assert.ok(app.includes('useStageCompletionGuard'), 'App owns the guard above shell and Dashboard');
+    assert.ok(guard.includes("addEventListener('popstate'"), 'Back/Forward is observed while pending');
+    assert.ok(guard.includes('stageGuardedUrlRef'), 'the guarded URL survives navigation attempts');
+    assert.ok(guard.includes('setNavigationBlocked'), 'SPA navigation follows the same guard');
     const router = readFileSync(join(here, '..', 'routing', 'router.tsx'), 'utf8');
     assert.ok(router.includes('navigationBlocked'), 'router owns the interaction guard');
     assert.ok(router.includes('return false'), 'blocked navigation is refused, not queued');
+  });
+});
+
+describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
+  beforeEach(() => {
+    installGlobals(() => Promise.resolve(okJson({})));
+    setNavigationBlocked(false);
+  });
+
+  function GuardProbe({
+    saveId,
+    data,
+    loading,
+    error,
+    refresh,
+    api,
+  }: {
+    saveId: string | null;
+    data: DashboardData | null;
+    loading: boolean;
+    error: string | null;
+    refresh: () => void;
+    api: { current: ReturnType<typeof useStageCompletionGuard> | null };
+  }): React.ReactElement | null {
+    const guard = useStageCompletionGuard({ saveId, data, loading, error, refresh });
+    api.current = guard;
+    return null;
+  }
+
+  async function renderGuard(
+    data: DashboardData | null,
+    options?: { loading?: boolean; error?: string | null; refresh?: () => void },
+  ): Promise<{ renderer: ReturnType<typeof create>; api: { current: ReturnType<typeof useStageCompletionGuard> | null }; refresh: () => void }> {
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let refreshCalls = 0;
+    const refresh = options?.refresh ?? ((): void => {
+      refreshCalls += 1;
+    });
+    void refreshCalls;
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data,
+          loading: options?.loading ?? false,
+          error: options?.error ?? null,
+          refresh,
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    return { renderer: renderer!, api, refresh };
+  }
+
+  it('P1 stale closure: a certain POST failure captured before start still clears the guard', async () => {
+    const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    let refreshCalls = 0;
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    // Capture the mutation-error callback from the pre-click render, exactly
+    // as the in-flight SeasonFlow.runNext catch holds it.
+    const staleMutationError = api.current!.handleStageMutationError;
+    assert.equal(api.current!.stageOp, null);
+    await act(async () => {
+      api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'guard is active after start');
+    assert.equal(isNavigationBlocked(), true, 'SPA navigation is blocked while pending');
+    await act(async () => {
+      staleMutationError(new ApiError(400, 'Stage already complete.'));
+    });
+    await flush(2);
+    assert.equal(api.current!.stageOp, null, 'certain failure clears the guard even via a stale callback');
+    assert.equal(api.current!.stageRefreshError, null);
+    assert.equal(refreshCalls, 0, 'certain failure does not trigger a refresh');
+    assert.equal(isNavigationBlocked(), false, 'navigation resumes after certain failure');
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('P1 stale closure: an uncertain POST failure captured before start keeps the guard and rechecks', async () => {
+    const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    let refreshCalls = 0;
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    const staleMutationError = api.current!.handleStageMutationError;
+    await act(async () => {
+      api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
+    });
+    await flush(2);
+    await act(async () => {
+      staleMutationError(new ApiError(500, 'boom'));
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'uncertain failure keeps the guard for an authoritative recheck');
+    assert.equal(refreshCalls, 1, 'uncertain failure triggers exactly one authoritative refresh');
+    assert.equal(isNavigationBlocked(), true);
+    // The post-mutation refresh delivers fresh data and clears the guard.
+    const dataC = dashboardData(leagueProgress(13, 25), leagueStatus(13));
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataC,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.equal(api.current!.stageOp, null, 'authoritative refresh after uncertain failure clears the guard');
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('P1 generation: a refresh in flight before the POST does not clear the guard', async () => {
+    const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    const dataB = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    const dataC = dashboardData(leagueProgress(13, 25), leagueStatus(13));
+    assert.notEqual(dataA, dataB, 'test precondition: distinct snapshot identities');
+    let refreshCalls = 0;
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    // Capture the post-mutation refresh entry from the pre-click render, as
+    // SeasonFlow holds the pre-start onAdvanced when the POST resolves.
+    const staleRefresh = api.current!.handleDashboardRefresh;
+    await act(async () => {
+      api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null);
+    // A refresh started before the POST resolves with a new snapshot while
+    // the mutation is still pending: the guard must survive it.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataB,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'stale pre-mutation data does not clear the guard');
+    assert.equal(isNavigationBlocked(), true);
+    // A pre-existing dashboard error with retained data is not a
+    // post-mutation refresh failure either.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataB,
+          loading: false,
+          error: 'Request failed (500).',
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'stale error does not become a refresh failure');
+    assert.equal(api.current!.stageRefreshError, null);
+    // The mutation settles and requests its authoritative refresh via the
+    // stale pre-start callback: this generation owns clearance.
+    await act(async () => {
+      staleRefresh();
+    });
+    await flush(2);
+    assert.equal(refreshCalls, 1);
+    assert.ok(api.current!.stageOp !== null, 'guard survives until the post-mutation data lands');
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataC,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.equal(api.current!.stageOp, null, 'post-mutation data clears the guard');
+    assert.equal(isNavigationBlocked(), false);
+    await act(async () => {
+      renderer!.unmount();
+    });
+    void renderGuard;
+  });
+
+  it('P1 generation: a failed post-mutation refresh keeps the guard with refresh-only retry', async () => {
+    const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    const dataC = dashboardData(leagueProgress(13, 25), leagueStatus(13));
+    let refreshCalls = 0;
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    const staleRefresh = api.current!.handleDashboardRefresh;
+    await act(async () => {
+      api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
+    });
+    await flush(2);
+    await act(async () => {
+      staleRefresh();
+    });
+    await flush(2);
+    // Post-mutation refresh fails while retaining the baseline snapshot.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: 'Request failed (500).',
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'failed refresh keeps the guard');
+    assert.equal(api.current!.stageRefreshError, 'Request failed (500).', 'refresh failure is explicit');
+    const before = refreshCalls;
+    await act(async () => {
+      api.current!.handleRetryStageRefresh();
+    });
+    await flush(2);
+    assert.equal(refreshCalls, before + 1, 'retry reloads state');
+    assert.ok(api.current!.stageOp !== null, 'retry does not resubmit the mutation');
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataC,
+          loading: false,
+          error: null,
+          refresh: () => {
+            refreshCalls += 1;
+          },
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.equal(api.current!.stageOp, null, 'successful retry clears the guard');
+    assert.equal(api.current!.stageRefreshError, null);
+    await act(async () => {
+      renderer!.unmount();
+    });
   });
 });
