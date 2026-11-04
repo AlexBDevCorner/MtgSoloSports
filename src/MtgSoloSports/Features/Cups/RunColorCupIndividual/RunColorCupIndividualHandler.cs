@@ -589,17 +589,21 @@ public sealed class RunColorCupIndividualHandler
 
         // Phased 16+16 with full carryover via the Cup-specific two-phase
         // orchestrator (never a mixed-size Accumulate). Finalists 1–16 rank by
-        // combined totals; eliminated 17–32 rank by qualifying totals as part
-        // of the same combined ordering (final points are strictly positive so
-        // finalists always outrank eliminated athletes).
+        // combined totals; eliminated 17–32 are frozen by round-16 qualifying
+        // rank (final points are strictly positive so finalists always outrank
+        // eliminated athletes).
         IReadOnlyList<StageAthleteTotals> phasedTotals =
             ColorCupIndividualPhasedOrchestrator.AccumulatePhasedTotals(payloads, rules);
         ValidatePhasedCarryover(payloads);
+        List<ColorCupIndividualRoundPayloadDocument> qualifyingForRank = payloads.Take(ColorCupIndividualFormat.QualifyingRounds).ToList();
+        Pcg32State round16AfterForRank = new(qualifyingForRank[^1].RngAfterState, qualifyingForRank[^1].RngAfterStream);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoffForRank =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoff(qualifyingForRank, rules, round16AfterForRank);
         ColorCupIndividualRoundPayloadDocument phasedLast = payloads[^1];
         Pcg32V1 phasedTieBreakRng = Pcg32V1.Restore(new Pcg32State(phasedLast.RngAfterState, phasedLast.RngAfterStream));
         IReadOnlyList<StageRankedAthlete> phasedRanked =
             ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(
-                phasedTotals, phasedTieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
+                phasedTotals, cutoffForRank.QualifyingOrderAthleteIds, phasedTieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
         ColorCupIndividualInvariants.ValidateCompletedCupForFormat(phasedRanked, phasedTotals, rules, formatVersion);
         Pcg32State phasedRngAfter = phasedTieBreakRng.Snapshot();
         string phasedChecksum = ComputeChecksum(phasedRanked);

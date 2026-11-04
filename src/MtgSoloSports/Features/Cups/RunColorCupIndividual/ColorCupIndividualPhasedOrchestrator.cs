@@ -23,7 +23,8 @@ public static class ColorCupIndividualPhasedOrchestrator
         IReadOnlyList<int> QualifierAthleteIds,
         Pcg32State RngAfterCutoff,
         bool TieDrawConsumed,
-        IReadOnlyList<StageAthleteTotals> QualifyingTotals);
+        IReadOnlyList<StageAthleteTotals> QualifyingTotals,
+        IReadOnlyList<int> QualifyingOrderAthleteIds);
 
     /// <summary>
     /// Resolves the round-16 cutoff from qualifying payloads plus the RNG state
@@ -113,21 +114,44 @@ public static class ColorCupIndividualPhasedOrchestrator
     }
 
     /// <summary>
-    /// Ranks phased totals best-first with the established stage ordering.
+    /// Ranks phased totals best-first: finalists 1–16 by combined totals with
+    /// the established stage ordering (seeded draw from <paramref name="rng"/>
+    /// only for exactly tied finalists); eliminated athletes 17–32 strictly by
+    /// the frozen round-16 <paramref name="qualifyingOrderAthleteIds"/> order
+    /// with no further RNG. Final points are strictly positive so finalists
+    /// always outrank eliminated athletes; a violation aborts.
     /// </summary>
     public static IReadOnlyList<StageRankedAthlete> RankPhasedTotals(
         IReadOnlyList<StageAthleteTotals> totals,
+        IReadOnlyList<int> qualifyingOrderAthleteIds,
         Pcg32V1 rng,
         RulesV1 rules,
         LeagueLevel level)
     {
         ArgumentNullException.ThrowIfNull(totals);
+        ArgumentNullException.ThrowIfNull(qualifyingOrderAthleteIds);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
         rules.Validate();
         ValidateMergedTotals(totals);
-        List<StageAthleteTotals> byScore = SortByScore(totals);
-        return RankScoreGroups(byScore, rng, rules, level);
+        ValidateQualifyingOrder(totals, qualifyingOrderAthleteIds);
+        Dictionary<int, StageAthleteTotals> byId = totals.ToDictionary(t => t.AthleteId);
+        List<StageAthleteTotals> finalists = SelectFinalists(byId, qualifyingOrderAthleteIds);
+        List<StageAthleteTotals> eliminated = SelectEliminated(byId, qualifyingOrderAthleteIds);
+        CheckFinalistsOutrankEliminated(finalists, eliminated);
+        List<StageAthleteTotals> finalistsByScore = SortByScore(finalists);
+        IReadOnlyList<StageRankedAthlete> finalistRanked = RankScoreGroups(finalistsByScore, rng, rules, level);
+        List<StageRankedAthlete> ranked = new(finalistRanked);
+        Dictionary<int, int> orderIndex = qualifyingOrderAthleteIds
+            .Select((id, index) => (id, index))
+            .ToDictionary(p => p.id, p => p.index);
+        eliminated.Sort((left, right) => orderIndex[left.AthleteId].CompareTo(orderIndex[right.AthleteId]));
+        foreach (StageAthleteTotals entry in eliminated)
+        {
+            ranked.Add(AwardStanding(ranked.Count + 1, entry, rules, level));
+        }
+
+        return ranked;
     }
 
     private static void ValidateQualifyingPayloads(IReadOnlyList<ColorCupIndividualRoundPayloadDocument> qualifyingPayloads)
@@ -204,12 +228,12 @@ public static class ColorCupIndividualPhasedOrchestrator
         StageAthleteTotals seventeenth = ordered[ColorCupIndividualFormat.CutoffRank];
         if (sixteenth.StageScoreThousandths != seventeenth.StageScoreThousandths)
         {
-            return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals);
+            return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals, OrderedIds(ordered));
         }
 
         if (CompareDeterministicPart(sixteenth, seventeenth) != 0)
         {
-            return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals);
+            return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals, OrderedIds(ordered));
         }
 
         return null;
@@ -226,6 +250,17 @@ public static class ColorCupIndividualPhasedOrchestrator
         return qualifiers;
     }
 
+    private static List<int> OrderedIds(List<StageAthleteTotals> ordered)
+    {
+        List<int> ids = new(ordered.Count);
+        foreach (StageAthleteTotals entry in ordered)
+        {
+            ids.Add(entry.AthleteId);
+        }
+
+        return ids;
+    }
+
     private static CutoffResolution ResolveTiedCutoff(
         List<StageAthleteTotals> ordered,
         Pcg32State rngBeforeCutoff,
@@ -238,7 +273,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         DeterministicShuffle.Shuffle(tied, rng);
         Pcg32State after = rng.Snapshot();
         List<StageAthleteTotals> resolved = Reassemble(ordered, tied, runStart, runEnd);
-        return new CutoffResolution(TakeTopIds(resolved), after, true, totals);
+        return new CutoffResolution(TakeTopIds(resolved), after, true, totals, OrderedIds(resolved));
     }
 
     private static (int RunStart, int RunEnd) FindStraddlingRun(
@@ -390,6 +425,84 @@ public static class ColorCupIndividualPhasedOrchestrator
             return score != 0 ? score : string.Compare(left.Name, right.Name, StringComparison.Ordinal);
         });
         return byScore;
+    }
+
+    private static void ValidateQualifyingOrder(
+        IReadOnlyList<StageAthleteTotals> totals,
+        IReadOnlyList<int> qualifyingOrderAthleteIds)
+    {
+        if (qualifyingOrderAthleteIds.Count != ColorCupIndividualFormat.FieldSize)
+        {
+            throw new InvalidOperationException(
+                $"Color Cup qualifying order requires exactly {ColorCupIndividualFormat.FieldSize} athletes, was {qualifyingOrderAthleteIds.Count}.");
+        }
+
+        HashSet<int> totalsIds = totals.Select(t => t.AthleteId).ToHashSet();
+        HashSet<int> orderIds = new();
+        foreach (int id in qualifyingOrderAthleteIds)
+        {
+            if (!totalsIds.Contains(id))
+            {
+                throw new InvalidOperationException($"Color Cup qualifying order references unknown athlete {id}.");
+            }
+
+            if (!orderIds.Add(id))
+            {
+                throw new InvalidOperationException($"Color Cup qualifying order contains duplicate athlete id {id}.");
+            }
+        }
+    }
+
+    private static List<StageAthleteTotals> SelectFinalists(
+        Dictionary<int, StageAthleteTotals> byId,
+        IReadOnlyList<int> qualifyingOrderAthleteIds)
+    {
+        HashSet<int> qualifierIds = qualifyingOrderAthleteIds.Take(ColorCupIndividualFormat.CutoffRank).ToHashSet();
+        List<StageAthleteTotals> finalists = new(ColorCupIndividualFormat.CutoffRank);
+        foreach (int id in qualifierIds)
+        {
+            StageAthleteTotals entry = byId[id];
+            if (SumCounts(entry) != ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds)
+            {
+                throw new InvalidOperationException($"Color Cup finalist '{entry.Name}' must appear in all 32 rounds.");
+            }
+
+            finalists.Add(entry);
+        }
+
+        return finalists;
+    }
+
+    private static List<StageAthleteTotals> SelectEliminated(
+        Dictionary<int, StageAthleteTotals> byId,
+        IReadOnlyList<int> qualifyingOrderAthleteIds)
+    {
+        List<StageAthleteTotals> eliminated = new(ColorCupIndividualFormat.FieldSize - ColorCupIndividualFormat.CutoffRank);
+        foreach (int id in qualifyingOrderAthleteIds.Skip(ColorCupIndividualFormat.CutoffRank))
+        {
+            StageAthleteTotals entry = byId[id];
+            if (SumCounts(entry) != ColorCupIndividualFormat.QualifyingRounds)
+            {
+                throw new InvalidOperationException($"Color Cup eliminated athlete '{entry.Name}' must stop at the 16-round cutoff.");
+            }
+
+            eliminated.Add(entry);
+        }
+
+        return eliminated;
+    }
+
+    private static void CheckFinalistsOutrankEliminated(
+        List<StageAthleteTotals> finalists,
+        List<StageAthleteTotals> eliminated)
+    {
+        int minFinalist = finalists.Min(t => t.StageScoreThousandths);
+        int maxEliminated = eliminated.Max(t => t.StageScoreThousandths);
+        if (minFinalist <= maxEliminated)
+        {
+            throw new InvalidOperationException(
+                "Color Cup finalists must outrank eliminated athletes on combined totals with full carryover.");
+        }
     }
 
     private static IReadOnlyList<StageRankedAthlete> RankScoreGroups(

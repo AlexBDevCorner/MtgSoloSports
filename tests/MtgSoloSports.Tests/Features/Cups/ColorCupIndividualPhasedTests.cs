@@ -343,10 +343,67 @@ public sealed class ColorCupIndividualPhasedTests
         }
 
         Pcg32V1 rng = Pcg32V1.Restore(new Pcg32State(42UL, 54UL));
+        List<int> qualifyingOrder = Enumerable.Range(1, 32).ToList();
         IReadOnlyList<StageRankedAthlete> ranked =
-            ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(totals, rng, rules, LeagueLevel.Feeder1);
+            ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(totals, qualifyingOrder, rng, rules, LeagueLevel.Feeder1);
         ranked.Count.ShouldBe(32);
         ranked.Select(r => r.StageRank).ShouldBe(Enumerable.Range(1, 32).ToList());
+    }
+
+    [Fact]
+    public void FinalRanks_EliminatedExactTie_FollowsQualifyingOrder()
+    {
+        // Regression for MSS-120 requirement 5: eliminated places 17–32 are
+        // frozen at the round-16 cutoff. Two eliminated athletes sharing the
+        // same qualifying score and placement histogram must keep qualifying
+        // order for every final RNG seed instead of a fresh round-32 draw.
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<StageAthleteTotals> qualifying = BuildQualifyingWithEliminatedTie();
+        Pcg32State before = new(11UL, 13UL);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoffFromTotals(qualifying, before);
+        cutoff.TieDrawConsumed.ShouldBeFalse();
+        cutoff.QualifyingOrderAthleteIds.Skip(16).Take(4).ShouldBe([17, 18, 19, 20]);
+
+        IReadOnlyList<StageAthleteTotals> merged = MergeWithFinalPoints(qualifying, cutoff.QualifierAthleteIds);
+        foreach (ulong seed in new ulong[] { 1UL, 42UL, 999UL })
+        {
+            Pcg32V1 rng = Pcg32V1.Restore(new Pcg32State(seed, 54UL));
+            IReadOnlyList<StageRankedAthlete> ranked =
+                ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(
+                    merged, cutoff.QualifyingOrderAthleteIds, rng, rules, LeagueLevel.Feeder1);
+            ranked.Count.ShouldBe(32);
+            // Finalists occupy 1–16; eliminated keep qualifying order 17–32.
+            ranked.Take(16).Select(r => r.AthleteId).ToHashSet()
+                .SetEquals(cutoff.QualifierAthleteIds.ToHashSet()).ShouldBeTrue();
+            ranked.Skip(16).Select(r => r.AthleteId).ShouldBe(cutoff.QualifyingOrderAthleteIds.Skip(16).ToList());
+            ranked.Single(r => r.StageRank == 17).AthleteId.ShouldBe(17);
+            ranked.Single(r => r.StageRank == 18).AthleteId.ShouldBe(18);
+        }
+    }
+
+    [Fact]
+    public void FinalRanks_StraddlingTail_FollowsCutoffShuffle()
+    {
+        // When the cutoff splits an exact tie, the shuffled tail order decides
+        // both the last qualifiers and the first eliminated places. Final
+        // ranking must reuse that frozen tail, not a fresh round-32 draw.
+        RulesV1 rules = RulesV1.CreateDefault();
+        List<StageAthleteTotals> qualifying = BuildTiedCutoffTotals();
+        Pcg32State before = new(999UL, 1001UL);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoffFromTotals(qualifying, before);
+        cutoff.TieDrawConsumed.ShouldBeTrue();
+
+        IReadOnlyList<StageAthleteTotals> merged = MergeWithFinalPoints(qualifying, cutoff.QualifierAthleteIds);
+        foreach (ulong seed in new ulong[] { 5UL, 77UL })
+        {
+            Pcg32V1 rng = Pcg32V1.Restore(new Pcg32State(seed, 91UL));
+            IReadOnlyList<StageRankedAthlete> ranked =
+                ColorCupIndividualPhasedOrchestrator.RankPhasedTotals(
+                    merged, cutoff.QualifyingOrderAthleteIds, rng, rules, LeagueLevel.Feeder1);
+            ranked.Skip(16).Select(r => r.AthleteId).ShouldBe(cutoff.QualifyingOrderAthleteIds.Skip(16).ToList());
+        }
     }
 
     private static List<StageAthleteTotals> BuildDistinctTotals()
@@ -508,6 +565,65 @@ public sealed class ColorCupIndividualPhasedTests
         }
 
         return payloads;
+    }
+
+    private static List<StageAthleteTotals> BuildQualifyingWithEliminatedTie()
+    {
+        List<StageAthleteTotals> totals = new(32);
+        for (int id = 1; id <= 32; id++)
+        {
+            List<int> counts = new(new int[32]);
+            int score;
+            int baseScore;
+            if (id <= 16)
+            {
+                score = 100000 - id * 1000;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+            else if (id == 17 || id == 18)
+            {
+                score = 50000;
+                baseScore = 49900;
+                counts[0] = 8;
+                counts[1] = 8;
+            }
+            else
+            {
+                score = 40000 - id * 100;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+
+            totals.Add(new StageAthleteTotals(id, $"Athlete {id:D2}", score, baseScore, counts));
+        }
+
+        return totals;
+    }
+
+    private static IReadOnlyList<StageAthleteTotals> MergeWithFinalPoints(
+        IReadOnlyList<StageAthleteTotals> qualifying,
+        IReadOnlyList<int> qualifierIds)
+    {
+        HashSet<int> qualifiers = qualifierIds.ToHashSet();
+        List<StageAthleteTotals> merged = new(qualifying.Count);
+        foreach (StageAthleteTotals qual in qualifying)
+        {
+            if (!qualifiers.Contains(qual.AthleteId))
+            {
+                merged.Add(qual);
+                continue;
+            }
+
+            List<int> counts = new(qual.RoundPlaceCounts);
+            counts[0] = checked(counts[0] + 16);
+            int stageScore = checked(qual.StageScoreThousandths + 50000);
+            int baseScore = checked(qual.BaseScoreThousandths + 40000);
+            merged.Add(new StageAthleteTotals(qual.AthleteId, qual.Name, stageScore, baseScore, counts));
+        }
+
+        merged.Sort(static (left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
+        return merged;
     }
 
     private static async Task<List<string>> SnapshotAsync(SaveStore store, Guid saveId)
