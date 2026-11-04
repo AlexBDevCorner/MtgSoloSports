@@ -162,7 +162,7 @@ dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj --configuration
 python3 scripts/test-timing.py --self-check
 
 # Opt-in diagnostics (early return without the flag does not verify them).
-MTG_LONGRUN=1 MTG_CUP_CALIBRATION=1 dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj --configuration Release --no-build --no-restore --filter "FullyQualifiedName~LongRun|FullyQualifiedName~CupSelectionCalibration"
+MTG_LONGRUN=1 MTG_CUP_CALIBRATION=1 MTG_CHAOS_CALIBRATION=1 dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj --configuration Release --no-build --no-restore --filter "FullyQualifiedName~LongRun|FullyQualifiedName~CupSelectionCalibration|FullyQualifiedName~ChaosCalibration"
 ```
 
 Suite budgets (measured guidance, not hard thresholds): focused class feedback
