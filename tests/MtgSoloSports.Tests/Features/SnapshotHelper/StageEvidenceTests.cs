@@ -177,7 +177,7 @@ public sealed class StageEvidenceTests
     }
 
     [Fact]
-    public async Task ProvisionalRanking_FlagsExactDeterministicTies()
+    public void ProvisionalRanking_FlagsExactDeterministicTies()
     {
         // Pure tie-break coverage: same championship, same vectors and raw totals tie;
         // different stage-place vectors break the tie without RNG.

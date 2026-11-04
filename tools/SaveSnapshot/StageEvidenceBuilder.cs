@@ -351,18 +351,33 @@ public static class StageEvidenceBuilder
             throw new InvalidOperationException($"Requested Superleague season {seasonNumber} stage {stageNumber} is only partially complete ({completedRounds}/{rules.RoundsPerStage} rounds) and cannot be presented as completed (partial-stage).");
         }
 
-        bool seasonComplete = false;
+        bool seasonCompleteAsOfTarget = await LoadSeasonCompleteAsOfTargetAsync(connection, rules, seasonId, stageNumber, cancellationToken).ConfigureAwait(false);
+        bool isFinalStage = stageNumber == rules.StagesPerSeason;
+
+        return new ResolvedTarget(
+            seasonId, seasonNumber, seasonCompleteAsOfTarget, leagueId, leagueName, stageId, stageNumber,
+            completedRounds, stageNumber == 1, isFinalStage);
+    }
+
+    private static async Task<bool> LoadSeasonCompleteAsOfTargetAsync(
+        SqliteConnection connection,
+        MtgSoloSports.SimulationKernel.Rules.RulesV1 rules,
+        int seasonId,
+        int stageNumber,
+        CancellationToken cancellationToken)
+    {
+        object? seasonValue;
         using (SqliteCommand seasonCommand = connection.CreateCommand())
         {
             seasonCommand.CommandText = "SELECT IsComplete FROM Seasons WHERE Id = $season;";
             seasonCommand.Parameters.AddWithValue("$season", seasonId);
-            object? seasonValue = await seasonCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            seasonComplete = seasonValue is not null && !(seasonValue is DBNull) && Convert.ToInt64(seasonValue, CultureInfo.InvariantCulture) != 0;
+            seasonValue = await seasonCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return new ResolvedTarget(
-            seasonId, seasonNumber, seasonComplete, leagueId, leagueName, stageId, stageNumber,
-            completedRounds, stageNumber == 1, stageNumber == rules.StagesPerSeason);
+        bool seasonCompleteFromDb = seasonValue is not null && !(seasonValue is DBNull) && Convert.ToInt64(seasonValue, CultureInfo.InvariantCulture) != 0;
+        // Cutoff: a non-final target can never observe its season as complete,
+        // even when the snapshot was taken after the season later finished.
+        return (stageNumber == rules.StagesPerSeason) && seasonCompleteFromDb;
     }
 
     private static async Task EnsureDurableAsync(
