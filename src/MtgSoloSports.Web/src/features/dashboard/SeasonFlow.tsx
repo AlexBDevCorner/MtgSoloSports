@@ -30,6 +30,7 @@ export function SeasonFlow({
   transitionPending,
   interactionLocked,
   onStageStart,
+  onStageSettled,
   onStageMutationError,
 }: {
   saveId: string;
@@ -75,6 +76,14 @@ export function SeasonFlow({
    * keep it through the authoritative refresh.
    */
   onStageStart?: (info: { stage: number; leagueCount: number }) => void;
+  /**
+   * MSS-124: notified when the stage mutation itself settled successfully,
+   * before the authoritative refresh is requested. Only this path marks the
+   * guard settled; generic refreshes (manual Refresh, fast-forward) while the
+   * POST is pending must not claim settlement, so their snapshots cannot
+   * clear the guard by revision.
+   */
+  onStageSettled?: () => void;
   /**
    * MSS-124: notified when the stage mutation itself fails. The app keeps
    * the guard for uncertain (possibly committed) failures until authoritative
@@ -148,9 +157,14 @@ export function SeasonFlow({
       // MSS-074: a manual commit of the final league stage must enter the same
       // pending-transition loading state as fast-forward until the authoritative
       // refresh lands; otherwise stale enabled League-play controls flash.
+      // MSS-124: mark the stage mutation settled before requesting the
+      // authoritative refresh so only this path owns guard provenance.
       const leagueJustCompleted =
         result.executedAction === 'CompleteNextGlobalStage' &&
         (result.isCurrentSeasonComplete || result.seasonComplete);
+      if (next?.kind === 'live') {
+        onStageSettled?.();
+      }
       if (leagueJustCompleted && onLeagueCompleted) {
         onLeagueCompleted();
       } else {

@@ -797,6 +797,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     data,
     loading,
     error,
+    revision,
     refresh,
     api,
   }: {
@@ -804,17 +805,18 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     data: DashboardData | null;
     loading: boolean;
     error: string | null;
+    revision: number;
     refresh: () => void;
     api: { current: ReturnType<typeof useStageCompletionGuard> | null };
   }): React.ReactElement | null {
-    const guard = useStageCompletionGuard({ saveId, data, loading, error, refresh });
+    const guard = useStageCompletionGuard({ saveId, data, loading, error, revision, refresh });
     api.current = guard;
     return null;
   }
 
   async function renderGuard(
     data: DashboardData | null,
-    options?: { loading?: boolean; error?: string | null; refresh?: () => void },
+    options?: { loading?: boolean; error?: string | null; revision?: number; refresh?: () => void },
   ): Promise<{ renderer: ReturnType<typeof create>; api: { current: ReturnType<typeof useStageCompletionGuard> | null }; refresh: () => void }> {
     const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
     let refreshCalls = 0;
@@ -830,6 +832,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data,
           loading: options?.loading ?? false,
           error: options?.error ?? null,
+          revision: options?.revision ?? 0,
           refresh,
           api,
         }),
@@ -838,6 +841,38 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     await flush(2);
     return { renderer: renderer!, api, refresh };
   }
+
+  function updateGuard(
+    renderer: ReturnType<typeof create>,
+    api: { current: ReturnType<typeof useStageCompletionGuard> | null },
+    data: DashboardData | null,
+    revision: number,
+    options?: { loading?: boolean; error?: string | null; refreshCalls?: { current: number } },
+  ): (increment: () => void) => Promise<void> {
+    void api;
+    void options;
+    return async () => {
+      await act(async () => {
+        renderer.update(
+          React.createElement(GuardProbe, {
+            saveId: SAVE,
+            data,
+            loading: options?.loading ?? false,
+            error: options?.error ?? null,
+            revision,
+            refresh: () => {
+              if (options?.refreshCalls) {
+                options.refreshCalls.current += 1;
+              }
+            },
+            api,
+          }),
+        );
+      });
+      await flush(2);
+    };
+  }
+  void updateGuard;
 
   it('P1 stale closure: a certain POST failure captured before start still clears the guard', async () => {
     const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
@@ -851,6 +886,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataA,
           loading: false,
           error: null,
+          revision: 0,
           refresh: () => {
             refreshCalls += 1;
           },
@@ -894,6 +930,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataA,
           loading: false,
           error: null,
+          revision: 0,
           refresh: () => {
             refreshCalls += 1;
           },
@@ -915,6 +952,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     assert.equal(refreshCalls, 1, 'uncertain failure triggers exactly one authoritative refresh');
     assert.equal(isNavigationBlocked(), true);
     // The post-mutation refresh delivers fresh data and clears the guard.
+    // Uncertain failure requested authoritative revision 1 with start data A.
     const dataC = dashboardData(leagueProgress(13, 25), leagueStatus(13));
     await act(async () => {
       renderer!.update(
@@ -923,6 +961,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataC,
           loading: false,
           error: null,
+          revision: 1,
           refresh: () => {
             refreshCalls += 1;
           },
@@ -945,6 +984,9 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     let refreshCalls = 0;
     const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
     let renderer: ReturnType<typeof create> | null = null;
+    const makeRefresh = (): (() => void) => (): void => {
+      refreshCalls += 1;
+    };
     await act(async () => {
       renderer = create(
         React.createElement(GuardProbe, {
@@ -952,16 +994,16 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataA,
           loading: false,
           error: null,
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 0,
+          refresh: makeRefresh(),
           api,
         }),
       );
     });
     await flush(2);
-    // Capture the post-mutation refresh entry from the pre-click render, as
-    // SeasonFlow holds the pre-start onAdvanced when the POST resolves.
+    // Capture the post-mutation entries from the pre-click render, as
+    // SeasonFlow holds the pre-start callbacks when the POST resolves.
+    const staleSettled = api.current!.handleStageSettled;
     const staleRefresh = api.current!.handleDashboardRefresh;
     await act(async () => {
       api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
@@ -969,7 +1011,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     await flush(2);
     assert.ok(api.current!.stageOp !== null);
     // A refresh started before the POST resolves with a new snapshot while
-    // the mutation is still pending: the guard must survive it.
+    // the mutation is still pending: the guard must survive it. Generic
+    // refreshes while unsettled only reload without claiming provenance.
     await act(async () => {
       renderer!.update(
         React.createElement(GuardProbe, {
@@ -977,9 +1020,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataB,
           loading: false,
           error: null,
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 0,
+          refresh: makeRefresh(),
           api,
         }),
       );
@@ -988,7 +1030,7 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     assert.ok(api.current!.stageOp !== null, 'stale pre-mutation data does not clear the guard');
     assert.equal(isNavigationBlocked(), true);
     // A pre-existing dashboard error with retained data is not a
-    // post-mutation refresh failure either.
+    // post-mutation refresh failure either (still unsettled, no auth gen).
     await act(async () => {
       renderer!.update(
         React.createElement(GuardProbe, {
@@ -996,9 +1038,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataB,
           loading: false,
           error: 'Request failed (500).',
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 0,
+          refresh: makeRefresh(),
           api,
         }),
       );
@@ -1006,14 +1047,43 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     await flush(2);
     assert.ok(api.current!.stageOp !== null, 'stale error does not become a refresh failure');
     assert.equal(api.current!.stageRefreshError, null);
-    // The mutation settles and requests its authoritative refresh via the
-    // stale pre-start callback: this generation owns clearance.
+    // A generic refresh while the POST is still pending must not settle and
+    // must not request the authoritative generation.
     await act(async () => {
       staleRefresh();
     });
     await flush(2);
-    assert.equal(refreshCalls, 1);
+    assert.equal(refreshCalls, 1, 'non-authoritative refresh still reloads');
+    assert.ok(api.current!.stageOp !== null);
+    assert.equal(api.current!.stageRefreshError, null);
+    // The mutation settles and requests its authoritative refresh via the
+    // stale pre-start callbacks: this generation owns clearance.
+    await act(async () => {
+      staleSettled();
+    });
+    await flush(2);
+    await act(async () => {
+      staleRefresh();
+    });
+    await flush(2);
+    assert.equal(refreshCalls, 2, 'authoritative refresh requested after settlement');
     assert.ok(api.current!.stageOp !== null, 'guard survives until the post-mutation data lands');
+    // Authoritative fetch in flight keeps the guard even with loading.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataB,
+          loading: true,
+          error: null,
+          revision: 1,
+          refresh: makeRefresh(),
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'loading authoritative refresh keeps the guard');
     await act(async () => {
       renderer!.update(
         React.createElement(GuardProbe, {
@@ -1021,9 +1091,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataC,
           loading: false,
           error: null,
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 1,
+          refresh: makeRefresh(),
           api,
         }),
       );
@@ -1043,6 +1112,9 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     let refreshCalls = 0;
     const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
     let renderer: ReturnType<typeof create> | null = null;
+    const makeRefresh = (): (() => void) => (): void => {
+      refreshCalls += 1;
+    };
     await act(async () => {
       renderer = create(
         React.createElement(GuardProbe, {
@@ -1050,24 +1122,30 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataA,
           loading: false,
           error: null,
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 0,
+          refresh: makeRefresh(),
           api,
         }),
       );
     });
     await flush(2);
+    const staleSettled = api.current!.handleStageSettled;
     const staleRefresh = api.current!.handleDashboardRefresh;
     await act(async () => {
       api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
     });
     await flush(2);
     await act(async () => {
+      staleSettled();
+    });
+    await flush(2);
+    await act(async () => {
       staleRefresh();
     });
     await flush(2);
+    assert.equal(refreshCalls, 1, 'authoritative refresh requested after settlement');
     // Post-mutation refresh fails while retaining the baseline snapshot.
+    // Authoritative revision 1 with the start snapshot + error must surface.
     await act(async () => {
       renderer!.update(
         React.createElement(GuardProbe, {
@@ -1075,9 +1153,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataA,
           loading: false,
           error: 'Request failed (500).',
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 1,
+          refresh: makeRefresh(),
           api,
         }),
       );
@@ -1099,9 +1176,8 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
           data: dataC,
           loading: false,
           error: null,
-          refresh: () => {
-            refreshCalls += 1;
-          },
+          revision: 2,
+          refresh: makeRefresh(),
           api,
         }),
       );
@@ -1109,6 +1185,114 @@ describe('MSS-124 correction: real App guard lifecycle (P1s)', () => {
     await flush(2);
     assert.equal(api.current!.stageOp, null, 'successful retry clears the guard');
     assert.equal(api.current!.stageRefreshError, null);
+    await act(async () => {
+      renderer!.unmount();
+    });
+  });
+
+  it('P1 blocking: a pre-mutation snapshot plus a failed authoritative refresh keeps the guard', async () => {
+    // Exact blocking defect: Dashboard refresh in flight when the stage POST
+    // starts commits its pre-mutation snapshot (B) during the long POST; the
+    // post-mutation authoritative refresh then fails while retaining B. The
+    // old data-identity check (B !== baseline A) cleared the guard without
+    // surfacing the error, re-enabling stale controls for an extra stage.
+    const dataA = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    const dataB = dashboardData(leagueProgress(12, 25), leagueStatus(12));
+    const dataC = dashboardData(leagueProgress(13, 25), leagueStatus(13));
+    assert.notEqual(dataA, dataB);
+    let refreshCalls = 0;
+    const api: { current: ReturnType<typeof useStageCompletionGuard> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    const makeRefresh = (): (() => void) => (): void => {
+      refreshCalls += 1;
+    };
+    await act(async () => {
+      renderer = create(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataA,
+          loading: false,
+          error: null,
+          revision: 0,
+          refresh: makeRefresh(),
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    const staleSettled = api.current!.handleStageSettled;
+    const staleRefresh = api.current!.handleDashboardRefresh;
+    await act(async () => {
+      api.current!.handleStageStart({ stage: 12, leagueCount: 25 });
+    });
+    await flush(2);
+    // Pre-mutation dashboard load finishes during the long POST.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataB,
+          loading: false,
+          error: null,
+          revision: 0,
+          refresh: makeRefresh(),
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'pre-mutation snapshot does not clear');
+    // Stage POST succeeds; authoritative refresh starts from B (rev 0 -> 1).
+    await act(async () => {
+      staleSettled();
+    });
+    await flush(2);
+    await act(async () => {
+      staleRefresh();
+    });
+    await flush(2);
+    assert.equal(refreshCalls, 1);
+    // Authoritative refresh fails while retaining the pre-mutation snapshot
+    // object B with the authoritative revision. Must surface, not clear.
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataB,
+          loading: false,
+          error: 'Request failed (500).',
+          revision: 1,
+          refresh: makeRefresh(),
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.ok(api.current!.stageOp !== null, 'failed authoritative refresh keeps the guard even with pre-mutation data');
+    assert.equal(api.current!.stageRefreshError, 'Request failed (500).');
+    assert.equal(isNavigationBlocked(), true, 'navigation stays blocked after failed authoritative refresh');
+    // Refresh-only retry succeeds and clears with authoritative data.
+    await act(async () => {
+      api.current!.handleRetryStageRefresh();
+    });
+    await flush(2);
+    assert.equal(refreshCalls, 2, 'retry reloads without resubmitting');
+    await act(async () => {
+      renderer!.update(
+        React.createElement(GuardProbe, {
+          saveId: SAVE,
+          data: dataC,
+          loading: false,
+          error: null,
+          revision: 2,
+          refresh: makeRefresh(),
+          api,
+        }),
+      );
+    });
+    await flush(2);
+    assert.equal(api.current!.stageOp, null, 'successful retry clears the guard');
+    assert.equal(isNavigationBlocked(), false);
     await act(async () => {
       renderer!.unmount();
     });

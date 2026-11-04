@@ -123,12 +123,14 @@ export default function App() {
     data: dashboard.data,
     loading: dashboard.loading,
     error: dashboard.error,
+    revision: dashboard.revision,
     refresh: dashboard.refresh,
   });
   const stageOp = stageGuard.stageOp;
   const stageRefreshError = stageGuard.stageRefreshError;
   const stageLocked = stageGuard.stageLocked;
   const handleStageStart = stageGuard.handleStageStart;
+  const handleStageSettled = stageGuard.handleStageSettled;
   const handleDashboardRefresh = stageGuard.handleDashboardRefresh;
   const handleStageMutationError = stageGuard.handleStageMutationError;
   const handleRetryStageRefresh = stageGuard.handleRetryStageRefresh;
@@ -249,6 +251,7 @@ export default function App() {
             onRefresh={handleDashboardRefresh}
             interactionLocked={stageOp !== null && stageOp.saveId === saveId}
             onStageStart={handleStageStart}
+            onStageSettled={handleStageSettled}
             onStageMutationError={handleStageMutationError}
           />
         );

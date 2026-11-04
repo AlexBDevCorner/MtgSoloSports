@@ -35,6 +35,7 @@ export function DashboardPage({
   onRefresh,
   interactionLocked,
   onStageStart,
+  onStageSettled,
   onStageMutationError,
 }: {
   saveId: string;
@@ -54,6 +55,11 @@ export function DashboardPage({
    * can show the busy message immediately and through the refresh.
    */
   onStageStart?: (info: { stage: number; leagueCount: number }) => void;
+  /**
+   * MSS-124: notified when the stage mutation settled successfully, before
+   * the authoritative refresh. Only this path settles guard provenance.
+   */
+  onStageSettled?: () => void;
   /**
    * MSS-124: notified when the stage mutation fails so the App can keep the
    * guard for uncertain outcomes until authoritative state is rechecked.
@@ -214,6 +220,7 @@ export function DashboardPage({
           transitionPending={leagueCompletionPending}
           interactionLocked={locked}
           onStageStart={onStageStart}
+          onStageSettled={onStageSettled}
           onStageMutationError={onStageMutationError}
         />
         {progress.isSeasonComplete || leagueCompletionPending ? null : (
