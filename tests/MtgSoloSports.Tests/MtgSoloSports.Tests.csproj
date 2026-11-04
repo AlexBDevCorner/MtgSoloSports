@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\MtgSoloSports\MtgSoloSports.csproj" />
+    <ProjectReference Include="..\..\tools\SaveSnapshot\MtgSoloSports.SaveSnapshot.csproj" />
   </ItemGroup>
 </Project>

@@ -543,6 +543,13 @@
           "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.12, )"
         }
       },
+      "mtgsolosports.savesnapshot": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Sqlite": "[10.0.12, )",
+          "MtgSoloSports": "[1.0.0, )"
+        }
+      },
       "Microsoft.EntityFrameworkCore.Sqlite": {
         "type": "CentralTransitive",
         "requested": "[10.0.12, )",
