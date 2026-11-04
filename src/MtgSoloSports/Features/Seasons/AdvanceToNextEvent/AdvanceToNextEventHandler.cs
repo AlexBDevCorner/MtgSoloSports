@@ -115,7 +115,14 @@ public sealed class AdvanceToNextEventHandler
             after.QualifierProgress,
             after.ChaosEligible,
             after.ChaosSelectionResolved,
-            after.ChaosComplete);
+            after.ChaosComplete,
+            after.SelectionFormulaEffectiveFromSeasonNumber,
+            after.SelectionFormulaVersion,
+            after.SelectionBonusWeightPermille,
+            after.SelectionPerformanceWeightPermille,
+            after.SelectionFormWeightPermille,
+            after.SelectionChaosWeightPermille,
+            after.SelectionPrestigeWeightPermille);
     }
 
     internal async Task<string> ResolveNextActionAsync(Guid saveId, CancellationToken cancellationToken)

@@ -61,6 +61,16 @@ export interface SeasonStatus {
   chaosEligible?: boolean | null;
   chaosSelectionResolved?: boolean | null;
   chaosComplete?: boolean | null;
+  /** MSS-132: save-specific Cup selection formula activation. The effective
+   * source season is the first source season using 35/30/20/5/10; earlier
+   * sources keep 35/30/25/10. Weights are effective for the current source. */
+  selectionFormulaEffectiveFromSeasonNumber?: number | null;
+  selectionFormulaVersion?: number | null;
+  selectionBonusWeightPermille?: number | null;
+  selectionPerformanceWeightPermille?: number | null;
+  selectionFormWeightPermille?: number | null;
+  selectionChaosWeightPermille?: number | null;
+  selectionPrestigeWeightPermille?: number | null;
 }
 
 export interface AdvanceNextEventResult {
@@ -92,6 +102,13 @@ export interface AdvanceNextEventResult {
   chaosEligible?: boolean | null;
   chaosSelectionResolved?: boolean | null;
   chaosComplete?: boolean | null;
+  selectionFormulaEffectiveFromSeasonNumber?: number | null;
+  selectionFormulaVersion?: number | null;
+  selectionBonusWeightPermille?: number | null;
+  selectionPerformanceWeightPermille?: number | null;
+  selectionFormWeightPermille?: number | null;
+  selectionChaosWeightPermille?: number | null;
+  selectionPrestigeWeightPermille?: number | null;
 }
 
 export interface CompleteSeasonProgress {

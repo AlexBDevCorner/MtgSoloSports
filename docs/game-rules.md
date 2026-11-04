@@ -289,6 +289,41 @@ Competition strength (Rules v2, selection-rating only): Superleague 1000 permill
 
 Effective bonus reflects accumulated career advantage (already tier-aware through bonus generation); performance/form reflect current results adjusted by current competition strength. The softer 100/80/60/40% factor deliberately avoids counting tier strength three times at the same severity as the bonus 2×/1×/1/2×/1/4× scale. Type Cup uses the same performance/form calculation, normalized globally across active candidates.
 
+### Selection formula upgrade boundary (MSS-132)
+
+Saves created before MSS-105 keep the legacy outer weights
+**35/30/25/10** (bonus 350, performance 300, form 250, Chaos 0, prestige 100)
+in their immutable rules snapshot. They adopt the approved
+**35/30/20/5/10** formula automatically from a persisted season boundary,
+without manual database edits, a new universe or a separate confirmation:
+
+- The save persists a selection-formula activation once: formula version 1
+  plus the first source season using 35/30/20/5/10 (`EffectiveFrom`).
+- For an initialized legacy save first upgraded during source season N, the
+  boundary is the first newly started season, no earlier than N+1 and no
+  earlier than that save's Chaos activation season. A pending successor
+  already persisted by movement but not started is still N+1.
+- The currently started source season keeps its legacy formula even if its
+  Cup selection has not happened yet. Both alternating Cup types use the new
+  formula from the effective source season onward.
+- New saves use current weights from the first eligible edition
+  (`EffectiveFrom = 1`). Uninitialized saves (no seasons) also start at 1.
+- Only the five outer weights change; inputs, tie-breaks, prestige model,
+  eligibility, Chaos calculation/normalization and color-local versus global
+  normalization are unchanged. Historical editions, reports, results, replays
+  and RNG data keep their original ratings; old stored and fallback reports
+  still show 35/30/25/10 with correct weighted contributions.
+- Database-schema migration never changes the rules snapshot; game-rule
+  activation is explicit, versioned, forward-only, retry/concurrent-safe,
+  RNG-free and survives export/import, checkpoints and restore. Reading
+  historical data never moves the boundary.
+
+Player-facing example (even-season upgrade): a legacy save upgraded during
+Season 18 keeps its Season 18 Type Cup on 35/30/25/10; the new Season 19
+Color Cup and Season 20 Type Cup use 35/30/20/5/10, provided Chaos
+eligibility permits those seasons. The Dashboard shows the scheduled formula
+with its effective season; each selection report shows its edition's formula.
+
 ### Individual event
 
 All 32 selected athletes compete in one standard 16-round stage. The event awards Gold/Silver/Bronze and an official individual Color Cup title. No bonus is earned.

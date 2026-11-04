@@ -227,6 +227,7 @@ public sealed class SaveStore
             if (pending.Count == 0)
             {
                 await EnsureChaosActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
+                await EnsureSelectionFormulaActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
                 MarkMigrationVerified(path, saveId);
                 return;
             }
@@ -250,6 +251,7 @@ public sealed class SaveStore
             SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
             _ = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
             await EnsureChaosActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
+            await EnsureSelectionFormulaActivationAsync(saveId, cancellationToken).ConfigureAwait(false);
             InvalidateMigrationVerified(saveId);
             MarkMigrationVerified(path, saveId);
         }
@@ -323,6 +325,28 @@ public sealed class SaveStore
         {
             // Table predates the Chaos activation migration; the pending-migration path
             // applies it before this backfill runs again.
+            return;
+        }
+
+        InvalidateMigrationVerified(saveId);
+    }
+
+    internal async Task EnsureSelectionFormulaActivationAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        // Backfills the single-row selection-formula activation for pre-MSS-132
+        // saves: first newly started season at max(CurrentSeason + 1, Chaos
+        // activation) so the currently started source season keeps its legacy
+        // formula. New saves already carry EffectiveFrom=1 from creation.
+        // Idempotent; consumes no sporting RNG; never moves the boundary on retry.
+        using SaveDbContext context = OpenDbContext(saveId);
+        try
+        {
+            _ = await Features.Cups.SelectionFormula.CupSelectionFormulaLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("CupSelectionFormulaActivations", StringComparison.OrdinalIgnoreCase))
+        {
+            // Table predates the selection-formula migration; the
+            // pending-migration path applies it before this backfill runs again.
             return;
         }
 
@@ -478,6 +502,12 @@ public sealed class SaveStore
             Id = 1,
             EffectiveFromSeasonNumber = InitialSeason,
             ChaosFormatVersion = SimulationKernel.Cups.ChaosCupFormat.ChaosFormatVersion,
+        });
+        context.CupSelectionFormulaActivations.Add(new CupSelectionFormulaActivationEntity
+        {
+            Id = Features.Cups.SelectionFormula.CupSelectionFormulaLifecycle.ActivationId,
+            EffectiveFromSeasonNumber = InitialSeason,
+            FormulaVersion = Features.Cups.SelectionFormula.CupSelectionFormulaLifecycle.FormulaVersion,
         });
 
         foreach (CatalogAthlete athlete in preparation.Selection.Selected)

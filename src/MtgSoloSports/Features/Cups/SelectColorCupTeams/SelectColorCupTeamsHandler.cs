@@ -73,6 +73,15 @@ public sealed partial class SelectColorCupTeamsHandler
         EnsureOddSeason(source);
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
+        // MSS-132: forward-only formula activation persists the first source
+        // season using 35/30/20/5/10; the current source keeps its snapshot
+        // formula even when its selection has not happened yet. Established
+        // atomically here (same transaction as the selection) and via
+        // EnsureMigrated for all other entry points; consumes no RNG.
+        CupSelectionFormulaActivationEntity activation =
+            await SelectionFormula.CupSelectionFormulaLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        RulesV1 effective = SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, activation, source.SeasonNumber);
+
         SelectionInputs inputs = await LoadInputsAsync(context, source, cancellationToken).ConfigureAwait(false);
         IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> career =
             await LoadCareerPrestigeAsync(
@@ -82,18 +91,18 @@ public sealed partial class SelectColorCupTeamsHandler
                 cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
         (Dictionary<int, IReadOnlyList<ColorCupSelection.ScoredCandidate>> rankings, Dictionary<int, CupSelectionMetrics.CupMetrics> metrics) =
-            RankAllColors(inputs, career, rules, chaos);
-        IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, rules);
-        AddReport(context, source, BuildReport(rankings, metrics, career, inputs, rules), rules);
-        await PersistSelectionsAsync(context, source, all, rules, cancellationToken).ConfigureAwait(false);
+            RankAllColors(inputs, career, effective, chaos);
+        IReadOnlyList<ColorCupSelection.ScoredCandidate> all = TakeTeams(rankings, effective);
+        AddReport(context, source, BuildReport(rankings, metrics, career, inputs, effective), effective);
+        await PersistSelectionsAsync(context, source, all, effective, cancellationToken).ConfigureAwait(false);
 
         List<ColorCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
-        ColorCupSelectionInvariants.ValidatePersisted(source, persisted, rules);
+        ColorCupSelectionInvariants.ValidatePersisted(source, persisted, effective);
         metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupSelectionResolved);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        return await BuildResponseAsync(_store, saveId, source, rules, cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(_store, saveId, source, effective, cancellationToken).ConfigureAwait(false);
     }
 
     internal sealed record SelectionInputs(

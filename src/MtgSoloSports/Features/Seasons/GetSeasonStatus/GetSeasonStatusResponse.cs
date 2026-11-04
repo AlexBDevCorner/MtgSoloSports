@@ -36,4 +36,11 @@ public sealed record GetSeasonStatusResponse(
     PostseasonEvents.SeasonQualifierProgress? QualifierProgress = null,
     bool ChaosEligible = false,
     bool ChaosSelectionResolved = false,
-    bool ChaosComplete = false);
+    bool ChaosComplete = false,
+    int SelectionFormulaEffectiveFromSeasonNumber = 0,
+    int SelectionFormulaVersion = 0,
+    int SelectionBonusWeightPermille = 0,
+    int SelectionPerformanceWeightPermille = 0,
+    int SelectionFormWeightPermille = 0,
+    int SelectionChaosWeightPermille = 0,
+    int SelectionPrestigeWeightPermille = 0);
