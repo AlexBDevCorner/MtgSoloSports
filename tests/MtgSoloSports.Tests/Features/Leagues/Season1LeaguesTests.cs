@@ -44,7 +44,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -67,7 +67,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -113,7 +113,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -154,7 +154,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -175,7 +175,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -195,7 +195,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -211,7 +211,7 @@ public sealed class Season1LeaguesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

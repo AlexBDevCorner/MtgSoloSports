@@ -39,8 +39,7 @@ public sealed class ReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -58,8 +57,7 @@ public sealed class ReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -82,8 +80,7 @@ public sealed class ReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -105,8 +102,7 @@ public sealed class ReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

@@ -46,7 +46,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -73,7 +73,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -92,7 +92,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -120,7 +120,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -143,7 +143,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -165,7 +165,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -186,7 +186,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -221,8 +221,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -257,8 +256,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -286,8 +284,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -316,8 +313,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -350,8 +346,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -383,8 +378,7 @@ public sealed class SaveCheckpointTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

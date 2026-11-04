@@ -42,7 +42,7 @@ public sealed class DashboardPolishTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -76,7 +76,7 @@ public sealed class DashboardPolishTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -137,7 +137,7 @@ public sealed class DashboardPolishTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

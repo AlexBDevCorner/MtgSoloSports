@@ -123,7 +123,7 @@ public sealed class StoryEventsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -165,7 +165,7 @@ public sealed class StoryEventsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -204,7 +204,7 @@ public sealed class StoryEventsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -264,7 +264,7 @@ public sealed class StoryEventsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -304,7 +304,7 @@ public sealed class StoryEventsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

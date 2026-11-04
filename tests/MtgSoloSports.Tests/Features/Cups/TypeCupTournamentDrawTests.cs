@@ -52,7 +52,7 @@ public sealed class TypeCupTournamentDrawTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -88,7 +88,7 @@ public sealed class TypeCupTournamentDrawTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -163,9 +163,9 @@ public sealed class TypeCupTournamentDrawTests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
-            Directory.Delete(rootThird, recursive: true);
+            TestSaveStores.DeleteRoot(rootFirst);
+            TestSaveStores.DeleteRoot(rootSecond);
+            TestSaveStores.DeleteRoot(rootThird);
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class TypeCupTournamentDrawTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -224,7 +224,7 @@ public sealed class TypeCupTournamentDrawTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

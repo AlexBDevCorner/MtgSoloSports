@@ -35,7 +35,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -54,7 +54,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -71,7 +71,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -124,7 +124,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -161,7 +161,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class ColorCupIndividualTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
             TestSaveStores.DeleteRoot(secondRoot);
         }
     }

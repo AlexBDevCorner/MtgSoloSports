@@ -117,7 +117,7 @@ public sealed class TypeCupOver32Tests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -141,8 +141,8 @@ public sealed class TypeCupOver32Tests
         }
         finally
         {
-            Directory.Delete(rootFirst, recursive: true);
-            Directory.Delete(rootSecond, recursive: true);
+            TestSaveStores.DeleteRoot(rootFirst);
+            TestSaveStores.DeleteRoot(rootSecond);
         }
     }
 
@@ -164,7 +164,7 @@ public sealed class TypeCupOver32Tests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

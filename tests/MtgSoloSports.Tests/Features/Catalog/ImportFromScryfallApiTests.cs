@@ -40,7 +40,7 @@ public sealed class ImportFromScryfallApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -62,7 +62,7 @@ public sealed class ImportFromScryfallApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -96,10 +96,10 @@ public sealed class ImportFromScryfallApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(seedRoot, recursive: true);
+            TestSaveStores.DeleteRoot(seedRoot);
             if (Directory.Exists(root))
             {
-                Directory.Delete(root, recursive: true);
+                TestSaveStores.DeleteRoot(root);
             }
         }
     }
@@ -149,10 +149,10 @@ public sealed class ImportFromScryfallApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(seedRoot, recursive: true);
+            TestSaveStores.DeleteRoot(seedRoot);
             if (Directory.Exists(root))
             {
-                Directory.Delete(root, recursive: true);
+                TestSaveStores.DeleteRoot(root);
             }
         }
     }
@@ -176,7 +176,7 @@ public sealed class ImportFromScryfallApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

@@ -53,7 +53,7 @@ public sealed class SeasonPlacementsApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

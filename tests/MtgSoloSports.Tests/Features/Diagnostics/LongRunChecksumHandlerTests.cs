@@ -56,12 +56,12 @@ public sealed class LongRunChecksumHandlerTests
             finally
             {
                 TestSaveStores.DeleteRoot(secondRoot);
-                Directory.Delete(thirdRoot, recursive: true);
+                TestSaveStores.DeleteRoot(thirdRoot);
             }
         }
         finally
         {
-            Directory.Delete(firstRoot, recursive: true);
+            TestSaveStores.DeleteRoot(firstRoot);
         }
     }
 
@@ -97,7 +97,7 @@ public sealed class LongRunChecksumHandlerTests
         }
         finally
         {
-            Directory.Delete(firstRoot, recursive: true);
+            TestSaveStores.DeleteRoot(firstRoot);
         }
     }
 

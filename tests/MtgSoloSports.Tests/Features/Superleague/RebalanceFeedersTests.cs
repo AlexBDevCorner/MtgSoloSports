@@ -36,7 +36,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -53,7 +53,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -101,7 +101,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -160,7 +160,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
             TestSaveStores.DeleteRoot(secondRoot);
         }
     }
@@ -836,7 +836,7 @@ public sealed class RebalanceFeedersTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

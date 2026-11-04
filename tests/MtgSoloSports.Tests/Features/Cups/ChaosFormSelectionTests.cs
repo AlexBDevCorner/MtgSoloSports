@@ -161,7 +161,7 @@ public sealed class ChaosFormSelectionTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -186,7 +186,7 @@ public sealed class ChaosFormSelectionTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

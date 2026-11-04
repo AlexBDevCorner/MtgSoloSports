@@ -55,7 +55,7 @@ public sealed class AthleteSearchApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -80,7 +80,7 @@ public sealed class AthleteSearchApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

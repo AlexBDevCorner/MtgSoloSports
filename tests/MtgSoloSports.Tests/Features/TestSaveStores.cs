@@ -110,8 +110,60 @@ internal static class TestSaveStores
 
     internal static void DeleteRoot(string root)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+
+        // Release pooled save/catalog SQLite handles before Windows deletes the directory.
+        // ClearAllPools only closes idle pooled connections, so parallel tests keep
+        // isolated databases: an active test simply reopens its own file on next use.
         SqliteConnection.ClearAllPools();
-        Directory.Delete(root, recursive: true);
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(root, recursive: true);
+            return;
+        }
+        catch (IOException)
+        {
+            // Windows file-sharing: a pooled handle is still being released. Fall through to GC + retry.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same sharing race as IOException on Windows.
+        }
+
+        // Finalizable connections hold OS handles until collected. Collect, then clear again.
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        SqliteConnection.ClearAllPools();
+
+        const int MaxAttempts = 5;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(root, recursive: true);
+                return;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            catch (IOException) when (attempt < MaxAttempts)
+            {
+                SqliteConnection.ClearAllPools();
+                Thread.Sleep(50 * attempt);
+            }
+            catch (UnauthorizedAccessException) when (attempt < MaxAttempts)
+            {
+                SqliteConnection.ClearAllPools();
+                Thread.Sleep(50 * attempt);
+            }
+        }
     }
 
     private static async Task CheckpointAsync(SaveStore store, Guid saveId)

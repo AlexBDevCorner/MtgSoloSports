@@ -81,8 +81,7 @@ public sealed class ChaosCupLiveControlsTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(factoryRoot, recursive: true);
+            TestSaveStores.DeleteRoot(factoryRoot);
             TestSaveStores.DeleteRoot(root);
         }
     }

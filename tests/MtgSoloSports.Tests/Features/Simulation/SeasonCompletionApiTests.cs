@@ -63,7 +63,7 @@ public sealed class SeasonCompletionApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -83,7 +83,7 @@ public sealed class SeasonCompletionApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

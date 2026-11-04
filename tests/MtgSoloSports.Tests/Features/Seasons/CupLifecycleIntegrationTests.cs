@@ -75,7 +75,7 @@ public sealed class CupLifecycleIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -133,7 +133,7 @@ public sealed class CupLifecycleIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -177,8 +177,8 @@ public sealed class CupLifecycleIntegrationTests
         }
         finally
         {
-            Directory.Delete(manualRoot, recursive: true);
-            Directory.Delete(fastRoot, recursive: true);
+            TestSaveStores.DeleteRoot(manualRoot);
+            TestSaveStores.DeleteRoot(fastRoot);
         }
     }
 

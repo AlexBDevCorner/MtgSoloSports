@@ -54,7 +54,7 @@ public sealed class SeasonLifecycleTests
         }
         finally
         {
-            Directory.Delete(firstRoot, recursive: true);
+            TestSaveStores.DeleteRoot(firstRoot);
         }
     }
 
@@ -74,7 +74,7 @@ public sealed class SeasonLifecycleTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -91,7 +91,7 @@ public sealed class SeasonLifecycleTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
