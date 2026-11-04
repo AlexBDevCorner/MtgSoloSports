@@ -59,7 +59,9 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
         string? workingDirectory = workingDirectoryOverride;
         try
         {
-            using JsonDocument document = JsonDocument.Parse(json);
+            using JsonDocument document = JsonDocument.Parse(
+                json,
+                new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
             JsonElement root = document.RootElement;
             baseUrl ??= GetOptionalString(root, "baseUrl");
             workingDirectory ??= GetOptionalString(root, "workingDirectory");
