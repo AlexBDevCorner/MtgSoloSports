@@ -30,7 +30,7 @@ public sealed class EventHistoryTests
 
             ListHistoryEventsResponse events = await new ListHistoryEventsHandler(store).HandleAsync(saveId, 1);
             events.Events.Select(e => $"{e.Event}:{e.RoundsPlayed}/{e.TotalRounds}:{e.IsComplete}")
-                .ShouldBe(["color-cup-individual:16/16:True", "color-cup-team:10/32:False"]);
+                .ShouldBe(["color-cup-individual:32/32:True", "color-cup-team:10/32:False"]);
             events.Events[1].GroupCount.ShouldBe(4);
             events.Events[1].RoundsPerGroup.ShouldBe(8);
             events.Events[1].Title.ShouldBe("Color Cup — team");

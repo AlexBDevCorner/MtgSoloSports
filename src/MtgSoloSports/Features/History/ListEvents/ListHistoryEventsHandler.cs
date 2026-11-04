@@ -50,12 +50,46 @@ public sealed class ListHistoryEventsHandler
                 totalRounds = await TypeCupTotalRoundsAsync(context, season, rules, totalRounds, cancellationToken).ConfigureAwait(false);
             }
 
+            if (string.Equals(key, PostseasonEvents.ColorCupIndividual, StringComparison.Ordinal))
+            {
+                totalRounds = await IndividualTotalRoundsAsync(context, season, totalRounds, cancellationToken).ConfigureAwait(false);
+                shape = new PostseasonEvents.EventShape(1, totalRounds);
+            }
+
             bool complete = await HistoryEventRows.IsCompleteAsync(context, season, key, cancellationToken).ConfigureAwait(false);
             events.Add(new HistoryEventSummary(
                 key, PostseasonEvents.Title(key), rows.Count, totalRounds, shape.GroupCount, shape.RoundsPerGroup, complete));
         }
 
         return new ListHistoryEventsResponse(saveId, seasonNumber, events);
+    }
+
+    internal static async Task<int> IndividualTotalRoundsAsync(
+        SaveDbContext context,
+        SeasonEntity season,
+        int fallback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            List<int> formats = await context.ColorCupIndividualRounds
+                .AsNoTracking()
+                .Where(e => e.SourceSeasonId == season.Id)
+                .Select(e => e.FormatVersion)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (formats.Count == 0)
+            {
+                return fallback;
+            }
+
+            int first = SimulationKernel.Cups.ColorCupIndividualFormat.ResolveStored(formats[0]);
+            return SimulationKernel.Cups.ColorCupIndividualFormat.TotalRounds(first);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is ArgumentException || ex is ArgumentOutOfRangeException)
+        {
+            return fallback;
+        }
     }
 
     internal static async Task<int> TypeCupTotalRoundsAsync(

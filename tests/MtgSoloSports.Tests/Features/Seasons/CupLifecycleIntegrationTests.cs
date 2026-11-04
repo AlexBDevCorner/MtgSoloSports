@@ -401,7 +401,7 @@ public sealed class CupLifecycleIntegrationTests
             .Where(e => e.SourceSeasonId == source.Id)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync().ConfigureAwait(false);
-        rounds.Count.ShouldBe(16);
+        rounds.Count.ShouldBe(32);
 
         Dictionary<int, int> seasonNumbers = await context.Seasons.AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.SeasonNumber).ConfigureAwait(false);
