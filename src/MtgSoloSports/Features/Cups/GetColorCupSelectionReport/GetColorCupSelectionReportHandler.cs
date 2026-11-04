@@ -47,20 +47,26 @@ public sealed class GetColorCupSelectionReportHandler
             .LoadSourceAsync(context, sourceSeasonNumber, cancellationToken)
             .ConfigureAwait(false);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        // MSS-132: fallback reports for selections without stored payloads must
+        // show the edition's original effective weights, not today's defaults.
+        // Stored reports already carry their original weights and are replayed.
+        CupSelectionFormulaActivationEntity activation =
+            await SelectionFormula.CupSelectionFormulaLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        RulesV1 effective = SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, activation, source.SeasonNumber);
         List<ColorCupSelectionEntity> rows = await context.ColorCupSelections
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        ColorCupSelectionInvariants.ValidatePersisted(source, rows, rules);
+        ColorCupSelectionInvariants.ValidatePersisted(source, rows, effective);
         CupSelectionReportEntity? stored = await context.CupSelectionReports
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.SourceSeasonId == source.Id, cancellationToken)
             .ConfigureAwait(false);
         ColorCupSelectionReportDocument report = stored is null
-            ? FallbackReport(rows, rules)
+            ? FallbackReport(rows, effective)
             : ColorCupSelectionReportDocument.FromStored(stored.PayloadJson);
-        EnsureReportMatchesSelection(report, rows, rules);
+        EnsureReportMatchesSelection(report, rows, effective);
 
         HashSet<int> ids = report.Teams.SelectMany(t => t.Ranking).Select(c => c.AthleteId).ToHashSet();
         Dictionary<int, SaveAthleteEntity> athletes = await context.SaveAthletes
@@ -68,7 +74,7 @@ public sealed class GetColorCupSelectionReportHandler
             .Where(e => ids.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        return MapResponse(saveId, source, rules, report, stored is not null, athletes);
+        return MapResponse(saveId, source, effective, report, stored is not null, athletes);
     }
 
     /// <summary>Selections that predate stored reports: the selected four per color only.</summary>

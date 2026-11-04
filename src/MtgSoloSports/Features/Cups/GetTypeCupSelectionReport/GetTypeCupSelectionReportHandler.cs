@@ -48,18 +48,21 @@ public sealed class GetTypeCupSelectionReportHandler
             .LoadSourceAsync(context, sourceSeasonNumber, cancellationToken)
             .ConfigureAwait(false);
         RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        CupSelectionFormulaActivationEntity activation =
+            await SelectionFormula.CupSelectionFormulaLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        RulesV1 effective = SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, activation, source.SeasonNumber);
         List<TypeCupSelectionEntity> rows = await context.TypeCupSelections
             .AsNoTracking()
             .Where(e => e.SourceSeasonId == source.Id)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        TypeCupSelectionInvariants.ValidatePersisted(source, rows, rules);
+        TypeCupSelectionInvariants.ValidatePersisted(source, rows, effective);
         CupSelectionReportEntity? stored = await context.CupSelectionReports
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.SourceSeasonId == source.Id, cancellationToken)
             .ConfigureAwait(false);
         TypeCupSelectionReportDocument report = stored is null
-            ? FallbackReport(rows, rules)
+            ? FallbackReport(rows, effective)
             : TypeCupSelectionReportDocument.FromStored(stored.PayloadJson);
         EnsureReportMatchesSelection(report, rows);
 
@@ -69,7 +72,7 @@ public sealed class GetTypeCupSelectionReportHandler
             .Where(e => ids.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
-        return MapResponse(saveId, source, rules, report, stored is not null, athletes);
+        return MapResponse(saveId, source, effective, report, stored is not null, athletes);
     }
 
     /// <summary>Allocations that predate stored reports: the four members per team only.</summary>

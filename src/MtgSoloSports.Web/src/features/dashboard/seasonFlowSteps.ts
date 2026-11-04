@@ -103,11 +103,35 @@ interface ActionCopy {
   target: SummaryTarget;
 }
 
+function selectionFormulaLine(status: SeasonStatus | null): string | null {
+  if (!status) {
+    return null;
+  }
+  const bonus = status.selectionBonusWeightPermille;
+  const performance = status.selectionPerformanceWeightPermille;
+  const form = status.selectionFormWeightPermille;
+  const chaos = status.selectionChaosWeightPermille;
+  const prestige = status.selectionPrestigeWeightPermille;
+  const effectiveFrom = status.selectionFormulaEffectiveFromSeasonNumber;
+  if (
+    bonus === undefined || bonus === null ||
+    performance === undefined || performance === null ||
+    form === undefined || form === null ||
+    chaos === undefined || chaos === null ||
+    prestige === undefined || prestige === null ||
+    effectiveFrom === undefined || effectiveFrom === null
+  ) {
+    return null;
+  }
+  return `Selection formula ${bonus}/${performance}/${form}/${chaos}/${prestige} · effective from Season ${effectiveFrom}.`;
+}
+
 function actionCopy(
   action: string,
   nextSeason: number,
   tiered: boolean,
   qualifierTotalEvents?: number | null,
+  status?: SeasonStatus | null,
 ): ActionCopy | null {
   switch (action) {
     case 'CompleteNextGlobalStage':
@@ -171,22 +195,28 @@ function actionCopy(
         summary: 'Feeder leagues rebalanced.',
         target: 'standings',
       };
-    case 'SelectColorCup':
+    case 'SelectColorCup': {
+      const base =
+        'Rates every athlete within its sporting color and picks the top 4 per color — 32 in total. Announce it on Live to see why each one made the squad.';
+      const formula = selectionFormulaLine(status ?? null);
       return {
         label: 'Select Color Cup squads',
-        explanation:
-          'Rates every athlete within its sporting color and picks the top 4 per color — 32 in total. Announce it on Live to see why each one made the squad.',
+        explanation: formula ? `${base} ${formula}` : base,
         summary: 'Cup squads selected.',
         target: 'cups',
       };
-    case 'SelectTypeCup':
+    }
+    case 'SelectTypeCup': {
+      const base =
+        'Forms a team of 4 for every creature type that can field one. Announce it on Live to see why each athlete plays for its type.';
+      const formula = selectionFormulaLine(status ?? null);
       return {
         label: 'Select Type Cup squads',
-        explanation:
-          'Forms a team of 4 for every creature type that can field one. Announce it on Live to see why each athlete plays for its type.',
+        explanation: formula ? `${base} ${formula}` : base,
         summary: 'Cup squads selected.',
         target: 'cups',
       };
+    }
     case 'RunColorCupIndividual':
       return {
         label: 'Run Color Cup — individual',
@@ -367,7 +397,7 @@ function nextFor(
       ? ('chaos-cup' as const)
       : (status.eventProgress ? status.eventProgress.event : null);
   const qualifierTotal = status.qualifierProgress?.totalEvents ?? status.eventProgress?.totalEvents ?? null;
-  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered, qualifierTotal);
+  const copy = actionCopy(legalAction, status.nextSeasonNumber ?? season + 1, tiered, qualifierTotal, status);
   if (!copy) {
     return {
       kind: 'event',

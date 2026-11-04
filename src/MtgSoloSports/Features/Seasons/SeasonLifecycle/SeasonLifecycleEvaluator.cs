@@ -443,7 +443,8 @@ public static class SeasonLifecycleEvaluator
         CupExtensionPoint.CupState cup = await CupExtensionPoint
             .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
             .ConfigureAwait(false);
-        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: true, cup, chaosEligible);
+        RulesV1 effective = await LoadSelectionEffectiveAsync(context, rules, source.SeasonNumber, cancellationToken).ConfigureAwait(false);
+        return SnapshotPostRebalance(saveId, source, next, effective, persistedPhase, expectedCup, isInaugural: true, cup, chaosEligible);
     }
 
     internal static async Task<SeasonLifecycleSnapshot> EvaluateNormalPendingAsync(
@@ -476,7 +477,35 @@ public static class SeasonLifecycleEvaluator
         CupExtensionPoint.CupState cup = await CupExtensionPoint
             .LoadCupStateAsync(context, source, expectedCup, cancellationToken)
             .ConfigureAwait(false);
-        return SnapshotPostRebalance(saveId, source, next, rules, persistedPhase, expectedCup, isInaugural: false, cup, chaosEligible);
+        RulesV1 effective = await LoadSelectionEffectiveAsync(context, rules, source.SeasonNumber, cancellationToken).ConfigureAwait(false);
+        return SnapshotPostRebalance(saveId, source, next, effective, persistedPhase, expectedCup, isInaugural: false, cup, chaosEligible);
+    }
+
+    internal static async Task<RulesV1> LoadSelectionEffectiveAsync(
+        SaveDbContext context,
+        RulesV1 rules,
+        int sourceSeasonNumber,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(rules);
+        try
+        {
+            Persistence.Saves.CupSelectionFormulaActivationEntity activation =
+                await Cups.SelectionFormula.CupSelectionFormulaLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+            return Cups.SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, activation, sourceSeasonNumber);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Cup selection", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("unsupported Cup selection", StringComparison.OrdinalIgnoreCase))
+        {
+            // Pre-migration saves or unsupported snapshots keep snapshot weights
+            // for lifecycle detail; the mutating paths fail explicitly.
+            return rules;
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
+        {
+            return rules;
+        }
     }
 
     internal sealed record MovementCounts(int Promotions, int Relegations, int Incumbents, int Challengers);
@@ -740,8 +769,15 @@ public static class SeasonLifecycleEvaluator
         bool chaosEligible = false)
     {
         string action = isColor ? SeasonLifecycleActions.SelectColorCup : SeasonLifecycleActions.SelectTypeCup;
+        // MSS-132: never advertise new weights for a legacy edition. The caller
+        // passes the source-season effective rules (snapshot for legacy sources,
+        // 35/30/20/5/10 for sources at or past activation); the detail reflects
+        // those weights so old and new editions stay inspectable.
+        string formula = rules.CupChaosWeightPermille == 0
+            ? "35/30/25/10 formula"
+            : "35/30/20/5/10 formula";
         string detail = isColor
-            ? $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step selects the Color Cup field for Season {source.SeasonNumber} (8 colors x 4, 35/30/20/5/10 formula) before any Cup event."
+            ? $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step selects the Color Cup field for Season {source.SeasonNumber} (8 colors x 4, {formula}) before any Cup event."
             : $"Feeders rebalanced to 32 each with a valid 32-athlete Superleague. Next backend step allocates Type Cup teams for Season {source.SeasonNumber} (four-athlete creature-type teams) before the team event.";
         return new SeasonLifecycleSnapshot(
             saveId,

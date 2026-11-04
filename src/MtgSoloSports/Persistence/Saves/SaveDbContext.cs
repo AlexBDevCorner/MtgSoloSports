@@ -87,6 +87,8 @@ public sealed class SaveDbContext : DbContext
 
     public DbSet<ChaosCupActivationEntity> ChaosCupActivations => Set<ChaosCupActivationEntity>();
 
+    public DbSet<CupSelectionFormulaActivationEntity> CupSelectionFormulaActivations => Set<CupSelectionFormulaActivationEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -167,6 +169,15 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.Id).ValueGeneratedNever();
             entity.Property(e => e.EffectiveFromSeasonNumber).IsRequired();
             entity.Property(e => e.ChaosFormatVersion).IsRequired();
+        });
+
+        modelBuilder.Entity<CupSelectionFormulaActivationEntity>(entity =>
+        {
+            entity.ToTable("CupSelectionFormulaActivations", table => table.HasCheckConstraint("CK_CupSelectionFormulaActivations_SingleRow", "\"Id\" = 1"));
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedNever();
+            entity.Property(e => e.EffectiveFromSeasonNumber).IsRequired();
+            entity.Property(e => e.FormulaVersion).IsRequired();
         });
     }
 

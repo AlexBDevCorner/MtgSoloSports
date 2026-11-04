@@ -92,6 +92,11 @@ public sealed partial class SelectTypeCupTeamsHandler
         await AdvanceRoundHandler.LoadMetadataAsync(context, saveId, cancellationToken).ConfigureAwait(false);
         SeasonEntity source = await LoadSourceSeasonAsync(context, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         EnsureEvenSeason(source);
+        // MSS-132: preview resolves the same source-season effective formula as
+        // the mutating path but persists nothing and never advances activation.
+        CupSelectionFormulaActivationEntity previewActivation =
+            await SelectionFormula.CupSelectionFormulaLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        RulesV1 previewEffective = SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, previewActivation, source.SeasonNumber);
         SelectionInputs inputs = await LoadInputsAsync(context, source, cancellationToken).ConfigureAwait(false);
         IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> career =
             await LoadCareerPrestigeAsync(
@@ -100,10 +105,10 @@ public sealed partial class SelectTypeCupTeamsHandler
                 inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
-        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career, chaos);
-        TypeCupAllocation.AllocationResult allocation = TypeCupAllocation.Allocate(candidates, rules);
+        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, previewEffective, career, chaos);
+        TypeCupAllocation.AllocationResult allocation = TypeCupAllocation.Allocate(candidates, previewEffective);
         Dictionary<int, string> names = inputs.ActiveAthletes.ToDictionary(e => e.Id, e => e.Name);
-        return MapResponse(saveId, source, rules, allocation, names);
+        return MapResponse(saveId, source, previewEffective, allocation, names);
     }
 
     internal async Task<SelectTypeCupTeamsResponse> SelectUnderLockAsync(
@@ -121,6 +126,12 @@ public sealed partial class SelectTypeCupTeamsHandler
         EnsureEvenSeason(source);
         await EnsureNotAlreadySelectedAsync(context, source, cancellationToken).ConfigureAwait(false);
 
+        // MSS-132: same forward-only activation as the Color Cup path; current
+        // source keeps its snapshot formula, future sources use 35/30/20/5/10.
+        CupSelectionFormulaActivationEntity activation =
+            await SelectionFormula.CupSelectionFormulaLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        RulesV1 effective = SelectionFormula.CupSelectionFormulaLifecycle.ToEffectiveRules(rules, activation, source.SeasonNumber);
+
         SelectionInputs inputs = await LoadInputsAsync(context, source, cancellationToken).ConfigureAwait(false);
         IReadOnlyDictionary<int, MtgSoloSports.SimulationKernel.Careers.CareerPerformanceScorer.AthleteCareerScore> career =
             await LoadCareerPrestigeAsync(
@@ -129,22 +140,22 @@ public sealed partial class SelectTypeCupTeamsHandler
                 inputs.ActiveAthletes.Select(e => e.Id).ToList(),
                 cancellationToken).ConfigureAwait(false);
         Dictionary<int, int> chaos = await LoadChaosRawsAsync(context, source, cancellationToken).ConfigureAwait(false);
-        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, rules, career, chaos);
-        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, rules);
+        List<TypeCupAllocation.CandidateRaw> candidates = BuildCandidates(inputs, effective, career, chaos);
+        TypeCupAllocationInsight.Result insight = TypeCupAllocationInsight.Allocate(candidates, effective);
         TypeCupAllocation.AllocationResult allocation = insight.Allocation;
         Dictionary<int, List<MtgSoloSports.SimulationKernel.Cups.ColorCupSelection.StageFormEntry>> stagesByAthlete = GroupStages(inputs);
-        Dictionary<int, MtgSoloSports.SimulationKernel.Cups.CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, rules, stagesByAthlete);
-        AddReport(context, source, BuildReport(insight, metrics, career, inputs, rules), rules);
-        await PersistSelectionsAsync(context, source, allocation, rules, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, MtgSoloSports.SimulationKernel.Cups.CupSelectionMetrics.CupMetrics> metrics = BuildMetricsMap(inputs, effective, stagesByAthlete);
+        AddReport(context, source, BuildReport(insight, metrics, career, inputs, effective), effective);
+        await PersistSelectionsAsync(context, source, allocation, effective, cancellationToken).ConfigureAwait(false);
 
         List<TypeCupSelectionEntity> persisted = await LoadPersistedAsync(context, source, cancellationToken).ConfigureAwait(false);
-        TypeCupSelectionInvariants.ValidatePersisted(source, persisted, rules);
+        TypeCupSelectionInvariants.ValidatePersisted(source, persisted, effective);
         await ValidateNationalityUntouchedAsync(context, persisted, cancellationToken).ConfigureAwait(false);
         metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.CupSelectionResolved);
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        return await BuildResponseAsync(_store, saveId, source, rules, cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(_store, saveId, source, effective, cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task<SeasonEntity> LoadSourceSeasonAsync(

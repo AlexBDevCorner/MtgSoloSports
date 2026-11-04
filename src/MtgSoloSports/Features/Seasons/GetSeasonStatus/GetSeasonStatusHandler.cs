@@ -36,6 +36,11 @@ public sealed class GetSeasonStatusHandler
         SeasonLifecycleSnapshot snapshot = await SeasonLifecycleEvaluator
             .EvaluateAsync(context, saveId, rules, cancellationToken)
             .ConfigureAwait(false);
+        // MSS-132: active/scheduled selection formula and its effective source
+        // season. Reading status never moves the boundary; missing tables on
+        // pre-migration saves fall back to snapshot weights.
+        (int effectiveFrom, int version, int bonus, int performance, int form, int chaos, int prestige) =
+            await LoadSelectionFormulaAsync(context, rules, snapshot, cancellationToken).ConfigureAwait(false);
         return new GetSeasonStatusResponse(
             snapshot.SaveId,
             snapshot.CurrentSeasonNumber,
@@ -62,6 +67,40 @@ public sealed class GetSeasonStatusHandler
             snapshot.QualifierProgress,
             snapshot.ChaosEligible,
             snapshot.ChaosSelectionResolved,
-            snapshot.ChaosComplete);
+            snapshot.ChaosComplete,
+            effectiveFrom,
+            version,
+            bonus,
+            performance,
+            form,
+            chaos,
+            prestige);
+    }
+
+    internal static async Task<(int EffectiveFrom, int Version, int Bonus, int Performance, int Form, int Chaos, int Prestige)> LoadSelectionFormulaAsync(
+        SaveDbContext context,
+        SimulationKernel.Rules.RulesV1 rules,
+        SeasonLifecycleSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        try
+        {
+            Persistence.Saves.CupSelectionFormulaActivationEntity activation =
+                await Cups.SelectionFormula.CupSelectionFormulaLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+            int reference = snapshot.SourceSeasonNumber ?? snapshot.CurrentSeasonNumber;
+            Cups.SelectionFormula.CupSelectionFormulaLifecycle.EffectiveWeights weights =
+                Cups.SelectionFormula.CupSelectionFormulaLifecycle.ResolveWeights(rules, activation, reference);
+            return (activation.EffectiveFromSeasonNumber, activation.FormulaVersion,
+                weights.BonusWeightPermille, weights.PerformanceWeightPermille,
+                weights.FormWeightPermille, weights.ChaosWeightPermille, weights.PrestigeWeightPermille);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            return (0, 0, rules.CupBonusWeightPermille, rules.CupPerformanceWeightPermille,
+                rules.CupFormWeightPermille, rules.CupChaosWeightPermille, rules.CupPrestigeWeightPermille);
+        }
     }
 }

@@ -811,6 +811,25 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         });
                 });
 
+            modelBuilder.Entity("MtgSoloSports.Persistence.Saves.CupSelectionFormulaActivationEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EffectiveFromSeasonNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FormulaVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CupSelectionFormulaActivations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CupSelectionFormulaActivations_SingleRow", "\"Id\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("MtgSoloSports.Persistence.Saves.RoundEntity", b =>
                 {
                     b.Property<int>("Id")

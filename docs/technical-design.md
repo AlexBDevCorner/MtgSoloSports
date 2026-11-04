@@ -248,9 +248,11 @@ for the whole phase in both modes. Round-by-round play:
 
 ## 16. Color Cup selection
 
-Calculate the 35/30/25/10 selection formula with fixed-point normalized values. Effective bonus is accumulated career advantage; completed-season performance and recent form are current results adjusted by current competition strength. Recent form uses exactly the completed source season's final ten league stages with simple increasing recency weights 1..10. Career-prestige constants belong in the save rules snapshot and can be calibrated before rules v1 is frozen for production saves.
+Calculate the versioned Cup selection formula with fixed-point normalized values (MSS-105: 35/30/20/5/10 with Chaos form; legacy saves keep 35/30/25/10 until MSS-132 activation). Effective bonus is accumulated career advantage; completed-season performance and recent form are current results adjusted by current competition strength. Recent form uses exactly the completed source season's final ten league stages with simple increasing recency weights 1..10. Career-prestige constants belong in the save rules snapshot and can be calibrated before rules v1 is frozen for production saves.
 
-Competition strength (MSS-064, Rules v2): Superleague 1000, Feeder 1 800, Feeder 2 600, Feeder 3 400 permille, stored in every tiered snapshot and validated as Super > F1 > F2 > F3 > 0. The softer factor deliberately avoids counting tier strength three times at bonus severity. One shared pure `SimulationKernel/Cups/CupSelectionMetrics` component resolves the explicit persisted league level (never league-name parsing) and scales performance (`points × factor / 1000`) and form (final-ten weighted aggregate × factor / 1000) with checked truncation. Candidates are source-season active athletes only (MSS-097, matching the Type Cup); pool never participates. Active requires a complete final window (generalized from `StagesPerSeason`/`RecentFormStageCount`) or selection aborts. Both Color and Type Cup use the same raw calculation; normalization (per-color vs global) and 35/30/25/10 weights are unchanged.
+Competition strength (MSS-064, Rules v2): Superleague 1000, Feeder 1 800, Feeder 2 600, Feeder 3 400 permille, stored in every tiered snapshot and validated as Super > F1 > F2 > F3 > 0. The softer factor deliberately avoids counting tier strength three times at bonus severity. One shared pure `SimulationKernel/Cups/CupSelectionMetrics` component resolves the explicit persisted league level (never league-name parsing) and scales performance (`points × factor / 1000`) and form (final-ten weighted aggregate × factor / 1000) with checked truncation. Candidates are source-season active athletes only (MSS-097, matching the Type Cup); pool never participates. Active requires a complete final window (generalized from `StagesPerSeason`/`RecentFormStageCount`) or selection aborts. Both Color and Type Cup use the same raw calculation; normalization (per-color vs global) is unchanged while the outer weights are versioned per source season (MSS-132).
+
+MSS-132 activation: a small save-specific `CupSelectionFormulaActivations` single-row record (`EffectiveFromSeasonNumber`, `FormulaVersion = 1`) plus shared `Features/Cups/SelectionFormula/CupSelectionFormulaLifecycle` resolution used by both Cup selectors and their report/read paths. The original snapshot stays intact; only the five outer weights change at activation (legacy 350/300/250/0/100 before, current 350/300/200/50/100 at or past activation). Effective rules are cloned per source season via the versioned snapshot documents (`with` weights, same version/core), so pure kernel signatures keep working and save/version resolution stays outside `SimulationKernel`. Lifecycle `NextActionDetail` for pending Color selection reflects the effective weights (never hard-coded new for legacy); `GetSeasonStatus`/`AdvanceToNextEvent` expose the boundary plus effective weights and the Dashboard shows the scheduled formula with its effective season.
 
 ### Selection as an event
 
@@ -281,8 +283,10 @@ where each athlete ended up. The select slice stores it in `CupSelectionReports`
 alongside the selection rows: per fielded team the top 12 of the type ranking
 plus the four members, each with capped state at selection time and the other
 viable types it could represent; plus viable types that fielded no team.
-Ratings reuse the same 35/30/25/10 strength-aware performance/form calculation as
-the Color Cup via shared `CupSelectionMetrics` (normalized globally), with v2
+Ratings reuse the same versioned strength-aware performance/form calculation as
+the Color Cup via shared `CupSelectionMetrics` (normalized globally; outer
+weights 35/30/20/5/10 at or past MSS-132 activation, legacy 35/30/25/10
+before), with v2
 strength explanation per candidate. `GET /api/saves/{saveId}/cups/type/selection-report?sourceSeason=` adds a
 reason per member: `Capped`, `OnlyType`, `BestRank` or `Balanced` (placed away
 from its best-ranked type so the most teams take part).
