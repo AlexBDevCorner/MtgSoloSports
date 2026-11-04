@@ -133,6 +133,64 @@ are ignored by Git; only `snapshot.config.example.json` is tracked.
 | `does not match the configured save id` | Bundle is for another save | Check `--save-id` / config; no fallback |
 | `newer than supported` / `rules version ... not supported` | Incompatible build | Upgrade the helper; no migration/repair |
 
+## Stage evidence (MSS-134)
+
+One command builds compact, verifiable evidence for the latest durably
+completed official Superleague stage across season transitions, or for an
+explicit historical cutoff:
+
+```powershell
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- evidence --config tools/SaveSnapshot/snapshot.config.json
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- evidence --config tools/SaveSnapshot/snapshot.config.json --season 2 --stage 5
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- evidence --config tools/SaveSnapshot/snapshot.config.json --season 2 --stage 5 --athlete "Card Name"
+```
+
+Resolution is offline over the verified `save.db` only (no live-app calls).
+Superleague is resolved from persisted `Leagues.Kind = 1`, never display-name
+guesses; stage/round counts come from the save-owned rules snapshot. Latest
+means the maximum `(SeasonNumber, StageNumber)` with `Stages.IsComplete`,
+exactly `LeagueSize` `StageStandings` rows and exactly `RoundsPerStage`
+`Rounds` rows; a partial, missing or corrupt target fails visibly
+(`partial-stage`, `not-found`, `corrupt`) and is never presented as completed.
+An explicit `--season/--stage` never silently falls back, and an unfinished
+next stage never substitutes for the previous completed stage.
+
+Output is versioned JSON (`schemaVersion: 1`,
+`evidenceType: superleague-stage-evidence`, `outcome: completed`) with source
+provenance (`snapshot.json` identity, `databaseSha256`, schema/rules/RNG
+versions, saved `StagesPerSeason`/`RoundsPerStage`/`LeagueSize`), target
+cutoff and completion evidence, the complete 32-row stage table, all 16
+round placements/scores plus round winners, championship standings
+immediately before and after the stage (signed rank/gap changes in
+thousandths), bounded athlete follow-up (`--athlete`/`--athlete-id`: 16 round
+placements, last 5 finishes, prior wins/titles) and same-season winners plus
+prior-season champions. All sporting values stay fixed-point thousandths with
+display strings (`77.000`, `+7.552%`); championship points, stage scores,
+bonuses and weighted career points are never mixed (career prestige is
+excluded by construction). Provisional order reuses `SeasonCalculator`
+accumulation plus deterministic tie-break vectors; exact deterministic ties
+are flagged and the historical seeded draw is not replayed. The final stage
+of a completed season reuses persisted official `SeasonStandings`.
+
+Cutoff: every query filters to seasons/stages at or before the target.
+Later stages, later seasons, later Cups, current mutable bonuses
+(`AthleteCareers`) and future honours are excluded; unavailable context is
+an explicit omission with a reason. Every numeric highlight carries a stable
+evidence reference (`Stages:…`, `Rounds:…`, `StageStandings:…`,
+`SeasonStandings:…`). Use `query` for targeted investigation on the same
+snapshot; no background calls to the advancing app are made.
+
+Coverage limits: one stage only (32 athletes, 16 rounds, 512 placements);
+history is bounded to the same season plus prior Superleague champions;
+full-database scans and per-athlete full histories are never loaded.
+
+Representative size/timing (measured, not claimed): Season 2 complete
+fixture (2 seasons in snapshot, Superleague season 2 stage 32 final,
+32 athletes, 16 rounds) produces 319,644 bytes of indented JSON in 52 ms
+extraction time on CI (Ubuntu runner, `dotnet test` Release; 58 s of that run
+is one-time Season 2 template construction, not extraction). Ordinary
+single-stage evidence is smaller (same shape, fewer prior seasons).
+
 ## Verification
 
 Focused tests drive the real CLI in-process against a loopback stub serving
@@ -141,6 +199,15 @@ a genuine `SaveStore.ExportAsync` artifact, plus offline-bundle acquisition:
 ```powershell
 dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj --configuration Release --no-build --no-restore --filter "FullyQualifiedName~SnapshotHelper"
 ```
+
+Stage-evidence tests (`StageEvidenceTests`) fork the cheapest applicable
+prepared save (`Season1PlusCups` for incidental history, `Season2Complete`
+only for the final-stage path) and execute the named completion themselves:
+latest selection with partial progress, season transition, before/after
+rankings and ties, stage-one/final-stage cases, plain/`br1` encodings,
+corruption, historical cutoff with later outcomes, and bounded athlete
+follow-up. Evidence tests assert the snapshot hash and `RngStates` are
+unchanged (read-only, no RNG consumption).
 
 Manual smoke against the default Compose app: start the container, create or
 open a save in the UI, run the setup/download/inspect one-liners above, then

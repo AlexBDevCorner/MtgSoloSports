@@ -48,6 +48,7 @@ internal static class Program
                 "acquire" => await AcquireAsync(rest, httpHandlerOverride, stdout, stderr).ConfigureAwait(false),
                 "info" => Info(rest, stdout, stderr),
                 "query" => await QueryAsync(rest, stdout, stderr).ConfigureAwait(false),
+                "evidence" => await EvidenceAsync(rest, stdout, stderr).ConfigureAwait(false),
                 "help" => await WriteHelpAsync(stdout).ConfigureAwait(false),
                 _ => UsageError(stderr, $"Unknown command '{args[0]}'."),
             };
@@ -155,6 +156,27 @@ internal static class Program
                 truncated = result.Truncated,
             },
             OutputJsonOptions)).ConfigureAwait(false);
+        await stdout.WriteAsync(Environment.NewLine).ConfigureAwait(false);
+        return 0;
+    }
+
+    private static async Task<int> EvidenceAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string configPath = RequireOption(args, "--config");
+        string? workingDirOverride = GetOption(args, "--working-dir");
+        int? season = ParseIntOption(args, "--season");
+        int? stage = ParseIntOption(args, "--stage");
+        string? athlete = GetOption(args, "--athlete");
+        int? athleteId = ParseIntOption(args, "--athlete-id");
+        SnapshotConfig config = SnapshotConfig.Load(configPath, workingDirectoryOverride: workingDirOverride);
+        SnapshotInfo info = SnapshotReader.ReadInfo(config.WorkingDirectory);
+        StageEvidenceDocument evidence = await StageEvidenceBuilder
+            .BuildAsync(info.SnapshotPath, info, season, stage, athlete, athleteId)
+            .ConfigureAwait(false);
+        await stderr.WriteLineAsync(
+            $"[snapshot] stage evidence for save '{info.SaveId:D}' season {evidence.Target.SeasonNumber} stage {evidence.Target.StageNumber} " +
+            $"({evidence.StageTable.Count} athletes, {evidence.Rounds.Count} rounds) in {evidence.ElapsedMs}ms.").ConfigureAwait(false);
+        await stdout.WriteAsync(evidence.ToJson()).ConfigureAwait(false);
         await stdout.WriteAsync(Environment.NewLine).ConfigureAwait(false);
         return 0;
     }
@@ -281,6 +303,22 @@ internal static class Program
         return limit;
     }
 
+    private static int? ParseIntOption(string[] args, string name)
+    {
+        string? raw = GetOption(args, name);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (!int.TryParse(raw.Trim(), CultureInfo.InvariantCulture, out int value))
+        {
+            throw new ArgumentException($"Option '{name}' must be an integer.", nameof(args));
+        }
+
+        return value;
+    }
+
     private static bool IsHelp(string value)
     {
         return string.Equals(value, "--help", StringComparison.OrdinalIgnoreCase)
@@ -301,7 +339,7 @@ internal static class Program
     }
 
     private static string Usage() =>
-        "MtgSoloSports save snapshot helper (MSS-133): fetch one verified read-only\n" +
+        "MtgSoloSports save snapshot helper (MSS-133/134): fetch one verified read-only\n" +
         "SQLite snapshot for the explicitly configured save.\n" +
         "\n" +
         "Usage:\n" +
@@ -309,9 +347,12 @@ internal static class Program
         "  snapshot acquire --config <path> [--bundle <file>] [--base-url <url>] [--save-id <guid>] [--working-dir <path>]\n" +
         "  snapshot info --config <path> [--working-dir <path>]\n" +
         "  snapshot query --config <path> --sql \"<SELECT ...>\" [--limit <n>] [--working-dir <path>]\n" +
+        "  snapshot evidence --config <path> [--season <n>] [--stage <n>] [--athlete <name>] [--athlete-id <id>] [--working-dir <path>]\n" +
         "\n" +
         "The loopback game app is the only network access (GET /api/saves and\n" +
         "GET /api/saves/{id}/export); --bundle works fully offline. Inspection is\n" +
         "read-only (Mode=ReadOnly + query_only) and never migrates or simulates.\n" +
-        "Data JSON goes to stdout, logs go to stderr.\n";
+        "Evidence (MSS-134) reads the verified snapshot only: latest completed\n" +
+        "Superleague stage by default, or an explicit --season/--stage cutoff with\n" +
+        "optional bounded --athlete follow-up. Data JSON goes to stdout, logs go to stderr.\n";
 }
