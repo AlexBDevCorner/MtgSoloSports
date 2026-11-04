@@ -24,6 +24,15 @@ public sealed class ColorCupIndividualRoundEntity
 
     public int RulesVersion { get; set; }
 
+    /// <summary>
+    /// MSS-119 edition format discriminator: 0 is the legacy 16 rounds of 32,
+    /// 1 is the phased 16 rounds of 32 plus 16 rounds of 16. Defaults to 0 so
+    /// rows written before MSS-119 read back as legacy without edits; the value
+    /// must match the round payload's <c>formatVersion</c> and must agree
+    /// across every round of one source season.
+    /// </summary>
+    public int FormatVersion { get; set; }
+
     public long RngBeforeState { get; set; }
 
     public long RngBeforeStream { get; set; }

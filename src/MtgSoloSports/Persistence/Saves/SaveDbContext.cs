@@ -591,6 +591,7 @@ public sealed class SaveDbContext : DbContext
             entity.Property(e => e.SourceSeasonNumber).IsRequired();
             entity.Property(e => e.RoundNumber).IsRequired();
             entity.Property(e => e.RulesVersion).IsRequired();
+            entity.Property(e => e.FormatVersion).IsRequired();
             entity.Property(e => e.RngBeforeState).IsRequired();
             entity.Property(e => e.RngBeforeStream).IsRequired();
             entity.Property(e => e.RngAfterState).IsRequired();

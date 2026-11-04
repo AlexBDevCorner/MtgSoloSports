@@ -158,6 +158,9 @@ namespace MtgSoloSports.Persistence.Saves.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("PayloadChecksum")
                         .IsRequired()
                         .HasMaxLength(64)
