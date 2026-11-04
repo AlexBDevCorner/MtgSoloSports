@@ -7,4 +7,5 @@ internal sealed record AlmanacSeasonEntry(
     string? SuperleagueChampionName,
     int? SuperleagueChampionAthleteId,
     string ColorCupState,
-    string TypeCupState);
+    string TypeCupState,
+    string ChaosCupState);

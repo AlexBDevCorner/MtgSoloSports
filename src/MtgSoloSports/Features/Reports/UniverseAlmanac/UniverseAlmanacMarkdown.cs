@@ -33,7 +33,7 @@ internal static class UniverseAlmanacMarkdown
         sb.AppendLine();
         sb.AppendLine("- Freshness: uploads become stale as simulation advances; re-export this almanac occasionally and a fresh season dossier for new coverage before quoting.");
         sb.AppendLine("- Units: weighted Hall of Fame career points measure all-time greatness (weights version labelled below); official Total league points are fixed-point thousandths (divide by 1000) summed from final season tables and never mixed with weighted points.");
-        sb.AppendLine("- Type Cup qualification never awards titles; only Final ranks 1–3 hold official medals. Color individual and team events are separate titles.");
+        sb.AppendLine("- Type Cup qualification never awards titles; only Final ranks 1–3 hold official medals. Color individual and team events are separate titles. Chaos Final ranks 1–3 hold official individual medals; Chaos group scores never substitute league totals or weighted points. Pending/incomplete Chaos editions are labelled, never inferred.");
         sb.AppendLine();
     }
 
@@ -48,12 +48,12 @@ internal static class UniverseAlmanacMarkdown
             return;
         }
 
-        sb.AppendLine("| Season | Complete | Superleague champion | Color Cup | Type Cup |");
-        sb.AppendLine("| --- | --- | --- | --- | --- |");
+        sb.AppendLine("| Season | Complete | Superleague champion | Color Cup | Type Cup | Chaos Cup |");
+        sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
         foreach (AlmanacSeasonEntry season in data.Seasons)
         {
             string champion = season.SuperleagueChampionName ?? "— (no Superleague in Season 1)";
-            sb.AppendLine(CultureInfo.InvariantCulture, $"| {season.SeasonNumber} | {(season.IsComplete ? "final" : "provisional")} | {ReportMarkdown.Cell(champion)} | {season.ColorCupState} | {season.TypeCupState} |");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {season.SeasonNumber} | {(season.IsComplete ? "final" : "provisional")} | {ReportMarkdown.Cell(champion)} | {season.ColorCupState} | {season.TypeCupState} | {season.ChaosCupState} |");
         }
 
         sb.AppendLine();
@@ -135,6 +135,102 @@ internal static class UniverseAlmanacMarkdown
         AppendColorRows(sb, "Color Cup individual medals — all-time by color (completed editions only)", data.ColorIndividualMedals);
         AppendColorRows(sb, "Color Cup combined medals — team + individual (completed editions only)", data.ColorCombinedMedals);
         AppendMedalTable(sb, "Type Cup team medals — all-time by creature type (Final only; qualification never awards medals)", data.TypeTeamTable);
+        AppendChaos(sb, data);
+    }
+
+    private static void AppendChaos(StringBuilder sb, UniverseAlmanacData data)
+    {
+        sb.AppendLine(CultureInfo.InvariantCulture, $"## Chaos Cup editions ({data.ChaosEditions.Count}) — Final P1..P3 hold official individual medals");
+        sb.AppendLine();
+        sb.AppendLine("Chaos group scores are isolated per 32-athlete group and reset every stage; they award no league championship points, promotion or new bonus and never substitute season totals or weighted career points. Pending/incomplete editions omit podiums, never inferred.");
+        sb.AppendLine();
+        AppendChaosEditions(sb, data);
+        AppendChaosMedals(sb, data);
+        AppendChaosColors(sb, data);
+    }
+
+    private static void AppendChaosEditions(StringBuilder sb, UniverseAlmanacData data)
+    {
+        ArgumentNullException.ThrowIfNull(sb);
+        if (data.ChaosEditions.Count == 0)
+        {
+            sb.AppendLine("No Chaos Cup editions yet; seasons before activation show NotHeld.");
+            sb.AppendLine();
+            return;
+        }
+
+        foreach (AlmanacChaosEditionEntry edition in data.ChaosEditions.OrderByDescending(e => e.SourceSeasonNumber))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Chaos Cup Season {edition.SourceSeasonNumber} {edition.State}: {FormatChaosPodium(edition)}{FormatChaosChampion(edition)}");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string FormatChaosPodium(AlmanacChaosEditionEntry edition)
+    {
+        ArgumentNullException.ThrowIfNull(edition);
+        if (edition.FinalTopThree.Count == 0)
+        {
+            return "no official podium yet (pending/incomplete)";
+        }
+
+        return string.Join(", ", edition.FinalTopThree.OrderBy(p => p.TeamRank).Select(p => $"P{p.TeamRank} {ReportMarkdown.Cell(p.TeamName)} ({ReportMarkdown.Cell(p.Medal)})"));
+    }
+
+    private static string FormatChaosChampion(AlmanacChaosEditionEntry edition)
+    {
+        ArgumentNullException.ThrowIfNull(edition);
+        if (edition.ChampionName is null)
+        {
+            return string.Empty;
+        }
+
+        return $" · Champion {ReportMarkdown.Cell(edition.ChampionName)} (id {edition.ChampionAthleteId?.ToString(CultureInfo.InvariantCulture) ?? "—"})";
+    }
+
+    private static void AppendChaosMedals(StringBuilder sb, UniverseAlmanacData data)
+    {
+        ArgumentNullException.ThrowIfNull(sb);
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Chaos Cup medals — all-time by athlete (completed editions only, {data.ChaosMedals.Count} medalists)");
+        sb.AppendLine();
+        if (data.ChaosMedals.Count == 0)
+        {
+            sb.AppendLine("No completed Chaos Cups yet; pending editions contribute zero medals.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Card | Gold | Silver | Bronze | Editions | Last |");
+        sb.AppendLine("| --- | --- | --- | --- | --- | --- |");
+        foreach (AlmanacChaosMedalEntry row in data.ChaosMedals)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {ReportMarkdown.Cell(row.AthleteName)} (id {row.AthleteId}) | {row.Gold} | {row.Silver} | {row.Bronze} | {row.Editions} | S{row.LastSeasonNumber} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendChaosColors(StringBuilder sb, UniverseAlmanacData data)
+    {
+        ArgumentNullException.ThrowIfNull(sb);
+        sb.AppendLine("### Chaos Cup medals — all-time by sporting color (completed editions only)");
+        sb.AppendLine();
+        if (data.ChaosColorMedals.Count == 0)
+        {
+            sb.AppendLine("No Chaos Cup editions yet.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Color | Gold | Silver | Bronze | Entrants |");
+        sb.AppendLine("| --- | --- | --- | --- | --- |");
+        foreach (AlmanacChaosColorEntry row in data.ChaosColorMedals)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {ReportMarkdown.Cell(row.TeamName)} | {row.Gold} | {row.Silver} | {row.Bronze} | {row.Entrants} |");
+        }
+
+        sb.AppendLine();
     }
 
     private static void AppendMedalTable(StringBuilder sb, string title, IReadOnlyList<Cups.ListCupEditions.ListCupEditionsResponse.TeamSummary> table)

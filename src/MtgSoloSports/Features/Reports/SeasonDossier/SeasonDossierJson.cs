@@ -34,6 +34,7 @@ internal static class SeasonDossierJson
             postseason = data.Postseason,
             colorCup = CupPart(data.ColorCup),
             typeCup = CupPart(data.TypeCup),
+            chaosCup = ChaosPart(data.Chaos),
             history = HistoryPart(data.History),
             careerRecords = data.CareerRecords,
         };
@@ -81,7 +82,8 @@ internal static class SeasonDossierJson
             championshipPoints = "official season championship points in fixed-point thousandths (divide by 1000; 32-position table, no bonus multiplier)",
             stageScore = "persisted stage-score sums in fixed-point thousandths (display only)",
             weightedCareerPoints = "weighted Hall of Fame career points are never in this dossier; leader titles below are official league honours only",
-            qualification = "Type Cup qualification never awards titles; only Final ranks 1-3 hold official medals. Color individual and team events are separate titles.",
+            qualification = "Type Cup qualification never awards titles; only Final ranks 1-3 hold official medals. Color individual and team events are separate titles. Chaos Final ranks 1-3 hold official individual medals; Chaos group scores award no league points and never substitute season totals or weighted career points.",
+            chaos = "Chaos group scores are isolated per 32-athlete group, reset every stage; pending/incomplete editions omit results, never inferred",
             status = "final = persisted official table; provisional = cumulative from completed stages only; pending/not-held = omitted, never inferred",
         };
     }
@@ -162,6 +164,34 @@ internal static class SeasonDossierJson
             team = cup.Team,
             tournament = cup.Tournament,
             note = cup.Note,
+        };
+    }
+
+    private static object? ChaosPart(ChaosSummaryEntry? chaos)
+    {
+        if (chaos is null)
+        {
+            return null;
+        }
+
+        return new
+        {
+            state = chaos.State,
+            hasEdition = chaos.HasEdition,
+            isComplete = chaos.IsComplete,
+            fieldSize = chaos.FieldSize,
+            roundsPlayed = chaos.RoundsPlayed,
+            totalRounds = chaos.TotalRounds,
+            groupsCompleted = chaos.GroupsCompleted,
+            totalGroups = chaos.TotalGroups,
+            editionChecksum = chaos.EditionChecksum,
+            rulesVersion = chaos.RulesVersion,
+            chaosFormatVersion = chaos.ChaosFormatVersion,
+            champion = chaos.Champion,
+            finalTopThree = chaos.FinalTopThree,
+            byColor = chaos.ByColor,
+            byDivision = chaos.ByDivision,
+            note = chaos.Note,
         };
     }
 

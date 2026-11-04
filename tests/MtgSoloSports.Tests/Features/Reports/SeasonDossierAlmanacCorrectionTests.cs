@@ -212,6 +212,7 @@ public sealed class SeasonDossierAlmanacCorrectionTests
             new PostseasonSection("resolved", "not-applicable", "resolved", "summary", [], []),
             null,
             typeCup,
+            null,
             new HistorySection(null, null, null, [], [], []),
             []);
     }

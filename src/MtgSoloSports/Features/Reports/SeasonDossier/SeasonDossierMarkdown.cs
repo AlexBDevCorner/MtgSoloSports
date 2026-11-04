@@ -22,6 +22,7 @@ internal static class SeasonDossierMarkdown
         AppendFeeders(sb, data);
         AppendPostseason(sb, data);
         AppendCups(sb, data);
+        AppendChaos(sb, data.Chaos);
         AppendHistory(sb, data);
         AppendRecords(sb, data);
         return sb.ToString();
@@ -43,7 +44,7 @@ internal static class SeasonDossierMarkdown
         sb.AppendLine("- Freshness: uploads become stale as simulation advances; re-export after new stages or postseason events before quoting.");
         sb.AppendLine();
         sb.AppendLine("- Units: championship points are official season totals in fixed-point thousandths (divide by 1000, e.g. 77000 = 77.000; 32-position table, no bonus multiplier). Weighted Hall of Fame career points never appear in this dossier; leader titles are official league honours.");
-        sb.AppendLine("- Type Cup qualification never awards titles; only Final ranks 1–3 hold official medals. Color individual and team events are separate titles. Provisional tables carry no zones; pending/not-held sections are omitted, never inferred.");
+        sb.AppendLine("- Type Cup qualification never awards titles; only Final ranks 1–3 hold official medals. Color individual and team events are separate titles. Chaos Final ranks 1–3 hold official individual medals; Chaos group scores award no league points and never substitute season totals or weighted career points. Provisional tables carry no zones; pending/not-held sections are omitted, never inferred.");
         sb.AppendLine();
     }
 
@@ -370,6 +371,50 @@ internal static class SeasonDossierMarkdown
             sb.AppendLine(CultureInfo.InvariantCulture, $"Wildcard places ({tournament.Wildcards.Count}, policy v{tournament.QualificationPolicyVersion}): {string.Join(", ", tournament.Wildcards.OrderBy(w => w.CreatureType, StringComparer.Ordinal).Select(w => ReportMarkdown.Cell(w.CreatureType)))}");
             sb.AppendLine();
         }
+    }
+
+    private static void AppendChaos(StringBuilder sb, ChaosSummaryEntry? chaos)
+    {
+        sb.AppendLine("## Chaos Cup — isolated group scores, no league points");
+        sb.AppendLine();
+        if (chaos is null || !chaos.HasEdition)
+        {
+            sb.AppendLine("Chaos Cup not held for this season; no edition persisted.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Edition state: {chaos.State} · Field {chaos.FieldSize} athletes · {chaos.RoundsPlayed}/{chaos.TotalRounds} rounds · {chaos.GroupsCompleted}/{chaos.TotalGroups} groups · {ReportMarkdown.Cell(chaos.Note)}");
+        sb.AppendLine();
+        if (chaos.ByColor.Count > 0)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Participation by color: {string.Join(", ", chaos.ByColor.OrderBy(b => b.Key, StringComparer.Ordinal).Select(b => $"{ReportMarkdown.Cell(b.Label)} {b.Count}"))}");
+        }
+
+        if (chaos.ByDivision.Count > 0)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Participation by tier: {string.Join(", ", chaos.ByDivision.Select(b => $"{ReportMarkdown.Cell(b.Label)} {b.Count}"))}");
+        }
+
+        sb.AppendLine("- Chaos group scores are isolated per 32-athlete group and reset every stage; they award no league championship points, promotion or new bonus and never substitute season totals or weighted career points.");
+        sb.AppendLine();
+        if (chaos.Champion is null)
+        {
+            sb.AppendLine("Final: pending — no official Final standings yet; finished groups are listed in the Chaos Cup edition dossier, qualifier success is not a title.");
+        }
+        else
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Champion: {ReportMarkdown.Cell(chaos.Champion.AthleteName)} (id {chaos.Champion.AthleteId}) · {ReportMarkdown.FormatPoints(chaos.Champion.FinalScoreThousandths)} · {chaos.Champion.RoundWins} round wins");
+            foreach (CupPodiumEntry podium in chaos.FinalTopThree.OrderBy(p => p.Rank))
+            {
+                string athlete = podium.AthleteId.HasValue
+                    ? $"{ReportMarkdown.Cell(podium.AthleteName ?? $"Athlete {podium.AthleteId.Value}")} (id {podium.AthleteId.Value})"
+                    : ReportMarkdown.Cell(podium.TeamName);
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  - P{podium.Rank} {athlete} · {ReportMarkdown.FormatPoints(podium.ScoreThousandths)} · {ReportMarkdown.Cell(podium.Medal)}");
+            }
+        }
+
+        sb.AppendLine();
     }
 
     private static void AppendHistory(StringBuilder sb, SeasonDossierData data)

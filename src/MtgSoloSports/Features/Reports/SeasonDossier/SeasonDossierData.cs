@@ -19,5 +19,6 @@ internal sealed record SeasonDossierData(
     PostseasonSection Postseason,
     CupSummaryEntry? ColorCup,
     CupSummaryEntry? TypeCup,
+    ChaosSummaryEntry? Chaos,
     HistorySection History,
     IReadOnlyList<CareerRecordEntry> CareerRecords);

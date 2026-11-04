@@ -19,6 +19,7 @@ internal static class UniverseAlmanacQueries
         IReadOnlyList<SuperleaguePodiumEntry> podiums = await LoadSuperleaguePodiumsAsync(context, seasons, names, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<FeederTitleEntry> feederTitles = await LoadFeederTitlesAsync(context, seasons, names, cancellationToken).ConfigureAwait(false);
         AlmanacCupTables cups = await UniverseAlmanacCupQueries.LoadCupTablesAsync(context, names, cancellationToken).ConfigureAwait(false);
+        UniverseAlmanacChaosQueries.ChaosTables chaos = await UniverseAlmanacChaosQueries.LoadChaosTablesAsync(context, names, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<AlmanacCareerRecordEntry> records = await UniverseAlmanacLeaderQueries.LoadCareerRecordsAsync(context, cancellationToken).ConfigureAwait(false);
         (AlmanacCareerLeaders leaders, IReadOnlyList<StreakEntry> titleStreaks, IReadOnlyList<StreakEntry> stageStreaks) = await UniverseAlmanacLeaderQueries.LoadLeadersAndStreaksAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<LeaguePointsLeaderEntry> pointsLeaders = await UniverseAlmanacLeaderQueries.LoadSuperleaguePointsLeadersAsync(context, names, cancellationToken).ConfigureAwait(false);
@@ -36,6 +37,9 @@ internal static class UniverseAlmanacQueries
             cups.ColorIndividualMedals,
             cups.ColorCombinedMedals,
             cups.TypeTeamTable,
+            chaos.Editions,
+            chaos.Medals,
+            chaos.ColorMedals,
             records,
             leaders,
             pointsLeaders,
@@ -74,12 +78,14 @@ internal static class UniverseAlmanacQueries
         Dictionary<int, LeagueEntity?> superleagueBySeason = await MapSuperleagueBySeasonAsync(context, seasons, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SeasonStandingEntity> champions = await MapChampionsAsync(context, seasons, superleagueBySeason, cancellationToken).ConfigureAwait(false);
         Dictionary<int, (string Color, string Type)> cupStates = await MapCupStatesAsync(context, seasons, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> chaosStates = await UniverseAlmanacChaosQueries.LoadChaosStatesAsync(context, seasons, cancellationToken).ConfigureAwait(false);
         List<AlmanacSeasonEntry> entries = new(seasons.Count);
         foreach (SeasonEntity season in seasons)
         {
             superleagueBySeason.TryGetValue(season.Id, out LeagueEntity? superleague);
             champions.TryGetValue(season.Id, out SeasonStandingEntity? champion);
             cupStates.TryGetValue(season.SeasonNumber, out (string Color, string Type) states);
+            chaosStates.TryGetValue(season.SeasonNumber, out string? chaosState);
             string? championName;
             int? championId = null;
             if (champion is not null)
@@ -108,7 +114,8 @@ internal static class UniverseAlmanacQueries
                 championName,
                 championId,
                 string.IsNullOrEmpty(states.Color) ? "NotHeld" : states.Color,
-                string.IsNullOrEmpty(states.Type) ? "NotHeld" : states.Type));
+                string.IsNullOrEmpty(states.Type) ? "NotHeld" : states.Type,
+                string.IsNullOrEmpty(chaosState) ? "NotHeld" : chaosState));
         }
 
         return entries;
