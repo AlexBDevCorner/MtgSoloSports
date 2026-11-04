@@ -49,6 +49,7 @@ internal static class Program
                 "info" => Info(rest, stdout, stderr),
                 "query" => await QueryAsync(rest, stdout, stderr).ConfigureAwait(false),
                 "evidence" => await EvidenceAsync(rest, stdout, stderr).ConfigureAwait(false),
+                "archive" => await ArchiveAsync(rest, stdout, stderr).ConfigureAwait(false),
                 "help" => await WriteHelpAsync(stdout).ConfigureAwait(false),
                 _ => UsageError(stderr, $"Unknown command '{args[0]}'."),
             };
@@ -179,6 +180,185 @@ internal static class Program
         await stdout.WriteAsync(evidence.ToJson()).ConfigureAwait(false);
         await stdout.WriteAsync(Environment.NewLine).ConfigureAwait(false);
         return 0;
+    }
+
+    private static Task<int> ArchiveAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        if (args.Length == 0)
+        {
+            throw new ArgumentException("Missing archive subcommand: 'init', 'context' or 'commit'.", nameof(args));
+        }
+
+        string subcommand = args[0].Trim().ToLowerInvariant();
+        string[] rest = args[1..];
+        return subcommand switch
+        {
+            "init" => ArchiveInitAsync(rest, stdout, stderr),
+            "context" => ArchiveContextAsync(rest, stdout, stderr),
+            "commit" => ArchiveCommitAsync(rest, stdout, stderr),
+            _ => throw new ArgumentException($"Unknown archive subcommand '{args[0]}'. Expected 'init', 'context' or 'commit'.", nameof(args)),
+        };
+    }
+
+    private static Task<int> ArchiveInitAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string configPath = RequireOption(args, "--config");
+        string? archiveOverride = GetOption(args, "--archive");
+        SnapshotConfig config = SnapshotConfig.Load(configPath, archiveDirectoryOverride: archiveOverride);
+        string archiveRoot = JournalArchive.ResolveArchiveRoot(config, archiveOverride);
+        string saveName = TrySnapshotSaveName(config) ?? "Save";
+        JournalArchive.SaveFile saved = JournalArchive.Init(archiveRoot, config.SaveId, saveName, DateTimeOffset.UtcNow);
+        stderr.WriteLine($"[snapshot] journalist archive ready for save '{saved.SaveId:D}' under '{archiveRoot}'.");
+        stdout.Write(JsonSerializer.Serialize(
+            new { archiveRoot, saveId = saved.SaveId, saveName = saved.SaveName },
+            OutputJsonOptions));
+        stdout.Write(Environment.NewLine);
+        return Task.FromResult(0);
+    }
+
+    private static Task<int> ArchiveContextAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string configPath = RequireOption(args, "--config");
+        string? archiveOverride = GetOption(args, "--archive");
+        int? season = ParseIntOption(args, "--season");
+        int? stage = ParseIntOption(args, "--stage");
+        int recent = ParseRecentOption(args);
+        SnapshotConfig config = SnapshotConfig.Load(configPath, archiveDirectoryOverride: archiveOverride);
+        string archiveRoot = JournalArchive.ResolveArchiveRoot(config, archiveOverride);
+        JournalArchive.ContextResult context = JournalArchive.BuildContext(archiveRoot, config.SaveId, season, stage, recent);
+        stderr.WriteLine(
+            $"[snapshot] archive context for save '{config.SaveId:D}' " +
+            (season.HasValue ? $"season {season.Value} stage {stage!.Value} " : "latest ") +
+            $"returned {context.Recent.Count} review(s), {context.ExcludedLaterArticles} later review(s) excluded.");
+        stdout.Write(JsonSerializer.Serialize(context, OutputJsonOptions));
+        stdout.Write(Environment.NewLine);
+        return Task.FromResult(0);
+    }
+
+    private static Task<int> ArchiveCommitAsync(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        string configPath = RequireOption(args, "--config");
+        string? archiveOverride = GetOption(args, "--archive");
+        int season = ParseRequiredIntOption(args, "--season");
+        int stage = ParseRequiredIntOption(args, "--stage");
+        string articlePath = RequireOption(args, "--article");
+        string evidencePath = RequireOption(args, "--evidence");
+        string? note = GetOption(args, "--note");
+        string? noteFile = GetOption(args, "--note-file");
+        bool isRevision = HasFlag(args, "--revision");
+        if (note is not null && noteFile is not null)
+        {
+            throw new ArgumentException("Specify only one of '--note' or '--note-file'.", nameof(args));
+        }
+
+        if (noteFile is not null)
+        {
+            note = ReadNoteFile(noteFile);
+        }
+
+        SnapshotConfig config = SnapshotConfig.Load(configPath, archiveDirectoryOverride: archiveOverride);
+        string archiveRoot = JournalArchive.ResolveArchiveRoot(config, archiveOverride);
+        SnapshotInfo? snapshot = TryReadSnapshot(config);
+        JournalArchive.MetaFile meta = JournalArchive.Commit(
+            archiveRoot, config.SaveId, season, stage, articlePath, evidencePath,
+            note, isRevision, DateTimeOffset.UtcNow, snapshot);
+        stderr.WriteLine(
+            $"[snapshot] archived season {meta.SeasonNumber} stage {meta.StageNumber} rev {meta.Revision} " +
+            (meta.Conflict ? "with provenance conflict (prior text preserved in .r<N> backups) " : string.Empty) +
+            $"for save '{meta.SaveId:D}'.");
+        stdout.Write(JsonSerializer.Serialize(meta, OutputJsonOptions));
+        stdout.Write(Environment.NewLine);
+        return Task.FromResult(0);
+    }
+
+    private static string? TrySnapshotSaveName(SnapshotConfig config)
+    {
+        try
+        {
+            return SnapshotReader.ReadInfo(config.WorkingDirectory).SaveName;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static SnapshotInfo? TryReadSnapshot(SnapshotConfig config)
+    {
+        try
+        {
+            return SnapshotReader.ReadInfo(config.WorkingDirectory);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static string ReadNoteFile(string noteFile)
+    {
+        string fullPath = Path.GetFullPath(noteFile);
+        string text;
+        try
+        {
+            text = File.ReadAllText(fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"Note file could not be read: '{fullPath}'.", ex);
+        }
+
+        if (text.Length > JournalArchive.MaxNoteChars + 1024)
+        {
+            throw new ArgumentException($"Note file must be at most {JournalArchive.MaxNoteChars} characters after trimming.", nameof(noteFile));
+        }
+
+        return text;
+    }
+
+    private static int ParseRecentOption(string[] args)
+    {
+        string? raw = GetOption(args, "--recent");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return JournalArchive.DefaultRecent;
+        }
+
+        if (!int.TryParse(raw.Trim(), CultureInfo.InvariantCulture, out int recent))
+        {
+            throw new ArgumentException("Option '--recent' must be an integer.", nameof(args));
+        }
+
+        return recent;
+    }
+
+    private static int ParseRequiredIntOption(string[] args, string name)
+    {
+        string? raw = GetOption(args, name);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            throw new ArgumentException($"Missing required option '{name}'.", nameof(args));
+        }
+
+        if (!int.TryParse(raw.Trim(), CultureInfo.InvariantCulture, out int value))
+        {
+            throw new ArgumentException($"Option '{name}' must be an integer.", nameof(args));
+        }
+
+        return value;
+    }
+
+    private static bool HasFlag(string[] args, string name)
+    {
+        foreach (string arg in args)
+        {
+            if (string.Equals(arg, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static HttpClient CreateHttpClient(HttpMessageHandler? overrideHandler)
@@ -339,7 +519,7 @@ internal static class Program
     }
 
     private static string Usage() =>
-        "MtgSoloSports save snapshot helper (MSS-133/134): fetch one verified read-only\n" +
+        "MtgSoloSports save snapshot helper (MSS-133/134/135): fetch one verified read-only\n" +
         "SQLite snapshot for the explicitly configured save.\n" +
         "\n" +
         "Usage:\n" +
@@ -348,11 +528,18 @@ internal static class Program
         "  snapshot info --config <path> [--working-dir <path>]\n" +
         "  snapshot query --config <path> --sql \"<SELECT ...>\" [--limit <n>] [--working-dir <path>]\n" +
         "  snapshot evidence --config <path> [--season <n>] [--stage <n>] [--athlete <name>] [--athlete-id <id>] [--working-dir <path>]\n" +
+        "  snapshot archive init --config <path> [--archive <dir>]\n" +
+        "  snapshot archive context --config <path> [--season <n> --stage <n>] [--recent <n>] [--archive <dir>]\n" +
+        "  snapshot archive commit --config <path> --season <n> --stage <n> --article <file.md> --evidence <file.json> [--note <text> | --note-file <file>] [--revision] [--archive <dir>]\n" +
         "\n" +
         "The loopback game app is the only network access (GET /api/saves and\n" +
         "GET /api/saves/{id}/export); --bundle works fully offline. Inspection is\n" +
         "read-only (Mode=ReadOnly + query_only) and never migrates or simulates.\n" +
         "Evidence (MSS-134) reads the verified snapshot only: latest completed\n" +
         "Superleague stage by default, or an explicit --season/--stage cutoff with\n" +
-        "optional bounded --athlete follow-up. Data JSON goes to stdout, logs go to stderr.\n";
+        "optional bounded --athlete follow-up. Archive (MSS-135) is the local\n" +
+        "journalist store: 'init' creates save-ID scoped directories, 'context'\n" +
+        "returns bounded earlier coverage with future-outcome exclusion for an\n" +
+        "explicit cutoff, and 'commit' saves the article with matching evidence\n" +
+        "provenance (explicit '--revision' preserves prior text). Data JSON goes to stdout, logs go to stderr.\n";
 }

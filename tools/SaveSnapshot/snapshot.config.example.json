@@ -1,9 +1,12 @@
 {
-  // Local snapshot helper configuration (MSS-133). This example is tracked;
+  // Local snapshot helper configuration (MSS-133/MSS-135). This example is tracked;
   // copy it to 'snapshot.config.json' (same directory, ignored by Git) and
   // set the exact save id. Never commit the real save id or machine paths.
-  // Relative working directories resolve against this file's directory.
+  // Relative working/archive directories resolve against this file's directory.
   "baseUrl": "http://localhost:8080",
   "saveId": "PASTE-EXACT-SAVE-ID-HERE",
-  "workingDirectory": "./snapshot-data"
+  "workingDirectory": "./snapshot-data",
+  // MSS-135 journalist archive: durable user-owned stage reviews, evidence
+  // metadata and season notebooks. Keep it outside Git (see .gitignore).
+  "archiveDirectory": "./journalist-archive"
 }
