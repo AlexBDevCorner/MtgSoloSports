@@ -37,6 +37,7 @@ export function FastForwardSeason({
   status,
   onCompleted,
   onRefresh,
+  interactionLocked,
 }: {
   saveId: string;
   progress: SeasonProgress;
@@ -44,6 +45,12 @@ export function FastForwardSeason({
   onCompleted: () => void;
   /** Generic refresh for error recovery; defaults to `onCompleted`. */
   onRefresh?: () => void;
+  /**
+   * MSS-124: true while a Dashboard stage completion (mutation + refresh)
+   * is pending. Fast-forward entry, confirmation and retry controls stay
+   * disabled so a conflicting bulk operation cannot execute.
+   */
+  interactionLocked?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +59,10 @@ export function FastForwardSeason({
   const availability = fastForwardAvailability(progress, status);
   const running = phase === 'running';
   const refreshState = onRefresh ?? onCompleted;
+  const locked = interactionLocked === true;
 
   async function handleConfirm(): Promise<void> {
-    if (running) {
+    if (running || locked) {
       return;
     }
     setPhase('running');
@@ -98,14 +106,14 @@ export function FastForwardSeason({
             </p>
           )}
           <div className="live-buttons" role="group" aria-label="Fast-forward recovery">
-            <button type="button" className="ghost-button" onClick={refreshState}>
+            <button type="button" className="ghost-button" onClick={refreshState} disabled={locked}>
               Refresh state
             </button>
             {availability.available ? (
               <button
                 type="button"
                 className="primary-button"
-                disabled={running}
+                disabled={running || locked}
                 onClick={() => {
                   setPhase('confirming');
                 }}
@@ -116,6 +124,7 @@ export function FastForwardSeason({
             <button
               type="button"
               className="ghost-button"
+              disabled={locked}
               onClick={() => {
                 setError(null);
                 setPhase('idle');
@@ -125,6 +134,9 @@ export function FastForwardSeason({
             </button>
           </div>
           {!availability.available ? <p className="muted small">{availability.reason}</p> : null}
+          {locked ? (
+            <p className="muted small">Stage completion in progress — fast-forward stays paused.</p>
+          ) : null}
         </Notice>
       </section>
     );
@@ -146,7 +158,7 @@ export function FastForwardSeason({
           <button
             type="button"
             className="primary-button"
-            disabled={running}
+            disabled={running || locked}
             onClick={() => {
               void handleConfirm();
             }}
@@ -156,7 +168,7 @@ export function FastForwardSeason({
           <button
             type="button"
             className="ghost-button"
-            disabled={running}
+            disabled={running || locked}
             onClick={() => {
               setPhase('idle');
             }}
@@ -164,6 +176,9 @@ export function FastForwardSeason({
             Cancel
           </button>
         </div>
+        {locked ? (
+          <p className="muted small">Stage completion in progress — fast-forward stays paused.</p>
+        ) : null}
       </section>
     );
   }
@@ -197,7 +212,11 @@ export function FastForwardSeason({
           <button
             type="button"
             className="primary-button"
+            disabled={locked}
             onClick={() => {
+              if (locked) {
+                return;
+              }
               setPhase('confirming');
             }}
           >
@@ -210,6 +229,9 @@ export function FastForwardSeason({
             {progress.leagues.length === 1 ? '' : 's'} · saved results cannot be undone through the
             UI.
           </p>
+          {locked ? (
+            <p className="muted small">Stage completion in progress — fast-forward stays paused.</p>
+          ) : null}
         </>
       ) : (
         <>

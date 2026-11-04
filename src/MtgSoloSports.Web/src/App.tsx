@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AthleteProfilePage } from './features/athletes/AthleteProfilePage';
 import { AthleteSearchPage } from './features/athletes/AthleteSearchPage';
 import { useAthleteProfile } from './features/athletes/useAthleteProfile';
@@ -28,6 +28,7 @@ import {
   Link,
   navigate,
   readLastSelectedSave,
+  setNavigationBlocked,
   useBrowserRoute,
   writeLastSelectedSave,
 } from './features/routing/router';
@@ -48,6 +49,11 @@ import { AppShell, type View } from './features/shell/AppShell';
 import { SavesPage } from './features/saves/SavesPage';
 import { useSaves } from './features/saves/useSaves';
 import { Loading, Notice } from './shared/ui/Notice';
+import { StageCompletionBarrier } from './features/dashboard/StageCompletionBarrier';
+import {
+  isUncertainStageMutationError,
+  type StageCompletionInfo,
+} from './features/dashboard/stageCompletionGuard';
 
 function viewForRoute(route: Route): View {
   switch (route.name) {
@@ -108,6 +114,109 @@ export default function App() {
   const lastSelected = useMemo(() => readLastSelectedSave(), [route]);
   const dashboardSaveId = routeSaveId;
   const dashboard = useDashboard(dashboardSaveId);
+
+  /**
+   * MSS-124 Dashboard stage-completion guard. Owned here (above the shell and
+   * the Dashboard) so the busy overlay, the shell lock and the router blocker
+   * observe one stable operation from mutation start through the authoritative
+   * refresh. Cleared only when fresh data arrives; a failed refresh keeps the
+   * guard with a refresh-only retry that never resubmits the completed stage.
+   */
+  const [stageOp, setStageOp] = useState<StageCompletionInfo | null>(null);
+  const [stageRefreshError, setStageRefreshError] = useState<string | null>(null);
+  const stageBaselineRef = useRef<typeof dashboard.data>(null);
+  const stageGuardedUrlRef = useRef<string | null>(null);
+
+  const stageLocked = stageOp !== null;
+
+  useEffect(() => {
+    setNavigationBlocked(stageLocked);
+    return () => {
+      setNavigationBlocked(false);
+    };
+  }, [stageLocked]);
+
+  // Back/Forward cannot dismiss the guard while work is pending. A full
+  // reload always loads authoritative state normally (no claim that reload
+  // cancels server work); this only restores the guarded SPA URL.
+  useEffect(() => {
+    if (!stageOp) {
+      return;
+    }
+    const guarded = stageGuardedUrlRef.current;
+    if (!guarded) {
+      return;
+    }
+    const onPopState = (): void => {
+      const current = window.location.pathname + window.location.search;
+      if (current !== guarded) {
+        window.history.pushState(null, '', guarded);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, [stageOp]);
+
+  // Keep the guard through the authoritative refresh. Fresh data (a new
+  // Dashboard snapshot) clears it; a failed refresh keeps it with a
+  // refresh-only retry. The baseline is the snapshot from operation start.
+  useEffect(() => {
+    if (!stageOp) {
+      return;
+    }
+    if (dashboard.loading) {
+      return;
+    }
+    if (dashboard.error && dashboard.data === stageBaselineRef.current) {
+      setStageRefreshError(dashboard.error);
+      return;
+    }
+    if (dashboard.data !== stageBaselineRef.current) {
+      stageBaselineRef.current = null;
+      stageGuardedUrlRef.current = null;
+      setStageOp(null);
+      setStageRefreshError(null);
+    }
+  }, [stageOp, dashboard.data, dashboard.loading, dashboard.error]);
+
+  function handleStageStart(info: { stage: number; leagueCount: number }): void {
+    if (stageOp || !dashboardSaveId) {
+      return;
+    }
+    stageBaselineRef.current = dashboard.data;
+    try {
+      stageGuardedUrlRef.current = window.location.pathname + window.location.search;
+    } catch {
+      stageGuardedUrlRef.current = null;
+    }
+    setStageRefreshError(null);
+    setStageOp({ saveId: dashboardSaveId, stage: info.stage, leagueCount: info.leagueCount });
+  }
+
+  function handleStageMutationError(error: unknown): void {
+    if (!stageOp) {
+      return;
+    }
+    // Uncertain outcomes (abort/network/5xx) may already be persisted:
+    // keep the guard and recheck authoritative state before another mutation.
+    // Certain failures clear immediately so the local recoverable error applies.
+    if (isUncertainStageMutationError(error)) {
+      dashboard.refresh();
+      return;
+    }
+    stageBaselineRef.current = null;
+    stageGuardedUrlRef.current = null;
+    setStageOp(null);
+    setStageRefreshError(null);
+  }
+
+  function handleRetryStageRefresh(): void {
+    setStageRefreshError(null);
+    dashboard.refresh();
+  }
 
   const athleteRoute =
     route.name === 'athlete'
@@ -223,6 +332,9 @@ export default function App() {
             error={dashboard.error}
             notFound={dashboard.notFound}
             onRefresh={dashboard.refresh}
+            interactionLocked={stageOp !== null && stageOp.saveId === saveId}
+            onStageStart={handleStageStart}
+            onStageMutationError={handleStageMutationError}
           />
         );
       case 'live': {
@@ -505,16 +617,27 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      view={viewForRoute(route)}
-      saveId={routeSaveId ?? lastSelected}
-      saveName={dashboard.data?.detail.name ?? selectedSave?.name ?? null}
-      seasonLabel={seasonLabel}
-      stageLabel={stageLabel}
-      catalog={catalogStatus(catalog.stats, catalog.loading)}
-    >
-      <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
-      {renderBody()}
-    </AppShell>
+    <>
+      <AppShell
+        view={viewForRoute(route)}
+        saveId={routeSaveId ?? lastSelected}
+        saveName={dashboard.data?.detail.name ?? selectedSave?.name ?? null}
+        seasonLabel={seasonLabel}
+        stageLabel={stageLabel}
+        catalog={catalogStatus(catalog.stats, catalog.loading)}
+        locked={stageLocked}
+        lockLabel="Stage completion in progress — navigation is paused."
+      >
+        <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
+        {renderBody()}
+      </AppShell>
+      {stageOp ? (
+        <StageCompletionBarrier
+          operation={stageOp}
+          refreshError={stageRefreshError}
+          onRetryRefresh={handleRetryStageRefresh}
+        />
+      ) : null}
+    </>
   );
 }

@@ -28,6 +28,9 @@ export function SeasonFlow({
   onAdvanced,
   onLeagueCompleted,
   transitionPending,
+  interactionLocked,
+  onStageStart,
+  onStageMutationError,
 }: {
   saveId: string;
   progress: SeasonProgress;
@@ -59,6 +62,26 @@ export function SeasonFlow({
    * so the removed intermediate completed-league screen never flashes.
    */
   transitionPending?: boolean;
+  /**
+   * MSS-124: true while a Dashboard stage completion (mutation + refresh)
+   * is pending. All mutation buttons stay disabled and Live/navigation links
+   * render inert so pointer and keyboard input cannot reach them; the App
+   * shell and router enforce the same guard for background navigation.
+   */
+  interactionLocked?: boolean;
+  /**
+   * MSS-124: notified synchronously when a stage completion starts, before
+   * the POST resolves, so the app can show the busy message immediately and
+   * keep it through the authoritative refresh.
+   */
+  onStageStart?: (info: { stage: number; leagueCount: number }) => void;
+  /**
+   * MSS-124: notified when the stage mutation itself fails. The app keeps
+   * the guard for uncertain (possibly committed) failures until authoritative
+   * state is rechecked, and clears it for certain failures so the local
+   * recoverable error becomes actionable.
+   */
+  onStageMutationError?: (error: unknown) => void;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +92,7 @@ export function SeasonFlow({
   // Synchronous in-flight guard so a rapid double-click cannot issue two
   // `advance-next-event` POSTs before the `running` state re-renders.
   const runningRef = useRef(false);
+  const locked = interactionLocked === true;
 
   if (transitionPending) {
     const pendingError = statusError ?? refreshError ?? null;
@@ -79,7 +103,7 @@ export function SeasonFlow({
           <Notice tone="error" title="Postseason refresh failed">
             <p>{pendingError}</p>
             <p>
-              <button type="button" className="ghost-button" disabled={running} onClick={onAdvanced}>
+              <button type="button" className="ghost-button" disabled={running || locked} onClick={onAdvanced}>
                 Retry
               </button>
             </p>
@@ -94,14 +118,22 @@ export function SeasonFlow({
 
   const flow = seasonFlow(progress, status);
   const next = flow.next;
+  const controlsDisabled = running || locked;
 
   async function runNext(): Promise<void> {
-    if (running || runningRef.current) {
+    if (running || runningRef.current || locked) {
       return;
     }
     runningRef.current = true;
     setRunning(true);
     setError(null);
+    // MSS-124: announce stage completion synchronously so the busy message
+    // appears immediately and survives through the authoritative refresh.
+    // Only league-play stage completion owns this guard; other postseason
+    // events keep their existing single-flight running guard.
+    if (next?.kind === 'live') {
+      onStageStart?.({ stage: progress.globalStage, leagueCount: progress.leagues.length });
+    }
     try {
       const result = await advanceToNextEvent(saveId);
       setConfirmChaosCup(false);
@@ -126,6 +158,12 @@ export function SeasonFlow({
       }
     } catch (failure) {
       setError(apiErrorMessage(failure));
+      // MSS-124: let the app decide whether the guard must survive until a
+      // refresh rechecks authoritative state (uncertain outcome) or can clear
+      // immediately (certain failure with a local retry).
+      if (next?.kind === 'live') {
+        onStageMutationError?.(failure);
+      }
     } finally {
       runningRef.current = false;
       setRunning(false);
@@ -140,7 +178,7 @@ export function SeasonFlow({
    * result, so refresh and Back/Forward never rerun the sporting action.
    */
   async function runNextAndReveal(): Promise<void> {
-    if (running || runningRef.current || next?.kind !== 'event' || !next.liveTransition) {
+    if (running || runningRef.current || locked || next?.kind !== 'event' || !next.liveTransition) {
       return;
     }
     runningRef.current = true;
@@ -175,7 +213,7 @@ export function SeasonFlow({
     next?.kind === 'event' && (next.action === 'RunChaosCup' || next.liveEvent === 'chaos-cup');
 
   function handleRequestChaosCup(): void {
-    if (running || runningRef.current || !isChaosCupNext) {
+    if (running || locked || runningRef.current || !isChaosCupNext) {
       return;
     }
     setConfirmChaosCup(true);
@@ -221,31 +259,43 @@ export function SeasonFlow({
               <button
                 type="button"
                 className="primary-button"
-                disabled={running}
+                disabled={controlsDisabled}
                 aria-busy={running}
                 title={`Completes stage ${next.globalStage} for all ${next.leagueCount} leagues in one backend operation.`}
                 onClick={() => {
                   void runNext();
                 }}
               >
-                {running ? 'Completing…' : `Complete stage ${next.globalStage} for all ${next.leagueCount} leagues`}
+                {running || locked ? 'Completing…' : `Complete stage ${next.globalStage} for all ${next.leagueCount} leagues`}
               </button>
-              <Link to={livePath(saveId)} className="ghost-button">
-                Go to Live
-              </Link>
+              {locked ? (
+                <span className="ghost-button" aria-disabled="true" title="Stage completion in progress — navigation is paused.">
+                  Go to Live
+                </span>
+              ) : (
+                <Link to={livePath(saveId)} className="ghost-button">
+                  Go to Live
+                </Link>
+              )}
             </div>
           ) : next.liveEvent ? (
             isChaosCupNext ? (
               <>
                 <div className="live-buttons">
-                  <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
-                    Play on Live
-                  </Link>
+                  {locked ? (
+                    <span className="primary-button" aria-disabled="true">
+                      Play on Live
+                    </span>
+                  ) : (
+                    <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
+                      Play on Live
+                    </Link>
+                  )}
                   {confirmChaosCup ? null : (
                     <button
                       type="button"
                       className="ghost-button"
-                      disabled={running}
+                      disabled={controlsDisabled}
                       aria-busy={running}
                       title="Tournament-wide fast-forward: plays every remaining group and the Final to the official places."
                       onClick={handleRequestChaosCup}
@@ -264,7 +314,7 @@ export function SeasonFlow({
                       <button
                         type="button"
                         className="ghost-button"
-                        disabled={running}
+                        disabled={controlsDisabled}
                         aria-busy={running}
                         onClick={handleConfirmChaosCup}
                       >
@@ -273,7 +323,7 @@ export function SeasonFlow({
                       <button
                         type="button"
                         className="ghost-button"
-                        disabled={running}
+                        disabled={controlsDisabled}
                         onClick={() => setConfirmChaosCup(false)}
                       >
                         Keep group/stage scope
@@ -285,14 +335,26 @@ export function SeasonFlow({
             ) : (
               <div className="live-buttons">
                 {next.liveEvent === 'qualifier' && isTieredProgress(progress) ? (
-                  <Link
-                    to={qualifiersPath(saveId, { season: flow.seasonNumber })}
-                    className="primary-button"
-                  >
-                    {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
-                      ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
-                      : 'Open qualifiers'}
-                  </Link>
+                  locked ? (
+                    <span className="primary-button" aria-disabled="true">
+                      {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
+                        ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
+                        : 'Open qualifiers'}
+                    </span>
+                  ) : (
+                    <Link
+                      to={qualifiersPath(saveId, { season: flow.seasonNumber })}
+                      className="primary-button"
+                    >
+                      {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
+                        ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
+                        : 'Open qualifiers'}
+                    </Link>
+                  )
+                ) : locked ? (
+                  <span className="primary-button" aria-disabled="true">
+                    Play on Live
+                  </span>
                 ) : (
                   <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
                     Play on Live
@@ -301,7 +363,7 @@ export function SeasonFlow({
                 <button
                   type="button"
                   className="ghost-button"
-                  disabled={running}
+                  disabled={controlsDisabled}
                   aria-busy={running}
                   onClick={() => {
                     void runNext();
@@ -313,16 +375,22 @@ export function SeasonFlow({
             )
           ) : next.liveSelection ? (
             <div className="live-buttons">
-              <Link
-                to={livePath(saveId, { event: next.liveSelection, season: flow.seasonNumber })}
-                className="primary-button"
-              >
-                Announce on Live
-              </Link>
+              {locked ? (
+                <span className="primary-button" aria-disabled="true">
+                  Announce on Live
+                </span>
+              ) : (
+                <Link
+                  to={livePath(saveId, { event: next.liveSelection, season: flow.seasonNumber })}
+                  className="primary-button"
+                >
+                  Announce on Live
+                </Link>
+              )}
               <button
                 type="button"
                 className="ghost-button"
-                disabled={running}
+                disabled={controlsDisabled}
                 aria-busy={running}
                 onClick={() => {
                   void runNext();
@@ -336,7 +404,7 @@ export function SeasonFlow({
               <button
                 type="button"
                 className="primary-button"
-                disabled={running}
+                disabled={controlsDisabled}
                 aria-busy={running}
                 onClick={() => {
                   void runNextAndReveal();
@@ -349,7 +417,7 @@ export function SeasonFlow({
             <button
               type="button"
               className="primary-button"
-              disabled={running}
+              disabled={controlsDisabled}
               aria-busy={running}
               onClick={() => {
                 void runNext();
@@ -366,7 +434,7 @@ export function SeasonFlow({
             <button
               type="button"
               className="ghost-button"
-              disabled={running}
+              disabled={controlsDisabled}
               onClick={() => {
                 onAdvanced();
               }}
@@ -385,7 +453,7 @@ export function SeasonFlow({
             <button
               type="button"
               className="ghost-button"
-              disabled={running}
+              disabled={controlsDisabled}
               onClick={() => {
                 onAdvanced();
               }}
@@ -404,7 +472,7 @@ export function SeasonFlow({
             <button
               type="button"
               className="ghost-button"
-              disabled={running}
+              disabled={controlsDisabled}
               onClick={() => {
                 onAdvanced();
               }}
@@ -420,7 +488,11 @@ export function SeasonFlow({
       {lastDone && doneLink && !error ? (
         <p className="flow-done" role="status">
           <span aria-hidden="true">✓ </span>Done: {lastDone.text}{' '}
-          <Link to={doneLink.path(saveId)}>{doneLink.label}</Link>
+          {locked ? (
+            <span aria-disabled="true">{doneLink.label}</span>
+          ) : (
+            <Link to={doneLink.path(saveId)}>{doneLink.label}</Link>
+          )}
         </p>
       ) : null}
 
@@ -431,7 +503,7 @@ export function SeasonFlow({
               <button
                 type="button"
                 className="ghost-button"
-                disabled={running}
+                disabled={controlsDisabled}
                 onClick={() => {
                   if (next?.kind === 'event' && next.liveTransition) {
                     void runNextAndReveal();
@@ -443,6 +515,17 @@ export function SeasonFlow({
                 Try again
               </button>
             </p>
+            {locked ? (
+              <p className="muted small">
+                Stage completion in progress — navigation and other simulation controls stay paused
+                until the authoritative refresh lands.
+              </p>
+            ) : (
+              <p className="muted small">
+                If this request was interrupted, refresh the dashboard to recheck authoritative state
+                before retrying; an interrupted stage may already be persisted.
+              </p>
+            )}
         </Notice>
       ) : null}
 

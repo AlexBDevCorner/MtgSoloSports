@@ -112,7 +112,10 @@ describe('final review fixes', () => {
     assert.ok(drawer.includes('toggleRef.current?.focus()'), 'focus returns to the toggle on Escape/backdrop');
     assert.ok(drawer.includes('matchMedia'), 'drawer closes when the layout widens past the breakpoint');
     assert.ok(button.includes('ref={toggleRef}'), 'toggle button is wired to the hook');
-    assert.ok(shell.includes('inert={drawer.open}'), 'page behind the open drawer is inert');
+    // MSS-124 extends the drawer inert to the stage-completion lock; the page
+    // behind the open drawer stays inert either way.
+    assert.ok(shell.includes('drawer.open'), 'page behind the open drawer is inert');
+    assert.ok(shell.includes('inert='), 'inert is applied to background content');
   });
 
   it('does not pin the filter toolbar on phones', () => {
