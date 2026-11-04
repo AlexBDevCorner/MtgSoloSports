@@ -246,6 +246,60 @@ export function fetchChaosSurvival(
   );
 }
 
+export interface ChaosAthleteRecord {
+  saveAthleteId: number;
+  athleteName: string;
+  titles: number;
+  medals: number;
+  finals: number;
+  bestFinalRank: number | null;
+  deepestStage: number;
+  longestProgressStreak: number;
+  p16Survivals: number;
+}
+
+export interface ChaosDivisionRecord {
+  divisionKey: string;
+  label: string;
+  bestFinalRank: number | null;
+  bestFinalHolderIds: number[];
+  deepestStage: number;
+}
+
+export interface ChaosColorRecord {
+  sportingColor: number;
+  sportingColorName: string;
+  titlesMax: number;
+  titleHolderIds: number[];
+  bestFinalRank: number | null;
+  bestRankHolderIds: number[];
+}
+
+export interface ChaosStoryCard {
+  kind: string;
+  saveAthleteId: number | null;
+  athleteName: string;
+  sourceSeasonNumber: number;
+  relatedSeasonNumber: number | null;
+  detail: string;
+  text: string;
+}
+
+export interface ChaosCupRecords {
+  saveId: string;
+  thresholdsVersion: string;
+  completedSeasons: number[];
+  athletes: ChaosAthleteRecord[];
+  divisions: ChaosDivisionRecord[];
+  colors: ChaosColorRecord[];
+  stories: ChaosStoryCard[];
+}
+
+/** All-time Chaos records plus conditional Tournament Stories; 404 while no edition exists. */
+export function fetchChaosCupRecords(saveId: string, signal?: AbortSignal): Promise<ChaosCupRecords> {
+  return fetchJson<ChaosCupRecords>(`/api/saves/${saveId}/cups/chaos/records`, { signal });
+}
+
 /** Finishes the current stage (every remaining group in canonical order). */
 export function completeChaosStage(
   saveId: string,

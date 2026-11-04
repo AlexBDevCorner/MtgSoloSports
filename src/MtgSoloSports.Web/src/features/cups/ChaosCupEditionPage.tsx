@@ -33,6 +33,7 @@ import {
   isFinalOfficial,
   survivalStageFor,
 } from './chaosEditionModel';
+import { ChaosRecordsPanel } from './ChaosRecordsPanel';
 import './CupHistory.css';
 
 /**
@@ -363,6 +364,13 @@ export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season
           )}
         </Card>
       ) : null}
+
+      <section className="page-section" aria-labelledby="chaos-records">
+        <h2 id="chaos-records" className="section-title">
+          Chaos records &amp; Tournament Stories
+        </h2>
+        <ChaosRecordsPanel saveId={saveId} />
+      </section>
 
       <section className="page-section" aria-labelledby="chaos-stages">
         <h2 id="chaos-stages" className="section-title">
