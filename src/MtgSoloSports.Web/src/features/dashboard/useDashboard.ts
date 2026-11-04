@@ -49,6 +49,13 @@ export interface DashboardState {
   error: string | null;
   notFound: boolean;
   refresh: () => void;
+  /**
+   * MSS-124: monotonic refresh generation. Increments on every `refresh()`
+   * so the stage-completion guard can prove a snapshot/error belongs to a
+   * refresh started after the stage mutation settled, instead of comparing
+   * data identity to a pre-mutation baseline.
+   */
+  revision: number;
 }
 
 export function useDashboard(saveId: string | null): DashboardState {
@@ -141,6 +148,7 @@ export function useDashboard(saveId: string | null): DashboardState {
     refresh: () => {
       setRevision((value) => value + 1);
     },
+    revision,
   };
 }
 

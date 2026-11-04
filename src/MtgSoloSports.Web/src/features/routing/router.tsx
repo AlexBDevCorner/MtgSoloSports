@@ -32,13 +32,35 @@ export function getCurrentRoute(): Route {
   return parseRoute(window.location.pathname, window.location.search);
 }
 
-export function navigate(to: string, options?: { replace?: boolean }): void {
+/**
+ * MSS-124 Dashboard stage-completion interaction guard. While a stage
+ * calculation and its authoritative refresh are pending, in-app SPA
+ * navigation is blocked so the guard cannot be dismissed and conflicting
+ * simulation screens cannot execute. This is local UX protection only:
+ * modifier-clicks/new tabs still load authoritative state normally, and a
+ * full reload always loads authoritative state.
+ */
+let navigationBlocked = false;
+
+export function setNavigationBlocked(blocked: boolean): void {
+  navigationBlocked = blocked;
+}
+
+export function isNavigationBlocked(): boolean {
+  return navigationBlocked;
+}
+
+export function navigate(to: string, options?: { replace?: boolean }): boolean {
+  if (navigationBlocked) {
+    return false;
+  }
   if (options?.replace) {
     window.history.replaceState(null, '', to);
   } else {
     window.history.pushState(null, '', to);
   }
   window.dispatchEvent(new PopStateEvent('popstate'));
+  return true;
 }
 
 function subscribeToLocation(onChange: () => void): () => void {

@@ -33,6 +33,10 @@ export function DashboardPage({
   error,
   notFound,
   onRefresh,
+  interactionLocked,
+  onStageStart,
+  onStageSettled,
+  onStageMutationError,
 }: {
   saveId: string;
   data: DashboardData | null;
@@ -40,6 +44,27 @@ export function DashboardPage({
   error: string | null;
   notFound: boolean;
   onRefresh: () => void;
+  /**
+   * MSS-124: true while a Dashboard stage completion (mutation + refresh)
+   * is pending. Simulation controls stay disabled and background navigation
+   * stays inert; the App-level barrier owns focus and the busy message.
+   */
+  interactionLocked?: boolean;
+  /**
+   * MSS-124: notified synchronously when stage completion starts so the App
+   * can show the busy message immediately and through the refresh.
+   */
+  onStageStart?: (info: { stage: number; leagueCount: number }) => void;
+  /**
+   * MSS-124: notified when the stage mutation settled successfully, before
+   * the authoritative refresh. Only this path settles guard provenance.
+   */
+  onStageSettled?: () => void;
+  /**
+   * MSS-124: notified when the stage mutation fails so the App can keep the
+   * guard for uncertain outcomes until authoritative state is rechecked.
+   */
+  onStageMutationError?: (error: unknown) => void;
 }) {
   /**
    * MSS-074: true after a fast-forward bulk commit or a manual final-stage
@@ -128,8 +153,10 @@ export function DashboardPage({
   const leagueHonours = recentHonours.filter((honour) => !honour.honourKind.includes('Cup'));
   const recordPreview = (records?.records ?? []).slice(0, 6);
 
+  const locked = interactionLocked === true;
+
   return (
-    <div className="dashboard">
+    <div className="dashboard" inert={locked} aria-busy={locked}>
       <dl className="kpis" aria-label="Season summary">
         <div className="kpi">
           <dt>Season</dt>
@@ -168,7 +195,7 @@ export function DashboardPage({
         title="Next step"
         className="next-action"
         action={
-          <button type="button" className="ghost-button" onClick={onRefresh}>
+          <button type="button" className="ghost-button" onClick={onRefresh} disabled={locked}>
             Refresh
           </button>
         }
@@ -191,6 +218,10 @@ export function DashboardPage({
             onRefresh();
           }}
           transitionPending={leagueCompletionPending}
+          interactionLocked={locked}
+          onStageStart={onStageStart}
+          onStageSettled={onStageSettled}
+          onStageMutationError={onStageMutationError}
         />
         {progress.isSeasonComplete || leagueCompletionPending ? null : (
           <FastForwardSeason
@@ -202,6 +233,7 @@ export function DashboardPage({
               onRefresh();
             }}
             onRefresh={onRefresh}
+            interactionLocked={locked}
           />
         )}
         <div className="next-action-details">

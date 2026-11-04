@@ -52,15 +52,24 @@ function RailLink({
   current,
   title,
   children,
+  locked,
+  lockLabel,
 }: {
   href: string | null;
   current: boolean;
   title: string;
   children: ReactNode;
+  /** MSS-124: while a Dashboard stage completion is pending, rail navigation is inert. */
+  locked?: boolean;
+  lockLabel?: string;
 }) {
-  if (!href) {
+  if (!href || locked) {
     return (
-      <span className="rail-link" aria-disabled="true" title="Select a save first">
+      <span
+        className="rail-link"
+        aria-disabled="true"
+        title={locked ? (lockLabel ?? 'Stage completion in progress — navigation is paused.') : 'Select a save first'}
+      >
         {children}
       </span>
     );
@@ -85,6 +94,8 @@ export function AppShell({
   stageLabel,
   catalog,
   children,
+  locked,
+  lockLabel,
 }: {
   view: View;
   /** Save-scoped navigation target; null on Saves/landing with no save context. */
@@ -94,16 +105,25 @@ export function AppShell({
   stageLabel: string | null;
   catalog: CatalogStatus;
   children: ReactNode;
+  /**
+   * MSS-124: true while a Dashboard stage completion (mutation + refresh)
+   * is pending. Rail + content become inert so pointer and keyboard input
+   * cannot reach background controls; the guard dialog owns focus.
+   */
+  locked?: boolean;
+  lockLabel?: string;
 }) {
   const drawer = useRailDrawer();
   const scoped = (build: (id: string) => string): string | null => (saveId ? build(saveId) : null);
   const saveMeta = [seasonLabel, stageLabel].filter((part): part is string => part !== null).join(' · ');
+  const interactionLocked = locked === true;
   return (
     <div className={drawer.open ? 'app rail-open' : 'app'}>
       <aside
         id={RAIL_ID}
         className="rail"
         aria-label="Application"
+        inert={interactionLocked}
         onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest('a')) {
             drawer.close();
@@ -121,30 +141,44 @@ export function AppShell({
                 {saveName}
               </span>
               {saveMeta ? <span className="rail-save-meta">{saveMeta}</span> : null}
-              <Link to={savesPath()} className="rail-save-switch">
-                Switch save
-              </Link>
+              {interactionLocked ? (
+                <span className="rail-save-switch" aria-disabled="true">
+                  Switch save
+                </span>
+              ) : (
+                <Link to={savesPath()} className="rail-save-switch">
+                  Switch save
+                </Link>
+              )}
             </>
           ) : (
             <>
               <span className="rail-save-name muted">No save open</span>
-              <Link to={savesPath()} className="rail-save-switch">
-                Open a save
-              </Link>
+              {interactionLocked ? (
+                <span className="rail-save-switch" aria-disabled="true">
+                  Open a save
+                </span>
+              ) : (
+                <Link to={savesPath()} className="rail-save-switch">
+                  Open a save
+                </Link>
+              )}
             </>
           )}
         </div>
         <nav className="rail-nav" aria-label="Main">
-          <RailLink href={scoped(dashboardPath)} current={view === 'dashboard'} title="Open dashboard">
+          <RailLink href={scoped(dashboardPath)} current={view === 'dashboard'} title="Open dashboard" locked={interactionLocked} lockLabel={lockLabel}>
             Dashboard
           </RailLink>
-          <RailLink href={scoped(livePath)} current={view === 'live'} title="Open the current live event">
+          <RailLink href={scoped(livePath)} current={view === 'live'} title="Open the current live event" locked={interactionLocked} lockLabel={lockLabel}>
             Live
           </RailLink>
           <RailLink
             href={scoped(standingsPath)}
             current={view === 'standings'}
             title="Open league tables and stage placements"
+            locked={interactionLocked}
+            lockLabel={lockLabel}
           >
             Standings
           </RailLink>
@@ -152,6 +186,8 @@ export function AppShell({
             href={scoped(leaguesPath)}
             current={view === 'leagues'}
             title="Open league profiles and histories"
+            locked={interactionLocked}
+            lockLabel={lockLabel}
           >
             Leagues
           </RailLink>
@@ -159,27 +195,29 @@ export function AppShell({
             href={scoped(qualifiersPath)}
             current={view === 'qualifiers'}
             title="Open qualifier overview and results"
+            locked={interactionLocked}
+            lockLabel={lockLabel}
           >
             Qualifiers
           </RailLink>
-          <RailLink href={scoped(athletesPath)} current={view === 'athletes' || view === 'athlete'} title="Search and browse athletes">
+          <RailLink href={scoped(athletesPath)} current={view === 'athletes' || view === 'athlete'} title="Search and browse athletes" locked={interactionLocked} lockLabel={lockLabel}>
             Athletes
           </RailLink>
-          <RailLink href={scoped(historyPath)} current={view === 'history'} title="Browse history">
+          <RailLink href={scoped(historyPath)} current={view === 'history'} title="Browse history" locked={interactionLocked} lockLabel={lockLabel}>
             History
           </RailLink>
-          <RailLink href={scoped(recordsPath)} current={view === 'records'} title="Browse records and Hall of Fame">
+          <RailLink href={scoped(recordsPath)} current={view === 'records'} title="Browse records and Hall of Fame" locked={interactionLocked} lockLabel={lockLabel}>
             Records
           </RailLink>
-          <RailLink href={scoped(reportsPath)} current={view === 'reports'} title="Export ChatGPT reports">
+          <RailLink href={scoped(reportsPath)} current={view === 'reports'} title="Export ChatGPT reports" locked={interactionLocked} lockLabel={lockLabel}>
             Reports
           </RailLink>
-          <RailLink href={scoped(cupsPath)} current={view === 'cups'} title="Browse cups">
+          <RailLink href={scoped(cupsPath)} current={view === 'cups'} title="Browse cups" locked={interactionLocked} lockLabel={lockLabel}>
             Cups
           </RailLink>
         </nav>
         <div className="rail-nav rail-nav-bottom">
-          <RailLink href={savesPath()} current={view === 'saves'} title="Manage saves">
+          <RailLink href={savesPath()} current={view === 'saves'} title="Manage saves" locked={interactionLocked} lockLabel={lockLabel}>
             Saves
           </RailLink>
           <p className="rail-catalog" role="status">
@@ -189,7 +227,7 @@ export function AppShell({
         </div>
       </aside>
       <div className="rail-backdrop" aria-hidden="true" onClick={drawer.dismiss} />
-      <div className="main" inert={drawer.open}>
+      <div className="main" inert={drawer.open || interactionLocked}>
         <div className="topbar-mobile">
           <MenuButton open={drawer.open} onToggle={drawer.toggle} toggleRef={drawer.toggleRef} />
           <span className="topbar-mobile-brand">MTG Solo Sports</span>

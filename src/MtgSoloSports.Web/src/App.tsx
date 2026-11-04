@@ -48,6 +48,8 @@ import { AppShell, type View } from './features/shell/AppShell';
 import { SavesPage } from './features/saves/SavesPage';
 import { useSaves } from './features/saves/useSaves';
 import { Loading, Notice } from './shared/ui/Notice';
+import { StageCompletionBarrier } from './features/dashboard/StageCompletionBarrier';
+import { useStageCompletionGuard } from './features/dashboard/useStageCompletionGuard';
 
 function viewForRoute(route: Route): View {
   switch (route.name) {
@@ -108,6 +110,30 @@ export default function App() {
   const lastSelected = useMemo(() => readLastSelectedSave(), [route]);
   const dashboardSaveId = routeSaveId;
   const dashboard = useDashboard(dashboardSaveId);
+
+  /**
+   * MSS-124 Dashboard stage-completion guard. Owned here (above the shell and
+   * the Dashboard) so the busy overlay, the shell lock and the router blocker
+   * observe one stable operation from mutation start through the authoritative
+   * refresh. See useStageCompletionGuard for the stale-closure and
+   * generation-corrected lifecycle.
+   */
+  const stageGuard = useStageCompletionGuard({
+    saveId: dashboardSaveId,
+    data: dashboard.data,
+    loading: dashboard.loading,
+    error: dashboard.error,
+    revision: dashboard.revision,
+    refresh: dashboard.refresh,
+  });
+  const stageOp = stageGuard.stageOp;
+  const stageRefreshError = stageGuard.stageRefreshError;
+  const stageLocked = stageGuard.stageLocked;
+  const handleStageStart = stageGuard.handleStageStart;
+  const handleStageSettled = stageGuard.handleStageSettled;
+  const handleDashboardRefresh = stageGuard.handleDashboardRefresh;
+  const handleStageMutationError = stageGuard.handleStageMutationError;
+  const handleRetryStageRefresh = stageGuard.handleRetryStageRefresh;
 
   const athleteRoute =
     route.name === 'athlete'
@@ -222,7 +248,11 @@ export default function App() {
             loading={dashboard.loading}
             error={dashboard.error}
             notFound={dashboard.notFound}
-            onRefresh={dashboard.refresh}
+            onRefresh={handleDashboardRefresh}
+            interactionLocked={stageOp !== null && stageOp.saveId === saveId}
+            onStageStart={handleStageStart}
+            onStageSettled={handleStageSettled}
+            onStageMutationError={handleStageMutationError}
           />
         );
       case 'live': {
@@ -505,16 +535,27 @@ export default function App() {
   }
 
   return (
-    <AppShell
-      view={viewForRoute(route)}
-      saveId={routeSaveId ?? lastSelected}
-      saveName={dashboard.data?.detail.name ?? selectedSave?.name ?? null}
-      seasonLabel={seasonLabel}
-      stageLabel={stageLabel}
-      catalog={catalogStatus(catalog.stats, catalog.loading)}
-    >
-      <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
-      {renderBody()}
-    </AppShell>
+    <>
+      <AppShell
+        view={viewForRoute(route)}
+        saveId={routeSaveId ?? lastSelected}
+        saveName={dashboard.data?.detail.name ?? selectedSave?.name ?? null}
+        seasonLabel={seasonLabel}
+        stageLabel={stageLabel}
+        catalog={catalogStatus(catalog.stats, catalog.loading)}
+        locked={stageLocked}
+        lockLabel="Stage completion in progress — navigation is paused."
+      >
+        <CatalogBanner stats={catalog.stats} loading={catalog.loading} onImported={catalog.refresh} />
+        {renderBody()}
+      </AppShell>
+      {stageOp ? (
+        <StageCompletionBarrier
+          operation={stageOp}
+          refreshError={stageRefreshError}
+          onRetryRefresh={handleRetryStageRefresh}
+        />
+      ) : null}
+    </>
   );
 }
