@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link, navigate } from '../routing/router';
@@ -63,6 +63,12 @@ export function SeasonFlow({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastDone, setLastDone] = useState<{ text: string; target: SummaryTarget } | null>(null);
+  // MSS-123: Chaos Cup full-tournament fast-forward needs an explicit
+  // confirmation; the request button never calls the mutation directly.
+  const [confirmChaosCup, setConfirmChaosCup] = useState(false);
+  // Synchronous in-flight guard so a rapid double-click cannot issue two
+  // `advance-next-event` POSTs before the `running` state re-renders.
+  const runningRef = useRef(false);
 
   if (transitionPending) {
     const pendingError = statusError ?? refreshError ?? null;
@@ -90,13 +96,15 @@ export function SeasonFlow({
   const next = flow.next;
 
   async function runNext(): Promise<void> {
-    if (running) {
+    if (running || runningRef.current) {
       return;
     }
+    runningRef.current = true;
     setRunning(true);
     setError(null);
     try {
       const result = await advanceToNextEvent(saveId);
+      setConfirmChaosCup(false);
       setLastDone(
         executedSummary(
           result.executedAction,
@@ -119,6 +127,7 @@ export function SeasonFlow({
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
+      runningRef.current = false;
       setRunning(false);
     }
   }
@@ -131,9 +140,10 @@ export function SeasonFlow({
    * result, so refresh and Back/Forward never rerun the sporting action.
    */
   async function runNextAndReveal(): Promise<void> {
-    if (running || next?.kind !== 'event' || !next.liveTransition) {
+    if (running || runningRef.current || next?.kind !== 'event' || !next.liveTransition) {
       return;
     }
+    runningRef.current = true;
     setRunning(true);
     setError(null);
     try {
@@ -153,8 +163,29 @@ export function SeasonFlow({
     } catch (failure) {
       setError(apiErrorMessage(failure));
     } finally {
+      runningRef.current = false;
       setRunning(false);
     }
+  }
+
+  // MSS-123: the Dashboard fast-forward for `RunChaosCup` completes all six
+  // remaining stages at once. It needs its own explicit label plus a second
+  // confirmation click; the request control never calls the mutation itself.
+  const isChaosCupNext =
+    next?.kind === 'event' && (next.action === 'RunChaosCup' || next.liveEvent === 'chaos-cup');
+
+  function handleRequestChaosCup(): void {
+    if (running || runningRef.current || !isChaosCupNext) {
+      return;
+    }
+    setConfirmChaosCup(true);
+  }
+
+  function handleConfirmChaosCup(): void {
+    if (!confirmChaosCup || !isChaosCupNext) {
+      return;
+    }
+    void runNext();
   }
 
   const doneLink = lastDone ? TARGET_LINKS[lastDone.target] : null;
@@ -204,33 +235,82 @@ export function SeasonFlow({
               </Link>
             </div>
           ) : next.liveEvent ? (
-            <div className="live-buttons">
-              {next.liveEvent === 'qualifier' && isTieredProgress(progress) ? (
-                <Link
-                  to={qualifiersPath(saveId, { season: flow.seasonNumber })}
-                  className="primary-button"
+            isChaosCupNext ? (
+              <>
+                <div className="live-buttons">
+                  <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
+                    Play on Live
+                  </Link>
+                  {confirmChaosCup ? null : (
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={running}
+                      aria-busy={running}
+                      title="Tournament-wide fast-forward: plays every remaining group and the Final to the official places."
+                      onClick={handleRequestChaosCup}
+                    >
+                      {running ? 'Running…' : 'Finish entire Chaos Cup'}
+                    </button>
+                  )}
+                </div>
+                {confirmChaosCup ? (
+                  <Notice tone="error" title="Finish the entire Chaos Cup?">
+                    <p>
+                      This plays every remaining group and the Final to the official places. To stop at
+                      the current group or stage, use the scoped Live controls instead.
+                    </p>
+                    <p className="live-buttons">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={running}
+                        aria-busy={running}
+                        onClick={handleConfirmChaosCup}
+                      >
+                        {running ? 'Finishing…' : 'Yes, finish entire Chaos Cup'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={running}
+                        onClick={() => setConfirmChaosCup(false)}
+                      >
+                        Keep group/stage scope
+                      </button>
+                    </p>
+                  </Notice>
+                ) : null}
+              </>
+            ) : (
+              <div className="live-buttons">
+                {next.liveEvent === 'qualifier' && isTieredProgress(progress) ? (
+                  <Link
+                    to={qualifiersPath(saveId, { season: flow.seasonNumber })}
+                    className="primary-button"
+                  >
+                    {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
+                      ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
+                      : 'Open qualifiers'}
+                  </Link>
+                ) : (
+                  <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
+                    Play on Live
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  className="ghost-button"
+                  disabled={running}
+                  aria-busy={running}
+                  onClick={() => {
+                    void runNext();
+                  }}
                 >
-                  {(status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents)
-                    ? `Open ${status?.qualifierProgress?.totalEvents ?? status?.eventProgress?.totalEvents} qualifiers`
-                    : 'Open qualifiers'}
-                </Link>
-              ) : (
-                <Link to={livePath(saveId, { event: next.liveEvent, season: flow.seasonNumber })} className="primary-button">
-                  Play on Live
-                </Link>
-              )}
-              <button
-                type="button"
-                className="ghost-button"
-                disabled={running}
-                aria-busy={running}
-                onClick={() => {
-                  void runNext();
-                }}
-              >
-                {running ? 'Running…' : 'Run all rounds'}
-              </button>
-            </div>
+                  {running ? 'Running…' : 'Run all rounds'}
+                </button>
+              </div>
+            )
           ) : next.liveSelection ? (
             <div className="live-buttons">
               <Link
