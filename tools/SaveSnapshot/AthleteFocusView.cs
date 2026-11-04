@@ -1,0 +1,28 @@
+namespace MtgSoloSports.SaveSnapshot;
+
+public sealed record AthleteFocusView(
+    int AthleteId,
+    string Name,
+    int StageRank,
+    int StageScoreThousandths,
+    string StageScoreDisplay,
+    int BaseScoreThousandths,
+    string BaseScoreDisplay,
+    int ChampionshipPointsThousandths,
+    string ChampionshipPointsDisplay,
+    int EarnedBonusThousandths,
+    string EarnedBonusDisplay,
+    int? RankBefore,
+    int RankAfter,
+    int? RankChange,
+    int? PointsBefore,
+    int PointsAfter,
+    int PointsAwarded,
+    int? GapBefore,
+    int GapAfter,
+    IReadOnlyList<RoundPlacementRef> RoundPlacements,
+    IReadOnlyList<RecentFinish> RecentForm,
+    int PriorStageWins,
+    IReadOnlyList<StageWinnerRef> PriorWinRefs,
+    int PriorTitles,
+    IReadOnlyList<int> PriorTitleSeasons);
