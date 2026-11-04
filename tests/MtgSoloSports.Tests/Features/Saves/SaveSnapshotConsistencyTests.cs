@@ -52,8 +52,7 @@ public sealed class SaveSnapshotConsistencyTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -89,8 +88,7 @@ public sealed class SaveSnapshotConsistencyTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -114,8 +112,7 @@ public sealed class SaveSnapshotConsistencyTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

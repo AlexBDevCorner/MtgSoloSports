@@ -330,8 +330,7 @@ public sealed class ChaosCupJourneySurvivalTests
             finally
             {
                 factory.Dispose();
-                SqliteConnection.ClearAllPools();
-                Directory.Delete(factoryRoot, recursive: true);
+                TestSaveStores.DeleteRoot(factoryRoot);
             }
         }
         finally

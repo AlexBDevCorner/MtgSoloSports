@@ -78,7 +78,7 @@ public sealed class AthleteProfileIndexTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -107,7 +107,7 @@ public sealed class AthleteProfileIndexTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

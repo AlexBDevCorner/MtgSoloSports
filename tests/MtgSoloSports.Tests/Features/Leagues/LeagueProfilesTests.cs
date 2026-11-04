@@ -246,7 +246,7 @@ public sealed class LeagueProfilesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -262,7 +262,7 @@ public sealed class LeagueProfilesTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

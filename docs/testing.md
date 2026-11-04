@@ -85,8 +85,7 @@ try
 finally
 {
     factory.Dispose();
-    SqliteConnection.ClearAllPools();
-    Directory.Delete(root, recursive: true);
+    TestSaveStores.DeleteRoot(root);
 }
 ```
 
@@ -106,7 +105,7 @@ public async Task AdvanceToNextEvent_FullLifecycle_Season1_To_Season3_Start()
     }
     finally
     {
-        Directory.Delete(root, recursive: true);
+        TestSaveStores.DeleteRoot(root);
     }
 }
 ```

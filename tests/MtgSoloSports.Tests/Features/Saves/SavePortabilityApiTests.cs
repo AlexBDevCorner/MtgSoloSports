@@ -70,7 +70,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -111,7 +111,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -151,7 +151,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -199,7 +199,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -251,8 +251,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -304,8 +303,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -335,7 +333,7 @@ public sealed class SavePortabilityApiTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

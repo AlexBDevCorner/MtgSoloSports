@@ -244,8 +244,7 @@ public sealed class ChaosCupReadApiTests
             finally
             {
                 factory.Dispose();
-                SqliteConnection.ClearAllPools();
-                Directory.Delete(factoryRoot, recursive: true);
+                TestSaveStores.DeleteRoot(factoryRoot);
             }
         }
         finally

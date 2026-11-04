@@ -233,8 +233,7 @@ public sealed class TypeCupPostSelectionStatusTests
 
     private static void DeleteRoot(string root)
     {
-        SqliteConnection.ClearAllPools();
-        Directory.Delete(root, recursive: true);
+        TestSaveStores.DeleteRoot(root);
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

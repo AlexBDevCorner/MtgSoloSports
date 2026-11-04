@@ -83,8 +83,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -178,7 +178,7 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         {
             factory.Dispose();
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
         }
     }
 
@@ -212,7 +212,7 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
         }
     }
 
@@ -259,8 +259,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -315,8 +315,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -354,8 +354,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -479,7 +479,7 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         {
             factory.Dispose();
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
         }
     }
 
@@ -511,8 +511,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -540,8 +540,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -672,8 +672,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -709,8 +709,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -762,8 +762,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         {
             gate.Release();
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -809,8 +809,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -851,8 +851,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -920,8 +920,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -974,8 +974,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -1009,8 +1009,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -1102,8 +1102,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -1122,8 +1122,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 
@@ -1243,8 +1243,8 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            try { Directory.Delete(root, recursive: true); } catch { }
-            try { Directory.Delete(driveRoot, recursive: true); } catch { }
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
         }
     }
 

@@ -62,7 +62,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -115,7 +115,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -173,7 +173,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -224,7 +224,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -278,7 +278,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -311,7 +311,7 @@ public sealed class ScoreRecordIntegrationTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 }

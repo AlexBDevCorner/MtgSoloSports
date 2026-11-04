@@ -160,7 +160,6 @@ public sealed class TypeCupCompletionHandoffTests
 
     private static void DeleteRoot(string root)
     {
-        SqliteConnection.ClearAllPools();
-        Directory.Delete(root, recursive: true);
+        TestSaveStores.DeleteRoot(root);
     }
 }

@@ -65,7 +65,7 @@ public sealed class LongRunBenchmarkTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

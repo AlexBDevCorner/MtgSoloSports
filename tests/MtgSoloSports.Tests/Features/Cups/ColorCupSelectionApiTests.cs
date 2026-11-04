@@ -76,7 +76,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -129,7 +129,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -146,7 +146,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -165,7 +165,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -182,7 +182,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -241,7 +241,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -265,7 +265,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -281,7 +281,7 @@ public sealed class ColorCupSelectionApiTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

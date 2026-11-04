@@ -50,7 +50,7 @@ public sealed class LongRunInvariantTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -92,7 +92,7 @@ public sealed class LongRunInvariantTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

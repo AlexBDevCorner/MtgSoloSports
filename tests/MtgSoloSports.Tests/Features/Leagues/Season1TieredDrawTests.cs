@@ -42,7 +42,7 @@ public sealed class Season1TieredDrawTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

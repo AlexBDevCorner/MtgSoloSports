@@ -32,8 +32,7 @@ public sealed class CupLeagueReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -52,8 +51,7 @@ public sealed class CupLeagueReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -72,8 +70,7 @@ public sealed class CupLeagueReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -94,8 +91,7 @@ public sealed class CupLeagueReportApiTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

@@ -365,8 +365,7 @@ public sealed class AthleteChaosHistoryTests
 
     private static void DeleteRoot(string root)
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        Directory.Delete(root, recursive: true);
+        TestSaveStores.DeleteRoot(root);
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment

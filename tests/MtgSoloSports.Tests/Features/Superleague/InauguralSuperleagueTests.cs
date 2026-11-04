@@ -28,7 +28,7 @@ public sealed class InauguralSuperleagueTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -45,7 +45,7 @@ public sealed class InauguralSuperleagueTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -97,7 +97,7 @@ public sealed class InauguralSuperleagueTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -122,7 +122,7 @@ public sealed class InauguralSuperleagueTests
         }
         finally
         {
-            Directory.Delete(firstRoot, recursive: true);
+            TestSaveStores.DeleteRoot(firstRoot);
             TestSaveStores.DeleteRoot(secondRoot);
         }
     }

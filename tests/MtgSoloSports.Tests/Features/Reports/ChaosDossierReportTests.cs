@@ -120,8 +120,7 @@ public sealed class ChaosDossierReportTests
             finally
             {
                 factory.Dispose();
-                SqliteConnection.ClearAllPools();
-                Directory.Delete(factoryRoot, recursive: true);
+                TestSaveStores.DeleteRoot(factoryRoot);
             }
 
             (long rngAfter, long streamAfter, int roundsAfter) = await LoadRngAndRoundsAsync(store, saveId);

@@ -34,7 +34,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -59,7 +59,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -86,7 +86,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -103,7 +103,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -133,7 +133,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -171,7 +171,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -215,7 +215,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -279,7 +279,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -307,7 +307,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -389,7 +389,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -441,7 +441,7 @@ public sealed class TypeCupTeamTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
             TestSaveStores.DeleteRoot(secondRoot);
         }
     }

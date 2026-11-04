@@ -96,8 +96,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -133,8 +132,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -170,8 +168,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -206,8 +203,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -244,8 +240,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -284,8 +279,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -319,8 +313,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -356,8 +349,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -408,8 +400,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -459,8 +450,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             restarted.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -508,8 +498,7 @@ public sealed class GoogleDriveAutoPublishTests
         finally
         {
             factory.Dispose();
-            SqliteConnection.ClearAllPools();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 

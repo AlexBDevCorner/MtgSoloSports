@@ -44,7 +44,7 @@ public sealed class AthleteRecordHoldingsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -73,7 +73,7 @@ public sealed class AthleteRecordHoldingsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -91,7 +91,7 @@ public sealed class AthleteRecordHoldingsTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
@@ -130,7 +130,7 @@ public sealed class AthleteRecordHoldingsTests
         finally
         {
             factory.Dispose();
-            Directory.Delete(root, recursive: true);
+            TestSaveStores.DeleteRoot(root);
         }
     }
 
