@@ -202,6 +202,11 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         StageAthleteTotals sixteenth = ordered[ColorCupIndividualFormat.CutoffRank - 1];
         StageAthleteTotals seventeenth = ordered[ColorCupIndividualFormat.CutoffRank];
+        if (sixteenth.StageScoreThousandths != seventeenth.StageScoreThousandths)
+        {
+            return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals);
+        }
+
         if (CompareDeterministicPart(sixteenth, seventeenth) != 0)
         {
             return new CutoffResolution(TakeTopIds(ordered), rngBeforeCutoff, false, totals);
@@ -241,18 +246,24 @@ public static class ColorCupIndividualPhasedOrchestrator
         StageAthleteTotals sixteenth)
     {
         int runStart = ColorCupIndividualFormat.CutoffRank - 1;
-        while (runStart > 0 && CompareDeterministicPart(ordered[runStart - 1], sixteenth) == 0)
+        while (runStart > 0 && IsCutoffTied(ordered[runStart - 1], sixteenth))
         {
             runStart--;
         }
 
         int runEnd = ColorCupIndividualFormat.CutoffRank;
-        while (runEnd < ordered.Count && CompareDeterministicPart(ordered[runEnd], sixteenth) == 0)
+        while (runEnd < ordered.Count && IsCutoffTied(ordered[runEnd], sixteenth))
         {
             runEnd++;
         }
 
         return (runStart, runEnd);
+    }
+
+    private static bool IsCutoffTied(StageAthleteTotals candidate, StageAthleteTotals sixteenth)
+    {
+        return candidate.StageScoreThousandths == sixteenth.StageScoreThousandths &&
+            CompareDeterministicPart(candidate, sixteenth) == 0;
     }
 
     private static List<StageAthleteTotals> Reassemble(

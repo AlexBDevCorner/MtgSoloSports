@@ -259,6 +259,49 @@ public sealed class ColorCupIndividualPhasedTests
     }
 
     [Fact]
+    public void Cutoff_SamePlacementDifferentScore_IsUntied()
+    {
+        // Regression for the score-first cutoff: identical placement histograms
+        // (hence identical base) with different qualifying totals from career
+        // bonuses must not trigger the tied-cutoff shuffle. The higher scorer
+        // qualifies deterministically and the RNG is untouched.
+        List<StageAthleteTotals> totals = BuildScoreSplitDeterministicTotals();
+        Pcg32State before = new(4242UL, 2424UL);
+        ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+            ColorCupIndividualPhasedOrchestrator.ResolveCutoffFromTotals(totals, before);
+
+        cutoff.TieDrawConsumed.ShouldBeFalse();
+        cutoff.RngAfterCutoff.ShouldBe(before);
+        cutoff.QualifierAthleteIds.Count.ShouldBe(16);
+        cutoff.QualifierAthleteIds.ShouldContain(16);
+        cutoff.QualifierAthleteIds.ShouldNotContain(17);
+        cutoff.QualifierAthleteIds.OrderBy(id => id).ShouldBe(Enumerable.Range(1, 16).ToList());
+    }
+
+    [Fact]
+    public void Cutoff_TiedRun_ExcludesScoreDifferentDeterministicTwin()
+    {
+        // The straddling shuffle run is bounded by qualifying score: an athlete
+        // sharing the placement/base key but scoring lower must never be drawn
+        // into the top 16 when the 16th/17th athletes truly tie.
+        List<StageAthleteTotals> totals = BuildTiedCutoffWithScoreDifferentNeighbor();
+        foreach (ulong state in new ulong[] { 7UL, 99UL, 12345UL })
+        {
+            Pcg32State before = new(state, 9UL);
+            ColorCupIndividualPhasedOrchestrator.CutoffResolution cutoff =
+                ColorCupIndividualPhasedOrchestrator.ResolveCutoffFromTotals(totals, before);
+
+            cutoff.TieDrawConsumed.ShouldBeTrue();
+            cutoff.QualifierAthleteIds.Count.ShouldBe(16);
+            cutoff.QualifierAthleteIds.ShouldNotContain(18);
+            foreach (int id in Enumerable.Range(1, 14))
+            {
+                cutoff.QualifierAthleteIds.ShouldContain(id);
+            }
+        }
+    }
+
+    [Fact]
     public void FinalRoster_RecoveredFromPayload_NotRerolled()
     {
         List<StageAthleteTotals> totals = BuildTiedCutoffTotals();
@@ -344,6 +387,88 @@ public sealed class ColorCupIndividualPhasedTests
             }
 
             totals.Add(new StageAthleteTotals(id, $"Athlete {id:D2}", score, score - 100, counts));
+        }
+
+        return totals;
+    }
+
+    private static List<StageAthleteTotals> BuildScoreSplitDeterministicTotals()
+    {
+        List<StageAthleteTotals> totals = new(32);
+        for (int id = 1; id <= 32; id++)
+        {
+            List<int> counts = new(new int[32]);
+            int score;
+            int baseScore;
+            if (id <= 15)
+            {
+                score = 100000 - id * 1000;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+            else if (id == 16)
+            {
+                score = 50000;
+                baseScore = 49000;
+                counts[0] = 8;
+                counts[1] = 8;
+            }
+            else if (id == 17)
+            {
+                score = 49000;
+                baseScore = 49000;
+                counts[0] = 8;
+                counts[1] = 8;
+            }
+            else
+            {
+                score = 40000 - id * 100;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+
+            totals.Add(new StageAthleteTotals(id, $"Athlete {id:D2}", score, baseScore, counts));
+        }
+
+        return totals;
+    }
+
+    private static List<StageAthleteTotals> BuildTiedCutoffWithScoreDifferentNeighbor()
+    {
+        List<StageAthleteTotals> totals = new(32);
+        for (int id = 1; id <= 32; id++)
+        {
+            List<int> counts = new(new int[32]);
+            int score;
+            int baseScore;
+            if (id <= 14)
+            {
+                score = 100000 - id * 1000;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+            else if (id <= 17)
+            {
+                score = 50000;
+                baseScore = 49900;
+                counts[0] = 8;
+                counts[1] = 8;
+            }
+            else if (id == 18)
+            {
+                score = 49000;
+                baseScore = 49900;
+                counts[0] = 8;
+                counts[1] = 8;
+            }
+            else
+            {
+                score = 40000 - id * 100;
+                baseScore = score - 100;
+                counts[(id - 1) % 32] = 16;
+            }
+
+            totals.Add(new StageAthleteTotals(id, $"Athlete {id:D2}", score, baseScore, counts));
         }
 
         return totals;
