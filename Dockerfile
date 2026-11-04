@@ -43,8 +43,10 @@ WORKDIR /repo
 COPY MtgSoloSports.slnx Directory.Build.props Directory.Packages.props NuGet.Config .editorconfig ./
 COPY src/MtgSoloSports/MtgSoloSports.csproj ./src/MtgSoloSports/
 COPY tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj ./tests/MtgSoloSports.Tests/
+COPY tools/SaveSnapshot/MtgSoloSports.SaveSnapshot.csproj ./tools/SaveSnapshot/
 COPY src/MtgSoloSports/packages.lock.json ./src/MtgSoloSports/
 COPY tests/MtgSoloSports.Tests/packages.lock.json ./tests/MtgSoloSports.Tests/
+COPY tools/SaveSnapshot/packages.lock.json ./tools/SaveSnapshot/
 RUN dotnet restore MtgSoloSports.slnx --locked-mode
 
 # Backend sources, then the compiled frontend from the web-build stage.

@@ -18,6 +18,13 @@ src/MtgSoloSports/wwwroot/*
 *.db
 *.db-shm
 *.db-wal
+*.mtgsave.zip
+
+# MSS-133 journalist snapshot helper: local working snapshots, runtime
+# settings and caches are never committed. Only the example config is tracked.
+snapshot-data/
+tools/SaveSnapshot/snapshot.config.json
+tools/SaveSnapshot/snapshot-data/
 
 # IDE / OS
 .vs/

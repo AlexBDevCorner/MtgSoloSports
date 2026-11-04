@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MtgSoloSports.SaveSnapshot</RootNamespace>
+    <AssemblyName>MtgSoloSports.SaveSnapshot</AssemblyName>
+    <Description>Local read-only save snapshot helper for agent journalism (MSS-133).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MtgSoloSports\MtgSoloSports.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Focused MSS-133 helper tests drive the CLI entry point in-process. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>MtgSoloSports.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+{
+  // Local snapshot helper configuration (MSS-133). This example is tracked;
+  // copy it to 'snapshot.config.json' (same directory, ignored by Git) and
+  // set the exact save id. Never commit the real save id or machine paths.
+  // Relative working directories resolve against this file's directory.
+  "baseUrl": "http://localhost:8080",
+  "saveId": "PASTE-EXACT-SAVE-ID-HERE",
+  "workingDirectory": "./snapshot-data"
+}
