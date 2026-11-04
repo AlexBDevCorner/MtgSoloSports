@@ -27,6 +27,8 @@ See:
 - [Autonomous development](docs/autonomous-development.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
 - [Testing guide](docs/testing.md) (prepared saves, budgets, `test-timing.py`)
+- [Journalist snapshot helper](docs/journalist-snapshot.md) (read-only save snapshots, stage evidence)
+- [Journalist stage-review workflow](docs/journalist-workflow.md) (local chat reviews with a persistent archive)
 
 ## Recommended local run (Docker)
 

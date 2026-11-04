@@ -75,3 +75,14 @@ warning; incomplete or not-yet-held sections are omitted, never inferred.
 - Export a fresh season dossier whenever new coverage is needed.
 - Attach both files to a ChatGPT Project or chat; replace the dossier as the save advances.
 - The app never syncs projects automatically; uploads become stale as simulation advances.
+
+## Journalist stage-review workflow (MSS-135)
+
+For a repeatable local "Write the latest Superleague stage review" chat that
+saves the article with its sources, use the snapshot helper plus the local
+archive instead of the Drive dossiers: see
+[journalist-workflow.md](journalist-workflow.md) (guide, PowerShell
+one-liners, prompts, layout, troubleshooting) and
+[journalist-snapshot.md](journalist-snapshot.md) (snapshot/evidence). The
+archive (`archive init`/`context`/`commit`) stays user-owned and untracked;
+Drive publishing stays unchanged.

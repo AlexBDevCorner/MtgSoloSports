@@ -8,8 +8,10 @@ namespace MtgSoloSports.SaveSnapshot;
 /// Relative working directories resolve against the config file directory.
 /// The helper never silently selects the first save or infers identity from a
 /// mutable display name: acquisition always requires this explicit save id.
+/// MSS-135 adds an optional local journalist archive directory (same
+/// relative-resolution rule); archive writes stay under that root only.
 /// </summary>
-public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingDirectory)
+public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingDirectory, string? ArchiveDirectory)
 {
     public const string ExampleBaseUrl = "http://localhost:8080";
 
@@ -20,21 +22,23 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
         string configPath,
         string? baseUrlOverride = null,
         Guid? saveIdOverride = null,
-        string? workingDirectoryOverride = null)
+        string? workingDirectoryOverride = null,
+        string? archiveDirectoryOverride = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
         string fullConfigPath = Path.GetFullPath(configPath);
-        RawConfig raw = ReadRaw(fullConfigPath, baseUrlOverride, saveIdOverride, workingDirectoryOverride);
+        RawConfig raw = ReadRaw(fullConfigPath, baseUrlOverride, saveIdOverride, workingDirectoryOverride, archiveDirectoryOverride);
         return Build(fullConfigPath, raw);
     }
 
-    private sealed record RawConfig(string? BaseUrl, Guid? SaveId, string? WorkingDirectory);
+    private sealed record RawConfig(string? BaseUrl, Guid? SaveId, string? WorkingDirectory, string? ArchiveDirectory);
 
     private static RawConfig ReadRaw(
         string fullConfigPath,
         string? baseUrlOverride,
         Guid? saveIdOverride,
-        string? workingDirectoryOverride)
+        string? workingDirectoryOverride,
+        string? archiveDirectoryOverride)
     {
         if (!File.Exists(fullConfigPath))
         {
@@ -57,6 +61,7 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
         string? baseUrl = baseUrlOverride;
         Guid? saveId = saveIdOverride;
         string? workingDirectory = workingDirectoryOverride;
+        string? archiveDirectory = archiveDirectoryOverride;
         try
         {
             using JsonDocument document = JsonDocument.Parse(
@@ -66,6 +71,7 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
             baseUrl ??= GetOptionalString(root, "baseUrl");
             workingDirectory ??= GetOptionalString(root, "workingDirectory");
             saveId ??= GetOptionalSaveId(root);
+            archiveDirectory ??= GetOptionalString(root, "archiveDirectory");
         }
         catch (JsonException ex)
         {
@@ -73,7 +79,7 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
                 $"Snapshot config file is not valid JSON: '{fullConfigPath}'.", ex);
         }
 
-        return new RawConfig(baseUrl, saveId, workingDirectory);
+        return new RawConfig(baseUrl, saveId, workingDirectory, archiveDirectory);
     }
 
     private static SnapshotConfig Build(string fullConfigPath, RawConfig raw)
@@ -110,7 +116,10 @@ public sealed record SnapshotConfig(string BaseUrl, Guid SaveId, string WorkingD
         string configDirectory = Path.GetDirectoryName(fullConfigPath) ?? Directory.GetCurrentDirectory();
         string resolvedWorkingDirectory = Path.GetFullPath(
             Path.Combine(configDirectory, raw.WorkingDirectory.Trim()));
-        return new SnapshotConfig(baseUrl, raw.SaveId.Value, resolvedWorkingDirectory);
+        string? resolvedArchiveDirectory = string.IsNullOrWhiteSpace(raw.ArchiveDirectory)
+            ? null
+            : Path.GetFullPath(Path.Combine(configDirectory, raw.ArchiveDirectory.Trim()));
+        return new SnapshotConfig(baseUrl, raw.SaveId.Value, resolvedWorkingDirectory, resolvedArchiveDirectory);
     }
 
     private static Guid? GetOptionalSaveId(JsonElement root)
