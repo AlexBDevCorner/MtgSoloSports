@@ -19,7 +19,7 @@ internal static class SnapshotTestSupport
         return path;
     }
 
-    internal static string WriteConfig(string directory, Guid saveId)
+    internal static string WriteConfig(string directory, Guid saveId, string? archiveDirectory = null)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "snapshot.config.json");
@@ -30,6 +30,7 @@ internal static class SnapshotTestSupport
                 baseUrl = "http://localhost:8080",
                 saveId = saveId.ToString("D"),
                 workingDirectory = "./snapshot-data",
+                archiveDirectory = archiveDirectory ?? "./journalist-archive",
             }));
         return path;
     }

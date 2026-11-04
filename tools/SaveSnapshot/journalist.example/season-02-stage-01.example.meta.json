@@ -1,0 +1,37 @@
+{
+  // [FIXTURE EXAMPLE — not a real-save report] Illustrative provenance sidecar shape.
+  // Real .meta.json files are written by 'archive commit' with real fingerprints.
+  "archiveFormatVersion": 1,
+  "saveId": "11111111-1111-1111-1111-111111111111",
+  "saveName": "Fixture Save (example only)",
+  "seasonNumber": 2,
+  "stageNumber": 1,
+  "revision": 1,
+  "articlePath": "season-02/stage-01.md",
+  "evidencePath": "season-02/stage-01.evidence.json",
+  "articleSha256": "example-only",
+  "evidenceSha256": "example-only",
+  "databaseSha256": "example-only",
+  "stageChecksum": "example-only",
+  "evidenceSchemaVersion": 1,
+  "evidenceType": "superleague-stage-evidence",
+  "evidenceGeneratedUtc": "2026-11-04T12:00:00Z",
+  "snapshotExportedUtc": "2026-11-04T11:59:00Z",
+  "snapshotAcquiredUtc": "2026-11-04T12:00:00Z",
+  "snapshotSchemaVersion": 1,
+  "snapshotRulesVersion": 1,
+  "savedRulesVersion": 1,
+  "stagesPerSeason": 32,
+  "roundsPerStage": 16,
+  "leagueSize": 32,
+  "committedUtc": "2026-11-04T12:05:00Z",
+  "conflict": false,
+  "priorDatabaseSha256": null,
+  "priorStageChecksum": null,
+  "note": "Fixture continuity note — example only.",
+  "snapshotAtCommit": {
+    "databaseSha256": "example-only",
+    "exportedUtc": "2026-11-04T11:59:00Z",
+    "acquiredUtc": "2026-11-04T12:00:00Z"
+  }
+}

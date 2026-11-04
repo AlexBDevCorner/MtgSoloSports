@@ -215,3 +215,14 @@ confirm `snapshot.json` (`saveId`, `exportedUtc`, `databaseSha256`, `seasons`)
 matches the save you played. Compare the source and snapshot hashes and the
 `RngStates` row before and after inspection to confirm nothing moved. No
 Docker daemon or live user data is needed in CI.
+
+## Journalist archive (MSS-135)
+
+Stage reviews live in a local user-owned archive beside the replaceable
+working snapshot. The per-request chat workflow — latest vs historical
+cutoffs, bounded prior-coverage reads, article checks, `archive context` /
+`archive commit` with explicit revisions, continuity notebooks and
+restore/conflict handling — is documented in
+[journalist-workflow.md](journalist-workflow.md). The tracked
+`tools/SaveSnapshot/journalist.example/` files are fixture-only
+illustrations, never real-save reports.
