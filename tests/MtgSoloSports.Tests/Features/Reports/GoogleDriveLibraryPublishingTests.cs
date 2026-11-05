@@ -1209,6 +1209,89 @@ public sealed class GoogleDriveLibraryPublishingTests
         }
     }
 
+    [Fact]
+    public async Task AutoPublish_LegacyDestinationWithoutChaos_StillCreatesColorTypeEditions()
+    {
+        // MSS-116 correction: pre-upgrade destinations adopted only the four
+        // Color/Type leaf folders. Auto selective refresh must gate Chaos
+        // readiness per category, so new Color/Type editions still auto-create
+        // when Chaos folders are missing.
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            client.Timeout = TimeSpan.FromMinutes(10);
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            LibrarySyncResult baseline = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            baseline.Status.ShouldBe(HttpStatusCode.OK, baseline.Body);
+            HashSet<string> known = new(baseline.Files.Select(f => f.Report), StringComparer.Ordinal);
+
+            await SimulateLegacyDestinationWithoutChaosAsync(factory, saveId);
+            using HttpResponseMessage simulated = await client.PostAsync(
+                $"/api/saves/{saveId:D}/simulate-seasons",
+                new StringContent("""{"seasons":1}""", Encoding.UTF8, "application/json"));
+            simulated.StatusCode.ShouldBe(HttpStatusCode.OK, await simulated.Content.ReadAsStringAsync());
+
+            await PutAutoPublishAsync(client, saveId, enabled: true);
+            await WaitForAutoUpToDateAsync(client, saveId, timeoutSeconds: 90);
+            await AssertFreshColorTypeAutoCreatedAsync(client, saveId, known);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task SimulateLegacyDestinationWithoutChaosAsync(
+        WebApplicationFactory<Program> factory,
+        Guid saveId)
+    {
+        // Simulate a pre-upgrade destination: Color/Type leaves adopted,
+        // Chaos never configured (fields did not exist).
+        DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+        DrivePublishingStore.DestinationDocument? before =
+            await store.GetDestinationAsync(saveId, CancellationToken.None);
+        before.ShouldNotBeNull();
+        before!.ColorCupsFolderId.ShouldNotBeNull();
+        before.TypeCupsFolderId.ShouldNotBeNull();
+        await store.SaveDestinationAsync(
+            before with { ChaosCupFolderId = null, ChaosCupsFolderId = null },
+            CancellationToken.None);
+        DrivePublishingStore.DestinationDocument? legacy =
+            await store.GetDestinationAsync(saveId, CancellationToken.None);
+        legacy.ShouldNotBeNull();
+        DriveAutoPublishWorker.IsLegacyCupLibraryReady(legacy!).ShouldBeTrue();
+        DriveAutoPublishWorker.IsChaosCupLibraryReady(legacy!).ShouldBeFalse();
+    }
+
+    private static async Task AssertFreshColorTypeAutoCreatedAsync(
+        HttpClient client,
+        Guid saveId,
+        HashSet<string> known)
+    {
+        // Auto selective refresh must have created the new Color/Type
+        // editions despite missing Chaos folders: a follow-up sync with
+        // creation disabled reports them unchanged, not failed.
+        LibrarySyncResult after = await PostLibrarySyncAsync(client, saveId);
+        after.Status.ShouldBe(HttpStatusCode.OK, after.Body);
+        HashSet<string> afterReports = new(after.Files.Select(f => f.Report), StringComparer.Ordinal);
+        List<string> freshColorType = afterReports
+            .Where(r => !known.Contains(r)
+                && (r.StartsWith("color-edition:", StringComparison.Ordinal)
+                    || r.StartsWith("type-edition:", StringComparison.Ordinal)))
+            .ToList();
+        freshColorType.ShouldNotBeEmpty();
+        foreach (string report in freshColorType)
+        {
+            after.Outcome(report).ShouldBe("unchanged");
+            after.FileId(report).ShouldNotBeNull();
+        }
+    }
+
     private static async Task<string> PostAdvanceAsync(HttpClient client, Guid saveId)
     {
         using HttpResponseMessage response = await client.PostAsync(
