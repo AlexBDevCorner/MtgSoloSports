@@ -340,14 +340,14 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             await FinishAfterPublishAsync(saveId, response, started, cancellationToken).ConfigureAwait(false);
 
             // MSS-091: after the dossier + almanac settle, refresh only the
-            // Cup edition/team reports that actually changed (recent source
-            // seasons). Historical files are never re-uploaded on ordinary
-            // league stages: unchanged fingerprints report unchanged with no
-            // writes. Best effort; failures only warn and keep the dossier
-            // settlement intact.
+            // Cup edition/team reports that actually changed (changed source
+            // seasons since the last settled publish). Historical files are
+            // never re-uploaded on ordinary league stages: unchanged
+            // fingerprints report unchanged with no writes. Best effort;
+            // failures only warn and keep the dossier settlement intact.
             if (response.Files.All(f => !string.Equals(f.Outcome, "failed", StringComparison.Ordinal)))
             {
-                await TryRefreshRecentCupsAsync(saveId, cancellationToken).ConfigureAwait(false);
+                await TryRefreshRecentCupsAsync(saveId, snapshot.LastSeasonNumber, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -438,7 +438,7 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task TryRefreshRecentCupsAsync(Guid saveId, CancellationToken cancellationToken)
+    private async Task TryRefreshRecentCupsAsync(Guid saveId, int? lastPublishedSeason, CancellationToken cancellationToken)
     {
         try
         {
@@ -455,7 +455,11 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             }
 
             DriveLibrarySyncHandler library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
-            IReadOnlyList<string> keys = await library.RecentCupKeysAsync(saveId, 1, cancellationToken).ConfigureAwait(false);
+            // Bulk runs coalesce to one checkpoint: cover the whole changed
+            // source-season range since the last settled publish (postseason
+            // lag included), not just the latest season, so earlier bulk Cup
+            // editions/teams are not left stale until a manual sync.
+            IReadOnlyList<string> keys = await library.RecentCupKeysForAutoAsync(saveId, lastPublishedSeason, cancellationToken).ConfigureAwait(false);
             if (keys.Count == 0)
             {
                 return;
@@ -469,7 +473,8 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                     AllowOverwriteEditedRemote: false,
                     AllowCreateMissing: cupsReady,
                     Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
-                    OnlyKeys: keys),
+                    OnlyKeys: keys,
+                    MaxFiles: 5000),
                 cancellationToken).ConfigureAwait(false);
             LogCupRefresh(saveId, response, cupsReady);
         }

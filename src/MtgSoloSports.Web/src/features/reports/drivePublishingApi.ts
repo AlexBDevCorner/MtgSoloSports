@@ -334,3 +334,59 @@ export function describeAutoPublishStatus(status: string): string {
       return 'Disabled';
   }
 }
+
+/**
+ * MSS-091 correction: pure helper that merges one Google Picker file grant
+ * into a library adoption JSON map (dossier/edition/team). The Picker grant
+ * is what makes a hand-uploaded file visible under the least-privilege
+ * drive.file scope; pasting an id alone does not grant access. Returns the
+ * updated JSON text so the caller can Save destination + Verify access.
+ * Throws on an invalid key or unparseable existing JSON.
+ */
+export function mergeLibraryAdoptionEntry(
+  raw: string,
+  key: string,
+  fileId: string,
+  fileName: string | null,
+): string {
+  const trimmedKey = key.trim();
+  if (trimmedKey === '' || trimmedKey.includes('/') || trimmedKey.includes('\\')) {
+    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2" for editions, "color:red"/"type:Dragon" for teams.');
+  }
+  const trimmedId = fileId.trim();
+  if (trimmedId === '') {
+    throw new Error('Picked file id is empty.');
+  }
+  const trimmedName = typeof fileName === 'string' && fileName.trim() !== '' ? fileName.trim() : null;
+  let current: Record<string, DriveLibraryAdoptionInput> = {};
+  const rawTrimmed = raw.trim();
+  if (rawTrimmed !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawTrimmed);
+    } catch {
+      throw new Error('Existing adoptions are not valid JSON. Fix the JSON before picking another file.');
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('Existing adoptions must be a JSON object keyed by semantic report key.');
+    }
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.length >= 500 && !(trimmedKey in (parsed as Record<string, unknown>))) {
+      throw new Error('Adoption map has too many entries (max 500).');
+    }
+    for (const [entryKey, value] of entries) {
+      if (typeof value !== 'object' || value === null) {
+        throw new Error(`Existing adoption entry "${entryKey}" must be {"fileId": "...", "fileName": "..."}.`);
+      }
+      const record = value as Record<string, unknown>;
+      const existingId = record.fileId;
+      const existingName = record.fileName;
+      current[entryKey] = {
+        fileId: typeof existingId === 'string' && existingId.trim() !== '' ? existingId.trim() : null,
+        fileName: typeof existingName === 'string' && existingName.trim() !== '' ? existingName.trim() : null,
+      };
+    }
+  }
+  current[trimmedKey] = { fileId: trimmedId, fileName: trimmedName };
+  return JSON.stringify(current);
+}

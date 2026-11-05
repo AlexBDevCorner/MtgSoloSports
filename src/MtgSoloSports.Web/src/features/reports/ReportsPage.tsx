@@ -7,6 +7,7 @@ import {
   describeAutoPublishStatus,
   disconnectDrive,
   getDriveStatus,
+  mergeLibraryAdoptionEntry,
   previewDriveLibrary,
   publishDriveReports,
   retryDriveAutoPublish,
@@ -127,6 +128,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [dossierAdoptionsText, setDossierAdoptionsText] = useState('');
   const [editionAdoptionsText, setEditionAdoptionsText] = useState('');
   const [teamAdoptionsText, setTeamAdoptionsText] = useState('');
+  const [dossierAdoptionKey, setDossierAdoptionKey] = useState('');
+  const [editionAdoptionKey, setEditionAdoptionKey] = useState('');
+  const [teamAdoptionKey, setTeamAdoptionKey] = useState('');
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [allowCreateMissing, setAllowCreateMissing] = useState(false);
@@ -781,11 +785,158 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 />
               </label>
             </div>
+            <div className="toolbar" role="group" aria-label="Drive library file grants">
+              <label className="field">
+                <span>Season key to grant</span>
+                <input
+                  type="text"
+                  value={dossierAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="1"
+                  onChange={(event) => setDossierAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (dossierAdoptionKey.trim() === '') {
+                    setDriveError('Enter the season key (for example "1") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-dossier-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setDossierAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, dossierAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for season ${dossierAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-dossier-file' ? 'Opening Picker…' : 'Choose season file…'}
+              </button>
+              <label className="field">
+                <span>Edition key to grant</span>
+                <input
+                  type="text"
+                  value={editionAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="color:1"
+                  onChange={(event) => setEditionAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (editionAdoptionKey.trim() === '') {
+                    setDriveError('Enter the edition key (for example "color:1") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-edition-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setEditionAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, editionAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for edition ${editionAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-edition-file' ? 'Opening Picker…' : 'Choose edition file…'}
+              </button>
+              <label className="field">
+                <span>Team key to grant</span>
+                <input
+                  type="text"
+                  value={teamAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="color:red"
+                  onChange={(event) => setTeamAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (teamAdoptionKey.trim() === '') {
+                    setDriveError('Enter the team key (for example "color:red") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-team-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setTeamAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, teamAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for team ${teamAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-team-file' ? 'Opening Picker…' : 'Choose team file…'}
+              </button>
+            </div>
             <p className="muted small">
               Adopt hand-uploaded library files by semantic key: dossier seasons as <code>1</code>,{' '}
               <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>; teams as{' '}
-              <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, grant
-              each file with Choose from Drive, then paste its id here and Save destination. Adopted files
+              <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, enter
+              the key above and grant each file with <em>Choose season/edition/team file…</em> (Google
+              Picker grants drive.file access to that exact file), then Save destination. Adopted files
               update in place under their custom names; unknown files are never renamed or deleted.
             </p>
             <p>

@@ -132,6 +132,68 @@ public sealed class DriveLibrarySyncHandler
         return await LoadRecentKeysAsync(context, cutoff, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// MSS-091 correction: automatic Cup refresh after a coalesced bulk run
+    /// (e.g. <c>SimulateSeasons</c> committing many seasons before the
+    /// background worker handles the single coalesced checkpoint). Covers the
+    /// whole changed source-season range since the last settled dossier
+    /// publish instead of a fixed one-season window, so earlier bulk Cup
+    /// editions/team histories are not left stale until a manual sync.
+    /// Pure read-only DB queries, no markdown generation.
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> RecentCupKeysForAutoAsync(
+        Guid saveId,
+        int? lastPublishedSeason,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        await _saves.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        SaveStore.SaveDetailRecord detail = await _saves.OpenAsync(saveId, cancellationToken).ConfigureAwait(false);
+        int seasonsBack = ComputeCupSeasonsBack(detail.CurrentSeason, lastPublishedSeason);
+        int cutoff = Math.Max(1, detail.CurrentSeason - seasonsBack);
+        using SaveDbContext context = _saves.OpenDbContext(saveId);
+        return await LoadRecentKeysAsync(context, cutoff, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Window covering every Cup source season that could have changed since
+    /// <paramref name="lastPublishedSeason"/> (the dossier checkpoint settled
+    /// before this auto attempt). The extra season covers postseason lag: a
+    /// Cup finalizes while the next season has already started. Bounded by
+    /// the bulk-simulation request cap so one auto refresh never scans an
+    /// unbounded history on ordinary league stages.
+    /// </summary>
+    internal static int ComputeCupSeasonsBack(int currentSeason, int? lastPublishedSeason)
+    {
+        if (!lastPublishedSeason.HasValue)
+        {
+            return 1;
+        }
+
+        int delta = currentSeason - lastPublishedSeason.Value;
+        if (delta < 0)
+        {
+            delta = 0;
+        }
+
+        long back = (long)delta + 1;
+        if (back < 1)
+        {
+            back = 1;
+        }
+
+        if (back > 500)
+        {
+            back = 500;
+        }
+
+        return (int)back;
+    }
+
     private static async Task<IReadOnlyList<string>> LoadRecentKeysAsync(
         SaveDbContext context,
         int cutoff,

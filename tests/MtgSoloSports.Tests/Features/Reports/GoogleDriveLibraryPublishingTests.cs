@@ -749,6 +749,78 @@ public sealed class GoogleDriveLibraryPublishingTests
     }
 
     [Fact]
+    public void ComputeCupSeasonsBack_CoversBulkRangeWithoutExpandingOrdinaryStages()
+    {
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(6, 1).ShouldBe(6);
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(5, 5).ShouldBe(1);
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(2, 2).ShouldBe(1);
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(4, null).ShouldBe(1);
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(4, 10).ShouldBe(1);
+        DriveLibrarySyncHandler.ComputeCupSeasonsBack(600, 1).ShouldBe(500);
+    }
+
+    [Fact]
+    public async Task AutoCupKeys_BulkSimulateSeasons_CoversWholeChangedRange()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            // Baseline current season before the supported bulk path.
+            int beforeSeason = await GetCurrentSeasonAsync(client, saveId);
+            beforeSeason.ShouldBeGreaterThanOrEqualTo(2);
+
+            // Named action: bulk-simulate two more full seasons through the
+            // production endpoint (single coalesced auto checkpoint).
+            using HttpResponseMessage simulated = await client.PostAsync(
+                $"/api/saves/{saveId:D}/simulate-seasons",
+                new StringContent("""{"seasons":2}""", Encoding.UTF8, "application/json"));
+            simulated.StatusCode.ShouldBe(HttpStatusCode.OK);
+            int afterSeason = await GetCurrentSeasonAsync(client, saveId);
+            afterSeason.ShouldBe(beforeSeason + 2);
+
+            DriveLibrarySyncHandler library;
+            IReadOnlyList<string> narrow;
+            IReadOnlyList<string> bulk;
+            using (IServiceScope scope = factory.Services.CreateScope())
+            {
+                library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
+                narrow = await library.RecentCupKeysAsync(saveId, 1, CancellationToken.None);
+                bulk = await library.RecentCupKeysForAutoAsync(saveId, beforeSeason, CancellationToken.None);
+            }
+
+            // The fixed one-season window misses the earlier bulk source
+            // seasons; the auto range since the last settled publish covers
+            // every changed Cup edition.
+            bulk.Count.ShouldBeGreaterThan(narrow.Count);
+            foreach (string key in narrow)
+            {
+                bulk.ShouldContain(key, StringComparer.Ordinal);
+            }
+
+            List<int> bulkEditionSeasons = bulk
+                .Where(k => k.StartsWith("color-edition:", StringComparison.Ordinal)
+                    || k.StartsWith("type-edition:", StringComparison.Ordinal))
+                .Select(k => int.Parse(k.Split(':')[1], System.Globalization.CultureInfo.InvariantCulture))
+                .Distinct()
+                .OrderBy(n => n)
+                .ToList();
+            bulkEditionSeasons.Count.ShouldBeGreaterThanOrEqualTo(3);
+            bulkEditionSeasons.ShouldContain(beforeSeason);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task LibrarySync_LegacyDossierSlot_OnlyServesCurrentSeason()
     {
         var (factory, root, _, drive) = CreateFactory();
@@ -1240,6 +1312,14 @@ public sealed class GoogleDriveLibraryPublishingTests
             $"/api/saves/{saveId:D}/reports/drive/auto-publish",
             new StringContent($"{{\"enabled\":{enabled.ToString().ToLowerInvariant()}}}", Encoding.UTF8, "application/json")).ConfigureAwait(false);
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task<int> GetCurrentSeasonAsync(HttpClient client, Guid saveId)
+    {
+        using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/reports/drive/status").ConfigureAwait(false);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        return json.RootElement.GetProperty("currentSeason").GetInt32();
     }
 
     private static async Task WaitForAutoUpToDateAsync(HttpClient client, Guid saveId, int timeoutSeconds)

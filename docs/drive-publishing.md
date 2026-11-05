@@ -199,7 +199,11 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
   adoption guidance instead.
 - **File adoption.** Existing hand-uploaded reports are adopted by stable semantic identity
   (save id, report type, season number or team key): same content adopts the existing file
-  with no write; changed content updates that exact file id. One same-named file with
+  with no write; changed content updates that exact file id. Enter the semantic key
+  (`1` for dossiers, `color:1`/`type:2` for editions, `color:red`/`type:Dragon` for teams)
+  and use **Choose season/edition/team file…** (Google Picker Markdown grant) so the
+  hand-uploaded file becomes visible under the `drive.file` scope, then Save destination.
+  One same-named file with
   different content stops with the existing id so you can adopt it explicitly; two or more
   same-named files (e.g. a ` (1)` duplicate) stop with duplicate guidance and create
   nothing. No deletion, rename or overwrite of unknown files, ever.
@@ -213,7 +217,9 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
   settles.
 - **Automatic mode** refreshes the almanac and current dossier as before, **plus** the Cup
   edition/team histories that actually changed after the relevant Cup selection or
-  finalization (recent source seasons only). New Cup edition/team files are created
+  finalization (every changed source season since the last settled publish, so a bulk
+  `SimulateSeasons` run refreshes all its new Cup reports, not just the latest season).
+  New Cup edition/team files are created
   automatically once the four Cup leaf folders are adopted; otherwise auto mode stays
   fail-closed and the next manual **Sync all changed reports** (with creation confirmed)
   is the prerequisite. Ordinary league stages never re-upload the
@@ -252,7 +258,9 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
 11. Simulate a transient failure; publish: recoverable `failed` outcome, retry clean.
 12. Adopt the Cup folders (`Color Cup/Cups`, `Color Cup/Teams Histories`, `Type Cup/Cups`,
     `Type Cup/Teams Histories`) with **Choose from Drive** or folder ids, then Save + Verify:
-    all six Cup checks report `ok`.
+    all six Cup checks report `ok`. Adopt hand-uploaded season/Cup/team files by key with
+    **Choose season/edition/team file…**, then Save + Verify (pasted ids alone do not grant
+    `drive.file` access).
 13. Preview library: per-category created/updated/unchanged/failed counts with no Drive writes.
 14. Sync all changed reports: every season dossier, Cup edition/team history and the almanac
     land in place (same ids); repeat sync writes nothing. A manually uploaded ` (1)` duplicate
