@@ -173,14 +173,58 @@ Opt-in **Automatically publish after each completed stage** on Reports/Drive
 - New seasons create a new stable `Seasons/season-N-dossier.md` while prior
   seasons are preserved; the almanac keeps its file.
 
+## Full historical library sync (MSS-091)
+
+**Sync all changed reports** on Reports/Drive extends the same in-place rules to the whole
+organized library:
+
+```text
+MtgSoloSports/mtshistory/Seasons/season-<N>-dossier.md     (all seasons)
+MtgSoloSports/mtshistory/Color Cup/Cups/cup-color-season-<N>-edition.md
+MtgSoloSports/mtshistory/Color Cup/Teams Histories/cup-color-team-<key>.md
+MtgSoloSports/mtshistory/Type Cup/Cups/cup-type-season-<N>-edition.md
+MtgSoloSports/mtshistory/Type Cup/Teams Histories/cup-type-team-<key>.md
+MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
+```
+
+- **Preview first.** *Preview library* inventories every supported report and reports
+  `created`/`updated`/`unchanged`/`failed` counts per category without any Drive write or
+  destination save, so you can see what a sync would do.
+- **Folder adoption, not duplication.** The destination now maps the six Cup folders
+  (`Color Cup`, `Color Cup/Cups`, `Color Cup/Teams Histories`, `Type Cup`, `Type Cup/Cups`,
+  `Type Cup/Teams Histories`) alongside `Seasons/`. Explicitly adopted folders keep custom
+  names; unadopted folders are auto-resolved by default name (`Color Cup`, `Cups`,
+  `Teams Histories`, ...) and only created when **Allow creating missing folders/files** is
+  ticked. An invisible-but-existing folder is never duplicated: resolution fails closed with
+  adoption guidance instead.
+- **File adoption.** Existing hand-uploaded reports are adopted by stable semantic identity
+  (save id, report type, season number or team key): same content adopts the existing file
+  with no write; changed content updates that exact file id. One same-named file with
+  different content stops with the existing id so you can adopt it explicitly; two or more
+  same-named files (e.g. a ` (1)` duplicate) stop with duplicate guidance and create
+  nothing. No deletion, rename or overwrite of unknown files, ever.
+- **Efficient change detection.** Each Markdown payload is hashed ignoring the volatile
+  `Generated:` line, so repeat syncs with unchanged simulation history write nothing.
+  Progress persists incrementally per category, so an interrupted sync (or a `MaxFiles`
+  truncated request) resumes without re-uploading settled files; failed files can be
+  retried with the same Sync action.
+- **Automatic mode** refreshes the almanac and current dossier as before, **plus** the Cup
+  edition/team histories that actually changed after the relevant Cup selection or
+  finalization (recent source seasons only). Ordinary league stages never re-upload the
+  whole team-history archive: unchanged fingerprints report `unchanged` with no writes.
+- **Freshness per category.** Status shows the last library sync time, per-category
+  created/updated/unchanged/failed counts and the last library error, alongside the
+  single-publish checkpoint. Verify access now also checks the six Cup folders
+  (`ok`/`needs-grant`/`not-found`/`needs-adoption`/`duplicate`/`outside-destination`).
+
 ## Limitations
 
 - Publishing needs the app running and an internet connection; automatic sync
   works only while the app runs and is authorized (no background processing
   when shut down).
-- Only the current dossier + almanac are published (no bulk history upload —
-  see MSS-091). `Color Cup`/`Type Cup` team-history destinations are reserved
-  for future sync and not published by this task.
+- Only the curated library above is published (season dossiers, Color/Type Cup
+  editions and team histories, almanac). Athlete, standings and league profile
+  reports stay download-only until explicitly configured later.
 - Drive updates do **not** replace separately uploaded ChatGPT Project copies:
   re-attach the files in ChatGPT after publishing.
 - To link/refresh a Drive folder inside ChatGPT, use ChatGPT's own Drive
@@ -200,3 +244,10 @@ Opt-in **Automatically publish after each completed stage** on Reports/Drive
 9. Disconnect (or revoke in the Google account); publish: recoverable `401`.
 10. Remove server credentials; connect: recoverable `503`.
 11. Simulate a transient failure; publish: recoverable `failed` outcome, retry clean.
+12. Adopt the Cup folders (`Color Cup/Cups`, `Color Cup/Teams Histories`, `Type Cup/Cups`,
+    `Type Cup/Teams Histories`) with **Choose from Drive** or folder ids, then Save + Verify:
+    all six Cup checks report `ok`.
+13. Preview library: per-category created/updated/unchanged/failed counts with no Drive writes.
+14. Sync all changed reports: every season dossier, Cup edition/team history and the almanac
+    land in place (same ids); repeat sync writes nothing. A manually uploaded ` (1)` duplicate
+    surfaces as `duplicate` with no new file until resolved in Drive.

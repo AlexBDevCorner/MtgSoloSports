@@ -7,12 +7,15 @@ import {
   describeAutoPublishStatus,
   disconnectDrive,
   getDriveStatus,
+  previewDriveLibrary,
   publishDriveReports,
   retryDriveAutoPublish,
   saveDriveDestination,
   setDriveAutoPublish,
   startDriveConnect,
+  syncDriveLibrary,
   verifyDriveDestination,
+  type DriveLibrarySyncResponse,
   type DriveStatus,
   type DriveVerifyResponse,
   type PublishDriveResponse,
@@ -51,11 +54,18 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [dossierFileName, setDossierFileName] = useState('');
   const [almanacFileId, setAlmanacFileId] = useState('');
   const [almanacFileName, setAlmanacFileName] = useState('');
+  const [colorCupFolderId, setColorCupFolderId] = useState('');
+  const [colorCupsFolderId, setColorCupsFolderId] = useState('');
+  const [colorTeamsFolderId, setColorTeamsFolderId] = useState('');
+  const [typeCupFolderId, setTypeCupFolderId] = useState('');
+  const [typeCupsFolderId, setTypeCupsFolderId] = useState('');
+  const [typeTeamsFolderId, setTypeTeamsFolderId] = useState('');
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [allowCreateMissing, setAllowCreateMissing] = useState(false);
   const [autoBusy, setAutoBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishDriveResponse | null>(null);
+  const [libraryResult, setLibraryResult] = useState<DriveLibrarySyncResponse | null>(null);
   const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
 
   useEffect(() => {
@@ -117,6 +127,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         setDossierFileName(status.dossier.fileName ?? '');
         setAlmanacFileId(status.almanac.fileId ?? '');
         setAlmanacFileName(status.almanac.fileName ?? '');
+        setColorCupFolderId(status.colorCupFolderId ?? '');
+        setColorCupsFolderId(status.colorCupsFolderId ?? '');
+        setColorTeamsFolderId(status.colorTeamsFolderId ?? '');
+        setTypeCupFolderId(status.typeCupFolderId ?? '');
+        setTypeCupsFolderId(status.typeCupsFolderId ?? '');
+        setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
         setDriveLoading(false);
       })
       .catch((failure: unknown) => {
@@ -143,6 +159,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       setDossierFileName(status.dossier.fileName ?? '');
       setAlmanacFileId(status.almanac.fileId ?? '');
       setAlmanacFileName(status.almanac.fileName ?? '');
+      setColorCupFolderId(status.colorCupFolderId ?? '');
+      setColorCupsFolderId(status.colorCupsFolderId ?? '');
+      setColorTeamsFolderId(status.colorTeamsFolderId ?? '');
+      setTypeCupFolderId(status.typeCupFolderId ?? '');
+      setTypeCupsFolderId(status.typeCupsFolderId ?? '');
+      setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
     } catch (failure) {
       setDriveError(apiErrorMessage(failure));
     }
@@ -296,8 +318,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       <Card eyebrow="Google Drive" title="Publish to Drive">
         <p className="muted small">
           Updates the current season dossier and universe almanac <em>in place</em> in your own{' '}
-          <code>mtshistory</code> Drive hierarchy. Unchanged reports are skipped; retries never create
-          duplicates. Publishing never changes simulation data.
+          <code>mtshistory</code> Drive hierarchy. <em>Sync all changed reports</em> extends the same
+          in-place rules to every season dossier, Color/Type Cup edition and team history. Unchanged
+          reports are skipped; retries never create duplicates. Publishing never changes simulation data.
         </p>
         {driveLoading ? <Loading label="Loading Drive status…" /> : null}
         {driveNotice ? (
@@ -419,6 +442,68 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   disabled={driveBusy !== null}
                   placeholder="universe-almanac-….md"
                   onChange={(event) => setAlmanacFileName(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="toolbar" role="group" aria-label="Drive Cup library folders">
+              <label className="field">
+                <span>Color Cup folder id</span>
+                <input
+                  type="text"
+                  value={colorCupFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/"
+                  onChange={(event) => setColorCupFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Color Cups folder id</span>
+                <input
+                  type="text"
+                  value={colorCupsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/Cups"
+                  onChange={(event) => setColorCupsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Color Teams Histories folder id</span>
+                <input
+                  type="text"
+                  value={colorTeamsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/Teams Histories"
+                  onChange={(event) => setColorTeamsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Cup folder id</span>
+                <input
+                  type="text"
+                  value={typeCupFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/"
+                  onChange={(event) => setTypeCupFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Cups folder id</span>
+                <input
+                  type="text"
+                  value={typeCupsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/Cups"
+                  onChange={(event) => setTypeCupsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Teams Histories folder id</span>
+                <input
+                  type="text"
+                  value={typeTeamsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/Teams Histories"
+                  onChange={(event) => setTypeTeamsFolderId(event.target.value)}
                 />
               </label>
             </div>
@@ -567,6 +652,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     almanacFileId,
                     almanacFileName,
                     confirmCrossSave,
+                    colorCupFolderId,
+                    colorCupsFolderId,
+                    colorTeamsFolderId,
+                    typeCupFolderId,
+                    typeCupsFolderId,
+                    typeTeamsFolderId,
                   })
                     .then(() => refreshDriveStatus())
                     .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
@@ -657,7 +748,60 @@ export function ReportsPage({ saveId }: { saveId: string }) {
               >
                 {driveBusy === 'publish' ? 'Publishing…' : 'Publish now'}
               </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('library-preview');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void previewDriveLibrary(saveId, {
+                    confirmCrossSave,
+                    allowOverwriteEditedRemote: allowOverwrite,
+                    allowCreateMissing,
+                  })
+                    .then((result) => setLibraryResult(result))
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'library-preview' ? 'Previewing…' : 'Preview library'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('library-sync');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void syncDriveLibrary(saveId, {
+                    confirmCrossSave,
+                    allowOverwriteEditedRemote: allowOverwrite,
+                    allowCreateMissing,
+                  })
+                    .then((result) => {
+                      setLibraryResult(result);
+                      return refreshDriveStatus();
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'library-sync' ? 'Syncing…' : 'Sync all changed reports'}
+              </button>
             </div>
+            {driveStatus.lastLibraryPublishedUtc ?? driveStatus.lastLibraryError ? (
+              <p className="muted small">
+                Library:{' '}
+                {driveStatus.lastLibraryPublishedUtc
+                  ? `synced ${driveStatus.lastLibraryPublishedUtc}`
+                  : 'never fully synced'}
+                {` · +${driveStatus.lastLibraryCreated} ~${driveStatus.lastLibraryUpdated} =${driveStatus.lastLibraryUnchanged} !${driveStatus.lastLibraryFailed}`}
+                {driveStatus.lastLibraryError ? ` · error: ${driveStatus.lastLibraryError}` : ''}
+              </p>
+            ) : null}
             {driveStatus.lastPublishedUtc ? (
               <p className="muted small">
                 Last publish: season {driveStatus.lastSeasonNumber} · {driveStatus.lastPhase} ·{' '}
@@ -719,7 +863,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
             ) : null}
             <p className="muted small">
               Automatic publishing uploads the current season dossier and universe almanac after each
-              completed global stage while the app runs. It never blocks simulation and never deletes
+              completed global stage while the app runs, plus the Color/Type Cup edition and team-history
+              reports that actually changed. It never blocks simulation and never deletes
               Drive files when disabled. New seasons start a new stable dossier file; prior seasons are
               preserved.
             </p>
@@ -736,6 +881,29 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     {file.detail ? ` — ${file.detail}` : ''}
                   </li>
                 ))}
+              </ul>
+            ) : null}
+            {libraryResult ? (
+              <ul className="muted small">
+                <li>
+                  Library {libraryResult.dryRun ? 'preview' : 'sync'}: {libraryResult.totalItems} items
+                  {libraryResult.truncated ? ' (truncated — re-run to resume the remainder)' : ''}
+                </li>
+                {libraryResult.categories.map((category) => (
+                  <li key={category.category}>
+                    {category.category}: {category.total} total · +{category.created} ~{category.updated} =
+                    {category.unchanged} !{category.failed}
+                  </li>
+                ))}
+                {libraryResult.files
+                  .filter((file) => file.outcome === 'failed')
+                  .map((file) => (
+                    <li key={file.report}>
+                      {file.report}: {file.outcome}
+                      {file.fileName ? ` — ${file.fileName}` : ''}
+                      {file.detail ? ` — ${file.detail}` : ''}
+                    </li>
+                  ))}
               </ul>
             ) : null}
             {verifyResult ? (

@@ -42,6 +42,19 @@ export interface DriveStatus {
   autoNextRetryUtc: string | null;
   autoLastError: string | null;
   autoPausedForAuth: boolean;
+  colorCupFolderId: string | null;
+  colorCupsFolderId: string | null;
+  colorTeamsFolderId: string | null;
+  typeCupFolderId: string | null;
+  typeCupsFolderId: string | null;
+  typeTeamsFolderId: string | null;
+  lastLibraryPublishedUtc: string | null;
+  lastLibraryError: string | null;
+  lastLibraryCreated: number;
+  lastLibraryUpdated: number;
+  lastLibraryUnchanged: number;
+  lastLibraryFailed: number;
+  lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
 }
 
 export interface DriveDestination {
@@ -66,6 +79,19 @@ export interface DriveDestination {
   autoRequestedSeason: number | null;
   autoRequestedGlobalStage: number | null;
   autoRequestedPhase: string | null;
+  colorCupFolderId: string | null;
+  colorCupsFolderId: string | null;
+  colorTeamsFolderId: string | null;
+  typeCupFolderId: string | null;
+  typeCupsFolderId: string | null;
+  typeTeamsFolderId: string | null;
+  lastLibraryPublishedUtc: string | null;
+  lastLibraryError: string | null;
+  lastLibraryCreated: number;
+  lastLibraryUpdated: number;
+  lastLibraryUnchanged: number;
+  lastLibraryFailed: number;
+  lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
 }
 
 export interface DriveDestinationInput {
@@ -77,6 +103,12 @@ export interface DriveDestinationInput {
   almanacFileId: string;
   almanacFileName: string;
   confirmCrossSave: boolean;
+  colorCupFolderId: string;
+  colorCupsFolderId: string;
+  colorTeamsFolderId: string;
+  typeCupFolderId: string;
+  typeCupsFolderId: string;
+  typeTeamsFolderId: string;
 }
 
 export interface DriveVerifyCheck {
@@ -172,10 +204,63 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
     almanacFileId: input.almanacFileId.trim() === '' ? null : input.almanacFileId.trim(),
     almanacFileName: input.almanacFileName.trim() === '' ? null : input.almanacFileName.trim(),
     confirmCrossSave: input.confirmCrossSave,
+    colorCupFolderId: input.colorCupFolderId.trim() === '' ? null : input.colorCupFolderId.trim(),
+    colorCupsFolderId: input.colorCupsFolderId.trim() === '' ? null : input.colorCupsFolderId.trim(),
+    colorTeamsFolderId: input.colorTeamsFolderId.trim() === '' ? null : input.colorTeamsFolderId.trim(),
+    typeCupFolderId: input.typeCupFolderId.trim() === '' ? null : input.typeCupFolderId.trim(),
+    typeCupsFolderId: input.typeCupsFolderId.trim() === '' ? null : input.typeCupsFolderId.trim(),
+    typeTeamsFolderId: input.typeTeamsFolderId.trim() === '' ? null : input.typeTeamsFolderId.trim(),
   };
   return fetchJson<DriveDestination>(driveDestinationUrl(saveId), {
     method: 'PUT',
     body: JSON.stringify(body),
+  });
+}
+
+export interface DriveLibraryCategoryResult {
+  category: string;
+  total: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+}
+
+export interface DriveLibrarySyncResponse {
+  saveId: string;
+  dryRun: boolean;
+  truncated: boolean;
+  totalItems: number;
+  syncedUtc: string;
+  categories: DriveLibraryCategoryResult[];
+  files: DriveFileOutcome[];
+}
+
+export function driveLibraryPreviewUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/library/preview`;
+}
+
+export function driveLibrarySyncUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/library/sync`;
+}
+
+export function previewDriveLibrary(
+  saveId: string,
+  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean; allowCreateMissing?: boolean },
+): Promise<DriveLibrarySyncResponse> {
+  return fetchJson<DriveLibrarySyncResponse>(driveLibraryPreviewUrl(saveId), {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+}
+
+export function syncDriveLibrary(
+  saveId: string,
+  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean; allowCreateMissing?: boolean },
+): Promise<DriveLibrarySyncResponse> {
+  return fetchJson<DriveLibrarySyncResponse>(driveLibrarySyncUrl(saveId), {
+    method: 'POST',
+    body: JSON.stringify(options),
   });
 }
 

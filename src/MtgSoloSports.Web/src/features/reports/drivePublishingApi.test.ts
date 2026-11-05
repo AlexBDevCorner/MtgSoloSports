@@ -7,6 +7,8 @@ import {
   driveAuthUrl,
   driveDestinationUrl,
   driveDisconnectUrl,
+  driveLibraryPreviewUrl,
+  driveLibrarySyncUrl,
   drivePublishUrl,
   driveStatusUrl,
   driveVerifyUrl,
@@ -40,5 +42,12 @@ describe('MSS-090 Drive auto-publish URLs and status labels', () => {
     assert.equal(describeAutoPublishStatus('Disconnected'), 'Disconnected');
     assert.equal(describeAutoPublishStatus('Disabled'), 'Disabled');
     assert.equal(describeAutoPublishStatus('unknown'), 'Disabled');
+  });
+});
+
+describe('MSS-091 Drive library sync URLs', () => {
+  it('builds library preview and sync URLs with exact save scope', () => {
+    assert.equal(driveLibraryPreviewUrl('save-1'), '/api/saves/save-1/reports/drive/library/preview');
+    assert.equal(driveLibrarySyncUrl('save-1'), '/api/saves/save-1/reports/drive/library/sync');
   });
 });
