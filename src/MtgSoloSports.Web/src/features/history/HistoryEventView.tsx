@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { optionalTournament } from '../cups/typeCupTournamentApi';
 import type { TypeCupTournament } from '../cups/typeCupTournamentApi';
+import { fetchColorCupIndividualProgress, type ColorCupIndividualProgress } from '../cups/colorCupApi';
+import { advancingLabel, cutoffSummary } from '../cups/colorCupProgress';
 import {
   fetchEventRound,
   fetchEventRounds,
@@ -54,9 +56,11 @@ export function HistoryEventView({
   const [roundView, setRoundView] = useState<EventRoundView | null>(null);
   const [teams, setTeams] = useState<EventTeamStandings | null>(null);
   const [tournament, setTournament] = useState<TypeCupTournament | null>(null);
+  const [individualProgress, setIndividualProgress] = useState<ColorCupIndividualProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const team = isTeamEvent(event);
   const isTypeTournamentHistory = event === 'type-cup-team';
+  const isIndividualHistory = event === 'color-cup-individual';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -83,8 +87,15 @@ export function HistoryEventView({
     } else {
       setTournament(null);
     }
+    if (isIndividualHistory) {
+      fetchColorCupIndividualProgress(saveId, season, controller.signal)
+        .then(setIndividualProgress)
+        .catch(() => setIndividualProgress(null));
+    } else {
+      setIndividualProgress(null);
+    }
     return () => controller.abort();
-  }, [saveId, season, event, team, isTypeTournamentHistory]);
+  }, [saveId, season, event, team, isTypeTournamentHistory, isIndividualHistory]);
 
   const isTypeCup = event === 'type-cup-team';
   const urlStage =
@@ -411,6 +422,104 @@ export function HistoryEventView({
               </tbody>
             </table>
           </div>
+        </Card>
+      ) : null}
+
+      {isIndividualHistory && individualProgress ? (
+        <Card
+          eyebrow={EVENT_TITLES[event]}
+          title={
+            individualProgress.isPhased
+              ? individualProgress.isComplete
+                ? 'Final standings — 1–16 finalists, 17–32 eliminated'
+                : `Progress — ${individualProgress.roundsPlayed} / ${individualProgress.totalRounds} · top 16 advance`
+              : `Individual standings — ${individualProgress.roundsPlayed} / ${individualProgress.totalRounds}`
+          }
+        >
+          {individualProgress.isPhased ? (
+            <>
+              <p className="muted small">
+                {individualProgress.isComplete
+                  ? `Phased 32-to-16 with full carryover. ${cutoffSummary(individualProgress.cutoffRank, individualProgress.tieDrawConsumed, false)}. Finalists carry 100% of qualifying points.`
+                  : individualProgress.roundsPlayed <= individualProgress.qualifyingRounds
+                    ? `Qualifying of 32 · ${cutoffSummary(individualProgress.cutoffRank, individualProgress.tieDrawConsumed, individualProgress.isProvisionalCutoff)}.`
+                    : `Final of 16 active · cumulative scores · ${cutoffSummary(individualProgress.cutoffRank, individualProgress.tieDrawConsumed, false)}. Carryover intact (no reset).`}
+              </p>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="numeric">Rank</th>
+                      <th scope="col">Card</th>
+                      <th scope="col" className="numeric">Points</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {individualProgress.standings.map((row, index) => {
+                      const showCut =
+                        individualProgress.cutoffRank !== null &&
+                        index === (individualProgress.cutoffRank ?? 16) - 1 &&
+                        individualProgress.standings.length > (individualProgress.cutoffRank ?? 16);
+                      return (
+                        <Fragment key={row.athleteId}>
+                          <tr>
+                            <td className="numeric">{row.provisionalRank}</td>
+                            <td>{row.name}</td>
+                            <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                            <td>{advancingLabel(row.advancingStatus)}</td>
+                          </tr>
+                          {showCut ? (
+                            <tr className="live-cut-line" aria-hidden="true">
+                              <td colSpan={4} className="live-cut-cell">
+                                <span className="live-cut-label">Cut — top {individualProgress.cutoffRank} advance</span>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {individualProgress.carryover && individualProgress.carryover.length > 0 ? (
+                <p className="muted small">
+                  Round-16 to round-17 continuity: {individualProgress.carryover.filter((c) => c.matches).length}/
+                  {individualProgress.carryover.length} finalists carry 100% (before equals after).
+                </p>
+              ) : null}
+              <p className="muted small">
+                Every recorded round stays replayable above via the Round selector (
+                {individualProgress.totalRounds} rounds for phased, 16 for legacy).
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="muted small">
+                Legacy 16-round edition · {individualProgress.roundsPlayed} / {individualProgress.totalRounds} · no cutoff.
+              </p>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="numeric">Rank</th>
+                      <th scope="col">Card</th>
+                      <th scope="col" className="numeric">Points</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {individualProgress.standings.map((row) => (
+                      <tr key={row.athleteId}>
+                        <td className="numeric">{row.provisionalRank}</td>
+                        <td>{row.name}</td>
+                        <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </Card>
       ) : null}
     </>

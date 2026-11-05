@@ -11,6 +11,11 @@ export interface ColorCupIndividualStanding {
   roundWins: number;
   medal: string;
   imageUrl: string | null;
+  /** Additive cutoff fields; null for legacy 16-round editions. */
+  qualifyingRank?: number | null;
+  qualifiedForFinal?: boolean | null;
+  qualifyingScoreThousandths?: number | null;
+  finalScoreThousandths?: number | null;
 }
 
 export interface ColorCupIndividualResult {
@@ -27,6 +32,59 @@ export interface ColorCupIndividualResult {
   championAthleteId: number;
   championName: string;
   standings: ColorCupIndividualStanding[];
+  /** Additive format discriminator; absent on older payloads means legacy. */
+  formatVersion?: number | null;
+  isPhased?: boolean | null;
+  qualifyingRounds?: number | null;
+  cutoffRank?: number | null;
+  finalFieldSize?: number | null;
+  qualifyingOrderAthleteIds?: number[] | null;
+  qualifierAthleteIds?: number[] | null;
+  eliminatedAthleteIds?: number[] | null;
+  tieDrawConsumed?: boolean | null;
+}
+
+export interface ColorCupIndividualProgressMember {
+  athleteId: number;
+  name: string;
+  sportingColor: string;
+  selectionRank: number;
+  provisionalRank: number;
+  scoreThousandths: number;
+  qualifyingRank: number | null;
+  advancingStatus: string | null;
+  qualifyingScoreThousandths: number | null;
+  finalScoreThousandths: number | null;
+  imageUrl: string | null;
+}
+
+export interface ColorCupIndividualCarryover {
+  athleteId: number;
+  name: string;
+  qualifyingScoreThousandths: number;
+  round17BeforeThousandths: number;
+  matches: boolean;
+}
+
+export interface ColorCupIndividualProgress {
+  saveId: string;
+  sourceSeasonNumber: number;
+  sourceSeasonId: number;
+  formatVersion: number;
+  isPhased: boolean;
+  totalRounds: number;
+  roundsPlayed: number;
+  isComplete: boolean;
+  qualifyingRounds: number;
+  cutoffRank: number | null;
+  finalFieldSize: number | null;
+  qualifyingOrderAthleteIds: number[] | null;
+  qualifierAthleteIds: number[] | null;
+  eliminatedAthleteIds: number[] | null;
+  tieDrawConsumed: boolean | null;
+  isProvisionalCutoff: boolean;
+  standings: ColorCupIndividualProgressMember[];
+  carryover: ColorCupIndividualCarryover[] | null;
 }
 
 export async function fetchColorCupIndividual(
@@ -50,6 +108,18 @@ export async function runColorCupIndividual(
   return fetchJson<ColorCupIndividualResult>(
     `/api/saves/${saveId}/cups/color/individual${query}`,
     { method: 'POST', signal },
+  );
+}
+
+export async function fetchColorCupIndividualProgress(
+  saveId: string,
+  sourceSeason: number | null,
+  signal?: AbortSignal,
+): Promise<ColorCupIndividualProgress> {
+  const query = sourceSeason !== null ? `?sourceSeason=${sourceSeason}` : '';
+  return fetchJson<ColorCupIndividualProgress>(
+    `/api/saves/${saveId}/cups/color/individual/progress${query}`,
+    { signal },
   );
 }
 

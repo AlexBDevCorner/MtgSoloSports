@@ -1227,23 +1227,82 @@ public sealed class RunColorCupIndividualHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
             .ConfigureAwait(false);
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        (int formatVersion, bool isPhased, ColorCupIndividualCutoff? cutoff, Dictionary<int, ColorCupIndividualAdvancing> advancingById) =
+            ResolveCutoffForBuild(rounds, rules);
+        List<ColorCupIndividualMember> members = BuildMembers(standings, names, advancingById);
+        return BuildResult(saveId, source, standings, rounds, names, members, simulation, formatVersion, isPhased, cutoff);
+    }
+
+    private static (int FormatVersion, bool IsPhased, ColorCupIndividualCutoff? Cutoff, Dictionary<int, ColorCupIndividualAdvancing> ById) ResolveCutoffForBuild(
+        List<ColorCupIndividualRoundEntity> rounds,
+        RulesV1 rules)
+    {
+        List<ColorCupIndividualRoundPayloadDocument> payloadDocs = rounds
+            .Select(r => ColorCupIndividualRoundPayloadDocument.FromStored(r.PayloadJson))
+            .ToList();
+        int formatVersion = ColorCupIndividualInvariants.ResolvePayloadFormat(payloadDocs);
+        bool isPhased = SimulationKernel.Cups.ColorCupIndividualFormat.IsPhased(formatVersion);
+        if (!isPhased)
+        {
+            return (formatVersion, false, null, new Dictionary<int, ColorCupIndividualAdvancing>());
+        }
+
+        (ColorCupIndividualCutoff built, Dictionary<int, ColorCupIndividualAdvancing> byId) =
+            ColorCupIndividualCutoffBuilder.BuildForCompleted(payloadDocs, rules);
+        return (formatVersion, true, built, byId);
+    }
+
+    private static List<ColorCupIndividualMember> BuildMembers(
+        List<ColorCupIndividualStandingEntity> standings,
+        Dictionary<int, string> names,
+        Dictionary<int, ColorCupIndividualAdvancing> advancingById)
+    {
         List<ColorCupIndividualMember> members = new(standings.Count);
         foreach (ColorCupIndividualStandingEntity standing in standings)
         {
-            names.TryGetValue(standing.SaveAthleteId, out string? name);
-            string color = ((SimulationKernel.Catalog.SportingColor)standing.SportingColor).ToString();
-            members.Add(new ColorCupIndividualMember(
-                standing.SaveAthleteId,
-                name ?? $"Athlete {standing.SaveAthleteId}",
-                color,
-                standing.SelectionRank,
-                standing.CupRank,
-                standing.CupScoreThousandths,
-                standing.BaseScoreThousandths,
-                standing.RoundWins,
-                ((ColorCupMedal)standing.Medal).ToString()));
+            members.Add(BuildOneMember(standing, names, advancingById));
         }
 
+        return members;
+    }
+
+    private static ColorCupIndividualMember BuildOneMember(
+        ColorCupIndividualStandingEntity standing,
+        Dictionary<int, string> names,
+        Dictionary<int, ColorCupIndividualAdvancing> advancingById)
+    {
+        names.TryGetValue(standing.SaveAthleteId, out string? name);
+        string color = ((SimulationKernel.Catalog.SportingColor)standing.SportingColor).ToString();
+        advancingById.TryGetValue(standing.SaveAthleteId, out ColorCupIndividualAdvancing? advancing);
+        return new ColorCupIndividualMember(
+            standing.SaveAthleteId,
+            name ?? $"Athlete {standing.SaveAthleteId}",
+            color,
+            standing.SelectionRank,
+            standing.CupRank,
+            standing.CupScoreThousandths,
+            standing.BaseScoreThousandths,
+            standing.RoundWins,
+            ((ColorCupMedal)standing.Medal).ToString(),
+            advancing?.QualifyingRank,
+            advancing?.QualifiedForFinal,
+            advancing?.QualifyingScoreThousandths,
+            advancing?.FinalScoreThousandths);
+    }
+
+    private static RunColorCupIndividualResponse BuildResult(
+        Guid saveId,
+        SeasonEntity source,
+        List<ColorCupIndividualStandingEntity> standings,
+        List<ColorCupIndividualRoundEntity> rounds,
+        Dictionary<int, string> names,
+        List<ColorCupIndividualMember> members,
+        CupSimulation simulation,
+        int formatVersion,
+        bool isPhased,
+        ColorCupIndividualCutoff? cutoff)
+    {
         ColorCupIndividualRoundPayloadDocument first = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[0].PayloadJson);
         ColorCupIndividualRoundPayloadDocument last = ColorCupIndividualRoundPayloadDocument.FromStored(rounds[^1].PayloadJson);
         ColorCupIndividualStandingEntity champion = standings.Single(s => s.CupRank == 1);
@@ -1261,6 +1320,15 @@ public sealed class RunColorCupIndividualHandler
             last.RngAfterStream,
             champion.SaveAthleteId,
             championName ?? $"Athlete {champion.SaveAthleteId}",
-            members);
+            members,
+            formatVersion,
+            isPhased,
+            SimulationKernel.Cups.ColorCupIndividualFormat.QualifyingRounds,
+            cutoff?.CutoffRank,
+            cutoff?.FinalFieldSize,
+            cutoff?.QualifyingOrderAthleteIds,
+            cutoff?.QualifierAthleteIds,
+            cutoff?.EliminatedAthleteIds,
+            cutoff?.TieDrawConsumed);
     }
 }

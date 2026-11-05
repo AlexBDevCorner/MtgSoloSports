@@ -102,6 +102,19 @@ internal static class CupEditionReportMarkdown
             return;
         }
 
+        if (individual.IsPhased)
+        {
+            AppendPhasedIndividual(sb, individual);
+            return;
+        }
+
+        AppendLegacyIndividual(sb, individual);
+    }
+
+    private static void AppendLegacyIndividual(StringBuilder sb, GetColorCupIndividualResultResponse individual)
+    {
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Format: legacy · {individual.Rounds} rounds of 32 · no cutoff or final phase.");
+        sb.AppendLine();
         sb.AppendLine(CultureInfo.InvariantCulture, $"Finished: {individual.Standings.Count} athletes · {individual.Rounds} rounds · Champion {ReportMarkdown.Cell(individual.ChampionName)} (id {individual.ChampionAthleteId}) · Checksum `{individual.Checksum}`.");
         sb.AppendLine();
         sb.AppendLine(CultureInfo.InvariantCulture, $"| Rank | Card | Team | Cup score | Round W | Medal |");
@@ -113,6 +126,56 @@ internal static class CupEditionReportMarkdown
 
         sb.AppendLine();
     }
+
+    private static void AppendPhasedIndividual(StringBuilder sb, GetColorCupIndividualResultResponse individual)
+    {
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Format: phased · {individual.Rounds} rounds (16 qualifying of 32 + 16 final of 16, 100% carryover) · Cutoff top 16 after round 16.");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Finished: {individual.Standings.Count} athletes · {individual.Rounds} rounds · Champion {ReportMarkdown.Cell(individual.ChampionName)} (id {individual.ChampionAthleteId}) · Checksum `{individual.Checksum}`.");
+        sb.AppendLine();
+        string tie = individual.TieDrawConsumed.HasValue
+            ? (individual.TieDrawConsumed.Value ? "yes (seeded draw)" : "no")
+            : "—";
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Cutoff: top 16 qualify for the final (qualifying ranks 1–16); places 17–32 frozen by qualifying finish. Tie draw consumed: {tie}.");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Finalists carry 100% of qualifying points; round-17 cumulative-before equals round-16 cumulative-after per finalist.");
+        sb.AppendLine();
+        AppendPhasedFinalists(sb, individual);
+        AppendPhasedEliminated(sb, individual);
+    }
+
+    private static void AppendPhasedFinalists(StringBuilder sb, GetColorCupIndividualResultResponse individual)
+    {
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Finalists — ranks 1–16 (combined qualifying + final points)");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"| Rank | Card | Team | Qual rank | Status | Qualifying | Final | Cup score | Round W | Medal |");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
+        foreach (GetColorCupIndividualMember row in individual.Standings.Where(r => r.CupRank <= 16).OrderBy(r => r.CupRank))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {row.CupRank} | {ReportMarkdown.Cell(row.Name)} (id {row.AthleteId}) | {ReportMarkdown.Cell(row.SportingColor)} | {FormatNullableRank(row.QualifyingRank)} | Qualified | {FormatNullablePoints(row.QualifyingScoreThousandths)} | {FormatNullablePoints(row.FinalScoreThousandths)} | {ReportMarkdown.FormatPoints(row.CupScoreThousandths)} | {row.RoundWins} | {ReportMarkdown.Cell(row.Medal)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendPhasedEliminated(StringBuilder sb, GetColorCupIndividualResultResponse individual)
+    {
+        sb.AppendLine(CultureInfo.InvariantCulture, $"### Eliminated at the cutoff — ranks 17–32 (qualifying points frozen, no final points)");
+        sb.AppendLine();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"| Rank | Card | Team | Qual rank | Status | Qualifying (final) | Round W | Medal |");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"| --- | --- | --- | --- | --- | --- | --- | --- |");
+        foreach (GetColorCupIndividualMember row in individual.Standings.Where(r => r.CupRank > 16).OrderBy(r => r.CupRank))
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"| {row.CupRank} | {ReportMarkdown.Cell(row.Name)} (id {row.AthleteId}) | {ReportMarkdown.Cell(row.SportingColor)} | {FormatNullableRank(row.QualifyingRank)} | Eliminated | {FormatNullablePoints(row.QualifyingScoreThousandths)} | {row.RoundWins} | {ReportMarkdown.Cell(row.Medal)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static string FormatNullableRank(int? rank) =>
+        rank.HasValue ? rank.Value.ToString(CultureInfo.InvariantCulture) : "—";
+
+    private static string FormatNullablePoints(int? thousandths) =>
+        thousandths.HasValue ? ReportMarkdown.FormatPoints(thousandths.Value) : "—";
 
     private static void AppendColorTeam(StringBuilder sb, GetColorCupTeamResultResponse? team)
     {

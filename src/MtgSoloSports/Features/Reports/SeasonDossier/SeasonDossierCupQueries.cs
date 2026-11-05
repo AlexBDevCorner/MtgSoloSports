@@ -58,7 +58,19 @@ internal static class SeasonDossierCupQueries
             .OrderBy(r => r.CupRank)
             .Select(r => new CupPodiumEntry(r.CupRank, r.SportingColor, r.SportingColor, r.CupScoreThousandths, r.Medal, r.AthleteId, r.Name))
             .ToList();
-        return new IndividualCupSummary(individual.ChampionName, individual.ChampionAthleteId, top);
+        return new IndividualCupSummary(
+            individual.ChampionName,
+            individual.ChampionAthleteId,
+            top,
+            individual.FormatVersion,
+            individual.IsPhased,
+            individual.Rounds,
+            individual.QualifyingRounds,
+            individual.CutoffRank,
+            individual.FinalFieldSize,
+            individual.TieDrawConsumed,
+            individual.QualifierAthleteIds?.Count,
+            individual.EliminatedAthleteIds?.Count);
     }
 
     internal static TeamCupSummary? MapColorTeam(
@@ -103,7 +115,12 @@ internal static class SeasonDossierCupQueries
         bool teamDone = data.ColorTeam is not null;
         if (individualDone && teamDone)
         {
-            return "Color Cup complete: individual ranks 1-3 hold official medals; team ranks 1-3 hold official team medals. Squads are historically correct selections.";
+            if (data.ColorIndividual!.IsPhased)
+            {
+                return "Color Cup complete (phased 16+16, full carryover): individual ranks 1-16 are finalists on combined points, 17-32 frozen by qualifying finish; ranks 1-3 hold official medals; team ranks 1-3 hold official team medals. Squads are historically correct selections.";
+            }
+
+            return "Color Cup complete (legacy 16 rounds): individual ranks 1-3 hold official medals; team ranks 1-3 hold official team medals. Squads are historically correct selections.";
         }
 
         if (individualDone || teamDone)
