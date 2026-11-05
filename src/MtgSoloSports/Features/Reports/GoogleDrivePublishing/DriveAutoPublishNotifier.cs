@@ -136,6 +136,13 @@ public sealed class DriveAutoPublishNotifier
         // compare against the persisted requested checkpoint here and reject
         // duplicates and stale (older-or-equal) snapshots. Only a strictly
         // newer (season, stage, phase) checkpoint advances the request.
+        // MSS-091: live Cup rounds/stages report a computed-only InProgress
+        // phase while SaveMetadata stays at the last milestone. The publisher
+        // settles LastPhase from the persisted phase, so requesting the
+        // computed phase can never become caught up and the worker re-signals
+        // forever. Compare and store the effective (persisted for InProgress)
+        // phase so partial progress is a harmless no-op and completions still
+        // advance.
         if (CompareCheckpoint(current, status) <= 0)
         {
             return null;
@@ -146,7 +153,7 @@ public sealed class DriveAutoPublishNotifier
             SaveName = saveName ?? current.SaveName,
             AutoRequestedSeason = status.CurrentSeasonNumber,
             AutoRequestedGlobalStage = status.GlobalStage,
-            AutoRequestedPhase = status.ComputedPhase,
+            AutoRequestedPhase = EffectivePhase(status),
             AutoRequestedUtc = now,
             AutoNextRetryUtc = current.AutoPausedForAuth ? current.AutoNextRetryUtc : now,
         };
@@ -165,11 +172,38 @@ public sealed class DriveAutoPublishNotifier
     }
 
     /// <summary>
+    /// Effective automatic-publish phase for a status snapshot. Live Cup
+    /// rounds/stages report a computed-only InProgress phase
+    /// (QualifierInProgress, ColorCupIndividualInProgress,
+    /// ColorCupTeamInProgress, TypeCupTeamInProgress) while the persisted
+    /// SaveMetadata phase stays at the last milestone. The publisher settles
+    /// LastPhase from the persisted phase, so the requested checkpoint must
+    /// use the persisted phase for InProgress snapshots; otherwise
+    /// IsCaughtUp can never become true and the worker re-signals forever.
+    /// Defined lifecycle phases pass through unchanged.
+    /// </summary>
+    internal static string EffectivePhase(GetSeasonStatusResponse status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        if (Enum.TryParse<SavePhase>(status.ComputedPhase, ignoreCase: false, out SavePhase parsed)
+            && Enum.IsDefined(parsed))
+        {
+            return status.ComputedPhase;
+        }
+
+        return status.PersistedPhase;
+    }
+
+    /// <summary>
     /// Total ordering for requested checkpoints: season dominates stage, stage
     /// dominates phase. Phase order follows <see cref="SavePhase"/> numeric
     /// order, which matches the lifecycle progression (SeasonInProgress through
-    /// CupComplete). Returns &lt;0 when the incoming snapshot is older than the
-    /// persisted request, 0 when equal, &gt;0 when strictly newer.
+    /// CupComplete). InProgress snapshots compare and store by their effective
+    /// (persisted) phase so partial Cup progress never opens an uncatchable
+    /// request. A stored legacy InProgress request (written before MSS-091)
+    /// heals to the effective phase on the next note. Returns &lt;0 when the
+    /// incoming snapshot is older than the persisted request, 0 when equal,
+    /// &gt;0 when strictly newer.
     /// </summary>
     internal static int CompareCheckpoint(
         DrivePublishingStore.DestinationDocument current,
@@ -199,12 +233,13 @@ public sealed class DriveAutoPublishNotifier
             return 1;
         }
 
-        if (string.Equals(currentPhase, status.ComputedPhase, StringComparison.Ordinal))
+        string incomingPhase = EffectivePhase(status);
+        if (string.Equals(currentPhase, incomingPhase, StringComparison.Ordinal))
         {
             return 0;
         }
 
-        bool incomingOk = Enum.TryParse<SavePhase>(status.ComputedPhase, ignoreCase: false, out SavePhase incoming)
+        bool incomingOk = Enum.TryParse<SavePhase>(incomingPhase, ignoreCase: false, out SavePhase incoming)
             && Enum.IsDefined(incoming);
         bool currentOk = Enum.TryParse<SavePhase>(currentPhase, ignoreCase: false, out SavePhase persisted)
             && Enum.IsDefined(persisted);
@@ -213,7 +248,15 @@ public sealed class DriveAutoPublishNotifier
             return ((int)incoming).CompareTo((int)persisted);
         }
 
-        return string.Compare(status.ComputedPhase, currentPhase, StringComparison.Ordinal);
+        // A stored InProgress request predates the MSS-091 effective-phase
+        // guard and can never match the publisher's persisted LastPhase. Heal
+        // it to the current effective phase instead of comparing strings.
+        if (!currentOk && incomingOk)
+        {
+            return 1;
+        }
+
+        return string.Compare(incomingPhase, currentPhase, StringComparison.Ordinal);
     }
 
     private async Task<string?> LoadSaveNameAsync(Guid saveId, CancellationToken cancellationToken)
