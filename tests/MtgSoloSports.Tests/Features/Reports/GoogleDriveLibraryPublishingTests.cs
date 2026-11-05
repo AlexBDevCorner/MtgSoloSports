@@ -768,6 +768,7 @@ public sealed class GoogleDriveLibraryPublishingTests
             Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
             drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
             using HttpClient client = factory.CreateClient();
+            client.Timeout = TimeSpan.FromMinutes(10); // Bulk 2-season run can exceed default 100s on loaded CI.
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
 
