@@ -682,6 +682,180 @@ public sealed class GoogleDriveLibraryPublishingTests
         }
     }
 
+    [Fact]
+    public async Task LibrarySync_LegacyDossierSlot_OnlyServesCurrentSeason()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            SeedLibraryFolders(drive);
+            // MSS-089 era adoption: single current-season dossier id with no
+            // per-season map and no LastSeasonNumber yet (no publish happened).
+            drive.SeedFile("legacy-dossier", "folder-seasons", "my-legacy.md", "# legacy current");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-mtshistory","dossierFileId":"legacy-dossier","dossierFileName":"my-legacy.md"}""");
+
+            LibrarySyncResult synced = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            synced.Status.ShouldBe(HttpStatusCode.OK);
+            // Season 1 (historical) must not overwrite the adopted
+            // current-season file; it creates its own stable file.
+            string season1File = synced.FileId("season-dossier:1")!;
+            (string.Equals(season1File, "legacy-dossier", StringComparison.Ordinal)).ShouldBeFalse();
+            synced.Outcome("season-dossier:1").ShouldBe("created");
+            // The current season (2) reuses the legacy id in place.
+            synced.FileId("season-dossier:2").ShouldBe("legacy-dossier");
+            synced.Outcome("season-dossier:2").ShouldBe("updated");
+            drive.Files["legacy-dossier"].Content.Contains("# Season dossier", StringComparison.Ordinal).ShouldBeTrue();
+            drive.Files["legacy-dossier"].Content.Contains("Season 2", StringComparison.Ordinal).ShouldBeTrue();
+            drive.Files[season1File].Content.Contains("Season 1", StringComparison.Ordinal).ShouldBeTrue();
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LibrarySync_SuffixedDuplicate_SurfacesWithoutCreation()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            SeedLibraryFolders(drive);
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            LibrarySyncResult preview = await PostLibraryPreviewAsync(client, saveId, allowCreateMissing: true);
+            string editionReport = preview.ReportsForCategory("color-edition").First();
+            string editionFileName = preview.FileName(editionReport)!;
+            string variant = editionFileName.EndsWith(".md", StringComparison.Ordinal)
+                ? editionFileName[..^3] + " (1).md"
+                : editionFileName + " (1)";
+
+            // Hand-uploaded "(1)" duplicate with no base file: creating next
+            // to it would increase ambiguity, so surfacing wins.
+            drive.SeedFile("dup-suffixed", "folder-color-cups", variant, "# duplicate");
+            LibrarySyncResult blocked = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            blocked.Status.ShouldBe(HttpStatusCode.OK);
+            blocked.Outcome(editionReport).ShouldBe("failed");
+            blocked.Detail(editionReport)!.Contains("(1)", StringComparison.Ordinal).ShouldBeTrue();
+            drive.FileIn("folder-color-cups", editionFileName).Count.ShouldBe(0);
+
+            // Base appears alongside the "(1)": still ambiguous, never a
+            // silent update of the base while the duplicate lingers.
+            drive.SeedFile("base-file", "folder-color-cups", editionFileName, "# stale base");
+            LibrarySyncResult blockedBoth = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            blockedBoth.Status.ShouldBe(HttpStatusCode.OK);
+            blockedBoth.Outcome(editionReport).ShouldBe("failed");
+            blockedBoth.Detail(editionReport)!.Contains("(1)", StringComparison.Ordinal).ShouldBeTrue();
+            drive.Files["base-file"].Content.ShouldBe("# stale base");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public void LiveCupHandlers_ExposePostCommitAutoPublishNotifier()
+    {
+        // Correction guard: all supported Live Cup completion paths must
+        // accept the same post-commit notifier as the one-shot handlers so
+        // auto mode can refresh Cup reports after round-by-round finals.
+        foreach (Type handler in new[]
+                 {
+                     typeof(MtgSoloSports.Features.Cups.PlayColorCupIndividualRound.PlayColorCupIndividualRoundHandler),
+                     typeof(MtgSoloSports.Features.Cups.PlayColorCupTeamRound.PlayColorCupTeamRoundHandler),
+                     typeof(MtgSoloSports.Features.Cups.PlayTypeCupTeamRound.PlayTypeCupTeamRoundHandler),
+                     typeof(MtgSoloSports.Features.Cups.FinishTypeCupTeamStage.FinishTypeCupTeamStageHandler),
+                 })
+        {
+            bool hasNotifier = handler.GetConstructors()
+                .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(DriveAutoPublishNotifier)));
+            hasNotifier.ShouldBeTrue($"Live handler {handler.Name} must accept DriveAutoPublishNotifier.");
+        }
+    }
+
+    [Fact]
+    public async Task LiveColorIndividualFinalization_UpdatesOnlySelectedReports()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            using HttpResponseMessage selected = await client.PostAsync(
+                $"/api/saves/{saveId:D}/cups/color/teams", null);
+            selected.StatusCode.ShouldBe(HttpStatusCode.OK);
+            LibrarySyncResult beforeFinal = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            Dictionary<string, string> contentBefore = SnapshotContents(drive);
+
+            await PlayColorIndividualToCompletionAsync(client, saveId);
+
+            List<string> cupKeys = beforeFinal.Files
+                .Select(f => f.Report)
+                .Where(r => r.StartsWith("color-edition:", StringComparison.Ordinal)
+                    || r.StartsWith("color-team:", StringComparison.Ordinal))
+                .ToList();
+            cupKeys.Count.ShouldBe(9);
+            LibrarySyncResult selective = await PostLibrarySyncSelectiveAsync(client, saveId, cupKeys);
+            selective.Files.ShouldAllBe(f => string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
+            bool anyChanged = false;
+            foreach (string key in cupKeys)
+            {
+                string id = selective.FileId(key)!;
+                if (!string.Equals(drive.Files[id].Content, contentBefore[id], StringComparison.Ordinal))
+                {
+                    anyChanged = true;
+                    break;
+                }
+            }
+
+            anyChanged.ShouldBeTrue();
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task PlayColorIndividualToCompletionAsync(HttpClient client, Guid saveId)
+    {
+        for (int guard = 0; guard < 40; guard++)
+        {
+            using HttpResponseMessage next = await client.PostAsync(
+                $"/api/saves/{saveId:D}/cups/color/individual/rounds/next", null).ConfigureAwait(false);
+            if (next.StatusCode != HttpStatusCode.OK)
+            {
+                string body = await next.Content.ReadAsStringAsync().ConfigureAwait(false);
+                throw new Xunit.Sdk.XunitException($"Live round {guard} failed with {next.StatusCode}: {body}");
+            }
+            using JsonDocument json = JsonDocument.Parse(await next.Content.ReadAsStringAsync().ConfigureAwait(false));
+            bool complete = (json.RootElement.TryGetProperty("complete", out JsonElement c) && c.GetBoolean())
+                || (json.RootElement.TryGetProperty("Complete", out JsonElement cc) && cc.GetBoolean())
+                || (json.RootElement.TryGetProperty("isComplete", out JsonElement ic) && ic.GetBoolean())
+                || (json.RootElement.TryGetProperty("IsComplete", out JsonElement iC) && iC.GetBoolean());
+            if (complete)
+            {
+                return;
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException("Live Color Cup individual did not complete within 40 rounds.");
+    }
+
     private static async Task AssertHierarchyAdoptedAsync(
         WebApplicationFactory<Program> factory,
         Guid saveId,

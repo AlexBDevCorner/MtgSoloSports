@@ -1167,17 +1167,33 @@ public sealed class PublishDriveReportsHandler
                 destination);
         }
 
-        if (matches.Count == 1)
-        {
-            return await HandleExistingNameAsync(destination, report, matches[0], desiredName, newFingerprint, applySlot, cancellationToken).ConfigureAwait(false);
-        }
-
         if (matches.Count > 1)
         {
             return (Failed(report, null, desiredName,
                 $"Found {matches.Count} files named '{desiredName}' in the destination. Adopt exactly one file id explicitly; nothing was created. " +
                 $"Duplicate names like '{desiredName} (1)' must be resolved in Drive first: keep one file, remove or rename the rest, then adopt the kept file id explicitly.", newFingerprint),
                 destination);
+        }
+
+        // MSS-091: Drive auto-names a manual duplicate as "<base> (1).md".
+        // An exact-name query never returns that file, so check the canonical
+        // "(1)" variant before adopting or creating. Creating next to it would
+        // increase ambiguity; updating the base while it lingers leaves the
+        // duplicate unresolved. Surface for explicit resolution instead.
+        // shortcut: only the "(1)" variant is probed; upgrade to a folder
+        // listing if broader "(N)" detection is ever needed.
+        IReadOnlyList<DriveFile> suffixed = await ListSuffixedAsync(parentFolderId, desiredName, cancellationToken).ConfigureAwait(false);
+        if (suffixed.Count > 0)
+        {
+            string variant = SuffixedDuplicateName(desiredName);
+            return (Failed(report, null, desiredName,
+                $"Found an ambiguous duplicate '{variant}' alongside '{desiredName}' in the destination. Adopt exactly one file id explicitly instead of creating or updating a duplicate; resolve names like '{variant}' in Drive first (keep one file, remove or rename the rest), then adopt the kept file id explicitly. Nothing was created.", newFingerprint),
+                destination);
+        }
+
+        if (matches.Count == 1)
+        {
+            return await HandleExistingNameAsync(destination, report, matches[0], desiredName, newFingerprint, applySlot, cancellationToken).ConfigureAwait(false);
         }
 
         // Fail closed: with drive.file an existing but ungranted report with
@@ -1337,6 +1353,37 @@ public sealed class PublishDriveReportsHandler
 
     private static bool IsForbidden(DriveApiException ex) =>
         ex.StatusCode == System.Net.HttpStatusCode.Forbidden;
+
+    internal static string SuffixedDuplicateName(string desiredName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(desiredName);
+        int dot = desiredName.LastIndexOf('.');
+        if (dot <= 0)
+        {
+            return desiredName + " (1)";
+        }
+
+        return desiredName[..dot] + " (1)" + desiredName[dot..];
+    }
+
+    private async Task<IReadOnlyList<DriveFile>> ListSuffixedAsync(
+        string parentFolderId,
+        string desiredName,
+        CancellationToken cancellationToken)
+    {
+        string variant = SuffixedDuplicateName(desiredName);
+        try
+        {
+            return await WithGetRetryAsync(
+                () => WithAuthAsync(token => _drive.ListByNameInFolderAsync(token, parentFolderId, variant, cancellationToken), cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (IsForbidden(ex))
+        {
+            throw new DriveConflictException(
+                "Google denied access to the destination folder (403). With the least-privilege drive.file scope, the app can only use folders it created or that were explicitly granted via Choose from Drive (Google Picker). Use Verify access to check the grant, then retry. Nothing was created.");
+        }
+    }
 
     internal async Task<T> WithGetRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
     {

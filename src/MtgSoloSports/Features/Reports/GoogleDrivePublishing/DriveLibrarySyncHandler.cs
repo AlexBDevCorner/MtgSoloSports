@@ -794,7 +794,7 @@ public sealed class DriveLibrarySyncHandler
         if (request.DryRun)
         {
             DriveFileOutcome predicted = await PredictItemAsync(
-                current, item, resolution.FolderId, saveId, request, cancellationToken).ConfigureAwait(false);
+                current, item, resolution.FolderId, saveId, request, detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
             return (predicted, current);
         }
 
@@ -807,7 +807,7 @@ public sealed class DriveLibrarySyncHandler
         try
         {
             return await PublishGeneratedAsync(
-                current, item, resolution.FolderId, generated.Value, request, cancellationToken).ConfigureAwait(false);
+                current, item, resolution.FolderId, generated.Value, request, detail.CurrentSeason, cancellationToken).ConfigureAwait(false);
         }
         catch (DriveNotConnectedException)
         {
@@ -968,10 +968,11 @@ public sealed class DriveLibrarySyncHandler
         string parentFolderId,
         string markdown,
         DriveLibrarySyncRequest request,
+        int currentSeason,
         CancellationToken cancellationToken)
     {
         string fingerprint = DrivePublishingFingerprint.ComputeHex(markdown);
-        SlotResolution slot = ResolveSlot(current, item);
+        SlotResolution slot = ResolveSlot(current, item, currentSeason);
         PublishDriveReportsHandler.ApplySlotFn applySlot = BuildApplySlot(item);
         return await _singleFile.PublishOneFileAsync(
             current,
@@ -994,13 +995,27 @@ public sealed class DriveLibrarySyncHandler
 
     private static SlotResolution ResolveSlot(
         DrivePublishingStore.DestinationDocument current,
-        DriveLibraryItem item)
+        DriveLibraryItem item,
+        int currentSeason)
     {
         if (string.Equals(item.Category, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal))
         {
             // Per-season dossier identity: never reuse another season's file
             // id. Missing slots take the stable create path (or adopt a
             // same-named file already in Seasons/).
+            // Legacy single-slot destinations (MSS-089 era: no map, no
+            // LastSeasonNumber yet) must only supply the current season.
+            // Otherwise season 1 would resolve to the adopted current-season
+            // file and overwrite it with wrong-season content.
+            bool hasMap = current.DossierBySeason is not null && current.DossierBySeason.Count > 0;
+            if (!hasMap
+                && current.DossierFileId is not null
+                && !current.LastSeasonNumber.HasValue
+                && item.SeasonNumber!.Value != currentSeason)
+            {
+                return new SlotResolution(null, null, null);
+            }
+
             (string? fileId, _, string? fingerprint, _) =
                 DrivePublishingStore.CurrentDossierView(current, item.SeasonNumber!.Value);
             string? explicitName = fileId is null
@@ -1061,6 +1076,7 @@ public sealed class DriveLibrarySyncHandler
         string parentFolderId,
         Guid saveId,
         DriveLibrarySyncRequest request,
+        int currentSeason,
         CancellationToken cancellationToken)
     {
         GenerationResult generated = await TryGenerateAsync(item, saveId, cancellationToken).ConfigureAwait(false);
@@ -1070,7 +1086,7 @@ public sealed class DriveLibrarySyncHandler
         }
 
         string fingerprint = DrivePublishingFingerprint.ComputeHex(generated.Value);
-        SlotResolution slot = ResolveSlot(current, item);
+        SlotResolution slot = ResolveSlot(current, item, currentSeason);
         if (slot.StoredFileId is null)
         {
             return await PredictCreateAsync(
@@ -1091,18 +1107,31 @@ public sealed class DriveLibrarySyncHandler
     {
         _ = markdown;
         IReadOnlyList<DriveFile> matches = await ListByNameAsync(parentFolderId, item.DefaultFileName, cancellationToken).ConfigureAwait(false);
+        if (matches.Count > 1)
+        {
+            return FailedOutcome(item,
+                $"Dry run: found {matches.Count} files named '{item.DefaultFileName}' in {item.ExpectedLocation}. Adopt exactly one file id explicitly (resolve names like '{item.DefaultFileName} (1)' in Drive first). Nothing would be created.");
+        }
+
+        // MSS-091: Drive auto-names a manual duplicate as "<base> (1).md",
+        // which an exact-name query never returns. Probe the canonical
+        // variant before predicting a create or an adoption.
+        // shortcut: only "(1)" is probed; upgrade to a folder listing if
+        // broader "(N)" detection is ever needed.
+        string variant = PublishDriveReportsHandler.SuffixedDuplicateName(item.DefaultFileName);
+        IReadOnlyList<DriveFile> suffixed = await ListByNameAsync(parentFolderId, variant, cancellationToken).ConfigureAwait(false);
+        if (suffixed.Count > 0)
+        {
+            return FailedOutcome(item,
+                $"Dry run: found an ambiguous duplicate '{variant}' alongside '{item.DefaultFileName}' in {item.ExpectedLocation}. Adopt exactly one file id explicitly instead of creating or updating a duplicate; resolve names like '{variant}' in Drive first. Nothing would be created.");
+        }
+
         if (matches.Count == 0)
         {
             return request.AllowCreateMissing
                 ? Predicted(item, null, "created", fingerprint, $"Dry run: would create '{item.DefaultFileName}' in {item.ExpectedLocation}.")
                 : FailedOutcome(item,
                     $"Dry run: no visible file named '{item.DefaultFileName}' was found in {item.ExpectedLocation}. With drive.file an ungranted pre-existing file is hidden; re-run sync with creation of missing folders/files confirmed, or adopt the existing file explicitly. Nothing would be created.");
-        }
-
-        if (matches.Count > 1)
-        {
-            return FailedOutcome(item,
-                $"Dry run: found {matches.Count} files named '{item.DefaultFileName}' in {item.ExpectedLocation}. Adopt exactly one file id explicitly (resolve names like '{item.DefaultFileName} (1)' in Drive first). Nothing would be created.");
         }
 
         string? remote = await TryDownloadAsync(matches[0].Id, cancellationToken).ConfigureAwait(false);

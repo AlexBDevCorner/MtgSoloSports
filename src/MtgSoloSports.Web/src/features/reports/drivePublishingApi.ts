@@ -94,6 +94,11 @@ export interface DriveDestination {
   lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
 }
 
+export interface DriveLibraryAdoptionInput {
+  fileId: string | null;
+  fileName: string | null;
+}
+
 export interface DriveDestinationInput {
   mtshistoryFolderId: string;
   mtshistoryFolderName: string;
@@ -109,6 +114,9 @@ export interface DriveDestinationInput {
   typeCupFolderId: string;
   typeCupsFolderId: string;
   typeTeamsFolderId: string;
+  dossierAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  editionAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  teamAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
 }
 
 export interface DriveVerifyCheck {
@@ -210,6 +218,9 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
     typeCupFolderId: input.typeCupFolderId.trim() === '' ? null : input.typeCupFolderId.trim(),
     typeCupsFolderId: input.typeCupsFolderId.trim() === '' ? null : input.typeCupsFolderId.trim(),
     typeTeamsFolderId: input.typeTeamsFolderId.trim() === '' ? null : input.typeTeamsFolderId.trim(),
+    dossierAdoptions: input.dossierAdoptions ?? null,
+    editionAdoptions: input.editionAdoptions ?? null,
+    teamAdoptions: input.teamAdoptions ?? null,
   };
   return fetchJson<DriveDestination>(driveDestinationUrl(saveId), {
     method: 'PUT',

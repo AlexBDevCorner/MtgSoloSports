@@ -33,6 +33,46 @@ async function fetchSeasons(saveId: string, signal: AbortSignal): Promise<Histor
   return fetchJson<HistorySeasons>(`/api/saves/${saveId}/history/seasons`, { signal });
 }
 
+function parseAdoptionMap(
+  raw: string,
+  label: string,
+): Record<string, { fileId: string | null; fileName: string | null }> | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(`${label} is not valid JSON. Use {"key": {"fileId": "...", "fileName": "..."}}.`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object keyed by semantic report key.`);
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length > 500) {
+    throw new Error(`${label} has too many entries (max 500).`);
+  }
+  const normalized: Record<string, { fileId: string | null; fileName: string | null }> = {};
+  for (const [key, value] of entries) {
+    if (key.trim() === '' || key.includes('/') || key.includes('\\')) {
+      throw new Error(`${label} has an invalid key "${key}".`);
+    }
+    if (typeof value !== 'object' || value === null) {
+      throw new Error(`${label} entry "${key}" must be {"fileId": "...", "fileName": "..."}.`);
+    }
+    const record = value as Record<string, unknown>;
+    const fileId = record.fileId;
+    const fileName = record.fileName;
+    normalized[key.trim()] = {
+      fileId: typeof fileId === 'string' && fileId.trim() !== '' ? fileId.trim() : null,
+      fileName: typeof fileName === 'string' && fileName.trim() !== '' ? fileName.trim() : null,
+    };
+  }
+  return normalized;
+}
+
 export function ReportsPage({ saveId }: { saveId: string }) {
   const [seasons, setSeasons] = useState<HistorySeasons | null>(null);
   const [seasonsError, setSeasonsError] = useState<string | null>(null);
@@ -60,6 +100,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [typeCupFolderId, setTypeCupFolderId] = useState('');
   const [typeCupsFolderId, setTypeCupsFolderId] = useState('');
   const [typeTeamsFolderId, setTypeTeamsFolderId] = useState('');
+  const [dossierAdoptionsText, setDossierAdoptionsText] = useState('');
+  const [editionAdoptionsText, setEditionAdoptionsText] = useState('');
+  const [teamAdoptionsText, setTeamAdoptionsText] = useState('');
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [allowCreateMissing, setAllowCreateMissing] = useState(false);
@@ -630,10 +673,96 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 {driveBusy === 'pick-almanac' ? 'Opening Picker…' : 'Choose almanac…'}
               </button>
             </div>
+            <div className="toolbar" role="group" aria-label="Drive Cup library folder grants">
+              {(
+                [
+                  ['pick-color-cup', 'Choose Color Cup…', 'colorCupFolderId'],
+                  ['pick-color-cups', 'Choose Color Cups…', 'colorCupsFolderId'],
+                  ['pick-color-teams', 'Choose Color Teams…', 'colorTeamsFolderId'],
+                  ['pick-type-cup', 'Choose Type Cup…', 'typeCupFolderId'],
+                  ['pick-type-cups', 'Choose Type Cups…', 'typeCupsFolderId'],
+                  ['pick-type-teams', 'Choose Type Teams…', 'typeTeamsFolderId'],
+                ] as const
+              ).map(([busyKey, label, target]) => (
+                <button
+                  key={target}
+                  type="button"
+                  className="ghost-button"
+                  disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                  title={pickerDisabledHint(driveStatus)}
+                  onClick={() => {
+                    const config = pickerConfigFromStatus(driveStatus);
+                    if (!config) {
+                      setDriveError(pickerDisabledHint(driveStatus));
+                      return;
+                    }
+                    setDriveBusy(busyKey);
+                    setDriveError(null);
+                    void showDrivePicker(config, 'folder')
+                      .then((picked) => {
+                        if (picked) {
+                          if (target === 'colorCupFolderId') setColorCupFolderId(picked.id);
+                          else if (target === 'colorCupsFolderId') setColorCupsFolderId(picked.id);
+                          else if (target === 'colorTeamsFolderId') setColorTeamsFolderId(picked.id);
+                          else if (target === 'typeCupFolderId') setTypeCupFolderId(picked.id);
+                          else if (target === 'typeCupsFolderId') setTypeCupsFolderId(picked.id);
+                          else setTypeTeamsFolderId(picked.id);
+                          setDriveNotice(
+                            `Picked folder “${picked.name}” — press Save destination, then Verify access.`,
+                          );
+                        }
+                      })
+                      .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                      .finally(() => setDriveBusy(null));
+                  }}
+                >
+                  {driveBusy === busyKey ? 'Opening Picker…' : label}
+                </button>
+              ))}
+            </div>
             <p className="muted small">
               {driveStatus.pickerEnabled
                 ? 'Choose from Drive grants drive.file access to that exact folder/file (same Google account), so publishing can update it in place.'
                 : pickerDisabledHint(driveStatus)}
+            </p>
+            <div className="toolbar" role="group" aria-label="Drive library file adoptions">
+              <label className="field">
+                <span>Historical dossier adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={dossierAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"1": {"fileId": "...", "fileName": "season-1-dossier.md"}}'
+                  onChange={(event) => setDossierAdoptionsText(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Cup edition adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={editionAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"color:1": {"fileId": "...", "fileName": "my-edition.md"}}'
+                  onChange={(event) => setEditionAdoptionsText(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Cup team adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={teamAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"color:red": {"fileId": "...", "fileName": "my-team.md"}}'
+                  onChange={(event) => setTeamAdoptionsText(event.target.value)}
+                />
+              </label>
+            </div>
+            <p className="muted small">
+              Adopt hand-uploaded library files by semantic key: dossier seasons as <code>1</code>,{' '}
+              <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>; teams as{' '}
+              <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, grant
+              each file with Choose from Drive, then paste its id here and Save destination. Adopted files
+              update in place under their custom names; unknown files are never renamed or deleted.
             </p>
             <p>
               <button
@@ -643,6 +772,18 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 onClick={() => {
                   setDriveBusy('save');
                   setDriveError(null);
+                  let dossierAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  let editionAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  let teamAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  try {
+                    dossierAdoptions = parseAdoptionMap(dossierAdoptionsText, 'Dossier adoptions');
+                    editionAdoptions = parseAdoptionMap(editionAdoptionsText, 'Edition adoptions');
+                    teamAdoptions = parseAdoptionMap(teamAdoptionsText, 'Team adoptions');
+                  } catch (failure) {
+                    setDriveError(failure instanceof Error ? failure.message : 'Invalid adoption JSON.');
+                    setDriveBusy(null);
+                    return;
+                  }
                   void saveDriveDestination(saveId, {
                     mtshistoryFolderId: folderId,
                     mtshistoryFolderName: folderName,
@@ -658,6 +799,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     typeCupFolderId,
                     typeCupsFolderId,
                     typeTeamsFolderId,
+                    dossierAdoptions,
+                    editionAdoptions,
+                    teamAdoptions,
                   })
                     .then(() => refreshDriveStatus())
                     .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))

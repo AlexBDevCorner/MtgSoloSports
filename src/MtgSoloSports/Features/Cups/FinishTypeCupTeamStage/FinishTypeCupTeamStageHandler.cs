@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.PlayTypeCupTeamRound;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -23,10 +24,12 @@ namespace MtgSoloSports.Features.Cups.FinishTypeCupTeamStage;
 public sealed class FinishTypeCupTeamStageHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public FinishTypeCupTeamStageHandler(SaveStore store)
+    public FinishTypeCupTeamStageHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<FinishTypeCupTeamStageResponse> HandleAsync(
@@ -48,14 +51,25 @@ public sealed class FinishTypeCupTeamStageHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        FinishTypeCupTeamStageResponse response;
         try
         {
-            return await FinishUnderLockAsync(saveId, expectedTournamentPhase, expectedQualificationGroup, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await FinishUnderLockAsync(saveId, expectedTournamentPhase, expectedQualificationGroup, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: Live stage finish can complete the tournament, changing the
+        // same Cup edition/team-history reports as the one-shot run.
+        // Post-commit note only; the notifier decides if the checkpoint moved.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<FinishTypeCupTeamStageResponse> FinishUnderLockAsync(
