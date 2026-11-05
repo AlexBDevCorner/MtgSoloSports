@@ -118,6 +118,8 @@ public sealed class PutDriveDestinationHandler
         string? TypeCupFolderId,
         string? TypeCupsFolderId,
         string? TypeTeamsFolderId,
+        string? ChaosCupFolderId,
+        string? ChaosCupsFolderId,
         IReadOnlyDictionary<string, DriveLibraryAdoption>? DossierAdoptions,
         IReadOnlyDictionary<string, DriveLibraryAdoption>? EditionAdoptions,
         IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions);
@@ -138,6 +140,8 @@ public sealed class PutDriveDestinationHandler
             NormalizeId(request.TypeCupFolderId, "Type Cup folder id"),
             NormalizeId(request.TypeCupsFolderId, "Type Cup Cups folder id"),
             NormalizeId(request.TypeTeamsFolderId, "Type Cup Teams Histories folder id"),
+            NormalizeId(request.ChaosCupFolderId, "Chaos Cup folder id"),
+            NormalizeId(request.ChaosCupsFolderId, "Chaos Cup Cups folder id"),
             NormalizeAdoptions(request.DossierAdoptions, "dossier adoptions"),
             NormalizeAdoptions(request.EditionAdoptions, "edition adoptions"),
             NormalizeAdoptions(request.TeamAdoptions, "team adoptions"));
@@ -196,6 +200,8 @@ public sealed class PutDriveDestinationHandler
                 || normalized.TypeCupFolderId is not null
                 || normalized.TypeCupsFolderId is not null
                 || normalized.TypeTeamsFolderId is not null
+                || normalized.ChaosCupFolderId is not null
+                || normalized.ChaosCupsFolderId is not null
                 || (normalized.DossierAdoptions is not null && normalized.DossierAdoptions.Count > 0)
                 || (normalized.EditionAdoptions is not null && normalized.EditionAdoptions.Count > 0)
                 || (normalized.TeamAdoptions is not null && normalized.TeamAdoptions.Count > 0)))
@@ -225,12 +231,7 @@ public sealed class PutDriveDestinationHandler
             return true;
         }
 
-        if (!string.Equals(existing.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal))
+        if (CupFoldersChanged(existing, normalized))
         {
             return true;
         }
@@ -269,6 +270,20 @@ public sealed class PutDriveDestinationHandler
         }
 
         return false;
+    }
+
+    private static bool CupFoldersChanged(
+        DrivePublishingStore.DestinationDocument existing,
+        NormalizedDestination normalized)
+    {
+        return !string.Equals(existing.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal);
     }
 
     private static bool AdoptionsChanged(
@@ -420,6 +435,8 @@ public sealed class PutDriveDestinationHandler
             normalized.TypeCupFolderId,
             normalized.TypeCupsFolderId,
             normalized.TypeTeamsFolderId,
+            normalized.ChaosCupFolderId,
+            normalized.ChaosCupsFolderId,
             tail.Editions,
             tail.Teams,
             tail.PublishedUtc,
@@ -460,7 +477,9 @@ public sealed class PutDriveDestinationHandler
             || !string.Equals(existing?.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing?.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal);
+            || !string.Equals(existing?.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing?.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing?.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal);
         if (foldersChanged)
         {
             return new LibraryTail(editions, teams, null, null, 0, 0, 0, 0, null);
@@ -657,6 +676,8 @@ public sealed class PutDriveDestinationHandler
             updated.TypeCupFolderId,
             updated.TypeCupsFolderId,
             updated.TypeTeamsFolderId,
+            updated.ChaosCupFolderId,
+            updated.ChaosCupsFolderId,
             updated.LastLibraryPublishedUtc,
             updated.LastLibraryError,
             updated.LastLibraryCreated,
@@ -681,6 +702,7 @@ public sealed class PutDriveDestinationHandler
             && normalized.ColorCupFolderId is null && normalized.ColorCupsFolderId is null
             && normalized.ColorTeamsFolderId is null && normalized.TypeCupFolderId is null
             && normalized.TypeCupsFolderId is null && normalized.TypeTeamsFolderId is null
+            && normalized.ChaosCupFolderId is null && normalized.ChaosCupsFolderId is null
             && (normalized.DossierAdoptions is null || normalized.DossierAdoptions.Count == 0)
             && (normalized.EditionAdoptions is null || normalized.EditionAdoptions.Count == 0)
             && (normalized.TeamAdoptions is null || normalized.TeamAdoptions.Count == 0)
@@ -721,32 +743,7 @@ public sealed class PutDriveDestinationHandler
             return true;
         }
 
-        if (normalized.ColorCupFolderId is not null && string.Equals(other.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (normalized.ColorCupsFolderId is not null && string.Equals(other.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (normalized.ColorTeamsFolderId is not null && string.Equals(other.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (normalized.TypeCupFolderId is not null && string.Equals(other.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (normalized.TypeCupsFolderId is not null && string.Equals(other.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        if (normalized.TypeTeamsFolderId is not null && string.Equals(other.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal))
+        if (CupFolderReused(other, normalized))
         {
             return true;
         }
@@ -770,6 +767,20 @@ public sealed class PutDriveDestinationHandler
         }
 
         return false;
+    }
+
+    private static bool CupFolderReused(
+        DrivePublishingStore.DestinationDocument other,
+        NormalizedDestination normalized)
+    {
+        return (normalized.ColorCupFolderId is not null && string.Equals(other.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal))
+            || (normalized.ColorCupsFolderId is not null && string.Equals(other.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal))
+            || (normalized.ColorTeamsFolderId is not null && string.Equals(other.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal))
+            || (normalized.TypeCupFolderId is not null && string.Equals(other.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal))
+            || (normalized.TypeCupsFolderId is not null && string.Equals(other.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal))
+            || (normalized.TypeTeamsFolderId is not null && string.Equals(other.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal))
+            || (normalized.ChaosCupFolderId is not null && string.Equals(other.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal))
+            || (normalized.ChaosCupsFolderId is not null && string.Equals(other.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal));
     }
 
     private static bool AdoptionReusesFile(

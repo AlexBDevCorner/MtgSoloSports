@@ -465,18 +465,7 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                 return;
             }
 
-            bool cupsReady = IsCupLibraryReady(destination);
-            DriveLibrarySyncResponse response = await library.HandleAsync(
-                saveId,
-                new DriveLibrarySyncRequest(
-                    ConfirmCrossSave: false,
-                    AllowOverwriteEditedRemote: false,
-                    AllowCreateMissing: cupsReady,
-                    Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
-                    OnlyKeys: keys,
-                    MaxFiles: 5000),
-                cancellationToken).ConfigureAwait(false);
-            LogCupRefresh(saveId, response, cupsReady);
+            await RefreshCupPartitionsAsync(saveId, library, destination, keys, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -488,17 +477,91 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         }
     }
 
+    // MSS-116 correction: pre-upgrade destinations adopted only the four
+    // Color/Type leaf folders. Gating the whole selective refresh on the
+    // Chaos leaf would disable auto-creation of new Color/Type edition/team
+    // files. Partition by category so legacy keys keep the legacy gate and
+    // Chaos keys keep the Chaos gate.
+    private async Task RefreshCupPartitionsAsync(
+        Guid saveId,
+        DriveLibrarySyncHandler library,
+        DrivePublishingStore.DestinationDocument destination,
+        IReadOnlyList<string> keys,
+        CancellationToken cancellationToken)
+    {
+        List<string> legacyKeys = keys
+            .Where(k => !string.Equals(
+                DriveLibraryKind.CategoryOf(k),
+                DriveLibraryKind.ChaosEdition,
+                StringComparison.Ordinal))
+            .ToList();
+        List<string> chaosKeys = keys
+            .Where(k => string.Equals(
+                DriveLibraryKind.CategoryOf(k),
+                DriveLibraryKind.ChaosEdition,
+                StringComparison.Ordinal))
+            .ToList();
+
+        if (legacyKeys.Count > 0)
+        {
+            await RefreshOneCupPartitionAsync(
+                saveId,
+                library,
+                legacyKeys,
+                [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
+                IsLegacyCupLibraryReady(destination),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (chaosKeys.Count > 0)
+        {
+            await RefreshOneCupPartitionAsync(
+                saveId,
+                library,
+                chaosKeys,
+                [DriveLibraryKind.ChaosEdition],
+                IsChaosCupLibraryReady(destination),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RefreshOneCupPartitionAsync(
+        Guid saveId,
+        DriveLibrarySyncHandler library,
+        IReadOnlyList<string> keys,
+        IReadOnlyList<string> categories,
+        bool allowCreateMissing,
+        CancellationToken cancellationToken)
+    {
+        DriveLibrarySyncResponse response = await library.HandleAsync(
+            saveId,
+            new DriveLibrarySyncRequest(
+                ConfirmCrossSave: false,
+                AllowOverwriteEditedRemote: false,
+                AllowCreateMissing: allowCreateMissing,
+                Categories: categories,
+                OnlyKeys: keys,
+                MaxFiles: 5000),
+            cancellationToken).ConfigureAwait(false);
+        LogCupRefresh(saveId, response, allowCreateMissing);
+    }
+
     // New Cup selections/finalizations introduce edition files (and sometimes
     // unseen team histories) with no stored slot. Creation is allowed only
     // when the adopted Cup leaf folders are known, so auto mode never creates
     // a parallel folder tree for a hidden but existing folder; otherwise the
     // refresh stays fail-closed and the next manual library sync (with
-    // creation confirmed) is the prerequisite.
-    private static bool IsCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
+    // creation confirmed) is the prerequisite. Legacy Color/Type keys keep
+    // the four-folder gate so pre-upgrade destinations (no Chaos folders)
+    // still auto-create Color/Type files; Chaos keys require the Chaos leaf.
+    internal static bool IsLegacyCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
         !string.IsNullOrWhiteSpace(destination.ColorCupsFolderId)
         && !string.IsNullOrWhiteSpace(destination.ColorTeamsFolderId)
         && !string.IsNullOrWhiteSpace(destination.TypeCupsFolderId)
         && !string.IsNullOrWhiteSpace(destination.TypeTeamsFolderId);
+
+    internal static bool IsChaosCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
+        !string.IsNullOrWhiteSpace(destination.ChaosCupsFolderId);
 
     private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
     {

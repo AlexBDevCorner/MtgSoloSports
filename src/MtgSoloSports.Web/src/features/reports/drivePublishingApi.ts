@@ -48,6 +48,8 @@ export interface DriveStatus {
   typeCupFolderId: string | null;
   typeCupsFolderId: string | null;
   typeTeamsFolderId: string | null;
+  chaosCupFolderId: string | null;
+  chaosCupsFolderId: string | null;
   lastLibraryPublishedUtc: string | null;
   lastLibraryError: string | null;
   lastLibraryCreated: number;
@@ -85,6 +87,8 @@ export interface DriveDestination {
   typeCupFolderId: string | null;
   typeCupsFolderId: string | null;
   typeTeamsFolderId: string | null;
+  chaosCupFolderId: string | null;
+  chaosCupsFolderId: string | null;
   lastLibraryPublishedUtc: string | null;
   lastLibraryError: string | null;
   lastLibraryCreated: number;
@@ -114,6 +118,8 @@ export interface DriveDestinationInput {
   typeCupFolderId: string;
   typeCupsFolderId: string;
   typeTeamsFolderId: string;
+  chaosCupFolderId: string;
+  chaosCupsFolderId: string;
   dossierAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
   editionAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
   teamAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
@@ -218,6 +224,8 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
     typeCupFolderId: input.typeCupFolderId.trim() === '' ? null : input.typeCupFolderId.trim(),
     typeCupsFolderId: input.typeCupsFolderId.trim() === '' ? null : input.typeCupsFolderId.trim(),
     typeTeamsFolderId: input.typeTeamsFolderId.trim() === '' ? null : input.typeTeamsFolderId.trim(),
+    chaosCupFolderId: input.chaosCupFolderId.trim() === '' ? null : input.chaosCupFolderId.trim(),
+    chaosCupsFolderId: input.chaosCupsFolderId.trim() === '' ? null : input.chaosCupsFolderId.trim(),
     dossierAdoptions: input.dossierAdoptions ?? null,
     editionAdoptions: input.editionAdoptions ?? null,
     teamAdoptions: input.teamAdoptions ?? null,
@@ -351,7 +359,7 @@ export function mergeLibraryAdoptionEntry(
 ): string {
   const trimmedKey = key.trim();
   if (trimmedKey === '' || trimmedKey.includes('/') || trimmedKey.includes('\\')) {
-    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2" for editions, "color:red"/"type:Dragon" for teams.');
+    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2"/"chaos:1" for editions, "color:red"/"type:Dragon" for teams.');
   }
   const trimmedId = fileId.trim();
   if (trimmedId === '') {

@@ -19,6 +19,8 @@ internal static class DriveLibraryKind
 
     internal const string TypeTeam = "type-team";
 
+    internal const string ChaosEdition = "chaos-edition";
+
     internal const string Almanac = "almanac";
 
     internal static string DossierReport(int seasonNumber) => $"{SeasonDossier}:{seasonNumber}";

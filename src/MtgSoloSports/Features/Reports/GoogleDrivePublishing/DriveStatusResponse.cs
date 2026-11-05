@@ -39,6 +39,8 @@ public sealed record DriveStatusResponse(
     string? TypeCupFolderId = null,
     string? TypeCupsFolderId = null,
     string? TypeTeamsFolderId = null,
+    string? ChaosCupFolderId = null,
+    string? ChaosCupsFolderId = null,
     DateTimeOffset? LastLibraryPublishedUtc = null,
     string? LastLibraryError = null,
     int LastLibraryCreated = 0,

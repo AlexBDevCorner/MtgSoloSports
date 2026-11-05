@@ -120,6 +120,11 @@ public sealed class VerifyDriveDestinationHandler
         checks.Add(await CheckCupLeafAsync(
             "type-teams", destination.TypeTeamsFolderId, destination.TypeCupFolderId,
             mtshistoryId, "Type Cup", "Teams Histories", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupFolderAsync(
+            "chaos-cup", destination.ChaosCupFolderId, mtshistoryId, "Chaos Cup", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupLeafAsync(
+            "chaos-cups", destination.ChaosCupsFolderId, destination.ChaosCupFolderId,
+            mtshistoryId, "Chaos Cup", "Cups", cancellationToken).ConfigureAwait(false));
     }
 
     private async Task<DriveVerifyCheck> CheckCupFolderAsync(

@@ -90,6 +90,8 @@ public sealed class GetDriveDestinationHandler
             destination?.TypeCupFolderId,
             destination?.TypeCupsFolderId,
             destination?.TypeTeamsFolderId,
+            destination?.ChaosCupFolderId,
+            destination?.ChaosCupsFolderId,
             destination?.LastLibraryPublishedUtc,
             destination?.LastLibraryError,
             destination?.LastLibraryCreated ?? 0,
