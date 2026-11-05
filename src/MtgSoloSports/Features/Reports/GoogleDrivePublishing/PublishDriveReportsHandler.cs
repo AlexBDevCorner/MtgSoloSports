@@ -347,12 +347,21 @@ public sealed class PublishDriveReportsHandler
         DrivePublishingStore.DestinationDocument merged = MergeFinished(
             context.Destination, current, latest ?? current, context.Detail.CurrentSeason);
 
+        // MSS-116: settle the shared checkpoint on the effective (notifier)
+        // phase. Chaos selection/completion reports defined lifecycle phases
+        // (ChaosSelectionResolved/ChaosComplete) while SaveMetadata stays at
+        // the last milestone, so settling LastPhase from the persisted phase
+        // can never equal the requested checkpoint and the worker re-signals
+        // forever. EffectivePhase is the persisted phase for computed-only
+        // InProgress snapshots and the computed phase otherwise, matching the
+        // notifier request for every category.
+        string effectivePhase = DriveAutoPublishNotifier.EffectivePhase(context.SeasonStatus);
         DrivePublishingStore.DestinationDocument finished = merged with
         {
             SaveName = context.Detail.Name,
             LastPublishedUtc = allSettled ? now : merged.LastPublishedUtc,
             LastSeasonNumber = allSettled ? context.Detail.CurrentSeason : merged.LastSeasonNumber,
-            LastPhase = allSettled ? context.Detail.Phase : merged.LastPhase,
+            LastPhase = allSettled ? effectivePhase : merged.LastPhase,
             LastGlobalStage = allSettled ? context.SeasonStatus.GlobalStage : merged.LastGlobalStage,
             LastDossierOutcome = outcomes[0].Outcome,
             LastAlmanacOutcome = outcomes[1].Outcome,
@@ -367,7 +376,7 @@ public sealed class PublishDriveReportsHandler
         return new PublishDriveReportsResponse(
             context.Detail.SaveId,
             context.Detail.CurrentSeason,
-            context.Detail.Phase,
+            effectivePhase,
             context.SeasonStatus.GlobalStage,
             now,
             outcomes);

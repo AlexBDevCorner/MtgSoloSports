@@ -1160,6 +1160,74 @@ public sealed class GoogleDriveLibraryPublishingTests
         }
     }
 
+    [Fact]
+    public async Task ChaosCompletion_AutoPublishBecomesUpToDate()
+    {
+        // MSS-116 correction: Chaos selection/completion reports defined
+        // lifecycle phases (ChaosSelectionResolved/ChaosComplete) while
+        // SaveMetadata stays at the last milestone. The publisher must settle
+        // LastPhase to the effective phase so the auto checkpoint becomes
+        // caught up instead of re-signalling forever.
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+            LibrarySyncResult baseline = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            baseline.Status.ShouldBe(HttpStatusCode.OK, baseline.Body);
+            await PutAutoPublishAsync(client, saveId, enabled: true);
+            await WaitForAutoUpToDateAsync(client, saveId, timeoutSeconds: 30);
+
+            // Named actions: Chaos selection then the full tournament via the
+            // production Next Event orchestration (same DI notifier as the UI).
+            string firstAction = await PostAdvanceAsync(client, saveId);
+            firstAction.ShouldBe("SelectChaosCup");
+            await WaitForAutoUpToDateAsync(client, saveId, timeoutSeconds: 30);
+
+            string secondAction = await PostAdvanceAsync(client, saveId);
+            secondAction.ShouldBe("RunChaosCup");
+            await WaitForAutoUpToDateAsync(client, saveId, timeoutSeconds: 60);
+
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? dest =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            dest.ShouldNotBeNull();
+            string chaosComplete = MtgSoloSports.Features.Saves.SavePhaseParser.ToText(
+                MtgSoloSports.Features.Saves.SavePhase.ChaosComplete);
+            dest!.AutoRequestedPhase.ShouldBe(chaosComplete);
+            dest.LastPhase.ShouldBe(chaosComplete);
+            DriveAutoPublishStatus.IsCaughtUp(dest!).ShouldBeTrue();
+            (await GetAutoStateAsync(client, saveId)).Status.ShouldBe("UpToDate");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task<string> PostAdvanceAsync(HttpClient client, Guid saveId)
+    {
+        using HttpResponseMessage response = await client.PostAsync(
+            $"/api/saves/{saveId:D}/advance-next-event", null).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body);
+        using JsonDocument json = JsonDocument.Parse(body);
+        foreach (JsonProperty prop in json.RootElement.EnumerateObject())
+        {
+            if (string.Equals(prop.Name, "executedAction", StringComparison.OrdinalIgnoreCase)
+                && prop.Value.ValueKind == JsonValueKind.String)
+            {
+                return prop.Value.GetString()!;
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"advance-next-event response misses executedAction: {body}");
+    }
+
     private sealed class TestHostEnvironment : Microsoft.Extensions.Hosting.IHostEnvironment
     {
         public TestHostEnvironment(string contentRoot)
