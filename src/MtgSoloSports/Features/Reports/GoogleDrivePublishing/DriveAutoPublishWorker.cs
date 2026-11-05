@@ -338,6 +338,17 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             }
 
             await FinishAfterPublishAsync(saveId, response, started, cancellationToken).ConfigureAwait(false);
+
+            // MSS-091: after the dossier + almanac settle, refresh only the
+            // Cup edition/team reports that actually changed (changed source
+            // seasons since the last settled publish). Historical files are
+            // never re-uploaded on ordinary league stages: unchanged
+            // fingerprints report unchanged with no writes. Best effort;
+            // failures only warn and keep the dossier settlement intact.
+            if (response.Files.All(f => !string.Equals(f.Outcome, "failed", StringComparison.Ordinal)))
+            {
+                await TryRefreshRecentCupsAsync(saveId, snapshot.LastSeasonNumber, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -425,6 +436,94 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                 AllowOverwriteEditedRemote: false,
                 AllowCreateMissing: allowCreateMissing),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TryRefreshRecentCupsAsync(Guid saveId, int? lastPublishedSeason, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using IServiceScope scope = _scopes.CreateScope();
+            DrivePublishingStore publishing = scope.ServiceProvider.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? destination =
+                await publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
+            if (destination is null
+                || !destination.AutoPublishEnabled
+                || destination.AutoPausedForAuth
+                || string.IsNullOrWhiteSpace(destination.MtshistoryFolderId))
+            {
+                return;
+            }
+
+            DriveLibrarySyncHandler library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
+            // Bulk runs coalesce to one checkpoint: cover the whole changed
+            // source-season range since the last settled publish (postseason
+            // lag included), not just the latest season, so earlier bulk Cup
+            // editions/teams are not left stale until a manual sync.
+            IReadOnlyList<string> keys = await library.RecentCupKeysForAutoAsync(saveId, lastPublishedSeason, cancellationToken).ConfigureAwait(false);
+            if (keys.Count == 0)
+            {
+                return;
+            }
+
+            bool cupsReady = IsCupLibraryReady(destination);
+            DriveLibrarySyncResponse response = await library.HandleAsync(
+                saveId,
+                new DriveLibrarySyncRequest(
+                    ConfirmCrossSave: false,
+                    AllowOverwriteEditedRemote: false,
+                    AllowCreateMissing: cupsReady,
+                    Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
+                    OnlyKeys: keys,
+                    MaxFiles: 5000),
+                cancellationToken).ConfigureAwait(false);
+            LogCupRefresh(saveId, response, cupsReady);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Drive auto-publish selective cup refresh failed for save {SaveId}; retrying on the next stage.", saveId);
+        }
+    }
+
+    // New Cup selections/finalizations introduce edition files (and sometimes
+    // unseen team histories) with no stored slot. Creation is allowed only
+    // when the adopted Cup leaf folders are known, so auto mode never creates
+    // a parallel folder tree for a hidden but existing folder; otherwise the
+    // refresh stays fail-closed and the next manual library sync (with
+    // creation confirmed) is the prerequisite.
+    private static bool IsCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
+        !string.IsNullOrWhiteSpace(destination.ColorCupsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.ColorTeamsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.TypeCupsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.TypeTeamsFolderId);
+
+    private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
+    {
+        int changed = response.Files.Count(f =>
+            string.Equals(f.Outcome, "created", StringComparison.Ordinal)
+            || string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
+        int failed = response.Files.Count(f => string.Equals(f.Outcome, "failed", StringComparison.Ordinal));
+        if (failed > 0 && !cupsReady)
+        {
+            _logger.LogWarning(
+                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed). Cup folders are not fully adopted: run Sync all changed reports once with creation confirmed, then auto mode resumes.",
+                saveId,
+                changed,
+                response.Files.Count,
+                failed);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed).",
+                saveId,
+                changed,
+                response.Files.Count,
+                failed);
+        }
     }
 
     private async Task HandlePublishExceptionAsync(Guid saveId, Exception ex, CancellationToken cancellationToken)

@@ -49,6 +49,32 @@ public sealed class DrivePublishingStore
         string? Fingerprint,
         string? RemoteModifiedTime);
 
+    /// <summary>
+    /// MSS-091: one adopted Drive file for a single library report (a Cup
+    /// edition keyed <c>color:3</c>/<c>type:7</c> or a Cup team keyed
+    /// <c>color:red</c>/<c>type:Dragon</c>). Same shape as
+    /// <see cref="DossierSlot"/> but stored under semantic library keys in
+    /// <c>CupEditionByKey</c>/<c>CupTeamByKey</c> so repeat syncs update the
+    /// same file id in place. New record (not a DossierSlot alias) so the
+    /// JSON stays explicit about which map owns the entry.
+    /// </summary>
+    public sealed record LibrarySlot(
+        string? FileId,
+        string? FileName,
+        string? Fingerprint,
+        string? RemoteModifiedTime);
+
+    /// <summary>
+    /// MSS-091: per-category counts persisted with the last library sync so
+    /// status stays offline-safe (no Drive calls). Keys are library category
+    /// names (<c>season-dossier</c>, <c>color-edition</c>, ...).
+    /// </summary>
+    public sealed record LibraryCategoryCounts(
+        int Created,
+        int Updated,
+        int Unchanged,
+        int Failed);
+
     public sealed record DestinationDocument(
         Guid SaveId,
         string SaveName,
@@ -79,7 +105,22 @@ public sealed class DrivePublishingStore
         int AutoAttemptCount = 0,
         DateTimeOffset? AutoNextRetryUtc = null,
         string? AutoLastError = null,
-        bool AutoPausedForAuth = false);
+        bool AutoPausedForAuth = false,
+        string? ColorCupFolderId = null,
+        string? ColorCupsFolderId = null,
+        string? ColorTeamsFolderId = null,
+        string? TypeCupFolderId = null,
+        string? TypeCupsFolderId = null,
+        string? TypeTeamsFolderId = null,
+        IReadOnlyDictionary<string, LibrarySlot>? CupEditionByKey = null,
+        IReadOnlyDictionary<string, LibrarySlot>? CupTeamByKey = null,
+        DateTimeOffset? LastLibraryPublishedUtc = null,
+        string? LastLibraryError = null,
+        int LastLibraryCreated = 0,
+        int LastLibraryUpdated = 0,
+        int LastLibraryUnchanged = 0,
+        int LastLibraryFailed = 0,
+        IReadOnlyDictionary<string, LibraryCategoryCounts>? LastLibraryByCategory = null);
 
     public sealed record PendingAuthDocument(
         string State,
@@ -208,6 +249,57 @@ public sealed class DrivePublishingStore
             destination.DossierFileName,
             destination.DossierFingerprint,
             destination.DossierRemoteModifiedTime);
+    }
+
+    /// <summary>
+    /// MSS-091: library slot lookup by semantic key. Missing maps and missing
+    /// keys both resolve to an empty slot (create on next sync); a stored
+    /// entry keeps its adopted file id/name across syncs.
+    /// </summary>
+    public static (string? FileId, string? FileName, string? Fingerprint, string? RemoteModifiedTime)
+        LibraryView(IReadOnlyDictionary<string, LibrarySlot>? map, string key)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        if (map is not null && map.TryGetValue(key, out LibrarySlot? slot))
+        {
+            return (slot.FileId, slot.FileName, slot.Fingerprint, slot.RemoteModifiedTime);
+        }
+
+        return (null, null, null, null);
+    }
+
+    /// <summary>
+    /// MSS-091: upsert one library slot (edition or team) without touching
+    /// any other map entry. A null file id clears the key.
+    /// </summary>
+    public static DestinationDocument WithLibrarySlot(
+        DestinationDocument destination,
+        bool isEdition,
+        string key,
+        string? fileId,
+        string? fileName,
+        string? fingerprint,
+        string? remoteModifiedTime)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        Dictionary<string, LibrarySlot> map = (isEdition ? destination.CupEditionByKey : destination.CupTeamByKey) is null
+            ? []
+            : new Dictionary<string, LibrarySlot>(
+                (isEdition ? destination.CupEditionByKey : destination.CupTeamByKey)!,
+                StringComparer.Ordinal);
+        if (fileId is null)
+        {
+            map.Remove(key);
+        }
+        else
+        {
+            map[key] = new LibrarySlot(fileId, fileName, fingerprint, remoteModifiedTime);
+        }
+
+        return isEdition
+            ? destination with { CupEditionByKey = map }
+            : destination with { CupTeamByKey = map };
     }
 
     public string GetStoreRoot() => _options.Value.ResolveStoreRoot(_environment);

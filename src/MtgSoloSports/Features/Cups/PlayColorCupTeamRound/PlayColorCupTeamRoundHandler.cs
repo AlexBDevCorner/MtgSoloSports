@@ -1,5 +1,6 @@
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -17,10 +18,12 @@ namespace MtgSoloSports.Features.Cups.PlayColorCupTeamRound;
 public sealed class PlayColorCupTeamRoundHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public PlayColorCupTeamRoundHandler(SaveStore store)
+    public PlayColorCupTeamRoundHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<PlayColorCupTeamRoundResponse> HandleAsync(
@@ -35,14 +38,25 @@ public sealed class PlayColorCupTeamRoundHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        PlayColorCupTeamRoundResponse response;
         try
         {
-            return await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: Live round-by-round finalization changes the same Cup
+        // edition/team-history reports as the one-shot run. Post-commit note
+        // only; the notifier decides whether the checkpoint advanced.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<PlayColorCupTeamRoundResponse> PlayUnderLockAsync(

@@ -51,6 +51,16 @@ public sealed class DrivePublishingOptions
     /// </summary>
     public string GoogleRedirectUri { get; set; } = "http://localhost:8080/api/reports/drive/callback";
 
+    /// <summary>
+    /// MSS-091: bounds one historical library sync request. The sync still
+    /// processes sequentially (one Drive write at a time, well under Google
+    /// quota) and generates reports one at a time so large universes never
+    /// buffer the whole library; this only caps how many items a single
+    /// request covers. Excess items report <c>Truncated</c> so the client
+    /// retries for the remainder (already-settled files report unchanged).
+    /// </summary>
+    public int LibraryMaxFilesPerSync { get; set; } = 500;
+
     public bool IsGoogleConfigured =>
         !string.IsNullOrWhiteSpace(GoogleClientId) && !string.IsNullOrWhiteSpace(GoogleClientSecret);
 

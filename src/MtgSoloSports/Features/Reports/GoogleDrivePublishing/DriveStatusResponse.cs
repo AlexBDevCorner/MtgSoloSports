@@ -32,4 +32,17 @@ public sealed record DriveStatusResponse(
     int AutoAttemptCount,
     DateTimeOffset? AutoNextRetryUtc,
     string? AutoLastError,
-    bool AutoPausedForAuth);
+    bool AutoPausedForAuth,
+    string? ColorCupFolderId = null,
+    string? ColorCupsFolderId = null,
+    string? ColorTeamsFolderId = null,
+    string? TypeCupFolderId = null,
+    string? TypeCupsFolderId = null,
+    string? TypeTeamsFolderId = null,
+    DateTimeOffset? LastLibraryPublishedUtc = null,
+    string? LastLibraryError = null,
+    int LastLibraryCreated = 0,
+    int LastLibraryUpdated = 0,
+    int LastLibraryUnchanged = 0,
+    int LastLibraryFailed = 0,
+    IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? LastLibraryByCategory = null);

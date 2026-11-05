@@ -42,6 +42,19 @@ export interface DriveStatus {
   autoNextRetryUtc: string | null;
   autoLastError: string | null;
   autoPausedForAuth: boolean;
+  colorCupFolderId: string | null;
+  colorCupsFolderId: string | null;
+  colorTeamsFolderId: string | null;
+  typeCupFolderId: string | null;
+  typeCupsFolderId: string | null;
+  typeTeamsFolderId: string | null;
+  lastLibraryPublishedUtc: string | null;
+  lastLibraryError: string | null;
+  lastLibraryCreated: number;
+  lastLibraryUpdated: number;
+  lastLibraryUnchanged: number;
+  lastLibraryFailed: number;
+  lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
 }
 
 export interface DriveDestination {
@@ -66,6 +79,24 @@ export interface DriveDestination {
   autoRequestedSeason: number | null;
   autoRequestedGlobalStage: number | null;
   autoRequestedPhase: string | null;
+  colorCupFolderId: string | null;
+  colorCupsFolderId: string | null;
+  colorTeamsFolderId: string | null;
+  typeCupFolderId: string | null;
+  typeCupsFolderId: string | null;
+  typeTeamsFolderId: string | null;
+  lastLibraryPublishedUtc: string | null;
+  lastLibraryError: string | null;
+  lastLibraryCreated: number;
+  lastLibraryUpdated: number;
+  lastLibraryUnchanged: number;
+  lastLibraryFailed: number;
+  lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
+}
+
+export interface DriveLibraryAdoptionInput {
+  fileId: string | null;
+  fileName: string | null;
 }
 
 export interface DriveDestinationInput {
@@ -77,6 +108,15 @@ export interface DriveDestinationInput {
   almanacFileId: string;
   almanacFileName: string;
   confirmCrossSave: boolean;
+  colorCupFolderId: string;
+  colorCupsFolderId: string;
+  colorTeamsFolderId: string;
+  typeCupFolderId: string;
+  typeCupsFolderId: string;
+  typeTeamsFolderId: string;
+  dossierAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  editionAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  teamAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
 }
 
 export interface DriveVerifyCheck {
@@ -172,10 +212,79 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
     almanacFileId: input.almanacFileId.trim() === '' ? null : input.almanacFileId.trim(),
     almanacFileName: input.almanacFileName.trim() === '' ? null : input.almanacFileName.trim(),
     confirmCrossSave: input.confirmCrossSave,
+    colorCupFolderId: input.colorCupFolderId.trim() === '' ? null : input.colorCupFolderId.trim(),
+    colorCupsFolderId: input.colorCupsFolderId.trim() === '' ? null : input.colorCupsFolderId.trim(),
+    colorTeamsFolderId: input.colorTeamsFolderId.trim() === '' ? null : input.colorTeamsFolderId.trim(),
+    typeCupFolderId: input.typeCupFolderId.trim() === '' ? null : input.typeCupFolderId.trim(),
+    typeCupsFolderId: input.typeCupsFolderId.trim() === '' ? null : input.typeCupsFolderId.trim(),
+    typeTeamsFolderId: input.typeTeamsFolderId.trim() === '' ? null : input.typeTeamsFolderId.trim(),
+    dossierAdoptions: input.dossierAdoptions ?? null,
+    editionAdoptions: input.editionAdoptions ?? null,
+    teamAdoptions: input.teamAdoptions ?? null,
   };
   return fetchJson<DriveDestination>(driveDestinationUrl(saveId), {
     method: 'PUT',
     body: JSON.stringify(body),
+  });
+}
+
+export interface DriveLibraryCategoryResult {
+  category: string;
+  total: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  failed: number;
+}
+
+export interface DriveLibrarySyncResponse {
+  saveId: string;
+  dryRun: boolean;
+  truncated: boolean;
+  totalItems: number;
+  nextSkip: number | null;
+  syncedUtc: string;
+  categories: DriveLibraryCategoryResult[];
+  files: DriveFileOutcome[];
+}
+
+export function driveLibraryPreviewUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/library/preview`;
+}
+
+export function driveLibrarySyncUrl(saveId: string): string {
+  return `/api/saves/${saveId}/reports/drive/library/sync`;
+}
+
+export function previewDriveLibrary(
+  saveId: string,
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
+): Promise<DriveLibrarySyncResponse> {
+  return fetchJson<DriveLibrarySyncResponse>(driveLibraryPreviewUrl(saveId), {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+}
+
+export function syncDriveLibrary(
+  saveId: string,
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
+): Promise<DriveLibrarySyncResponse> {
+  return fetchJson<DriveLibrarySyncResponse>(driveLibrarySyncUrl(saveId), {
+    method: 'POST',
+    body: JSON.stringify(options),
   });
 }
 
@@ -224,4 +333,60 @@ export function describeAutoPublishStatus(status: string): string {
     default:
       return 'Disabled';
   }
+}
+
+/**
+ * MSS-091 correction: pure helper that merges one Google Picker file grant
+ * into a library adoption JSON map (dossier/edition/team). The Picker grant
+ * is what makes a hand-uploaded file visible under the least-privilege
+ * drive.file scope; pasting an id alone does not grant access. Returns the
+ * updated JSON text so the caller can Save destination + Verify access.
+ * Throws on an invalid key or unparseable existing JSON.
+ */
+export function mergeLibraryAdoptionEntry(
+  raw: string,
+  key: string,
+  fileId: string,
+  fileName: string | null,
+): string {
+  const trimmedKey = key.trim();
+  if (trimmedKey === '' || trimmedKey.includes('/') || trimmedKey.includes('\\')) {
+    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2" for editions, "color:red"/"type:Dragon" for teams.');
+  }
+  const trimmedId = fileId.trim();
+  if (trimmedId === '') {
+    throw new Error('Picked file id is empty.');
+  }
+  const trimmedName = typeof fileName === 'string' && fileName.trim() !== '' ? fileName.trim() : null;
+  let current: Record<string, DriveLibraryAdoptionInput> = {};
+  const rawTrimmed = raw.trim();
+  if (rawTrimmed !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawTrimmed);
+    } catch {
+      throw new Error('Existing adoptions are not valid JSON. Fix the JSON before picking another file.');
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('Existing adoptions must be a JSON object keyed by semantic report key.');
+    }
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.length >= 500 && !(trimmedKey in (parsed as Record<string, unknown>))) {
+      throw new Error('Adoption map has too many entries (max 500).');
+    }
+    for (const [entryKey, value] of entries) {
+      if (typeof value !== 'object' || value === null) {
+        throw new Error(`Existing adoption entry "${entryKey}" must be {"fileId": "...", "fileName": "..."}.`);
+      }
+      const record = value as Record<string, unknown>;
+      const existingId = record.fileId;
+      const existingName = record.fileName;
+      current[entryKey] = {
+        fileId: typeof existingId === 'string' && existingId.trim() !== '' ? existingId.trim() : null,
+        fileName: typeof existingName === 'string' && existingName.trim() !== '' ? existingName.trim() : null,
+      };
+    }
+  }
+  current[trimmedKey] = { fileId: trimmedId, fileName: trimmedName };
+  return JSON.stringify(current);
 }

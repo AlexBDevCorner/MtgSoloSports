@@ -51,6 +51,17 @@ public sealed class GetDriveDestinationHandler
             connected,
             destination is not null && _tracker.IsPublishing(detail.SaveId));
 
+        return ToResponse(detail, destination, autoStatus);
+    }
+
+    private static DriveDestinationResponse ToResponse(
+        SaveStore.SaveDetailRecord detail,
+        DrivePublishingStore.DestinationDocument? destination,
+        string autoStatus)
+    {
+        (string? dossierId, string? dossierName, string? dossierFingerprint, _) =
+            DrivePublishingStore.CurrentDossierView(destination, detail.CurrentSeason);
+
         return new DriveDestinationResponse(
             detail.SaveId,
             detail.Name,
@@ -72,6 +83,19 @@ public sealed class GetDriveDestinationHandler
             autoStatus,
             destination?.AutoRequestedSeason,
             destination?.AutoRequestedGlobalStage,
-            destination?.AutoRequestedPhase);
+            destination?.AutoRequestedPhase,
+            destination?.ColorCupFolderId,
+            destination?.ColorCupsFolderId,
+            destination?.ColorTeamsFolderId,
+            destination?.TypeCupFolderId,
+            destination?.TypeCupsFolderId,
+            destination?.TypeTeamsFolderId,
+            destination?.LastLibraryPublishedUtc,
+            destination?.LastLibraryError,
+            destination?.LastLibraryCreated ?? 0,
+            destination?.LastLibraryUpdated ?? 0,
+            destination?.LastLibraryUnchanged ?? 0,
+            destination?.LastLibraryFailed ?? 0,
+            destination?.LastLibraryByCategory);
     }
 }

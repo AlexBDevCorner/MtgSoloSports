@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -22,10 +23,12 @@ namespace MtgSoloSports.Features.Cups.PlayTypeCupTeamRound;
 public sealed class PlayTypeCupTeamRoundHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public PlayTypeCupTeamRoundHandler(SaveStore store)
+    public PlayTypeCupTeamRoundHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<PlayTypeCupTeamRoundResponse> HandleAsync(
@@ -40,14 +43,25 @@ public sealed class PlayTypeCupTeamRoundHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        PlayTypeCupTeamRoundResponse response;
         try
         {
-            return await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: Live round-by-round finalization changes the same Cup
+        // edition/team-history reports as the one-shot run. Post-commit note
+        // only; the notifier decides whether the checkpoint advanced.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<PlayTypeCupTeamRoundResponse> PlayUnderLockAsync(

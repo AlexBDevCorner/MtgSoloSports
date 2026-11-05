@@ -92,7 +92,20 @@ public sealed class GetDriveStatusHandler
             destination?.AutoAttemptCount ?? 0,
             destination?.AutoNextRetryUtc,
             destination?.AutoLastError,
-            destination?.AutoPausedForAuth ?? false);
+            destination?.AutoPausedForAuth ?? false,
+            destination?.ColorCupFolderId,
+            destination?.ColorCupsFolderId,
+            destination?.ColorTeamsFolderId,
+            destination?.TypeCupFolderId,
+            destination?.TypeCupsFolderId,
+            destination?.TypeTeamsFolderId,
+            destination?.LastLibraryPublishedUtc,
+            destination?.LastLibraryError,
+            destination?.LastLibraryCreated ?? 0,
+            destination?.LastLibraryUpdated ?? 0,
+            destination?.LastLibraryUnchanged ?? 0,
+            destination?.LastLibraryFailed ?? 0,
+            destination?.LastLibraryByCategory);
     }
 
     private string AutoStatus(

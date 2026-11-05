@@ -7,12 +7,16 @@ import {
   describeAutoPublishStatus,
   disconnectDrive,
   getDriveStatus,
+  mergeLibraryAdoptionEntry,
+  previewDriveLibrary,
   publishDriveReports,
   retryDriveAutoPublish,
   saveDriveDestination,
   setDriveAutoPublish,
   startDriveConnect,
+  syncDriveLibrary,
   verifyDriveDestination,
+  type DriveLibrarySyncResponse,
   type DriveStatus,
   type DriveVerifyResponse,
   type PublishDriveResponse,
@@ -28,6 +32,70 @@ const JOURNALIST_PROMPT = `You are a longtime MtgSoloSports columnist. Use only 
 
 async function fetchSeasons(saveId: string, signal: AbortSignal): Promise<HistorySeasons> {
   return fetchJson<HistorySeasons>(`/api/saves/${saveId}/history/seasons`, { signal });
+}
+
+function mergeLibraryCategories(
+  left: DriveLibrarySyncResponse['categories'],
+  right: DriveLibrarySyncResponse['categories'],
+): DriveLibrarySyncResponse['categories'] {
+  const merged = new Map<string, DriveLibrarySyncResponse['categories'][number]>();
+  for (const entry of [...left, ...right]) {
+    const existing = merged.get(entry.category);
+    merged.set(
+      entry.category,
+      existing === undefined
+        ? entry
+        : {
+            category: entry.category,
+            total: existing.total + entry.total,
+            created: existing.created + entry.created,
+            updated: existing.updated + entry.updated,
+            unchanged: existing.unchanged + entry.unchanged,
+            failed: existing.failed + entry.failed,
+          },
+    );
+  }
+  return [...merged.values()];
+}
+
+function parseAdoptionMap(
+  raw: string,
+  label: string,
+): Record<string, { fileId: string | null; fileName: string | null }> | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(`${label} is not valid JSON. Use {"key": {"fileId": "...", "fileName": "..."}}.`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object keyed by semantic report key.`);
+  }
+  const entries = Object.entries(parsed as Record<string, unknown>);
+  if (entries.length > 500) {
+    throw new Error(`${label} has too many entries (max 500).`);
+  }
+  const normalized: Record<string, { fileId: string | null; fileName: string | null }> = {};
+  for (const [key, value] of entries) {
+    if (key.trim() === '' || key.includes('/') || key.includes('\\')) {
+      throw new Error(`${label} has an invalid key "${key}".`);
+    }
+    if (typeof value !== 'object' || value === null) {
+      throw new Error(`${label} entry "${key}" must be {"fileId": "...", "fileName": "..."}.`);
+    }
+    const record = value as Record<string, unknown>;
+    const fileId = record.fileId;
+    const fileName = record.fileName;
+    normalized[key.trim()] = {
+      fileId: typeof fileId === 'string' && fileId.trim() !== '' ? fileId.trim() : null,
+      fileName: typeof fileName === 'string' && fileName.trim() !== '' ? fileName.trim() : null,
+    };
+  }
+  return normalized;
 }
 
 export function ReportsPage({ saveId }: { saveId: string }) {
@@ -51,11 +119,24 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [dossierFileName, setDossierFileName] = useState('');
   const [almanacFileId, setAlmanacFileId] = useState('');
   const [almanacFileName, setAlmanacFileName] = useState('');
+  const [colorCupFolderId, setColorCupFolderId] = useState('');
+  const [colorCupsFolderId, setColorCupsFolderId] = useState('');
+  const [colorTeamsFolderId, setColorTeamsFolderId] = useState('');
+  const [typeCupFolderId, setTypeCupFolderId] = useState('');
+  const [typeCupsFolderId, setTypeCupsFolderId] = useState('');
+  const [typeTeamsFolderId, setTypeTeamsFolderId] = useState('');
+  const [dossierAdoptionsText, setDossierAdoptionsText] = useState('');
+  const [editionAdoptionsText, setEditionAdoptionsText] = useState('');
+  const [teamAdoptionsText, setTeamAdoptionsText] = useState('');
+  const [dossierAdoptionKey, setDossierAdoptionKey] = useState('');
+  const [editionAdoptionKey, setEditionAdoptionKey] = useState('');
+  const [teamAdoptionKey, setTeamAdoptionKey] = useState('');
   const [confirmCrossSave, setConfirmCrossSave] = useState(false);
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [allowCreateMissing, setAllowCreateMissing] = useState(false);
   const [autoBusy, setAutoBusy] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishDriveResponse | null>(null);
+  const [libraryResult, setLibraryResult] = useState<DriveLibrarySyncResponse | null>(null);
   const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
 
   useEffect(() => {
@@ -117,6 +198,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         setDossierFileName(status.dossier.fileName ?? '');
         setAlmanacFileId(status.almanac.fileId ?? '');
         setAlmanacFileName(status.almanac.fileName ?? '');
+        setColorCupFolderId(status.colorCupFolderId ?? '');
+        setColorCupsFolderId(status.colorCupsFolderId ?? '');
+        setColorTeamsFolderId(status.colorTeamsFolderId ?? '');
+        setTypeCupFolderId(status.typeCupFolderId ?? '');
+        setTypeCupsFolderId(status.typeCupsFolderId ?? '');
+        setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
         setDriveLoading(false);
       })
       .catch((failure: unknown) => {
@@ -143,6 +230,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       setDossierFileName(status.dossier.fileName ?? '');
       setAlmanacFileId(status.almanac.fileId ?? '');
       setAlmanacFileName(status.almanac.fileName ?? '');
+      setColorCupFolderId(status.colorCupFolderId ?? '');
+      setColorCupsFolderId(status.colorCupsFolderId ?? '');
+      setColorTeamsFolderId(status.colorTeamsFolderId ?? '');
+      setTypeCupFolderId(status.typeCupFolderId ?? '');
+      setTypeCupsFolderId(status.typeCupsFolderId ?? '');
+      setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
     } catch (failure) {
       setDriveError(apiErrorMessage(failure));
     }
@@ -296,8 +389,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       <Card eyebrow="Google Drive" title="Publish to Drive">
         <p className="muted small">
           Updates the current season dossier and universe almanac <em>in place</em> in your own{' '}
-          <code>mtshistory</code> Drive hierarchy. Unchanged reports are skipped; retries never create
-          duplicates. Publishing never changes simulation data.
+          <code>mtshistory</code> Drive hierarchy. <em>Sync all changed reports</em> extends the same
+          in-place rules to every season dossier, Color/Type Cup edition and team history. Unchanged
+          reports are skipped; retries never create duplicates. Publishing never changes simulation data.
         </p>
         {driveLoading ? <Loading label="Loading Drive status…" /> : null}
         {driveNotice ? (
@@ -419,6 +513,68 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   disabled={driveBusy !== null}
                   placeholder="universe-almanac-….md"
                   onChange={(event) => setAlmanacFileName(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="toolbar" role="group" aria-label="Drive Cup library folders">
+              <label className="field">
+                <span>Color Cup folder id</span>
+                <input
+                  type="text"
+                  value={colorCupFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/"
+                  onChange={(event) => setColorCupFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Color Cups folder id</span>
+                <input
+                  type="text"
+                  value={colorCupsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/Cups"
+                  onChange={(event) => setColorCupsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Color Teams Histories folder id</span>
+                <input
+                  type="text"
+                  value={colorTeamsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Color Cup/Teams Histories"
+                  onChange={(event) => setColorTeamsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Cup folder id</span>
+                <input
+                  type="text"
+                  value={typeCupFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/"
+                  onChange={(event) => setTypeCupFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Cups folder id</span>
+                <input
+                  type="text"
+                  value={typeCupsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/Cups"
+                  onChange={(event) => setTypeCupsFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Type Teams Histories folder id</span>
+                <input
+                  type="text"
+                  value={typeTeamsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Type Cup/Teams Histories"
+                  onChange={(event) => setTypeTeamsFolderId(event.target.value)}
                 />
               </label>
             </div>
@@ -545,10 +701,243 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 {driveBusy === 'pick-almanac' ? 'Opening Picker…' : 'Choose almanac…'}
               </button>
             </div>
+            <div className="toolbar" role="group" aria-label="Drive Cup library folder grants">
+              {(
+                [
+                  ['pick-color-cup', 'Choose Color Cup…', 'colorCupFolderId'],
+                  ['pick-color-cups', 'Choose Color Cups…', 'colorCupsFolderId'],
+                  ['pick-color-teams', 'Choose Color Teams…', 'colorTeamsFolderId'],
+                  ['pick-type-cup', 'Choose Type Cup…', 'typeCupFolderId'],
+                  ['pick-type-cups', 'Choose Type Cups…', 'typeCupsFolderId'],
+                  ['pick-type-teams', 'Choose Type Teams…', 'typeTeamsFolderId'],
+                ] as const
+              ).map(([busyKey, label, target]) => (
+                <button
+                  key={target}
+                  type="button"
+                  className="ghost-button"
+                  disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                  title={pickerDisabledHint(driveStatus)}
+                  onClick={() => {
+                    const config = pickerConfigFromStatus(driveStatus);
+                    if (!config) {
+                      setDriveError(pickerDisabledHint(driveStatus));
+                      return;
+                    }
+                    setDriveBusy(busyKey);
+                    setDriveError(null);
+                    void showDrivePicker(config, 'folder')
+                      .then((picked) => {
+                        if (picked) {
+                          if (target === 'colorCupFolderId') setColorCupFolderId(picked.id);
+                          else if (target === 'colorCupsFolderId') setColorCupsFolderId(picked.id);
+                          else if (target === 'colorTeamsFolderId') setColorTeamsFolderId(picked.id);
+                          else if (target === 'typeCupFolderId') setTypeCupFolderId(picked.id);
+                          else if (target === 'typeCupsFolderId') setTypeCupsFolderId(picked.id);
+                          else setTypeTeamsFolderId(picked.id);
+                          setDriveNotice(
+                            `Picked folder “${picked.name}” — press Save destination, then Verify access.`,
+                          );
+                        }
+                      })
+                      .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                      .finally(() => setDriveBusy(null));
+                  }}
+                >
+                  {driveBusy === busyKey ? 'Opening Picker…' : label}
+                </button>
+              ))}
+            </div>
             <p className="muted small">
               {driveStatus.pickerEnabled
                 ? 'Choose from Drive grants drive.file access to that exact folder/file (same Google account), so publishing can update it in place.'
                 : pickerDisabledHint(driveStatus)}
+            </p>
+            <div className="toolbar" role="group" aria-label="Drive library file adoptions">
+              <label className="field">
+                <span>Historical dossier adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={dossierAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"1": {"fileId": "...", "fileName": "season-1-dossier.md"}}'
+                  onChange={(event) => setDossierAdoptionsText(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Cup edition adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={editionAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"color:1": {"fileId": "...", "fileName": "my-edition.md"}}'
+                  onChange={(event) => setEditionAdoptionsText(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Cup team adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={teamAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"color:red": {"fileId": "...", "fileName": "my-team.md"}}'
+                  onChange={(event) => setTeamAdoptionsText(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="toolbar" role="group" aria-label="Drive library file grants">
+              <label className="field">
+                <span>Season key to grant</span>
+                <input
+                  type="text"
+                  value={dossierAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="1"
+                  onChange={(event) => setDossierAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (dossierAdoptionKey.trim() === '') {
+                    setDriveError('Enter the season key (for example "1") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-dossier-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setDossierAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, dossierAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for season ${dossierAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-dossier-file' ? 'Opening Picker…' : 'Choose season file…'}
+              </button>
+              <label className="field">
+                <span>Edition key to grant</span>
+                <input
+                  type="text"
+                  value={editionAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="color:1"
+                  onChange={(event) => setEditionAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (editionAdoptionKey.trim() === '') {
+                    setDriveError('Enter the edition key (for example "color:1") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-edition-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setEditionAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, editionAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for edition ${editionAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-edition-file' ? 'Opening Picker…' : 'Choose edition file…'}
+              </button>
+              <label className="field">
+                <span>Team key to grant</span>
+                <input
+                  type="text"
+                  value={teamAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="color:red"
+                  onChange={(event) => setTeamAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (teamAdoptionKey.trim() === '') {
+                    setDriveError('Enter the team key (for example "color:red") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-team-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setTeamAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, teamAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for team ${teamAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-team-file' ? 'Opening Picker…' : 'Choose team file…'}
+              </button>
+            </div>
+            <p className="muted small">
+              Adopt hand-uploaded library files by semantic key: dossier seasons as <code>1</code>,{' '}
+              <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>; teams as{' '}
+              <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, enter
+              the key above and grant each file with <em>Choose season/edition/team file…</em> (Google
+              Picker grants drive.file access to that exact file), then Save destination. Adopted files
+              update in place under their custom names; unknown files are never renamed or deleted.
             </p>
             <p>
               <button
@@ -558,6 +947,18 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                 onClick={() => {
                   setDriveBusy('save');
                   setDriveError(null);
+                  let dossierAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  let editionAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  let teamAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  try {
+                    dossierAdoptions = parseAdoptionMap(dossierAdoptionsText, 'Dossier adoptions');
+                    editionAdoptions = parseAdoptionMap(editionAdoptionsText, 'Edition adoptions');
+                    teamAdoptions = parseAdoptionMap(teamAdoptionsText, 'Team adoptions');
+                  } catch (failure) {
+                    setDriveError(failure instanceof Error ? failure.message : 'Invalid adoption JSON.');
+                    setDriveBusy(null);
+                    return;
+                  }
                   void saveDriveDestination(saveId, {
                     mtshistoryFolderId: folderId,
                     mtshistoryFolderName: folderName,
@@ -567,6 +968,15 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     almanacFileId,
                     almanacFileName,
                     confirmCrossSave,
+                    colorCupFolderId,
+                    colorCupsFolderId,
+                    colorTeamsFolderId,
+                    typeCupFolderId,
+                    typeCupsFolderId,
+                    typeTeamsFolderId,
+                    dossierAdoptions,
+                    editionAdoptions,
+                    teamAdoptions,
                   })
                     .then(() => refreshDriveStatus())
                     .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
@@ -657,7 +1067,83 @@ export function ReportsPage({ saveId }: { saveId: string }) {
               >
                 {driveBusy === 'publish' ? 'Publishing…' : 'Publish now'}
               </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('library-preview');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void previewDriveLibrary(saveId, {
+                    confirmCrossSave,
+                    allowOverwriteEditedRemote: allowOverwrite,
+                    allowCreateMissing,
+                  })
+                    .then((result) => setLibraryResult(result))
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'library-preview' ? 'Previewing…' : 'Preview library'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('library-sync');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void (async () => {
+                    let skip: number | undefined;
+                    let aggregated: DriveLibrarySyncResponse | null = null;
+                    for (let page = 0; page < 20; page += 1) {
+                      const result = await syncDriveLibrary(saveId, {
+                        confirmCrossSave,
+                        allowOverwriteEditedRemote: allowOverwrite,
+                        allowCreateMissing,
+                        ...(skip === undefined ? {} : { skip }),
+                      });
+                      aggregated = aggregated === null ? result : {
+                        ...result,
+                        totalItems: result.totalItems,
+                        truncated: result.truncated,
+                        nextSkip: result.nextSkip,
+                        dryRun: false,
+                        files: [...aggregated.files, ...result.files],
+                        categories: mergeLibraryCategories(aggregated.categories, result.categories),
+                      };
+                      if (!result.truncated || result.nextSkip === null || result.nextSkip === undefined) {
+                        if (aggregated !== null) {
+                          aggregated = { ...aggregated, truncated: false, nextSkip: null };
+                        }
+                        break;
+                      }
+                      skip = result.nextSkip;
+                    }
+                    if (aggregated !== null) {
+                      setLibraryResult(aggregated);
+                    }
+                    await refreshDriveStatus();
+                  })()
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'library-sync' ? 'Syncing…' : 'Sync all changed reports'}
+              </button>
             </div>
+            {driveStatus.lastLibraryPublishedUtc ?? driveStatus.lastLibraryError ? (
+              <p className="muted small">
+                Library:{' '}
+                {driveStatus.lastLibraryPublishedUtc
+                  ? `synced ${driveStatus.lastLibraryPublishedUtc}`
+                  : 'never fully synced'}
+                {` · +${driveStatus.lastLibraryCreated} ~${driveStatus.lastLibraryUpdated} =${driveStatus.lastLibraryUnchanged} !${driveStatus.lastLibraryFailed}`}
+                {driveStatus.lastLibraryError ? ` · error: ${driveStatus.lastLibraryError}` : ''}
+              </p>
+            ) : null}
             {driveStatus.lastPublishedUtc ? (
               <p className="muted small">
                 Last publish: season {driveStatus.lastSeasonNumber} · {driveStatus.lastPhase} ·{' '}
@@ -719,7 +1205,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
             ) : null}
             <p className="muted small">
               Automatic publishing uploads the current season dossier and universe almanac after each
-              completed global stage while the app runs. It never blocks simulation and never deletes
+              completed global stage while the app runs, plus the Color/Type Cup edition and team-history
+              reports that actually changed. It never blocks simulation and never deletes
               Drive files when disabled. New seasons start a new stable dossier file; prior seasons are
               preserved.
             </p>
@@ -736,6 +1223,29 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     {file.detail ? ` — ${file.detail}` : ''}
                   </li>
                 ))}
+              </ul>
+            ) : null}
+            {libraryResult ? (
+              <ul className="muted small">
+                <li>
+                  Library {libraryResult.dryRun ? 'preview' : 'sync'}: {libraryResult.totalItems} items
+                  {libraryResult.truncated ? ' (truncated — re-run to resume the remainder)' : ''}
+                </li>
+                {libraryResult.categories.map((category) => (
+                  <li key={category.category}>
+                    {category.category}: {category.total} total · +{category.created} ~{category.updated} =
+                    {category.unchanged} !{category.failed}
+                  </li>
+                ))}
+                {libraryResult.files
+                  .filter((file) => file.outcome === 'failed')
+                  .map((file) => (
+                    <li key={file.report}>
+                      {file.report}: {file.outcome}
+                      {file.fileName ? ` — ${file.fileName}` : ''}
+                      {file.detail ? ` — ${file.detail}` : ''}
+                    </li>
+                  ))}
               </ul>
             ) : null}
             {verifyResult ? (

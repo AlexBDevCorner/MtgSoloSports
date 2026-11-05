@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -33,10 +34,12 @@ public sealed partial class RunColorCupTeamHandler
     public const string TeamLeagueName = "Color Cup Team";
 
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public RunColorCupTeamHandler(SaveStore store)
+    public RunColorCupTeamHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<RunColorCupTeamResponse> HandleAsync(
@@ -56,14 +59,25 @@ public sealed partial class RunColorCupTeamHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        RunColorCupTeamResponse response;
         try
         {
-            return await RunUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await RunUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: finalization changes the Color Cup edition and team-history
+        // reports. Post-commit checkpoint note only (local file write, never
+        // Google calls). Never throws, never fails the sporting command.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<RunColorCupTeamResponse> RunUnderLockAsync(

@@ -196,8 +196,11 @@ public sealed class PutDriveAutoPublishHandler
     {
         // Read the durable checkpoint without holding the sporting lock: the
         // toggle runs outside simulation transactions and only needs the
-        // latest committed read model.
+        // latest committed read model. MSS-091: live Cup rounds report a
+        // computed-only InProgress phase while the publisher settles the
+        // persisted phase; store the effective (persisted for InProgress)
+        // phase so enabling auto mid-Cup does not open an uncatchable request.
         GetSeasonStatusResponse response = await _status.HandleAsync(saveId, cancellationToken).ConfigureAwait(false);
-        return (response.CurrentSeasonNumber, response.GlobalStage, response.ComputedPhase);
+        return (response.CurrentSeasonNumber, response.GlobalStage, DriveAutoPublishNotifier.EffectivePhase(response));
     }
 }

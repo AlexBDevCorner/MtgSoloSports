@@ -1,5 +1,6 @@
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -17,10 +18,12 @@ namespace MtgSoloSports.Features.Cups.PlayColorCupIndividualRound;
 public sealed class PlayColorCupIndividualRoundHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public PlayColorCupIndividualRoundHandler(SaveStore store)
+    public PlayColorCupIndividualRoundHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<PlayColorCupIndividualRoundResponse> HandleAsync(
@@ -35,14 +38,27 @@ public sealed class PlayColorCupIndividualRoundHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        PlayColorCupIndividualRoundResponse response;
         try
         {
-            return await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await PlayUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: Live round-by-round finalization changes the same Cup
+        // edition/team-history reports as the one-shot run. Post-commit
+        // checkpoint note only (local file write, never Google calls). The
+        // notifier itself decides whether the durable checkpoint actually
+        // advanced, so intermediate rounds are harmless no-ops.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     internal async Task<PlayColorCupIndividualRoundResponse> PlayUnderLockAsync(

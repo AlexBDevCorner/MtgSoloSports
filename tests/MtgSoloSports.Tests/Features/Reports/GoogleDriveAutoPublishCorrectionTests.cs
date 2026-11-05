@@ -1248,6 +1248,149 @@ public sealed class GoogleDriveAutoPublishCorrectionTests
         }
     }
 
+    [Fact]
+    public async Task TypeCupPartialProgress_DoesNotOpenUncatchableAutoRequest()
+    {
+        // MSS-091 blocking: live Type Cup rounds/stages report computed-only
+        // InProgress while SaveMetadata stays at the selection milestone. The
+        // publisher settles from the persisted phase, so partials must store
+        // the effective phase and stay catchable.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkTypeCupSelectedAsync("mtgsolosports-autopub-typecup-");
+        string driveRoot = Path.Combine(Path.GetTempPath(), "mtgsolosports-autopub-typecup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(driveRoot);
+        try
+        {
+            var harness = CreateTypeCupHarness(store, driveRoot);
+            GetSeasonStatusResponse selected = await AssertTypeCupSelectedAsync(harness.Status, saveId);
+            await SeedCaughtUpAsync(harness.Publishing, harness.Tracker, saveId, selected);
+            GetSeasonStatusResponse live = await PlayOneLiveRoundAsync(store, harness, saveId);
+            await AssertPartialStaysCatchableAsync(harness, saveId, live);
+            GetSeasonStatusResponse live2 = await FinishOneStageAsync(store, harness, saveId);
+            await AssertPartialStaysCatchableAsync(harness, saveId, live2);
+            AssertLegacyInProgressHeals(live2, harness);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { TestSaveStores.DeleteRoot(root); } catch { }
+            try { TestSaveStores.DeleteRoot(driveRoot); } catch { }
+        }
+    }
+
+    private sealed record TypeCupHarness(
+        DrivePublishingStore Publishing,
+        GetSeasonStatusHandler Status,
+        DriveAutoPublishTracker Tracker,
+        DriveAutoPublishNotifier Notifier);
+
+    private static TypeCupHarness CreateTypeCupHarness(
+        MtgSoloSports.Persistence.Saves.SaveStore store, string driveRoot)
+    {
+        DrivePublishingStore publishing = CreatePublishingStore(driveRoot);
+        GetSeasonStatusHandler status = new(store);
+        DriveAutoPublishTracker tracker = new();
+        DriveAutoPublishNotifier notifier = new(
+            store, publishing, tracker, status, TimeProvider.System,
+            NullLogger<DriveAutoPublishNotifier>.Instance);
+        return new TypeCupHarness(publishing, status, tracker, notifier);
+    }
+
+    private static async Task<GetSeasonStatusResponse> AssertTypeCupSelectedAsync(
+        GetSeasonStatusHandler status, Guid saveId)
+    {
+        GetSeasonStatusResponse selected = await status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        string milestone = MtgSoloSports.Features.Saves.SavePhaseParser.ToText(
+            MtgSoloSports.Features.Saves.SavePhase.CupSelectionResolved);
+        selected.PersistedPhase.ShouldBe(milestone);
+        selected.ComputedPhase.ShouldBe(milestone);
+        return selected;
+    }
+
+    private static async Task SeedCaughtUpAsync(
+        DrivePublishingStore publishing, DriveAutoPublishTracker tracker,
+        Guid saveId, GetSeasonStatusResponse selected)
+    {
+        DrivePublishingStore.DestinationDocument blank = new(
+            saveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true);
+        DrivePublishingStore.DestinationDocument seed = blank with
+        {
+            AutoRequestedSeason = selected.CurrentSeasonNumber,
+            AutoRequestedGlobalStage = selected.GlobalStage,
+            AutoRequestedPhase = selected.PersistedPhase,
+            AutoRequestedUtc = DateTimeOffset.UtcNow,
+            LastSeasonNumber = selected.CurrentSeasonNumber,
+            LastGlobalStage = selected.GlobalStage,
+            LastPhase = selected.PersistedPhase,
+            LastPublishedUtc = DateTimeOffset.UtcNow,
+        };
+        await publishing.SaveDestinationAsync(seed, CancellationToken.None).ConfigureAwait(false);
+        while (tracker.Reader.TryRead(out _)) { }
+    }
+
+    private static async Task<GetSeasonStatusResponse> PlayOneLiveRoundAsync(
+        MtgSoloSports.Persistence.Saves.SaveStore store, TypeCupHarness harness, Guid saveId)
+    {
+        var step = new MtgSoloSports.Features.Cups.PlayTypeCupTeamRound.PlayTypeCupTeamRoundHandler(
+            store, harness.Notifier);
+        var first = await step.HandleAsync(saveId, sourceSeasonNumber: 2, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        first.IsComplete.ShouldBeFalse();
+        GetSeasonStatusResponse live = await harness.Status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        live.PersistedPhase.ShouldBe(
+            MtgSoloSports.Features.Saves.SavePhaseParser.ToText(
+                MtgSoloSports.Features.Saves.SavePhase.CupSelectionResolved));
+        string inProgress = MtgSoloSports.Features.Seasons.SeasonLifecycle.PostseasonEvents.InProgressPhase(
+            MtgSoloSports.Features.Seasons.SeasonLifecycle.PostseasonEvents.TypeCupTeam);
+        live.ComputedPhase.ShouldBe(inProgress);
+        return live;
+    }
+
+    private static async Task<GetSeasonStatusResponse> FinishOneStageAsync(
+        MtgSoloSports.Persistence.Saves.SaveStore store, TypeCupHarness harness, Guid saveId)
+    {
+        while (harness.Tracker.Reader.TryRead(out _)) { }
+        var finish = new MtgSoloSports.Features.Cups.FinishTypeCupTeamStage.FinishTypeCupTeamStageHandler(
+            store, harness.Notifier);
+        var finished = await finish.HandleAsync(saveId, sourceSeasonNumber: 2, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+        finished.IsComplete.ShouldBeFalse();
+        return await harness.Status.HandleAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static async Task AssertPartialStaysCatchableAsync(
+        TypeCupHarness harness, Guid saveId, GetSeasonStatusResponse live)
+    {
+        DriveAutoPublishNotifier.EffectivePhase(live).ShouldBe(live.PersistedPhase);
+        DrivePublishingStore.DestinationDocument? after =
+            await harness.Publishing.GetDestinationAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        after.ShouldNotBeNull();
+        after!.AutoRequestedPhase.ShouldBe(live.PersistedPhase);
+        string.Equals(after.AutoRequestedPhase, live.ComputedPhase, StringComparison.Ordinal).ShouldBeFalse();
+        var settled = after with
+        {
+            LastSeasonNumber = live.CurrentSeasonNumber,
+            LastGlobalStage = live.GlobalStage,
+            LastPhase = live.PersistedPhase,
+        };
+        DriveAutoPublishStatus.IsCaughtUp(settled).ShouldBeTrue();
+        DriveAutoPublishStatus.HasPendingRequest(settled).ShouldBeFalse();
+        harness.Tracker.Reader.TryRead(out _).ShouldBeFalse();
+    }
+
+    private static void AssertLegacyInProgressHeals(GetSeasonStatusResponse live, TypeCupHarness harness)
+    {
+        var stuck = new DrivePublishingStore.DestinationDocument(
+            live.SaveId, "Save", "folder-mtshistory", "mtshistory", "folder-seasons",
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            AutoPublishEnabled: true,
+            AutoRequestedSeason: live.CurrentSeasonNumber,
+            AutoRequestedGlobalStage: live.GlobalStage,
+            AutoRequestedPhase: live.ComputedPhase,
+            AutoRequestedUtc: DateTimeOffset.UtcNow);
+        DriveAutoPublishNotifier.CompareCheckpoint(stuck, live).ShouldBeGreaterThan(0);
+        _ = harness;
+    }
+
     private static GetSeasonStatusResponse StatusFor(int season, int stage, string phase) => new(
         Guid.NewGuid(), season, phase, phase, null, null, false, stage,
         false, false, false, false, false, false, false, false, false, false,
