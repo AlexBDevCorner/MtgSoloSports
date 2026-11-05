@@ -21,4 +21,17 @@ public sealed record DriveDestinationResponse(
     string AutoPublishStatus,
     int? AutoRequestedSeason,
     int? AutoRequestedGlobalStage,
-    string? AutoRequestedPhase);
+    string? AutoRequestedPhase,
+    string? ColorCupFolderId = null,
+    string? ColorCupsFolderId = null,
+    string? ColorTeamsFolderId = null,
+    string? TypeCupFolderId = null,
+    string? TypeCupsFolderId = null,
+    string? TypeTeamsFolderId = null,
+    DateTimeOffset? LastLibraryPublishedUtc = null,
+    string? LastLibraryError = null,
+    int LastLibraryCreated = 0,
+    int LastLibraryUpdated = 0,
+    int LastLibraryUnchanged = 0,
+    int LastLibraryFailed = 0,
+    IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? LastLibraryByCategory = null);

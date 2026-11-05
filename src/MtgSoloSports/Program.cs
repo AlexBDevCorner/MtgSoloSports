@@ -238,6 +238,7 @@ builder.Services.AddScoped<GetDriveDestinationHandler>();
 builder.Services.AddScoped<PutDriveDestinationHandler>();
 builder.Services.AddScoped<VerifyDriveDestinationHandler>();
 builder.Services.AddScoped<PublishDriveReportsHandler>();
+builder.Services.AddScoped<DriveLibrarySyncHandler>();
 builder.Services.AddScoped<PutDriveAutoPublishHandler>();
 builder.Services.AddScoped<PostDriveAutoPublishRetryHandler>();
 
@@ -362,6 +363,7 @@ GetDriveDestinationEndpoint.Map(app);
 PutDriveDestinationEndpoint.Map(app);
 VerifyDriveDestinationEndpoint.Map(app);
 PublishDriveReportsEndpoint.Map(app);
+DriveLibrarySyncEndpoint.Map(app);
 PutDriveAutoPublishEndpoint.Map(app);
 PostDriveAutoPublishRetryEndpoint.Map(app);
 GetLongRunChecksumEndpoint.Map(app);

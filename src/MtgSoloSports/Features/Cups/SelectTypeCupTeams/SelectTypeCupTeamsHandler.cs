@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Cups;
@@ -33,10 +34,12 @@ namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 public sealed partial class SelectTypeCupTeamsHandler
 {
     private readonly SaveStore _store;
+    private readonly DriveAutoPublishNotifier? _autoPublish;
 
-    public SelectTypeCupTeamsHandler(SaveStore store)
+    public SelectTypeCupTeamsHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<SelectTypeCupTeamsResponse> HandleAsync(
@@ -56,14 +59,26 @@ public sealed partial class SelectTypeCupTeamsHandler
 
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SelectTypeCupTeamsResponse response;
         try
         {
-            return await SelectUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await SelectUnderLockAsync(saveId, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-091: selection creates the Type Cup edition and team-history
+        // reports. Post-commit checkpoint note only (local file write, never
+        // Google calls); the automatic publisher refreshes the affected
+        // reports. Never throws, never fails the sporting command.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     /// <summary>

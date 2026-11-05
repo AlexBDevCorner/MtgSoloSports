@@ -338,6 +338,17 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             }
 
             await FinishAfterPublishAsync(saveId, response, started, cancellationToken).ConfigureAwait(false);
+
+            // MSS-091: after the dossier + almanac settle, refresh only the
+            // Cup edition/team reports that actually changed (recent source
+            // seasons). Historical files are never re-uploaded on ordinary
+            // league stages: unchanged fingerprints report unchanged with no
+            // writes. Best effort; failures only warn and keep the dossier
+            // settlement intact.
+            if (response.Files.All(f => !string.Equals(f.Outcome, "failed", StringComparison.Ordinal)))
+            {
+                await TryRefreshRecentCupsAsync(saveId, cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -425,6 +436,59 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                 AllowOverwriteEditedRemote: false,
                 AllowCreateMissing: allowCreateMissing),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TryRefreshRecentCupsAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using IServiceScope scope = _scopes.CreateScope();
+            DrivePublishingStore publishing = scope.ServiceProvider.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? destination =
+                await publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
+            if (destination is null
+                || !destination.AutoPublishEnabled
+                || destination.AutoPausedForAuth
+                || string.IsNullOrWhiteSpace(destination.MtshistoryFolderId))
+            {
+                return;
+            }
+
+            DriveLibrarySyncHandler library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
+            IReadOnlyList<string> keys = await library.RecentCupKeysAsync(saveId, 1, cancellationToken).ConfigureAwait(false);
+            if (keys.Count == 0)
+            {
+                return;
+            }
+
+            DriveLibrarySyncResponse response = await library.HandleAsync(
+                saveId,
+                new DriveLibrarySyncRequest(
+                    ConfirmCrossSave: false,
+                    AllowOverwriteEditedRemote: false,
+                    AllowCreateMissing: false,
+                    Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
+                    OnlyKeys: keys),
+                cancellationToken).ConfigureAwait(false);
+            int changed = response.Files.Count(f =>
+                string.Equals(f.Outcome, "created", StringComparison.Ordinal)
+                || string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
+            int failed = response.Files.Count(f => string.Equals(f.Outcome, "failed", StringComparison.Ordinal));
+            _logger.LogInformation(
+                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed).",
+                saveId,
+                changed,
+                response.Files.Count,
+                failed);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Drive auto-publish selective cup refresh failed for save {SaveId}; retrying on the next stage.", saveId);
+        }
     }
 
     private async Task HandlePublishExceptionAsync(Guid saveId, Exception ex, CancellationToken cancellationToken)

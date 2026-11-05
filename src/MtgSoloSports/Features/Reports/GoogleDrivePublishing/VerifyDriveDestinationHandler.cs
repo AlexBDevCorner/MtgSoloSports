@@ -87,8 +87,120 @@ public sealed class VerifyDriveDestinationHandler
         string? seasonsFolderId = await CheckFoldersAsync(destination, checks, cancellationToken).ConfigureAwait(false);
         await CheckDossierAsync(destination, detail, seasonsFolderId, checks, cancellationToken).ConfigureAwait(false);
         await CheckAlmanacAsync(destination, checks, cancellationToken).ConfigureAwait(false);
+        await CheckLibraryFoldersAsync(destination, checks, cancellationToken).ConfigureAwait(false);
 
         return new DriveVerifyResponse(detail.SaveId, detail.Name, detail.CurrentSeason, checks);
+    }
+
+    /// <summary>
+    /// MSS-091: verify the historical library folder mapping. Explicit cup
+    /// folders keep custom names (only MIME type and destination location
+    /// are verified); unset folders report how publishing would resolve them
+    /// without creating anything.
+    /// </summary>
+    private async Task CheckLibraryFoldersAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        List<DriveVerifyCheck> checks,
+        CancellationToken cancellationToken)
+    {
+        string mtshistoryId = destination.MtshistoryFolderId!;
+        checks.Add(await CheckCupFolderAsync(
+            "color-cup", destination.ColorCupFolderId, mtshistoryId, "Color Cup", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupFolderAsync(
+            "type-cup", destination.TypeCupFolderId, mtshistoryId, "Type Cup", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupLeafAsync(
+            "color-cups", destination.ColorCupsFolderId, destination.ColorCupFolderId,
+            mtshistoryId, "Color Cup", "Cups", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupLeafAsync(
+            "color-teams", destination.ColorTeamsFolderId, destination.ColorCupFolderId,
+            mtshistoryId, "Color Cup", "Teams Histories", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupLeafAsync(
+            "type-cups", destination.TypeCupsFolderId, destination.TypeCupFolderId,
+            mtshistoryId, "Type Cup", "Cups", cancellationToken).ConfigureAwait(false));
+        checks.Add(await CheckCupLeafAsync(
+            "type-teams", destination.TypeTeamsFolderId, destination.TypeCupFolderId,
+            mtshistoryId, "Type Cup", "Teams Histories", cancellationToken).ConfigureAwait(false));
+    }
+
+    private async Task<DriveVerifyCheck> CheckCupFolderAsync(
+        string report,
+        string? folderId,
+        string mtshistoryId,
+        string defaultName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(folderId))
+        {
+            return await CheckFolderNameAvailableAsync(
+                report, mtshistoryId, defaultName, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await CheckFolderAsync(report, folderId!, mtshistoryId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<DriveVerifyCheck> CheckCupLeafAsync(
+        string report,
+        string? folderId,
+        string? containerId,
+        string mtshistoryId,
+        string containerName,
+        string leafName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(folderId))
+        {
+            if (string.IsNullOrWhiteSpace(containerId))
+            {
+                return new DriveVerifyCheck(
+                    report, "not-found", null, leafName,
+                    $"Neither the '{containerName}/{leafName}' folder nor its container is adopted. Publishing auto-resolves '{containerName}' then '{leafName}' under mtshistory, or adopt both explicitly with Choose from Drive.");
+            }
+
+            return await CheckFolderNameAvailableAsync(
+                report, containerId!, leafName, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (string.IsNullOrWhiteSpace(containerId))
+        {
+            DriveVerifyCheck adopted = await CheckFolderAsync(report, folderId!, expectedParent: null, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(adopted.Status, "ok", StringComparison.Ordinal))
+            {
+                return adopted;
+            }
+
+            return adopted with
+            {
+                Detail = $"Adopted {report} folder is accessible with a custom location; publishing infers its '{containerName}' container from the parent (or adopt the container explicitly).",
+            };
+        }
+
+        return await CheckFolderAsync(report, folderId!, containerId!, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<DriveVerifyCheck> CheckFolderNameAvailableAsync(
+        string report,
+        string parentFolderId,
+        string desiredName,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<DriveFile> matches;
+        try
+        {
+            matches = await WithAuthAsync(
+                token => _drive.ListByNameInFolderAsync(token, parentFolderId, desiredName, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (DriveApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            return new DriveVerifyCheck(report, "needs-grant", null, desiredName, $"Cannot list the destination folder (403). {GrantGuidance}");
+        }
+
+        return matches.Count switch
+        {
+            0 => new DriveVerifyCheck(report, "ok", null, desiredName, $"No visible folder named '{desiredName}' was found. Publishing reuses it when visible, or creates it when creation of missing folders/files is explicitly confirmed."),
+            1 => new DriveVerifyCheck(report, "needs-adoption", matches[0].Id, desiredName, $"A folder named '{desiredName}' already exists (id {matches[0].Id}). Adopt it explicitly to update in place instead of creating a duplicate."),
+            _ => new DriveVerifyCheck(report, "duplicate", null, desiredName, $"Found {matches.Count} folders named '{desiredName}'. Adopt exactly one folder id explicitly."),
+        };
     }
 
     private async Task<string?> CheckFoldersAsync(
