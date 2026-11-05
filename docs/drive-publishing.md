@@ -234,16 +234,72 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
   (Color/Type/Chaos containers and leaves)
   (`ok`/`needs-grant`/`not-found`/`needs-adoption`/`duplicate`/`outside-destination`).
 
+## Athlete archive (MSS-093)
+
+**Sync athletes** on Reports/Drive publishes one Markdown report per athlete
+plus a searchable index, reusing the exact individual athlete download:
+
+```text
+MtgSoloSports/mtshistory/Athletes/athletes-index.md
+MtgSoloSports/mtshistory/Athletes/White/athlete-<id>-<slug>.md
+MtgSoloSports/mtshistory/Athletes/Blue/...
+MtgSoloSports/mtshistory/Athletes/Black/...
+MtgSoloSports/mtshistory/Athletes/Red/...
+MtgSoloSports/mtshistory/Athletes/Green/...
+MtgSoloSports/mtshistory/Athletes/Multicolor/...
+MtgSoloSports/mtshistory/Athletes/Hybrid/...
+MtgSoloSports/mtshistory/Athletes/Colorless/...
+```
+
+- **Explicit bulk import.** The small `Publish now` stays dossier + almanac only.
+  The library `Sync all changed reports` stays legacy-only unless athlete
+  categories are explicitly requested. The first athlete bulk import is an
+  explicit **Publish all athletes / Sync changed athletes** action with a clear
+  count (2048 files + index), resumable batches (`N/total`,
+  created/updated/unchanged/failed), cancel/retry and quota-safe paging. It
+  never runs as a side effect of the small Publish.
+- **Stable identity.** Each file is keyed by save id + stable athlete id; the
+  name slug is decoration only. Duplicate display names, slug changes and
+  renames update the same Drive file id in place — no `(1)` duplicates, no
+  extra files when league/pool membership changes. The stored Drive filename
+  is retained on rename/adoption (never auto-renamed); the index always links
+  that stored filename. Folders follow the stable
+  printed sporting color, never the current league.
+- **Full coverage.** Every persisted athlete is listed, including common-pool
+  athletes with no season yet, via a bounded deterministic server-side
+  inventory (id ascending). Missing reports fail as `failed`, never silent
+  omission.
+- **Index.** `athletes-index.md` lists every athlete (id, name, color, league
+  or pool, report path) in stable id order plus coverage/snapshot metadata.
+  Report paths use the stored Drive filenames so renamed/adopted files stay
+  linked. It updates when names, colors, leagues or coverage change and is safe to
+  reference from the Drive report library.
+- **Efficient updates.** Ordinary runs are incremental: known affected ids
+  (participants, honours, selections, movements, Cup histories, current and
+  previous record holders) plus per-file fingerprints. Unchanged pool reports
+  are skipped; an occasional full reconciliation catches missed record-holder
+  changes. Bulk maxima are loaded once per sync page, not 2048 times, and all
+  Drive writes stay outside simulation transactions with retry/backoff and
+  persistent checkpointing. Restart resumes without duplicating.
+- **Safety.** In-place updates by stored file id, skip-unchanged, duplicate and
+  remote-edit conflict policy, no deletion of unknown user files, per-save
+  folder separation with cross-save confirmation, server-side credentials and
+  no new OAuth scopes. Status shows per-category and overall checkpoints,
+  pending counts, failures and retry, plus a way to open the Drive destination.
+
 ## Limitations
 
 - Publishing needs the app running and an internet connection; automatic sync
   works only while the app runs and is authorized (no background processing
   when shut down).
 - Only the curated library above is published (season dossiers, Color/Type/Chaos Cup
-  editions and Color/Type team histories, almanac). Athlete, standings and league profile
-  reports stay download-only until explicitly configured later.
+  editions and Color/Type team histories, almanac, plus the explicit athlete
+  archive). Standings and league profile reports stay download-only.
 - Drive updates do **not** replace separately uploaded ChatGPT Project copies:
-  re-attach the files in ChatGPT after publishing.
+  re-attach the files in ChatGPT after publishing. A Drive folder with
+  thousands of reports is **not** equivalent to thousands of ChatGPT Project
+  file uploads and does not guarantee automatic retrieval; the human-readable
+  index assists explicit retrieval in ChatGPT via its Drive picker.
 - To link/refresh a Drive folder inside ChatGPT, use ChatGPT's own Drive
   picker on the same folder; this app's OAuth grant is separate and cannot be
   transferred.

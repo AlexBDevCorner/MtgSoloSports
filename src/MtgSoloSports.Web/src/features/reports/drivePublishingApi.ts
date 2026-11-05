@@ -57,6 +57,11 @@ export interface DriveStatus {
   lastLibraryUnchanged: number;
   lastLibraryFailed: number;
   lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
+  athletesFolderId: string | null;
+  athletesFolderName: string | null;
+  athleteColorFolderIds: Record<string, string> | null;
+  athletesIndexFileId: string | null;
+  athletesIndexFileName: string | null;
 }
 
 export interface DriveDestination {
@@ -96,6 +101,11 @@ export interface DriveDestination {
   lastLibraryUnchanged: number;
   lastLibraryFailed: number;
   lastLibraryByCategory: Record<string, { created: number; updated: number; unchanged: number; failed: number }> | null;
+  athletesFolderId: string | null;
+  athletesFolderName: string | null;
+  athleteColorFolderIds: Record<string, string> | null;
+  athletesIndexFileId: string | null;
+  athletesIndexFileName: string | null;
 }
 
 export interface DriveLibraryAdoptionInput {
@@ -123,6 +133,12 @@ export interface DriveDestinationInput {
   dossierAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
   editionAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
   teamAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  athletesFolderId: string;
+  athletesFolderName: string;
+  athleteColorFolderIds?: Record<string, string> | null;
+  athleteAdoptions?: Record<string, DriveLibraryAdoptionInput> | null;
+  athletesIndexFileId: string;
+  athletesIndexFileName: string;
 }
 
 export interface DriveVerifyCheck {
@@ -229,6 +245,12 @@ export function saveDriveDestination(saveId: string, input: DriveDestinationInpu
     dossierAdoptions: input.dossierAdoptions ?? null,
     editionAdoptions: input.editionAdoptions ?? null,
     teamAdoptions: input.teamAdoptions ?? null,
+    athletesFolderId: input.athletesFolderId.trim() === '' ? null : input.athletesFolderId.trim(),
+    athletesFolderName: input.athletesFolderName.trim() === '' ? null : input.athletesFolderName.trim(),
+    athleteColorFolderIds: input.athleteColorFolderIds ?? null,
+    athleteAdoptions: input.athleteAdoptions ?? null,
+    athletesIndexFileId: input.athletesIndexFileId.trim() === '' ? null : input.athletesIndexFileId.trim(),
+    athletesIndexFileName: input.athletesIndexFileName.trim() === '' ? null : input.athletesIndexFileName.trim(),
   };
   return fetchJson<DriveDestination>(driveDestinationUrl(saveId), {
     method: 'PUT',
@@ -272,6 +294,8 @@ export function previewDriveLibrary(
     allowCreateMissing?: boolean;
     skip?: number;
     maxFiles?: number;
+    categories?: string[] | null;
+    onlyKeys?: string[] | null;
   },
 ): Promise<DriveLibrarySyncResponse> {
   return fetchJson<DriveLibrarySyncResponse>(driveLibraryPreviewUrl(saveId), {
@@ -288,12 +312,42 @@ export function syncDriveLibrary(
     allowCreateMissing?: boolean;
     skip?: number;
     maxFiles?: number;
+    categories?: string[] | null;
+    onlyKeys?: string[] | null;
   },
 ): Promise<DriveLibrarySyncResponse> {
   return fetchJson<DriveLibrarySyncResponse>(driveLibrarySyncUrl(saveId), {
     method: 'POST',
     body: JSON.stringify(options),
   });
+}
+
+export const athleteLibraryCategories = ['athlete', 'athletes-index'];
+
+export function previewAthleteLibrary(
+  saveId: string,
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
+): Promise<DriveLibrarySyncResponse> {
+  return previewDriveLibrary(saveId, { ...options, categories: athleteLibraryCategories });
+}
+
+export function syncAthleteLibrary(
+  saveId: string,
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
+): Promise<DriveLibrarySyncResponse> {
+  return syncDriveLibrary(saveId, { ...options, categories: athleteLibraryCategories });
 }
 
 export function publishDriveReports(
@@ -359,7 +413,7 @@ export function mergeLibraryAdoptionEntry(
 ): string {
   const trimmedKey = key.trim();
   if (trimmedKey === '' || trimmedKey.includes('/') || trimmedKey.includes('\\')) {
-    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2"/"chaos:1" for editions, "color:red"/"type:Dragon" for teams.');
+    throw new Error('Adoption key is invalid. Use "1" for dossiers, "color:1"/"type:2"/"chaos:1" for editions, "color:red"/"type:Dragon" for teams, athlete id like "123" for athletes.');
   }
   const trimmedId = fileId.trim();
   if (trimmedId === '') {

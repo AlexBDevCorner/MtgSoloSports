@@ -2,10 +2,11 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 
 /// <summary>
 /// MSS-091: stable semantic identity for the historical report library.
-/// Every published file is keyed by (save id, category, season number or
+/// Every published file is keyed by (save id, report type, season number or
 /// team key) so repeat syncs update the same Drive file id when changed and
-/// skip it when unchanged. Athlete/standings/league profile reports are
-/// excluded until explicitly configured later.
+/// skip it when unchanged. MSS-093 adds athlete/standings/league profile
+/// reports under explicit athlete categories; standings/league profiles stay
+/// download-only.
 /// </summary>
 internal static class DriveLibraryKind
 {
@@ -23,11 +24,29 @@ internal static class DriveLibraryKind
 
     internal const string Almanac = "almanac";
 
+    internal const string Athlete = "athlete";
+
+    internal const string AthletesIndex = "athletes-index";
+
     internal static string DossierReport(int seasonNumber) => $"{SeasonDossier}:{seasonNumber}";
 
     internal static string EditionReport(string cup, int seasonNumber) => $"{cup}-edition:{seasonNumber}";
 
     internal static string TeamReport(string cup, string teamKey) => $"{cup}-team:{teamKey}";
+
+    internal static string AthleteReport(int athleteId) => $"{Athlete}:{athleteId}";
+
+    internal static string AthleteKey(int athleteId) => athleteId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    internal static int SplitAthleteKey(string key)
+    {
+        if (!int.TryParse(key, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int athleteId) || athleteId <= 0)
+        {
+            throw new ArgumentException($"Invalid athlete key '{key}'.", nameof(key));
+        }
+
+        return athleteId;
+    }
 
     internal static string CategoryOf(string report)
     {

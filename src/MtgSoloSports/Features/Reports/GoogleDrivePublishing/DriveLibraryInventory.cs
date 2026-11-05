@@ -12,7 +12,10 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// selections): saves without Cups yield no edition/team items, never
 /// invented reports. Ordering is deterministic (almanac first, then dossiers
 /// and editions ascending, then teams ordinal) so dry-run, sync and retries
-/// agree.
+/// agree. MSS-093 optionally appends the athlete archive (index first, then
+/// every persisted athlete by stable id ascending, including common-pool
+/// athletes with no season yet); null-category full syncs exclude athletes so
+/// the small Publish-now/library path never silently writes thousands of files.
 /// </summary>
 internal sealed class DriveLibraryInventory
 {
@@ -26,7 +29,8 @@ internal sealed class DriveLibraryInventory
     internal static async Task<DriveLibraryInventory> LoadAsync(
         SaveDbContext context,
         string saveName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeAthletes = false)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(saveName);
@@ -47,7 +51,59 @@ internal sealed class DriveLibraryInventory
         items.AddRange(colorTeams.Select(ColorTeamItem));
         items.AddRange(typeTeams.Select(TypeTeamItem));
 
+        if (includeAthletes)
+        {
+            items.Add(AthletesIndexItem());
+            List<AthleteInventoryRow> athletes = await LoadAthletesAsync(context, cancellationToken).ConfigureAwait(false);
+            items.AddRange(athletes.Select(AthleteItem));
+        }
+
         return new DriveLibraryInventory(items);
+    }
+
+    internal sealed record AthleteInventoryRow(int AthleteId, string Name, int SportingColor);
+
+    internal static string AthleteColorName(int sportingColor) =>
+        Enum.IsDefined((SportingColor)sportingColor)
+            ? ((SportingColor)sportingColor).ToString()
+            : $"Color{sportingColor}";
+
+    private static DriveLibraryItem AthletesIndexItem() =>
+        new(
+            DriveLibraryKind.AthletesIndex,
+            DriveLibraryKind.AthletesIndex,
+            "athletes-index.md",
+            "the Athletes folder",
+            null,
+            null,
+            null);
+
+    private static DriveLibraryItem AthleteItem(AthleteInventoryRow row)
+    {
+        string colorName = AthleteColorName(row.SportingColor);
+        return new(
+            DriveLibraryKind.Athlete,
+            DriveLibraryKind.AthleteReport(row.AthleteId),
+            ReportFilenames.AthleteFileName(row.AthleteId, row.Name, "md"),
+            $"the Athletes/{colorName} folder",
+            null,
+            null,
+            null,
+            row.AthleteId,
+            colorName);
+    }
+
+    private static async Task<List<AthleteInventoryRow>> LoadAthletesAsync(SaveDbContext context, CancellationToken cancellationToken)
+    {
+        // Bounded deterministic server-side list: every persisted athlete by
+        // stable save-scoped id ascending, including pool athletes with no
+        // season. No pagination, no league filtering, no UI roster.
+        return await context.SaveAthletes
+            .AsNoTracking()
+            .OrderBy(e => e.Id)
+            .Select(e => new AthleteInventoryRow(e.Id, e.Name, e.SportingColor))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static DriveLibraryItem AlmanacItem(string saveName) =>

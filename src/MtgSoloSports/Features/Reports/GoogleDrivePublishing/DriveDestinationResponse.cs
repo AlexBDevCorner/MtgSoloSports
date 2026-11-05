@@ -36,4 +36,9 @@ public sealed record DriveDestinationResponse(
     int LastLibraryUpdated = 0,
     int LastLibraryUnchanged = 0,
     int LastLibraryFailed = 0,
-    IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? LastLibraryByCategory = null);
+    IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? LastLibraryByCategory = null,
+    string? AthletesFolderId = null,
+    string? AthletesFolderName = null,
+    IReadOnlyDictionary<string, string>? AthleteColorFolderIds = null,
+    string? AthletesIndexFileId = null,
+    string? AthletesIndexFileName = null);

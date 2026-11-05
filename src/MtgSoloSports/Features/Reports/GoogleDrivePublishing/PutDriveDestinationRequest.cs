@@ -19,4 +19,10 @@ public sealed record PutDriveDestinationRequest(
     string? ChaosCupsFolderId = null,
     IReadOnlyDictionary<string, DriveLibraryAdoption>? DossierAdoptions = null,
     IReadOnlyDictionary<string, DriveLibraryAdoption>? EditionAdoptions = null,
-    IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions = null);
+    IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions = null,
+    string? AthletesFolderId = null,
+    string? AthletesFolderName = null,
+    IReadOnlyDictionary<string, string>? AthleteColorFolderIds = null,
+    IReadOnlyDictionary<string, DriveLibraryAdoption>? AthleteAdoptions = null,
+    string? AthletesIndexFileId = null,
+    string? AthletesIndexFileName = null);

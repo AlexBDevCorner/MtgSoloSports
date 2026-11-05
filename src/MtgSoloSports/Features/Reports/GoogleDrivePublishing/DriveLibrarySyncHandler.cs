@@ -83,6 +83,8 @@ public sealed class DriveLibrarySyncHandler
         FolderResolution TypeCups,
         FolderResolution TypeTeams,
         FolderResolution ChaosCups,
+        FolderResolution Athletes,
+        IReadOnlyDictionary<string, FolderResolution> AthleteColors,
         DrivePublishingStore.DestinationDocument Destination);
 
     private sealed record GenerationResult(bool Ok, string Value);
@@ -94,6 +96,35 @@ public sealed class DriveLibrarySyncHandler
 
     private static bool NeedsFolder(HashSet<string>? categories, string category) =>
         categories is null || categories.Contains(category);
+
+    private static bool NeedsAthleteFolder(HashSet<string>? categories, string category, HashSet<string>? onlyKeys)
+    {
+        // MSS-093: null-category full syncs stay legacy-only so the small
+        // Publish-now/library path never silently writes thousands of athlete
+        // files. Athletes sync only on explicit category request or explicit
+        // athlete OnlyKeys (selective auto refresh).
+        if (categories is not null && categories.Contains(category))
+        {
+            return true;
+        }
+
+        if (onlyKeys is null || onlyKeys.Count == 0)
+        {
+            return false;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.Athlete, StringComparison.Ordinal))
+        {
+            return onlyKeys.Any(k => k.StartsWith(DriveLibraryKind.Athlete + ":", StringComparison.Ordinal));
+        }
+
+        if (string.Equals(category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal))
+        {
+            return onlyKeys.Contains(DriveLibraryKind.AthletesIndex);
+        }
+
+        return false;
+    }
 
     public async Task<DriveLibrarySyncResponse> HandleAsync(
         Guid saveId,
@@ -203,6 +234,40 @@ public sealed class DriveLibrarySyncHandler
         return (int)back;
     }
 
+    /// <summary>
+    /// MSS-093: changed athlete report keys for opt-in auto publishing after a
+    /// committed global stage or relevant Cup/selection/postseason/new-season
+    /// event. Covers the whole changed source-season range since the last
+    /// settled dossier publish (bulk coalescing included), plus current and
+    /// previous record holders so pool athletes losing a global record are not
+    /// missed. Pure read-only DB queries, no markdown generation.
+    /// </summary>
+    internal async Task<IReadOnlyList<string>> RecentAthleteKeysForAutoAsync(
+        Guid saveId,
+        int? lastPublishedSeason,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        await _saves.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        SaveStore.SaveDetailRecord detail = await _saves.OpenAsync(saveId, cancellationToken).ConfigureAwait(false);
+        int seasonsBack = ComputeCupSeasonsBack(detail.CurrentSeason, lastPublishedSeason);
+        int cutoff = Math.Max(1, detail.CurrentSeason - seasonsBack);
+        using SaveDbContext context = _saves.OpenDbContext(saveId);
+        DrivePublishingStore.DestinationDocument? destination =
+            await _publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
+        MtgSoloSports.Features.Athletes.GetRecordHoldings.GetAthleteRecordHoldingsHandler.GlobalMaxima newMaxima =
+            await MtgSoloSports.Features.Athletes.GetRecordHoldings.GetAthleteRecordHoldingsHandler.LoadGlobalMaximaAsync(context, cancellationToken).ConfigureAwait(false);
+        HashSet<int> ids = await DriveAthleteReports.LoadChangedAthleteIdsAsync(
+            context, cutoff, newMaxima, destination?.AthleteRecordMaxima, cancellationToken).ConfigureAwait(false);
+        List<string> keys = ids.OrderBy(id => id).Select(id => DriveLibraryKind.AthleteReport(id)).ToList();
+        keys.Add(DriveLibraryKind.AthletesIndex);
+        return keys;
+    }
+
     private static async Task<IReadOnlyList<string>> LoadRecentKeysAsync(
         SaveDbContext context,
         int cutoff,
@@ -274,11 +339,18 @@ public sealed class DriveLibrarySyncHandler
         return keys;
     }
 
+    private Guid _athleteSharedSaveId = Guid.Empty;
+    private DriveAthleteReports.SharedAthleteData? _athleteShared;
+    private IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow>? _athleteRows;
+
     private async Task<DriveLibrarySyncResponse> ExecuteLockedAsync(
         Guid saveId,
         DriveLibrarySyncRequest request,
         CancellationToken cancellationToken)
     {
+        _athleteShared = null;
+        _athleteSharedSaveId = Guid.Empty;
+        _athleteRows = null;
         LibraryContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
         List<DriveLibraryItem> filtered = await LoadFilteredItemsAsync(saveId, context, request, cancellationToken).ConfigureAwait(false);
         int skip = ResolveSkip(request);
@@ -355,12 +427,40 @@ public sealed class DriveLibrarySyncHandler
             ? null
             : new HashSet<string>(request.OnlyKeys.Where(k => !string.IsNullOrWhiteSpace(k)), StringComparer.Ordinal);
 
+        bool includeAthletes = IncludesAthletes(categories, onlyKeys);
         using SaveDbContext db = _saves.OpenDbContext(saveId);
-        DriveLibraryInventory inventory = await DriveLibraryInventory.LoadAsync(db, context.Detail.Name, cancellationToken).ConfigureAwait(false);
+        DriveLibraryInventory inventory = await DriveLibraryInventory.LoadAsync(db, context.Detail.Name, cancellationToken, includeAthletes).ConfigureAwait(false);
         return inventory.Items
-            .Where(item => categories is null || categories.Contains(item.Category))
+            .Where(item => MatchesCategory(item, categories))
             .Where(item => onlyKeys is null || onlyKeys.Contains(item.Report))
             .ToList();
+    }
+
+    private static bool IncludesAthletes(HashSet<string>? categories, HashSet<string>? onlyKeys)
+    {
+        if (categories is not null && (categories.Contains(DriveLibraryKind.Athlete) || categories.Contains(DriveLibraryKind.AthletesIndex)))
+        {
+            return true;
+        }
+
+        if (onlyKeys is null)
+        {
+            return false;
+        }
+
+        return onlyKeys.Any(k => k.StartsWith(DriveLibraryKind.Athlete + ":", StringComparison.Ordinal) || string.Equals(k, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal));
+    }
+
+    private static bool MatchesCategory(DriveLibraryItem item, HashSet<string>? categories)
+    {
+        if (string.Equals(item.Category, DriveLibraryKind.Athlete, StringComparison.Ordinal)
+            || string.Equals(item.Category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal))
+        {
+            // Null means legacy full sync: exclude athletes (no silent bulk).
+            return categories is not null && categories.Contains(item.Category);
+        }
+
+        return categories is null || categories.Contains(item.Category);
     }
 
     private static HashSet<string>? NormalizeCategories(IReadOnlyList<string>? categories)
@@ -377,7 +477,7 @@ public sealed class DriveLibrarySyncHandler
             if (!IsKnownCategory(trimmed))
             {
                 throw new ArgumentException(
-                    $"Unsupported library category '{category}'. Use season-dossier, color-edition, type-edition, chaos-edition, color-team, type-team or almanac.",
+                    $"Unsupported library category '{category}'. Use season-dossier, color-edition, type-edition, chaos-edition, color-team, type-team, almanac, athlete or athletes-index.",
                     nameof(categories));
             }
 
@@ -394,7 +494,9 @@ public sealed class DriveLibrarySyncHandler
         || string.Equals(category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.ColorTeam, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.TypeTeam, StringComparison.Ordinal)
-        || string.Equals(category, DriveLibraryKind.Almanac, StringComparison.Ordinal);
+        || string.Equals(category, DriveLibraryKind.Almanac, StringComparison.Ordinal)
+        || string.Equals(category, DriveLibraryKind.Athlete, StringComparison.Ordinal)
+        || string.Equals(category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal);
 
     private int ResolveMaxFiles(DriveLibrarySyncRequest request)
     {
@@ -440,6 +542,9 @@ public sealed class DriveLibrarySyncHandler
         // existing user folder under drive.file. Gate each leaf on its
         // category (null categories = full sync = all folders).
         HashSet<string>? categories = NormalizeCategories(request.Categories);
+        HashSet<string>? onlyKeys = request.OnlyKeys is null
+            ? null
+            : new HashSet<string>(request.OnlyKeys.Where(k => !string.IsNullOrWhiteSpace(k)), StringComparer.Ordinal);
         FolderResolution seasons = NeedsFolder(categories, DriveLibraryKind.SeasonDossier)
             ? await EnsureSeasonsFolderAsync(
                 destination, mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
@@ -468,27 +573,66 @@ public sealed class DriveLibrarySyncHandler
                 destination, destination.TypeCupFolderId, destination.TypeCupsFolderId,
                 mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
             : SkippedFolder;
-        FolderResolution typeTeams = NeedsFolder(categories, DriveLibraryKind.TypeTeam)
-            ? await EnsureCupLeafAsync(
-                "Type Cup", "Teams Histories",
-                static (doc, id) => doc with { TypeCupFolderId = id },
-                static (doc, id) => doc with { TypeTeamsFolderId = id },
-                destination, destination.TypeCupFolderId, destination.TypeTeamsFolderId,
-                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
-            : SkippedFolder;
-        FolderResolution chaosCups = NeedsFolder(categories, DriveLibraryKind.ChaosEdition)
-            ? await EnsureCupLeafAsync(
-                "Chaos Cup", "Cups",
-                static (doc, id) => doc with { ChaosCupFolderId = id },
-                static (doc, id) => doc with { ChaosCupsFolderId = id },
-                destination, destination.ChaosCupFolderId, destination.ChaosCupsFolderId,
-                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
-            : SkippedFolder;
-
+        FolderResolution typeTeams = await ResolveTypeTeamsAsync(destination, mtshistoryId, categories, request, cancellationToken).ConfigureAwait(false);
+        FolderResolution chaosCups = await ResolveChaosCupsAsync(destination, mtshistoryId, categories, request, cancellationToken).ConfigureAwait(false);
+        (FolderResolution athletes, IReadOnlyDictionary<string, FolderResolution> athleteColors) =
+            await ResolveAthleteFoldersAsync(destination, mtshistoryId, categories, onlyKeys, request, cancellationToken).ConfigureAwait(false);
         DrivePublishingStore.DestinationDocument current =
-            await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false)
-            ?? destination;
-        return new LibraryFolders(mtshistoryId, seasons, colorCups, colorTeams, typeCups, typeTeams, chaosCups, current);
+            await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false) ?? destination;
+        return new LibraryFolders(mtshistoryId, seasons, colorCups, colorTeams, typeCups, typeTeams, chaosCups, athletes, athleteColors, current);
+    }
+
+    private async Task<FolderResolution> ResolveTypeTeamsAsync(
+        DrivePublishingStore.DestinationDocument destination, string mtshistoryId,
+        HashSet<string>? categories, DriveLibrarySyncRequest request, CancellationToken ct)
+    {
+        return NeedsFolder(categories, DriveLibraryKind.TypeTeam)
+            ? await EnsureCupLeafAsync("Type Cup", "Teams Histories",
+                static (doc, id) => doc with { TypeCupFolderId = id }, static (doc, id) => doc with { TypeTeamsFolderId = id },
+                destination, destination.TypeCupFolderId, destination.TypeTeamsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, ct).ConfigureAwait(false)
+            : SkippedFolder;
+    }
+
+    private async Task<FolderResolution> ResolveChaosCupsAsync(
+        DrivePublishingStore.DestinationDocument destination, string mtshistoryId,
+        HashSet<string>? categories, DriveLibrarySyncRequest request, CancellationToken ct)
+    {
+        return NeedsFolder(categories, DriveLibraryKind.ChaosEdition)
+            ? await EnsureCupLeafAsync("Chaos Cup", "Cups",
+                static (doc, id) => doc with { ChaosCupFolderId = id }, static (doc, id) => doc with { ChaosCupsFolderId = id },
+                destination, destination.ChaosCupFolderId, destination.ChaosCupsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, ct).ConfigureAwait(false)
+            : SkippedFolder;
+    }
+
+    private async Task<(FolderResolution Athletes, IReadOnlyDictionary<string, FolderResolution> Colors)> ResolveAthleteFoldersAsync(
+        DrivePublishingStore.DestinationDocument destination, string mtshistoryId,
+        HashSet<string>? categories, HashSet<string>? onlyKeys, DriveLibrarySyncRequest request, CancellationToken ct)
+    {
+        bool needsAthletes = NeedsAthleteFolder(categories, DriveLibraryKind.Athlete, onlyKeys)
+            || NeedsAthleteFolder(categories, DriveLibraryKind.AthletesIndex, onlyKeys);
+        if (!needsAthletes)
+        {
+            return (SkippedFolder, EmptyAthleteColors());
+        }
+
+        FolderResolution athletes = await EnsureAthletesRootAsync(destination, mtshistoryId, request.AllowCreateMissing, request.DryRun, ct).ConfigureAwait(false);
+        IReadOnlyDictionary<string, FolderResolution> colors = athletes.FolderId is not null
+            ? await EnsureAthleteColorFoldersAsync(destination, athletes.FolderId, request.AllowCreateMissing, request.DryRun, ct).ConfigureAwait(false)
+            : EmptyAthleteColors();
+        return (athletes, colors);
+    }
+
+    private static IReadOnlyDictionary<string, FolderResolution> EmptyAthleteColors()
+    {
+        Dictionary<string, FolderResolution> map = new(StringComparer.Ordinal);
+        foreach (string color in DriveAthleteColors.All)
+        {
+            map[color] = SkippedFolder;
+        }
+
+        return map;
     }
 
     private async Task<string> LoadMtshistoryAsync(
@@ -567,6 +711,121 @@ public sealed class DriveLibrarySyncHandler
         return await FindOrCreateFolderAsync(
             mtshistoryId, "Seasons", static (doc, id) => doc with { SeasonsFolderId = id },
             destination, allowCreateMissing, dryRun, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<FolderResolution> EnsureAthletesRootAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string mtshistoryId,
+        bool allowCreateMissing,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        // MSS-093: dedicated Athletes/ destination beneath the selected
+        // mtshistory folder. Explicit ids keep custom names (only MIME and
+        // destination location are verified); unset roots auto-resolve by the
+        // configured name (default "Athletes") and are only created with
+        // explicit Drive authorization.
+        if (!string.IsNullOrWhiteSpace(destination.AthletesFolderId))
+        {
+            return await VerifyAthleteRootAsync(destination.AthletesFolderId!, mtshistoryId, cancellationToken).ConfigureAwait(false);
+        }
+
+        string desired = string.IsNullOrWhiteSpace(destination.AthletesFolderName)
+            ? DriveAthleteColors.DefaultRootName
+            : destination.AthletesFolderName!;
+        return await FindOrCreateFolderAsync(
+            mtshistoryId, desired, static (doc, id) => doc with { AthletesFolderId = id },
+            destination, allowCreateMissing, dryRun, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<FolderResolution> VerifyAthleteRootAsync(
+        string folderId,
+        string mtshistoryId,
+        CancellationToken cancellationToken)
+    {
+        // Custom root names allowed: verify MIME + location, never the name.
+        FolderResolution checkedFolder = await VerifyFolderAsync(folderId, "Athletes folder", mtshistoryId, null, cancellationToken).ConfigureAwait(false);
+        return checkedFolder;
+    }
+
+    private async Task<IReadOnlyDictionary<string, FolderResolution>> EnsureAthleteColorFoldersAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string athletesFolderId,
+        bool allowCreateMissing,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, FolderResolution> map = new(StringComparer.Ordinal);
+        foreach (string color in DriveAthleteColors.All)
+        {
+            string? explicitId = destination.AthleteColorFolderIds is not null && destination.AthleteColorFolderIds.TryGetValue(color, out string? stored)
+                ? stored
+                : null;
+            FolderResolution resolution;
+            if (!string.IsNullOrWhiteSpace(explicitId))
+            {
+                resolution = await VerifyFolderAsync(explicitId!, $"Athletes/{color}", athletesFolderId, null, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                resolution = await FindOrCreateAthleteColorAsync(destination, athletesFolderId, color, allowCreateMissing, dryRun, cancellationToken).ConfigureAwait(false);
+            }
+
+            map[color] = resolution;
+        }
+
+        return map;
+    }
+
+    private async Task<FolderResolution> FindOrCreateAthleteColorAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string athletesFolderId,
+        string color,
+        bool allowCreateMissing,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        DriveFile? found = await TryFindFolderAsync(athletesFolderId, color, cancellationToken).ConfigureAwait(false);
+        if (found is not null)
+        {
+            await PersistAthleteColorAdoptionAsync(destination, color, found.Id, dryRun, cancellationToken).ConfigureAwait(false);
+            return new FolderResolution(found.Id, false, null);
+        }
+
+        if (!allowCreateMissing)
+        {
+            return Failure(
+                $"'{color}' was not found among visible Athletes/ folders. With drive.file an existing but ungranted folder is hidden (empty listing does not prove the name is free). To avoid a duplicate folder tree, adopt the existing folder explicitly with Choose from Drive (then Save + Verify), or re-run sync with creation of missing folders/files confirmed. Nothing was created.");
+        }
+
+        if (dryRun)
+        {
+            return new FolderResolution(null, true, null);
+        }
+
+        DriveFile created = await _singleFile.WithAuthAsync(
+            token => _drive.CreateFolderAsync(token, athletesFolderId, color, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+        await PersistAthleteColorAdoptionAsync(destination, color, created.Id, dryRun, cancellationToken).ConfigureAwait(false);
+        return new FolderResolution(created.Id, false, null);
+    }
+
+    private async Task PersistAthleteColorAdoptionAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        string color,
+        string folderId,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        if (dryRun)
+        {
+            return;
+        }
+
+        DrivePublishingStore.DestinationDocument? latest =
+            await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false)
+            ?? destination;
+        await _publishing.SaveDestinationAsync(DrivePublishingStore.WithAthleteColorFolder(latest, color, folderId), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<FolderResolution> VerifyFolderAsync(
@@ -914,7 +1173,7 @@ public sealed class DriveLibrarySyncHandler
         DriveLibrarySyncRequest request,
         CancellationToken cancellationToken)
     {
-        FolderResolution resolution = ResolutionFor(folders, item.Category);
+        FolderResolution resolution = ResolutionFor(folders, item);
         if (resolution.FolderId is null)
         {
             return (LibraryFailed(item, resolution, request.DryRun), current);
@@ -927,7 +1186,7 @@ public sealed class DriveLibrarySyncHandler
             return (predicted, current);
         }
 
-        GenerationResult generated = await TryGenerateAsync(item, saveId, cancellationToken).ConfigureAwait(false);
+        GenerationResult generated = await TryGenerateAsync(current, item, saveId, cancellationToken).ConfigureAwait(false);
         if (!generated.Ok)
         {
             return (FailedOutcome(item, generated.Value), current);
@@ -948,17 +1207,59 @@ public sealed class DriveLibrarySyncHandler
         }
     }
 
-    private static FolderResolution ResolutionFor(LibraryFolders folders, string category) =>
-        category switch
+    private static FolderResolution ResolutionFor(LibraryFolders folders, DriveLibraryItem item)
+    {
+        string category = item.Category;
+        if (string.Equals(category, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal))
         {
-            var c when string.Equals(c, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal) => folders.Seasons,
-            var c when string.Equals(c, DriveLibraryKind.ColorEdition, StringComparison.Ordinal) => folders.ColorCups,
-            var c when string.Equals(c, DriveLibraryKind.TypeEdition, StringComparison.Ordinal) => folders.TypeCups,
-            var c when string.Equals(c, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal) => folders.ChaosCups,
-            var c when string.Equals(c, DriveLibraryKind.ColorTeam, StringComparison.Ordinal) => folders.ColorTeams,
-            var c when string.Equals(c, DriveLibraryKind.TypeTeam, StringComparison.Ordinal) => folders.TypeTeams,
-            _ => new FolderResolution(folders.MtshistoryId, false, null),
-        };
+            return folders.Seasons;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal))
+        {
+            return folders.ColorCups;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal))
+        {
+            return folders.TypeCups;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal))
+        {
+            return folders.ChaosCups;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.ColorTeam, StringComparison.Ordinal))
+        {
+            return folders.ColorTeams;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.TypeTeam, StringComparison.Ordinal))
+        {
+            return folders.TypeTeams;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal))
+        {
+            return folders.Athletes;
+        }
+
+        if (string.Equals(category, DriveLibraryKind.Athlete, StringComparison.Ordinal))
+        {
+            // Stable sporting color decides the folder; league/pool movement
+            // never moves files. Missing color mapping fails closed.
+            string color = item.AthleteColor ?? string.Empty;
+            if (!string.IsNullOrEmpty(color) && folders.AthleteColors.TryGetValue(color, out FolderResolution? resolved))
+            {
+                return resolved;
+            }
+
+            return new FolderResolution(null, false, $"Athlete {item.AthleteId} has unknown sporting color '{color}'; fix the save data, then retry. Nothing was created.");
+        }
+
+        return new FolderResolution(folders.MtshistoryId, false, null);
+    }
 
     private static DriveFileOutcome LibraryFailed(DriveLibraryItem item, FolderResolution resolution, bool dryRun)
     {
@@ -979,6 +1280,7 @@ public sealed class DriveLibrarySyncHandler
         new(item.Report, "failed", null, item.DefaultFileName, null, null, detail);
 
     private async Task<GenerationResult> TryGenerateAsync(
+        DrivePublishingStore.DestinationDocument current,
         DriveLibraryItem item,
         Guid saveId,
         CancellationToken cancellationToken)
@@ -995,6 +1297,13 @@ public sealed class DriveLibrarySyncHandler
                     || string.Equals(c, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
                     || string.Equals(c, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal) =>
                     await GenerateEditionAsync(saveId, item, cancellationToken).ConfigureAwait(false),
+                var c when string.Equals(c, DriveLibraryKind.ColorTeam, StringComparison.Ordinal)
+                    || string.Equals(c, DriveLibraryKind.TypeTeam, StringComparison.Ordinal) =>
+                    await GenerateTeamAsync(saveId, item, cancellationToken).ConfigureAwait(false),
+                var c when string.Equals(c, DriveLibraryKind.Athlete, StringComparison.Ordinal) =>
+                    await GenerateAthleteAsync(saveId, item.AthleteId!.Value, cancellationToken).ConfigureAwait(false),
+                var c when string.Equals(c, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal) =>
+                    await GenerateAthletesIndexAsync(saveId, current, cancellationToken).ConfigureAwait(false),
                 _ => await GenerateTeamAsync(saveId, item, cancellationToken).ConfigureAwait(false),
             };
             return new GenerationResult(true, markdown);
@@ -1015,10 +1324,64 @@ public sealed class DriveLibrarySyncHandler
         {
             return new GenerationResult(false, $"That report is no longer available in this save: {Trim(ex.Message)} Nothing was changed.");
         }
+        catch (MtgSoloSports.Features.Athletes.GetProfile.AthleteProfileNotFoundException ex)
+        {
+            return new GenerationResult(false, $"That athlete report is no longer available in this save: {Trim(ex.Message)} Nothing was changed.");
+        }
+        catch (MtgSoloSports.Features.Athletes.GetRecordHoldings.AthleteRecordHoldingsNotFoundException ex)
+        {
+            return new GenerationResult(false, $"That athlete report is no longer available in this save: {Trim(ex.Message)} Nothing was changed.");
+        }
         catch (InvalidOperationException ex)
         {
             return new GenerationResult(false, $"That report could not be generated from persisted rows: {Trim(ex.Message)} Nothing was changed.");
         }
+    }
+
+    private async Task<DriveAthleteReports.SharedAthleteData> GetAthleteSharedAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        if (_athleteShared is not null && _athleteSharedSaveId == saveId)
+        {
+            return _athleteShared;
+        }
+
+        DriveAthleteReports.SharedAthleteData shared = await DriveAthleteReports.LoadSharedAsync(_saves, saveId, cancellationToken).ConfigureAwait(false);
+        _athleteShared = shared;
+        _athleteSharedSaveId = saveId;
+        return shared;
+    }
+
+    private async Task<string> GenerateAthleteAsync(Guid saveId, int athleteId, CancellationToken cancellationToken)
+    {
+        DriveAthleteReports.SharedAthleteData shared = await GetAthleteSharedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        return await DriveAthleteReports.GenerateAthleteAsync(_saves, saveId, athleteId, shared, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string> GenerateAthletesIndexAsync(Guid saveId, DrivePublishingStore.DestinationDocument current, CancellationToken cancellationToken)
+    {
+        DriveAthleteReports.SharedAthleteData shared = await GetAthleteSharedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow> rows = await GetAthleteRowsAsync(saveId, cancellationToken).ConfigureAwait(false);
+        return await DriveAthleteReports.GenerateIndexAsync(_saves, saveId, shared, rows, current.AthleteByKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow>> GetAthleteRowsAsync(Guid saveId, CancellationToken cancellationToken)
+    {
+        if (_athleteRows is not null && _athleteSharedSaveId == saveId)
+        {
+            return _athleteRows;
+        }
+
+        using SaveDbContext context = _saves.OpenDbContext(saveId);
+        // Full bounded list for the index: every persisted athlete by stable
+        // id ascending. Single query, no histories buffered.
+        List<DriveLibraryInventory.AthleteInventoryRow> rows = await context.SaveAthletes
+            .AsNoTracking()
+            .OrderBy(e => e.Id)
+            .Select(e => new DriveLibraryInventory.AthleteInventoryRow(e.Id, e.Name, e.SportingColor))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        _athleteRows = rows;
+        return rows;
     }
 
     private async Task<string> GenerateAlmanacAsync(Guid saveId, CancellationToken cancellationToken)
@@ -1160,6 +1523,19 @@ public sealed class DriveLibrarySyncHandler
             return new SlotResolution(current.AlmanacFileId, current.AlmanacFileName, current.AlmanacFingerprint);
         }
 
+        if (string.Equals(item.Category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal))
+        {
+            return new SlotResolution(current.AthletesIndexFileId, current.AthletesIndexFileName, current.AthletesIndexFingerprint);
+        }
+
+        if (string.Equals(item.Category, DriveLibraryKind.Athlete, StringComparison.Ordinal))
+        {
+            string athleteKey = DriveLibraryKind.AthleteKey(item.AthleteId!.Value);
+            (string? athleteId, string? athleteName, string? athleteFingerprint, _) =
+                DrivePublishingStore.AthleteView(current.AthleteByKey, athleteKey);
+            return new SlotResolution(athleteId, athleteName, athleteFingerprint);
+        }
+
         bool isEdition = string.Equals(item.Category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
             || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
             || string.Equals(item.Category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal);
@@ -1193,6 +1569,24 @@ public sealed class DriveLibrarySyncHandler
             };
         }
 
+        if (string.Equals(item.Category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal))
+        {
+            return (current, fileId, fileName, fingerprint, modifiedTime) => current with
+            {
+                AthletesIndexFileId = fileId,
+                AthletesIndexFileName = fileName,
+                AthletesIndexFingerprint = fingerprint,
+                AthletesIndexRemoteModifiedTime = modifiedTime,
+            };
+        }
+
+        if (string.Equals(item.Category, DriveLibraryKind.Athlete, StringComparison.Ordinal))
+        {
+            string athleteKey = DriveLibraryKind.AthleteKey(item.AthleteId!.Value);
+            return (current, fileId, fileName, fingerprint, modifiedTime) =>
+                DrivePublishingStore.WithAthleteSlot(current, athleteKey, fileId, fileName, fingerprint, modifiedTime);
+        }
+
         bool isEdition = string.Equals(item.Category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
             || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
             || string.Equals(item.Category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal);
@@ -1212,7 +1606,7 @@ public sealed class DriveLibrarySyncHandler
         int currentSeason,
         CancellationToken cancellationToken)
     {
-        GenerationResult generated = await TryGenerateAsync(item, saveId, cancellationToken).ConfigureAwait(false);
+        GenerationResult generated = await TryGenerateAsync(current, item, saveId, cancellationToken).ConfigureAwait(false);
         if (!generated.Ok)
         {
             return FailedOutcome(item, generated.Value);
@@ -1427,6 +1821,17 @@ public sealed class DriveLibrarySyncHandler
         int unchanged = outcomes.Count(o => string.Equals(o.Outcome, "unchanged", StringComparison.Ordinal));
         int failed = outcomes.Count(o => string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
 
+        // MSS-093: track the latest global record maxima whenever athlete
+        // files settle, so the next auto refresh can detect holder removals
+        // (old maxima vs new) without a full 2048-file scan.
+        IReadOnlyDictionary<string, int>? athleteMaxima = current.AthleteRecordMaxima;
+        if (_athleteShared is not null && batch.Any(item =>
+                string.Equals(item.Category, DriveLibraryKind.Athlete, StringComparison.Ordinal)
+                || string.Equals(item.Category, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal)))
+        {
+            athleteMaxima = DriveAthleteReports.ToMaximaMap(_athleteShared.Maxima);
+        }
+
         DrivePublishingStore.DestinationDocument finished = current with
         {
             LastLibraryPublishedUtc = complete && allSettled ? now : current.LastLibraryPublishedUtc,
@@ -1436,6 +1841,7 @@ public sealed class DriveLibrarySyncHandler
             LastLibraryUnchanged = unchanged,
             LastLibraryFailed = failed,
             LastLibraryByCategory = byCategory,
+            AthleteRecordMaxima = athleteMaxima,
         };
         // Post-commit durability: persist the settled maps plus the library
         // summary even when the HTTP caller disconnected mid-sync, so a
@@ -1523,6 +1929,8 @@ public sealed class DriveLibrarySyncHandler
         yield return DriveLibraryKind.ChaosEdition;
         yield return DriveLibraryKind.ColorTeam;
         yield return DriveLibraryKind.TypeTeam;
+        yield return DriveLibraryKind.Athlete;
+        yield return DriveLibraryKind.AthletesIndex;
     }
 
     private async Task EnsureNoCrossSaveReuseAsync(
@@ -1552,19 +1960,26 @@ public sealed class DriveLibrarySyncHandler
         DrivePublishingStore.DestinationDocument other,
         DrivePublishingStore.DestinationDocument destination)
     {
-        foreach (string? folderId in new[]
-                 {
-                     destination.MtshistoryFolderId,
-                     destination.SeasonsFolderId,
-                     destination.ColorCupFolderId,
-                     destination.ColorCupsFolderId,
-                     destination.ColorTeamsFolderId,
-                     destination.TypeCupFolderId,
-                     destination.TypeCupsFolderId,
-                     destination.TypeTeamsFolderId,
-                     destination.ChaosCupFolderId,
-                     destination.ChaosCupsFolderId,
-                 })
+        List<string?> folderIds =
+        [
+            destination.MtshistoryFolderId,
+            destination.SeasonsFolderId,
+            destination.ColorCupFolderId,
+            destination.ColorCupsFolderId,
+            destination.ColorTeamsFolderId,
+            destination.TypeCupFolderId,
+            destination.TypeCupsFolderId,
+            destination.TypeTeamsFolderId,
+            destination.ChaosCupFolderId,
+            destination.ChaosCupsFolderId,
+            destination.AthletesFolderId,
+        ];
+        if (destination.AthleteColorFolderIds is not null)
+        {
+            folderIds.AddRange(destination.AthleteColorFolderIds.Values);
+        }
+
+        foreach (string? folderId in folderIds)
         {
             if (folderId is null)
             {
@@ -1580,7 +1995,9 @@ public sealed class DriveLibrarySyncHandler
                 || string.Equals(other.TypeCupsFolderId, folderId, StringComparison.Ordinal)
                 || string.Equals(other.TypeTeamsFolderId, folderId, StringComparison.Ordinal)
                 || string.Equals(other.ChaosCupFolderId, folderId, StringComparison.Ordinal)
-                || string.Equals(other.ChaosCupsFolderId, folderId, StringComparison.Ordinal))
+                || string.Equals(other.ChaosCupsFolderId, folderId, StringComparison.Ordinal)
+                || string.Equals(other.AthletesFolderId, folderId, StringComparison.Ordinal)
+                || (other.AthleteColorFolderIds is not null && other.AthleteColorFolderIds.Values.Contains(folderId, StringComparer.Ordinal)))
             {
                 return true;
             }
@@ -1611,6 +2028,11 @@ public sealed class DriveLibrarySyncHandler
             ids.Add(destination.AlmanacFileId);
         }
 
+        if (destination.AthletesIndexFileId is not null)
+        {
+            ids.Add(destination.AthletesIndexFileId);
+        }
+
         foreach (IReadOnlyDictionary<int, DrivePublishingStore.DossierSlot>? map in new[] { destination.DossierBySeason })
         {
             if (map is null)
@@ -1629,7 +2051,7 @@ public sealed class DriveLibrarySyncHandler
 
         foreach (IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? map in new[]
                  {
-                     destination.CupEditionByKey, destination.CupTeamByKey,
+                     destination.CupEditionByKey, destination.CupTeamByKey, destination.AthleteByKey,
                  })
         {
             if (map is null)

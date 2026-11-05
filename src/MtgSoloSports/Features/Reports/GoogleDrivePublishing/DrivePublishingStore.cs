@@ -122,7 +122,16 @@ public sealed class DrivePublishingStore
         int LastLibraryUpdated = 0,
         int LastLibraryUnchanged = 0,
         int LastLibraryFailed = 0,
-        IReadOnlyDictionary<string, LibraryCategoryCounts>? LastLibraryByCategory = null);
+        IReadOnlyDictionary<string, LibraryCategoryCounts>? LastLibraryByCategory = null,
+        string? AthletesFolderId = null,
+        string? AthletesFolderName = null,
+        IReadOnlyDictionary<string, string>? AthleteColorFolderIds = null,
+        IReadOnlyDictionary<string, LibrarySlot>? AthleteByKey = null,
+        string? AthletesIndexFileId = null,
+        string? AthletesIndexFileName = null,
+        string? AthletesIndexFingerprint = null,
+        string? AthletesIndexRemoteModifiedTime = null,
+        IReadOnlyDictionary<string, int>? AthleteRecordMaxima = null);
 
     public sealed record PendingAuthDocument(
         string State,
@@ -302,6 +311,65 @@ public sealed class DrivePublishingStore
         return isEdition
             ? destination with { CupEditionByKey = map }
             : destination with { CupTeamByKey = map };
+    }
+
+    /// <summary>
+    /// MSS-093: athlete slot lookup by stable save-scoped athlete id string.
+    /// Missing maps and missing keys both resolve to an empty slot (create on
+    /// next sync); a stored entry keeps its adopted file id across name/slug
+    /// changes so renames update in place instead of creating duplicates.
+    /// </summary>
+    public static (string? FileId, string? FileName, string? Fingerprint, string? RemoteModifiedTime)
+        AthleteView(IReadOnlyDictionary<string, LibrarySlot>? map, string key)
+    {
+        return LibraryView(map, key);
+    }
+
+    /// <summary>
+    /// MSS-093: upsert one athlete slot without touching any other entry.
+    /// A null file id clears the key.
+    /// </summary>
+    public static DestinationDocument WithAthleteSlot(
+        DestinationDocument destination,
+        string key,
+        string? fileId,
+        string? fileName,
+        string? fingerprint,
+        string? remoteModifiedTime)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        Dictionary<string, LibrarySlot> map = destination.AthleteByKey is null
+            ? new Dictionary<string, LibrarySlot>(StringComparer.Ordinal)
+            : new Dictionary<string, LibrarySlot>(destination.AthleteByKey, StringComparer.Ordinal);
+        if (fileId is null)
+        {
+            map.Remove(key);
+        }
+        else
+        {
+            map[key] = new LibrarySlot(fileId, fileName, fingerprint, remoteModifiedTime);
+        }
+
+        return destination with { AthleteByKey = map };
+    }
+
+    /// <summary>
+    /// MSS-093: upsert one athlete color folder id without touching others.
+    /// </summary>
+    public static DestinationDocument WithAthleteColorFolder(
+        DestinationDocument destination,
+        string colorName,
+        string folderId)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(colorName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(folderId);
+        Dictionary<string, string> map = destination.AthleteColorFolderIds is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(destination.AthleteColorFolderIds, StringComparer.Ordinal);
+        map[colorName] = folderId;
+        return destination with { AthleteColorFolderIds = map };
     }
 
     public string GetStoreRoot() => _options.Value.ResolveStoreRoot(_environment);

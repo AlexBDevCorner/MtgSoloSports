@@ -348,6 +348,7 @@ public sealed class DriveAutoPublishWorker : BackgroundService
             if (response.Files.All(f => !string.Equals(f.Outcome, "failed", StringComparison.Ordinal)))
             {
                 await TryRefreshRecentCupsAsync(saveId, snapshot.LastSeasonNumber, cancellationToken).ConfigureAwait(false);
+                await TryRefreshRecentAthletesAsync(saveId, snapshot, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -562,6 +563,99 @@ public sealed class DriveAutoPublishWorker : BackgroundService
 
     internal static bool IsChaosCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
         !string.IsNullOrWhiteSpace(destination.ChaosCupsFolderId);
+
+    private async Task TryRefreshRecentAthletesAsync(
+        Guid saveId,
+        DrivePublishingStore.DestinationDocument snapshot,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using IServiceScope scope = _scopes.CreateScope();
+            DrivePublishingStore publishing = scope.ServiceProvider.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? destination =
+                await publishing.GetDestinationAsync(saveId, cancellationToken).ConfigureAwait(false);
+            if (destination is null
+                || !destination.AutoPublishEnabled
+                || destination.AutoPausedForAuth
+                || string.IsNullOrWhiteSpace(destination.MtshistoryFolderId))
+            {
+                return;
+            }
+
+            // Opt-in athlete archive only: no Athletes/ root means the user
+            // never ran the explicit first bulk import, so auto mode stays
+            // fail-closed instead of creating 2048 files as a side effect.
+            if (string.IsNullOrWhiteSpace(destination.AthletesFolderId))
+            {
+                return;
+            }
+
+            DriveLibrarySyncHandler library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
+            IReadOnlyList<string> keys = await library.RecentAthleteKeysForAutoAsync(saveId, snapshot.LastSeasonNumber, cancellationToken).ConfigureAwait(false);
+            if (keys.Count == 0)
+            {
+                return;
+            }
+
+            DriveLibrarySyncResponse response = await library.HandleAsync(
+                saveId,
+                new DriveLibrarySyncRequest(
+                    ConfirmCrossSave: false,
+                    AllowOverwriteEditedRemote: false,
+                    AllowCreateMissing: IsAthleteLibraryReady(destination),
+                    Categories: [DriveLibraryKind.Athlete, DriveLibraryKind.AthletesIndex],
+                    OnlyKeys: keys,
+                    MaxFiles: 5000),
+                cancellationToken).ConfigureAwait(false);
+            LogAthleteRefresh(saveId, response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Drive auto-publish selective athlete refresh failed for save {SaveId}; retrying on the next stage.", saveId);
+        }
+    }
+
+    internal static bool IsAthleteLibraryReady(DrivePublishingStore.DestinationDocument destination)
+    {
+        if (string.IsNullOrWhiteSpace(destination.AthletesFolderId))
+        {
+            return false;
+        }
+
+        if (destination.AthleteColorFolderIds is null)
+        {
+            return false;
+        }
+
+        foreach (string color in DriveAthleteColors.All)
+        {
+            if (!destination.AthleteColorFolderIds.TryGetValue(color, out string? folderId) || string.IsNullOrWhiteSpace(folderId))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void LogAthleteRefresh(Guid saveId, DriveLibrarySyncResponse response)
+    {
+        int changed = response.Files.Count(f =>
+            string.Equals(f.Outcome, "created", StringComparison.Ordinal)
+            || string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
+        int failed = response.Files.Count(f => string.Equals(f.Outcome, "failed", StringComparison.Ordinal));
+        _logger.LogInformation(
+            "Drive auto-publish selective athlete refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed).",
+            saveId,
+            changed,
+            response.Files.Count,
+            failed);
+    }
 
     private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
     {
