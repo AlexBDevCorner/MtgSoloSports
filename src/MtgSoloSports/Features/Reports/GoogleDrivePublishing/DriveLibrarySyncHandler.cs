@@ -1186,7 +1186,7 @@ public sealed class DriveLibrarySyncHandler
             return (predicted, current);
         }
 
-        GenerationResult generated = await TryGenerateAsync(item, saveId, cancellationToken).ConfigureAwait(false);
+        GenerationResult generated = await TryGenerateAsync(current, item, saveId, cancellationToken).ConfigureAwait(false);
         if (!generated.Ok)
         {
             return (FailedOutcome(item, generated.Value), current);
@@ -1280,6 +1280,7 @@ public sealed class DriveLibrarySyncHandler
         new(item.Report, "failed", null, item.DefaultFileName, null, null, detail);
 
     private async Task<GenerationResult> TryGenerateAsync(
+        DrivePublishingStore.DestinationDocument current,
         DriveLibraryItem item,
         Guid saveId,
         CancellationToken cancellationToken)
@@ -1302,7 +1303,7 @@ public sealed class DriveLibrarySyncHandler
                 var c when string.Equals(c, DriveLibraryKind.Athlete, StringComparison.Ordinal) =>
                     await GenerateAthleteAsync(saveId, item.AthleteId!.Value, cancellationToken).ConfigureAwait(false),
                 var c when string.Equals(c, DriveLibraryKind.AthletesIndex, StringComparison.Ordinal) =>
-                    await GenerateAthletesIndexAsync(saveId, cancellationToken).ConfigureAwait(false),
+                    await GenerateAthletesIndexAsync(saveId, current, cancellationToken).ConfigureAwait(false),
                 _ => await GenerateTeamAsync(saveId, item, cancellationToken).ConfigureAwait(false),
             };
             return new GenerationResult(true, markdown);
@@ -1356,11 +1357,11 @@ public sealed class DriveLibrarySyncHandler
         return await DriveAthleteReports.GenerateAthleteAsync(_saves, saveId, athleteId, shared, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string> GenerateAthletesIndexAsync(Guid saveId, CancellationToken cancellationToken)
+    private async Task<string> GenerateAthletesIndexAsync(Guid saveId, DrivePublishingStore.DestinationDocument current, CancellationToken cancellationToken)
     {
         DriveAthleteReports.SharedAthleteData shared = await GetAthleteSharedAsync(saveId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow> rows = await GetAthleteRowsAsync(saveId, cancellationToken).ConfigureAwait(false);
-        return await DriveAthleteReports.GenerateIndexAsync(_saves, saveId, shared, rows, cancellationToken).ConfigureAwait(false);
+        return await DriveAthleteReports.GenerateIndexAsync(_saves, saveId, shared, rows, current.AthleteByKey, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow>> GetAthleteRowsAsync(Guid saveId, CancellationToken cancellationToken)
@@ -1605,7 +1606,7 @@ public sealed class DriveLibrarySyncHandler
         int currentSeason,
         CancellationToken cancellationToken)
     {
-        GenerationResult generated = await TryGenerateAsync(item, saveId, cancellationToken).ConfigureAwait(false);
+        GenerationResult generated = await TryGenerateAsync(current, item, saveId, cancellationToken).ConfigureAwait(false);
         if (!generated.Ok)
         {
             return FailedOutcome(item, generated.Value);

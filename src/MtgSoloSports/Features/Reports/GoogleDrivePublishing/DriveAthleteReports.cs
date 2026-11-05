@@ -78,6 +78,7 @@ internal sealed class DriveAthleteReports
         Guid saveId,
         SharedAthleteData shared,
         IReadOnlyList<DriveLibraryInventory.AthleteInventoryRow> athletes,
+        IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? athleteSlots,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(store);
@@ -90,7 +91,20 @@ internal sealed class DriveAthleteReports
         {
             string colorName = DriveLibraryInventory.AthleteColorName(row.SportingColor);
             string leagueOrPool = leagueById.TryGetValue(row.AthleteId, out var entry) ? entry.LeagueOrPool : "Common pool";
+            // MSS-093 correction: the publisher retains the stored/adopted
+            // remote filename on rename/adoption (never renames in place), so
+            // the index must link the stored filename, not a freshly slugged
+            // name. Fall back to the canonical name only for never-published
+            // athletes with no stored slot.
             string fileName = ReportFilenames.AthleteFileName(row.AthleteId, row.Name, "md");
+            string athleteKey = row.AthleteId.ToString(CultureInfo.InvariantCulture);
+            if (athleteSlots is not null
+                && athleteSlots.TryGetValue(athleteKey, out DrivePublishingStore.LibrarySlot? slot)
+                && !string.IsNullOrWhiteSpace(slot.FileName))
+            {
+                fileName = slot.FileName!;
+            }
+
             rows.Add(new AthleteIndexRow(row.AthleteId, row.Name, colorName, leagueOrPool, $"{colorName}/{fileName}"));
         }
 
@@ -133,7 +147,7 @@ internal sealed class DriveAthleteReports
         sb.AppendLine(CultureInfo.InvariantCulture, $"Scope: {rows.Count} persisted athletes (active + common pool) · Snapshot: {shared.SeasonCount} season(s) · Report: {DriveLibraryKind.AthletesIndex} v{ReportContract.SchemaVersion} · Rules v{shared.Rules.Version} · Schema v{shared.Metadata.SchemaVersion}");
         sb.AppendLine(CultureInfo.InvariantCulture, $"Generated: {DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture)} (UTC; metadata only)");
         sb.AppendLine();
-        sb.AppendLine("- Each athlete keeps one stable file under `Athletes/<Color>/athlete-<id>-<slug>.md` keyed by stable save-scoped id; the name slug is decoration only and renames update in place.");
+        sb.AppendLine("- Each athlete keeps one stable file under `Athletes/<Color>/athlete-<id>-<slug>.md` keyed by stable save-scoped id; the name slug is decoration only and the stored Drive filename is retained on rename/adoption so the index always links the actual file.");
         sb.AppendLine("- This Drive folder is not a ChatGPT Project: a folder with thousands of reports does not auto-upload into ChatGPT. Use this index to retrieve explicit files in ChatGPT via its Drive picker; Drive updates never replace separately uploaded Project copies.");
         sb.AppendLine("- Coverage: active athletes show their current league; pool athletes show `Common pool`. Unchanged pool reports are skipped on incremental syncs; run an occasional full reconciliation to catch missed record-holder changes.");
         sb.AppendLine();

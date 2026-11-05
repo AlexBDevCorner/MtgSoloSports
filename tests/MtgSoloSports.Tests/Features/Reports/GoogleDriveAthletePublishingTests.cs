@@ -159,6 +159,9 @@ public sealed class GoogleDriveAthletePublishingTests
             synced.Outcome(athleteReport).ShouldBe("updated");
             drive.Files["athlete-adopted"].Name.ShouldBe("my-athlete.md");
             drive.Files["athlete-adopted"].Content.ShouldContain("# Athlete report");
+            // Index must link the stored/adopted filename, not a freshly slugged name.
+            string indexId = synced.FileId("athletes-index");
+            drive.Files[indexId].Content.ShouldContain(color + "/my-athlete.md");
 
             // Rename the athlete in the save: mapping retains the file id, no duplicate.
             await RenameAthleteAsync(factory, root, saveId, int.Parse(athleteKey, System.Globalization.CultureInfo.InvariantCulture), "Renamed Superstar");
@@ -166,6 +169,11 @@ public sealed class GoogleDriveAthletePublishingTests
             afterRename.FileId(athleteReport).ShouldBe("athlete-adopted");
             drive.Files["athlete-adopted"].Content.ShouldContain("Renamed Superstar");
             drive.Files.Values.Count(f => f.Parents.Contains("folder-color", StringComparer.Ordinal)).ShouldBe(1);
+            // Index still links the retained filename after rename, never the new slug.
+            string renamedIndexId = afterRename.FileId("athletes-index");
+            string renamedIndex = drive.Files[renamedIndexId].Content;
+            renamedIndex.ShouldContain(color + "/my-athlete.md");
+            renamedIndex.ShouldNotContain("renamed-superstar");
         }
         finally
         {

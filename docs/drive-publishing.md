@@ -261,7 +261,9 @@ MtgSoloSports/mtshistory/Athletes/Colorless/...
 - **Stable identity.** Each file is keyed by save id + stable athlete id; the
   name slug is decoration only. Duplicate display names, slug changes and
   renames update the same Drive file id in place — no `(1)` duplicates, no
-  extra files when league/pool membership changes. Folders follow the stable
+  extra files when league/pool membership changes. The stored Drive filename
+  is retained on rename/adoption (never auto-renamed); the index always links
+  that stored filename. Folders follow the stable
   printed sporting color, never the current league.
 - **Full coverage.** Every persisted athlete is listed, including common-pool
   athletes with no season yet, via a bounded deterministic server-side
@@ -269,7 +271,8 @@ MtgSoloSports/mtshistory/Athletes/Colorless/...
   omission.
 - **Index.** `athletes-index.md` lists every athlete (id, name, color, league
   or pool, report path) in stable id order plus coverage/snapshot metadata.
-  It updates when names, colors, leagues or coverage change and is safe to
+  Report paths use the stored Drive filenames so renamed/adopted files stay
+  linked. It updates when names, colors, leagues or coverage change and is safe to
   reference from the Drive report library.
 - **Efficient updates.** Ordinary runs are incremental: known affected ids
   (participants, honours, selections, movements, Cup histories, current and
