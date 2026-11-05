@@ -238,26 +238,7 @@ internal static class SeasonDossierMarkdown
 
         sb.AppendLine(CultureInfo.InvariantCulture, $"- Edition state: {color.State} · {ReportMarkdown.Cell(color.Note)}");
         sb.AppendLine();
-        if (color.Individual is null)
-        {
-            sb.AppendLine("Individual event: pending — no persisted standings yet.");
-        }
-        else if (color.Individual.ChampionName is null)
-        {
-            sb.AppendLine("Individual event: pending — squads final, results omitted until played.");
-        }
-        else
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"- Individual champion: {ReportMarkdown.Cell(color.Individual.ChampionName)} (id {color.Individual.ChampionAthleteId?.ToString(CultureInfo.InvariantCulture) ?? "—"})");
-            foreach (CupPodiumEntry podium in color.Individual.TopThree)
-            {
-                string athlete = podium.AthleteId.HasValue
-                    ? $"{ReportMarkdown.Cell(podium.AthleteName ?? $"Athlete {podium.AthleteId.Value}")} (id {podium.AthleteId.Value}) · {ReportMarkdown.Cell(podium.TeamName)}"
-                    : ReportMarkdown.Cell(podium.TeamName);
-                sb.AppendLine(CultureInfo.InvariantCulture, $"  - P{podium.Rank} {athlete} · {ReportMarkdown.FormatPoints(podium.ScoreThousandths)} · {ReportMarkdown.Cell(podium.Medal)}");
-            }
-        }
-
+        AppendIndividualResult(sb, color.Individual);
         sb.AppendLine();
         if (color.Team is null || color.Team.ChampionTeamName is null)
         {
@@ -278,6 +259,47 @@ internal static class SeasonDossierMarkdown
         }
 
         sb.AppendLine();
+    }
+
+    private static void AppendIndividualResult(StringBuilder sb, IndividualCupSummary? individual)
+    {
+        if (individual is null)
+        {
+            sb.AppendLine("Individual event: pending — no persisted standings yet.");
+            return;
+        }
+
+        if (individual.ChampionName is null)
+        {
+            sb.AppendLine("Individual event: pending — squads final, results omitted until played.");
+            return;
+        }
+
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Individual champion: {ReportMarkdown.Cell(individual.ChampionName)} (id {individual.ChampionAthleteId?.ToString(CultureInfo.InvariantCulture) ?? "—"})");
+        foreach (CupPodiumEntry podium in individual.TopThree)
+        {
+            string athlete = podium.AthleteId.HasValue
+                ? $"{ReportMarkdown.Cell(podium.AthleteName ?? $"Athlete {podium.AthleteId.Value}")} (id {podium.AthleteId.Value}) · {ReportMarkdown.Cell(podium.TeamName)}"
+                : ReportMarkdown.Cell(podium.TeamName);
+            sb.AppendLine(CultureInfo.InvariantCulture, $"  - P{podium.Rank} {athlete} · {ReportMarkdown.FormatPoints(podium.ScoreThousandths)} · {ReportMarkdown.Cell(podium.Medal)}");
+        }
+
+        AppendIndividualCutoff(sb, individual);
+    }
+
+    private static void AppendIndividualCutoff(StringBuilder sb, IndividualCupSummary individual)
+    {
+        if (!individual.IsPhased)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"- Individual format: legacy · {individual.TotalRounds} rounds of 32 · no cutoff.");
+            return;
+        }
+
+        string tie = individual.TieDrawConsumed.HasValue
+            ? (individual.TieDrawConsumed.Value ? "yes (seeded draw)" : "no")
+            : "—";
+        sb.AppendLine(CultureInfo.InvariantCulture, $"- Individual format: phased · {individual.TotalRounds} rounds (16 qualifying of 32 + 16 final of 16, 100% carryover) · Cutoff top {individual.CutoffRank ?? 16} after round 16.");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"  - Finalists {individual.QualifierCount ?? 16} (ranks 1–16, combined points) · Eliminated {individual.EliminatedCount ?? 16} (ranks 17–32, qualifying frozen) · Tie draw: {tie}.");
     }
 
     private static void AppendTypeCup(StringBuilder sb, CupSummaryEntry? type)

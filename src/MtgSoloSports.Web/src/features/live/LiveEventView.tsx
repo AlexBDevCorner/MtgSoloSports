@@ -20,6 +20,8 @@ import { EVENT_TITLES, isTeamEvent, progressLabel, resultsTarget, type EventKey 
 import { projectRevealedTeamStandings } from '../events/teamStandingsProjection';
 import { optionalDraw, optionalTournament } from '../cups/typeCupTournamentApi';
 import type { TypeCupDraw, TypeCupTournament } from '../cups/typeCupTournamentApi';
+import { fetchColorCupIndividualProgress, type ColorCupIndividualProgress } from '../cups/colorCupApi';
+import { advancingLabel, cutoffSummary } from '../cups/colorCupProgress';
 import { TypeCupLiveStages } from './typeCupLiveStages';
 import {
   buildTypeCupStages,
@@ -145,6 +147,7 @@ export function LiveEventView({
   // matching QualifiersPage/SeasonFlow tier detection. Defaults to false
   // (legacy branch) so a failed/slow fetch never falsely claims "1 of 17".
   const [isTiered, setIsTiered] = useState(false);
+  const [individualProgress, setIndividualProgress] = useState<ColorCupIndividualProgress | null>(null);
   const team = isTeamEvent(event);
 
   useEffect(() => {
@@ -152,6 +155,7 @@ export function LiveEventView({
     setLoading(true);
     const isTypeCup = event === 'type-cup-team';
     const needsTier = event === 'qualifier';
+    const isIndividual = event === 'color-cup-individual';
     Promise.all([
       fetchSeasonEvents(saveId, season, controller.signal).catch(() => [] as SeasonEventSummary[]),
       fetchEventRounds(saveId, season, event, controller.signal).catch(() => [] as PlayedRound[]),
@@ -159,13 +163,17 @@ export function LiveEventView({
       isTypeCup ? optionalTournament(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
       isTypeCup ? optionalDraw(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
       needsTier ? fetchSeasonProgress(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      isIndividual
+        ? fetchColorCupIndividualProgress(saveId, season, controller.signal).catch(() => null)
+        : Promise.resolve(null),
     ])
-      .then(([events, played, standings, tournamentResult, drawResult, seasonProgress]) => {
+      .then(([events, played, standings, tournamentResult, drawResult, seasonProgress, individual]) => {
         setSummary(events.find((entry) => entry.event === event) ?? null);
         setRounds(played);
         setTeams(standings);
         setTournament(tournamentResult);
         setDraw(drawResult);
+        setIndividualProgress((individual as ColorCupIndividualProgress | null) ?? null);
         if (needsTier && seasonProgress) {
           setIsTiered(
             seasonProgress.leagues.some(
@@ -1252,6 +1260,100 @@ export function LiveEventView({
             </table>
           ) : null}
         </Card>
+        {event === 'color-cup-individual' && individualProgress ? (
+          <Card
+            eyebrow="Color Cup — individual"
+            title={
+              individualProgress.isPhased
+                ? `Qualifying + Final · ${individualProgress.roundsPlayed} / ${individualProgress.totalRounds}`
+                : `Individual · ${individualProgress.roundsPlayed} / ${individualProgress.totalRounds}`
+            }
+          >
+            {individualProgress.isPhased ? (
+              <>
+                <p className="muted small">
+                  {individualProgress.roundsPlayed <= individualProgress.qualifyingRounds
+                    ? `Qualifying of 32 · Round ${individualProgress.roundsPlayed} / ${individualProgress.qualifyingRounds}. ${cutoffSummary(individualProgress.cutoffRank, individualProgress.tieDrawConsumed, individualProgress.isProvisionalCutoff)}.`
+                    : `Final of 16 · Round ${individualProgress.roundsPlayed} / ${individualProgress.totalRounds} (qualifying 1–16 + final ${individualProgress.qualifyingRounds + 1}–${individualProgress.totalRounds}). ${cutoffSummary(individualProgress.cutoffRank, individualProgress.tieDrawConsumed, false)}. Finalists carry 100% of qualifying points.`}
+                </p>
+                <table className="mini-table">
+                  <caption className="reveal-subhead">
+                    {individualProgress.isComplete
+                      ? 'Final standings — 1–16 finalists, 17–32 eliminated'
+                      : individualProgress.roundsPlayed <= individualProgress.qualifyingRounds
+                        ? 'Provisional qualifying standings — top 16 advance'
+                        : 'Final phase so far — 16 active, cumulative scores'}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className="numeric">Rank</th>
+                      <th scope="col">Card</th>
+                      <th scope="col" className="numeric">Points</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {individualProgress.standings.map((row, index) => {
+                      const showCut =
+                        individualProgress.cutoffRank !== null &&
+                        index === (individualProgress.cutoffRank ?? 16) - 1 &&
+                        individualProgress.standings.length > (individualProgress.cutoffRank ?? 16);
+                      return (
+                        <Fragment key={row.athleteId}>
+                          <tr>
+                            <td className="numeric">{row.provisionalRank}</td>
+                            <td>{row.name}</td>
+                            <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                            <td>{advancingLabel(row.advancingStatus)}</td>
+                          </tr>
+                          {showCut ? (
+                            <tr className="live-cut-line" aria-hidden="true">
+                              <td colSpan={4} className="live-cut-cell">
+                                <span className="live-cut-label">Cut — top {individualProgress.cutoffRank} advance</span>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {individualProgress.carryover && individualProgress.carryover.length > 0 ? (
+                  <p className="muted small">
+                    Carryover continuity: round-17 cumulative-before equals round-16 cumulative-after
+                    for {individualProgress.carryover.filter((c) => c.matches).length}/
+                    {individualProgress.carryover.length} finalists (full carryover, no reset).
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <p className="muted small">
+                  Legacy 16-round edition · Round {individualProgress.roundsPlayed} / {individualProgress.totalRounds} · no cutoff.
+                </p>
+                <table className="mini-table">
+                  <caption className="reveal-subhead">Standings so far</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" className="numeric">Rank</th>
+                      <th scope="col">Card</th>
+                      <th scope="col" className="numeric">Points</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {individualProgress.standings.map((row) => (
+                      <tr key={row.athleteId}>
+                        <td className="numeric">{row.provisionalRank}</td>
+                        <td>{row.name}</td>
+                        <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </Card>
+        ) : null}
       </aside>
 
       <section className="live-main" aria-label="Event round">

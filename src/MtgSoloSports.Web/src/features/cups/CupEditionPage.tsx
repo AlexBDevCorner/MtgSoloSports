@@ -7,6 +7,7 @@ import { AthleteLink, Link } from '../routing/router';
 import { cupEditionPath, cupsPath, historyPath, livePath, type CupKind } from '../routing/routes';
 import { ChaosCupEditionPage } from './ChaosCupEditionPage';
 import { fetchColorCupIndividual, fetchColorCupTeam, type ColorCupIndividualResult } from './colorCupApi';
+import { advancingLabel, cutoffSummary, isPhasedResult } from './colorCupProgress';
 import { fetchCupEditions, optional, type CupEdition } from './cupHistoryApi';
 import { TypeCupTournamentSection } from './TypeCupTournamentSection';
 import {
@@ -448,71 +449,231 @@ function ColorTypeEditionPage({
             Individual event
           </h2>
           {individual ? (
-            <div className="page-grid">
-              <Card eyebrow="Individual event" title={`${individual.championName} wins the Cup`}>
-                <CupPodium
-                  entries={individualPodium.map((row) => ({
-                    key: String(row.athleteId),
-                    place: row.cupRank,
-                    art: <CardArt imageUrl={row.imageUrl} name={row.name} />,
-                    label: <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />,
-                    detail: `${row.sportingColor} · ${formatPoints(row.cupScoreThousandths)}`,
-                  }))}
-                />
-              </Card>
-              <Card
-                eyebrow="Individual event"
-                title={`Full table — ${individual.standings.length} athletes`}
-                action={
-                  <Link to={historyPath(saveId, { season, event: 'color-cup-individual' })} className="ghost-button">
-                    Replay
-                  </Link>
-                }
-                info={<p>All selected athletes race one {individual.rounds}-round stage. No bonus is earned.</p>}
-              >
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th scope="col" className="numeric">Rank</th>
-                        <th scope="col">Card</th>
-                        <th scope="col">Team</th>
-                        <th scope="col" className="numeric">Cup score</th>
-                        <th scope="col" className="numeric">Round W</th>
-                        <th scope="col">Medal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {individual.standings.map((row) => (
-                        <tr key={row.athleteId}>
-                          <td className="numeric">{row.cupRank}</td>
-                          <td>
-                            <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                            <span className="card-sub"> · #{row.selectionRank}</span>
-                          </td>
-                          <td>
-                            <TeamBadge
-                              saveId={saveId}
-                              cup={cup}
-                              teamKey={teamKeyFromName(cup, row.sportingColor)}
-                              teamName={row.sportingColor}
-                            />
-                          </td>
-                          <td className="numeric">{formatPoints(row.cupScoreThousandths)}</td>
-                          <td className="numeric">{row.roundWins}</td>
-                          <td>{medalBadge(row.medal)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
+            <IndividualEventSection saveId={saveId} cup={cup} season={season} individual={individual} />
           ) : (
             <p className="muted">The individual event has not finished yet.</p>
           )}
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function IndividualEventSection({
+  saveId,
+  cup,
+  season,
+  individual,
+}: {
+  saveId: string;
+  cup: Exclude<CupKind, 'chaos'>;
+  season: number;
+  individual: ColorCupIndividualResult;
+}) {
+  const phased = isPhasedResult(individual);
+  const podium = individual.standings.filter((row) => row.cupRank <= 3);
+  const finalists = phased
+    ? individual.standings.filter((row) => row.cupRank <= 16)
+    : individual.standings;
+  const eliminated = phased ? individual.standings.filter((row) => row.cupRank > 16) : [];
+  const cutoff = cutoffSummary(individual.cutoffRank, individual.tieDrawConsumed, false);
+  return (
+    <div className="page-grid">
+      <Card eyebrow="Individual event" title={`${individual.championName} wins the Cup`}>
+        <CupPodium
+          entries={podium.map((row) => ({
+            key: String(row.athleteId),
+            place: row.cupRank,
+            art: <CardArt imageUrl={row.imageUrl} name={row.name} />,
+            label: <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />,
+            detail: `${row.sportingColor} · ${formatPoints(row.cupScoreThousandths)}`,
+          }))}
+        />
+        {phased ? (
+          <p className="muted small">
+            Phased 32-to-16 with full score carryover: rounds 1–16 of 32, top 16 advance, final
+            rounds 17–32 of 16. {cutoff}. Finalists carry 100% of qualifying points into the
+            final.
+          </p>
+        ) : null}
+      </Card>
+      {phased ? (
+        <>
+          <Card
+            eyebrow="Individual event"
+            title={`Finalists — ranks 1–16 of ${individual.standings.length}`}
+            action={
+              <Link to={historyPath(saveId, { season, event: 'color-cup-individual' })} className="ghost-button">
+                Replay
+              </Link>
+            }
+            info={
+              <p>
+                Combined qualifying + final points. Cutoff {cutoff}. Round-17 cumulative-before
+                equals round-16 cumulative-after per finalist (full carryover, no reset).{' '}
+                <Link to={historyPath(saveId, { season, event: 'color-cup-individual', round: 16 })}>
+                  Replay round 16
+                </Link>{' '}
+                ·{' '}
+                <Link to={historyPath(saveId, { season, event: 'color-cup-individual', round: 17 })}>
+                  Replay round 17
+                </Link>
+                .
+              </p>
+            }
+          >
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col" className="numeric">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Team</th>
+                    <th scope="col" className="numeric">Qual rank</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" className="numeric">Qualifying</th>
+                    <th scope="col" className="numeric">Final</th>
+                    <th scope="col" className="numeric">Cup score</th>
+                    <th scope="col" className="numeric">Round W</th>
+                    <th scope="col">Medal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {finalists.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.cupRank}</td>
+                      <td>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                        <span className="card-sub"> · #{row.selectionRank}</span>
+                      </td>
+                      <td>
+                        <TeamBadge
+                          saveId={saveId}
+                          cup={cup}
+                          teamKey={teamKeyFromName(cup, row.sportingColor)}
+                          teamName={row.sportingColor}
+                        />
+                      </td>
+                      <td className="numeric">{row.qualifyingRank ?? '—'}</td>
+                      <td>{advancingLabel('Qualified')}</td>
+                      <td className="numeric">
+                        {row.qualifyingScoreThousandths != null ? formatPoints(row.qualifyingScoreThousandths) : '—'}
+                      </td>
+                      <td className="numeric">
+                        {row.finalScoreThousandths != null ? formatPoints(row.finalScoreThousandths) : '—'}
+                      </td>
+                      <td className="numeric">{formatPoints(row.cupScoreThousandths)}</td>
+                      <td className="numeric">{row.roundWins}</td>
+                      <td>{medalBadge(row.medal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+          <Card
+            eyebrow="Individual event"
+            title={`Eliminated at the cutoff — ranks 17–32 by qualifying finish`}
+            action={
+              <Link to={historyPath(saveId, { season, event: 'color-cup-individual', round: 16 })} className="ghost-button">
+                Replay round 16
+              </Link>
+            }
+            info={<p>Qualifying points frozen at round 16; no final points. Medals and records stay with ranks 1–3.</p>}
+          >
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col" className="numeric">Rank</th>
+                    <th scope="col">Card</th>
+                    <th scope="col">Team</th>
+                    <th scope="col" className="numeric">Qual rank</th>
+                    <th scope="col">Status</th>
+                    <th scope="col" className="numeric">Qualifying (final)</th>
+                    <th scope="col" className="numeric">Round W</th>
+                    <th scope="col">Medal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eliminated.map((row) => (
+                    <tr key={row.athleteId}>
+                      <td className="numeric">{row.cupRank}</td>
+                      <td>
+                        <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                        <span className="card-sub"> · #{row.selectionRank}</span>
+                      </td>
+                      <td>
+                        <TeamBadge
+                          saveId={saveId}
+                          cup={cup}
+                          teamKey={teamKeyFromName(cup, row.sportingColor)}
+                          teamName={row.sportingColor}
+                        />
+                      </td>
+                      <td className="numeric">{row.qualifyingRank ?? '—'}</td>
+                      <td>{advancingLabel('Eliminated')}</td>
+                      <td className="numeric">
+                        {row.qualifyingScoreThousandths != null ? formatPoints(row.qualifyingScoreThousandths) : '—'}
+                      </td>
+                      <td className="numeric">{row.roundWins}</td>
+                      <td>{medalBadge(row.medal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      ) : (
+        <Card
+          eyebrow="Individual event"
+          title={`Full table — ${individual.standings.length} athletes`}
+          action={
+            <Link to={historyPath(saveId, { season, event: 'color-cup-individual' })} className="ghost-button">
+              Replay
+            </Link>
+          }
+          info={<p>All selected athletes race one {individual.rounds}-round stage. No bonus is earned.</p>}
+        >
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col" className="numeric">Rank</th>
+                  <th scope="col">Card</th>
+                  <th scope="col">Team</th>
+                  <th scope="col" className="numeric">Cup score</th>
+                  <th scope="col" className="numeric">Round W</th>
+                  <th scope="col">Medal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {individual.standings.map((row) => (
+                  <tr key={row.athleteId}>
+                    <td className="numeric">{row.cupRank}</td>
+                    <td>
+                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                      <span className="card-sub"> · #{row.selectionRank}</span>
+                    </td>
+                    <td>
+                      <TeamBadge
+                        saveId={saveId}
+                        cup={cup}
+                        teamKey={teamKeyFromName(cup, row.sportingColor)}
+                        teamName={row.sportingColor}
+                      />
+                    </td>
+                    <td className="numeric">{formatPoints(row.cupScoreThousandths)}</td>
+                    <td className="numeric">{row.roundWins}</td>
+                    <td>{medalBadge(row.medal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

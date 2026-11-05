@@ -13,4 +13,8 @@ public sealed record ColorCupIndividualMember(
     int CupScoreThousandths,
     int BaseScoreThousandths,
     int RoundWins,
-    string Medal);
+    string Medal,
+    int? QualifyingRank = null,
+    bool? QualifiedForFinal = null,
+    int? QualifyingScoreThousandths = null,
+    int? FinalScoreThousandths = null);

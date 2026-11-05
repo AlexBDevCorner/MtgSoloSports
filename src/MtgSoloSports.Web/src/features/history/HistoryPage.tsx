@@ -703,8 +703,9 @@ export function HistoryPage({
             seasonNumber === null ? undefined : seasonNumber % 2 === 1 ? (
               <p>
                 Odd seasons run the Color Cup after feeder rebalancing and before bonus aging: 32
-                selected athletes in a 16-round individual plus four 8-round rank groups for the
-                team title. Honours and stories persist with the Cup.
+                selected athletes in the individual (legacy 16 rounds; new phased 16 qualifying of
+                32 plus 16 final of 16 with full carryover, top 16 advance) plus four 8-round rank
+                groups for the team title. Honours and stories persist with the Cup.
               </p>
             ) : (
               <p>
@@ -730,7 +731,11 @@ export function HistoryPage({
                     name={colorIndividualState.data!.championName}
                   />{' '}
                   · {colorIndividualState.data!.cupSize} athletes ·{' '}
-                  {colorIndividualState.data!.rounds} rounds.
+                  {colorIndividualState.data!.rounds} rounds
+                  {colorIndividualState.data!.isPhased || colorIndividualState.data!.rounds === 32
+                    ? ' (phased 16+16, top 16 advance with full carryover)'
+                    : ' (legacy 16 rounds)'}
+                  .
                 </p>
               ) : (
                 <p className="muted">No Color Cup individual result for this season yet.</p>

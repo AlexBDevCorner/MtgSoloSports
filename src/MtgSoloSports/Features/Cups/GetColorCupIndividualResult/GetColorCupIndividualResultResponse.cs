@@ -19,4 +19,13 @@ public sealed record GetColorCupIndividualResultResponse(
     ulong RngAfterStream,
     int ChampionAthleteId,
     string ChampionName,
-    IReadOnlyList<GetColorCupIndividualMember> Standings);
+    IReadOnlyList<GetColorCupIndividualMember> Standings,
+    int FormatVersion = 0,
+    bool IsPhased = false,
+    int QualifyingRounds = 16,
+    int? CutoffRank = null,
+    int? FinalFieldSize = null,
+    IReadOnlyList<int>? QualifyingOrderAthleteIds = null,
+    IReadOnlyList<int>? QualifierAthleteIds = null,
+    IReadOnlyList<int>? EliminatedAthleteIds = null,
+    bool? TieDrawConsumed = null);

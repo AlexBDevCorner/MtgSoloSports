@@ -82,6 +82,7 @@ internal static class CupEditionReportJson
             missing = "null means unavailable/not-applicable; 0 is an exact zero, never a placeholder",
             ranks = "teamRank 1 holds the champion team; individual cupRank 1 holds the individual champion (Color only)",
             qualification = "Type Cup qualification standings never award titles; only Final ranks 1-3 hold official medals",
+            colorCutoff = "phased Color Cup: top 16 qualify after round 16 with 100% carryover; ranks 17-32 frozen by qualifying finish; legacy 16-round editions have no cutoff fields (null, never fabricated)",
         };
     }
 

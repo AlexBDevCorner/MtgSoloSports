@@ -14,4 +14,8 @@ public sealed record GetColorCupIndividualMember(
     int BaseScoreThousandths,
     int RoundWins,
     string Medal,
-    string? ImageUrl);
+    string? ImageUrl,
+    int? QualifyingRank = null,
+    bool? QualifiedForFinal = null,
+    int? QualifyingScoreThousandths = null,
+    int? FinalScoreThousandths = null);
