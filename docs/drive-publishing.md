@@ -205,12 +205,18 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
   nothing. No deletion, rename or overwrite of unknown files, ever.
 - **Efficient change detection.** Each Markdown payload is hashed ignoring the volatile
   `Generated:` line, so repeat syncs with unchanged simulation history write nothing.
-  Progress persists incrementally per category, so an interrupted sync (or a `MaxFiles`
-  truncated request) resumes without re-uploading settled files; failed files can be
-  retried with the same Sync action.
+  Progress persists incrementally per category, so an interrupted sync resumes without
+  re-uploading settled files; failed files can be retried with the same Sync action.
+  Bounded `MaxFiles` pages report `truncated: true` with `nextSkip`: resume with
+  `skip = nextSkip` until `truncated` is false (the UI loops automatically, up to 20
+  pages). A truncated page never advances the library checkpoint until the final page
+  settles.
 - **Automatic mode** refreshes the almanac and current dossier as before, **plus** the Cup
   edition/team histories that actually changed after the relevant Cup selection or
-  finalization (recent source seasons only). Ordinary league stages never re-upload the
+  finalization (recent source seasons only). New Cup edition/team files are created
+  automatically once the four Cup leaf folders are adopted; otherwise auto mode stays
+  fail-closed and the next manual **Sync all changed reports** (with creation confirmed)
+  is the prerequisite. Ordinary league stages never re-upload the
   whole team-history archive: unchanged fingerprints report `unchanged` with no writes.
 - **Freshness per category.** Status shows the last library sync time, per-category
   created/updated/unchanged/failed counts and the last library error, alongside the

@@ -461,25 +461,17 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                 return;
             }
 
+            bool cupsReady = IsCupLibraryReady(destination);
             DriveLibrarySyncResponse response = await library.HandleAsync(
                 saveId,
                 new DriveLibrarySyncRequest(
                     ConfirmCrossSave: false,
                     AllowOverwriteEditedRemote: false,
-                    AllowCreateMissing: false,
+                    AllowCreateMissing: cupsReady,
                     Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
                     OnlyKeys: keys),
                 cancellationToken).ConfigureAwait(false);
-            int changed = response.Files.Count(f =>
-                string.Equals(f.Outcome, "created", StringComparison.Ordinal)
-                || string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
-            int failed = response.Files.Count(f => string.Equals(f.Outcome, "failed", StringComparison.Ordinal));
-            _logger.LogInformation(
-                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed).",
-                saveId,
-                changed,
-                response.Files.Count,
-                failed);
+            LogCupRefresh(saveId, response, cupsReady);
         }
         catch (OperationCanceledException)
         {
@@ -488,6 +480,44 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Drive auto-publish selective cup refresh failed for save {SaveId}; retrying on the next stage.", saveId);
+        }
+    }
+
+    // New Cup selections/finalizations introduce edition files (and sometimes
+    // unseen team histories) with no stored slot. Creation is allowed only
+    // when the adopted Cup leaf folders are known, so auto mode never creates
+    // a parallel folder tree for a hidden but existing folder; otherwise the
+    // refresh stays fail-closed and the next manual library sync (with
+    // creation confirmed) is the prerequisite.
+    private static bool IsCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
+        !string.IsNullOrWhiteSpace(destination.ColorCupsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.ColorTeamsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.TypeCupsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.TypeTeamsFolderId);
+
+    private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
+    {
+        int changed = response.Files.Count(f =>
+            string.Equals(f.Outcome, "created", StringComparison.Ordinal)
+            || string.Equals(f.Outcome, "updated", StringComparison.Ordinal));
+        int failed = response.Files.Count(f => string.Equals(f.Outcome, "failed", StringComparison.Ordinal));
+        if (failed > 0 && !cupsReady)
+        {
+            _logger.LogWarning(
+                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed). Cup folders are not fully adopted: run Sync all changed reports once with creation confirmed, then auto mode resumes.",
+                saveId,
+                changed,
+                response.Files.Count,
+                failed);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Drive auto-publish selective cup refresh for save {SaveId} changed {Changed} of {Total} recent files ({Failed} failed).",
+                saveId,
+                changed,
+                response.Files.Count,
+                failed);
         }
     }
 

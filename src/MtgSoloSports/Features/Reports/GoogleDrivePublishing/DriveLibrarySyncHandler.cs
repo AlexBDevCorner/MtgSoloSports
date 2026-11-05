@@ -201,9 +201,17 @@ public sealed class DriveLibrarySyncHandler
     {
         LibraryContext context = await LoadContextAsync(saveId, request.ConfirmCrossSave, cancellationToken).ConfigureAwait(false);
         List<DriveLibraryItem> filtered = await LoadFilteredItemsAsync(saveId, context, request, cancellationToken).ConfigureAwait(false);
+        int skip = ResolveSkip(request);
+        if (skip > filtered.Count)
+        {
+            skip = filtered.Count;
+        }
+
         int maxFiles = ResolveMaxFiles(request);
-        bool truncated = filtered.Count > maxFiles;
-        List<DriveLibraryItem> batch = truncated ? filtered.GetRange(0, maxFiles) : filtered;
+        List<DriveLibraryItem> remaining = filtered.Skip(skip).ToList();
+        bool truncated = remaining.Count > maxFiles;
+        List<DriveLibraryItem> batch = truncated ? remaining.GetRange(0, maxFiles) : remaining;
+        int? nextSkip = truncated ? skip + batch.Count : null;
         LibraryFolders folders = await ResolveFoldersAsync(context.Destination, request, cancellationToken).ConfigureAwait(false);
 
         List<DriveFileOutcome> outcomes = [];
@@ -225,10 +233,10 @@ public sealed class DriveLibrarySyncHandler
 
         if (request.DryRun)
         {
-            return BuildResponse(saveId, request, batch, truncated, outcomes, _timeProvider.GetUtcNow());
+            return BuildResponse(saveId, request, filtered.Count, batch, truncated, nextSkip, outcomes, _timeProvider.GetUtcNow());
         }
 
-        return await FinishAsync(saveId, request, batch, truncated, outcomes, current, cancellationToken).ConfigureAwait(false);
+        return await FinishAsync(saveId, request, filtered.Count, batch, truncated, nextSkip, outcomes, current, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<LibraryContext> LoadContextAsync(
@@ -321,6 +329,21 @@ public sealed class DriveLibrarySyncHandler
 
         int configured = _options.Value.LibraryMaxFilesPerSync;
         return configured < 1 || configured > 5000 ? 500 : configured;
+    }
+
+    private static int ResolveSkip(DriveLibrarySyncRequest request)
+    {
+        if (!request.Skip.HasValue)
+        {
+            return 0;
+        }
+
+        if (request.Skip.Value < 0)
+        {
+            throw new ArgumentException("Skip must be zero or greater.", nameof(request));
+        }
+
+        return request.Skip.Value;
     }
 
     private async Task<LibraryFolders> ResolveFoldersAsync(
@@ -1268,14 +1291,21 @@ public sealed class DriveLibrarySyncHandler
     private async Task<DriveLibrarySyncResponse> FinishAsync(
         Guid saveId,
         DriveLibrarySyncRequest request,
+        int totalItems,
         List<DriveLibraryItem> batch,
         bool truncated,
+        int? nextSkip,
         List<DriveFileOutcome> outcomes,
         DrivePublishingStore.DestinationDocument current,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = _timeProvider.GetUtcNow();
         bool allSettled = outcomes.All(o => !string.Equals(o.Outcome, "failed", StringComparison.Ordinal));
+        // A truncated or selective page must not claim the whole library is
+        // synced: only a complete non-truncated run advances the library
+        // checkpoint. Partial pages still persist settled file ids so a
+        // resume with Skip = NextSkip skips re-uploads.
+        bool complete = !truncated;
         string? firstError = outcomes
             .Where(o => string.Equals(o.Outcome, "failed", StringComparison.Ordinal))
             .Select(o => $"{o.Report}: {o.Detail}")
@@ -1289,7 +1319,7 @@ public sealed class DriveLibrarySyncHandler
 
         DrivePublishingStore.DestinationDocument finished = current with
         {
-            LastLibraryPublishedUtc = allSettled ? now : current.LastLibraryPublishedUtc,
+            LastLibraryPublishedUtc = complete && allSettled ? now : current.LastLibraryPublishedUtc,
             LastLibraryError = allSettled ? null : firstError,
             LastLibraryCreated = created,
             LastLibraryUpdated = updated,
@@ -1309,7 +1339,7 @@ public sealed class DriveLibrarySyncHandler
             updated,
             unchanged,
             failed);
-        return BuildResponse(saveId, request, batch, truncated, outcomes, now);
+        return BuildResponse(saveId, request, totalItems, batch, truncated, nextSkip, outcomes, now);
     }
 
     private static Dictionary<string, DrivePublishingStore.LibraryCategoryCounts> CountByCategory(
@@ -1338,8 +1368,10 @@ public sealed class DriveLibrarySyncHandler
     private static DriveLibrarySyncResponse BuildResponse(
         Guid saveId,
         DriveLibrarySyncRequest request,
+        int totalItems,
         List<DriveLibraryItem> batch,
         bool truncated,
+        int? nextSkip,
         List<DriveFileOutcome> outcomes,
         DateTimeOffset syncedUtc)
     {
@@ -1365,7 +1397,8 @@ public sealed class DriveLibrarySyncHandler
             saveId,
             request.DryRun,
             truncated,
-            batch.Count,
+            totalItems,
+            nextSkip,
             syncedUtc,
             categories,
             outcomes);

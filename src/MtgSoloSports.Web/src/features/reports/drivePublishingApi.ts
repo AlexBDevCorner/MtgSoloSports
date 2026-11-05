@@ -242,6 +242,7 @@ export interface DriveLibrarySyncResponse {
   dryRun: boolean;
   truncated: boolean;
   totalItems: number;
+  nextSkip: number | null;
   syncedUtc: string;
   categories: DriveLibraryCategoryResult[];
   files: DriveFileOutcome[];
@@ -257,7 +258,13 @@ export function driveLibrarySyncUrl(saveId: string): string {
 
 export function previewDriveLibrary(
   saveId: string,
-  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean; allowCreateMissing?: boolean },
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
 ): Promise<DriveLibrarySyncResponse> {
   return fetchJson<DriveLibrarySyncResponse>(driveLibraryPreviewUrl(saveId), {
     method: 'POST',
@@ -267,7 +274,13 @@ export function previewDriveLibrary(
 
 export function syncDriveLibrary(
   saveId: string,
-  options: { confirmCrossSave: boolean; allowOverwriteEditedRemote: boolean; allowCreateMissing?: boolean },
+  options: {
+    confirmCrossSave: boolean;
+    allowOverwriteEditedRemote: boolean;
+    allowCreateMissing?: boolean;
+    skip?: number;
+    maxFiles?: number;
+  },
 ): Promise<DriveLibrarySyncResponse> {
   return fetchJson<DriveLibrarySyncResponse>(driveLibrarySyncUrl(saveId), {
     method: 'POST',

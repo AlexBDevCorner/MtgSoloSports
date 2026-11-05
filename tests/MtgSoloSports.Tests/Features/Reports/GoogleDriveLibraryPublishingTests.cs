@@ -526,18 +526,84 @@ public sealed class GoogleDriveLibraryPublishingTests
             first.Truncated.ShouldBeTrue();
             first.Files.Count.ShouldBe(3);
             first.Files.ShouldAllBe(f => string.Equals(f.Outcome, "created", StringComparison.Ordinal));
+            first.NextSkip.ShouldBe(3);
+            first.TotalItems.ShouldBeGreaterThan(3);
             int createdIds = drive.Files.Count;
+            // A truncated page must not claim the whole library is synced.
+            (await GetLibraryPublishedUtcAsync(client, saveId)).ShouldBeNull();
 
-            LibrarySyncResult resumed = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
-            resumed.Status.ShouldBe(HttpStatusCode.OK);
-            resumed.Truncated.ShouldBeFalse();
-            resumed.TotalItems.ShouldBeGreaterThan(3);
-            // Already-settled files are skipped, not re-uploaded.
-            resumed.Files.Count(f => string.Equals(f.Outcome, "unchanged", StringComparison.Ordinal)).ShouldBe(3);
+            // Resume with the returned cursor: the second page advances past
+            // the first batch instead of re-processing it.
+            LibrarySyncResult second = await PostLibrarySyncSkipAsync(
+                client, saveId, skip: first.NextSkip!.Value, allowCreateMissing: true);
+            second.Status.ShouldBe(HttpStatusCode.OK, second.Body);
+            second.Truncated.ShouldBeFalse();
+            second.TotalItems.ShouldBe(first.TotalItems);
+            second.Files.ShouldNotBeEmpty();
+            second.Files.Select(f => f.Report)
+                .Intersect(first.Files.Select(f => f.Report), StringComparer.Ordinal)
+                .ShouldBeEmpty();
+            second.Files.ShouldAllBe(f => string.Equals(f.Outcome, "created", StringComparison.Ordinal));
             drive.Files.Count.ShouldBeGreaterThan(createdIds);
 
-            LibrarySyncResult second = await PostLibrarySyncAsync(client, saveId);
-            second.Files.ShouldAllBe(f => string.Equals(f.Outcome, "unchanged", StringComparison.Ordinal));
+            // A bounded retry with the same MaxFiles also advances: paging
+            // through with the cursor reaches every item exactly once.
+            List<string> paged = [.. first.Files.Select(f => f.Report), .. second.Files.Select(f => f.Report)];
+            paged.Distinct(StringComparer.Ordinal).Count().ShouldBe(first.TotalItems);
+            paged.Count.ShouldBe(first.TotalItems);
+
+            LibrarySyncResult settled = await PostLibrarySyncAsync(client, saveId);
+            settled.Status.ShouldBe(HttpStatusCode.OK, settled.Body);
+            settled.Truncated.ShouldBeFalse();
+            settled.Files.ShouldAllBe(f => string.Equals(f.Outcome, "unchanged", StringComparison.Ordinal));
+            (await GetLibraryPublishedUtcAsync(client, saveId)).ShouldNotBeNull();
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LibrarySync_SelectiveNewCupEdition_CreatesWhenFoldersAdopted()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            LibrarySyncResult first = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            first.Status.ShouldBe(HttpStatusCode.OK, first.Body);
+            first.Truncated.ShouldBeFalse();
+
+            // Named action: simulate one more season so a new Cup source
+            // season introduces edition files with no stored slot (the auto
+            // selective-refresh trigger).
+            using HttpResponseMessage simulated = await client.PostAsync(
+                $"/api/saves/{saveId:D}/simulate-seasons",
+                new StringContent("""{"seasons":1}""", Encoding.UTF8, "application/json"));
+            simulated.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+            // The adopted Cup folders are known after the first sync, so a
+            // selective refresh with creation allowed (the auto path) creates
+            // the new edition files instead of reporting failed.
+            LibrarySyncResult preview = await PostLibraryPreviewAsync(client, saveId, allowCreateMissing: true);
+            preview.Status.ShouldBe(HttpStatusCode.OK, preview.Body);
+            HashSet<string> known = new(first.Files.Select(f => f.Report), StringComparer.Ordinal);
+            List<string> fresh = preview.Files
+                .Select(f => f.Report)
+                .Where(r => !known.Contains(r))
+                .ToList();
+            fresh.ShouldNotBeEmpty();
+            LibrarySyncResult selective = await PostLibrarySyncSelectiveCreateAsync(client, saveId, fresh);
+            selective.Status.ShouldBe(HttpStatusCode.OK, selective.Body);
+            selective.Files.Select(f => f.Report).ShouldBe(fresh);
+            selective.Files.ShouldAllBe(f => string.Equals(f.Outcome, "created", StringComparison.Ordinal));
         }
         finally
         {
@@ -891,6 +957,7 @@ public sealed class GoogleDriveLibraryPublishingTests
         bool DryRun,
         bool Truncated,
         int TotalItems,
+        int? NextSkip,
         List<LibrarySyncFile> Files,
         string Body)
     {
@@ -1015,6 +1082,48 @@ public sealed class GoogleDriveLibraryPublishingTests
         return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);
     }
 
+    private static async Task<LibrarySyncResult> PostLibrarySyncSkipAsync(
+        HttpClient client, Guid saveId, int skip, bool allowCreateMissing = false, int? maxFiles = null)
+    {
+        string body = JsonSerializer.Serialize(new
+        {
+            confirmCrossSave = false,
+            allowOverwriteEditedRemote = false,
+            allowCreateMissing,
+            skip,
+            maxFiles,
+        });
+        return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);
+    }
+
+    private static async Task<LibrarySyncResult> PostLibrarySyncSelectiveCreateAsync(
+        HttpClient client, Guid saveId, IReadOnlyList<string> onlyKeys)
+    {
+        string body = JsonSerializer.Serialize(new
+        {
+            confirmCrossSave = false,
+            allowOverwriteEditedRemote = false,
+            allowCreateMissing = true,
+            onlyKeys,
+        });
+        return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> GetLibraryPublishedUtcAsync(HttpClient client, Guid saveId)
+    {
+        using HttpResponseMessage response = await client.GetAsync(
+            $"/api/saves/{saveId:D}/reports/drive/status").ConfigureAwait(false);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        if (json.RootElement.TryGetProperty("lastLibraryPublishedUtc", out JsonElement value)
+            && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        return null;
+    }
+
     private static Task<HttpResponseMessage> PostLibrarySyncRawAsync(HttpClient client, Guid saveId, string json) =>
         client.PostAsync(
             $"/api/saves/{saveId:D}/reports/drive/library/sync",
@@ -1043,7 +1152,7 @@ public sealed class GoogleDriveLibraryPublishingTests
         JsonElement root = json.RootElement;
         if (status != HttpStatusCode.OK)
         {
-            return new LibrarySyncResult(status, false, false, 0, [], root.GetRawText());
+            return new LibrarySyncResult(status, false, false, 0, null, [], root.GetRawText());
         }
 
         List<LibrarySyncFile> files = root.GetProperty("files").EnumerateArray()
@@ -1060,11 +1169,16 @@ public sealed class GoogleDriveLibraryPublishingTests
                     ? detail.GetString()
                     : null))
             .ToList();
+        int? nextSkip = root.TryGetProperty("nextSkip", out JsonElement skipElement) &&
+            skipElement.ValueKind == JsonValueKind.Number
+            ? skipElement.GetInt32()
+            : null;
         return new LibrarySyncResult(
             status,
             root.GetProperty("dryRun").GetBoolean(),
             root.GetProperty("truncated").GetBoolean(),
             root.GetProperty("totalItems").GetInt32(),
+            nextSkip,
             files,
             root.GetRawText());
     }

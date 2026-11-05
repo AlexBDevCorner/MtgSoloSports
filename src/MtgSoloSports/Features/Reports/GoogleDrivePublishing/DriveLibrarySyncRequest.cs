@@ -6,7 +6,9 @@ namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 /// (selective refresh used by automatic mode). <c>DryRun</c> previews
 /// create/update/unchanged/failed counts without any Drive write or
 /// destination save. <c>MaxFiles</c> bounds one request; excess items report
-/// <c>Truncated</c> so the client retries for the remainder (resumable.
+/// <c>Truncated</c> with <c>NextSkip</c> so the client resumes with
+/// <c>Skip = NextSkip</c> (resumable; settled files report unchanged on
+/// retry and are not re-uploaded).
 /// </summary>
 public sealed record DriveLibrarySyncRequest(
     bool ConfirmCrossSave,
@@ -15,4 +17,5 @@ public sealed record DriveLibrarySyncRequest(
     bool DryRun = false,
     IReadOnlyList<string>? Categories = null,
     IReadOnlyList<string>? OnlyKeys = null,
-    int? MaxFiles = null);
+    int? MaxFiles = null,
+    int? Skip = null);

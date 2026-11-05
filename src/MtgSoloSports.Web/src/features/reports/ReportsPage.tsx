@@ -33,6 +33,30 @@ async function fetchSeasons(saveId: string, signal: AbortSignal): Promise<Histor
   return fetchJson<HistorySeasons>(`/api/saves/${saveId}/history/seasons`, { signal });
 }
 
+function mergeLibraryCategories(
+  left: DriveLibrarySyncResponse['categories'],
+  right: DriveLibrarySyncResponse['categories'],
+): DriveLibrarySyncResponse['categories'] {
+  const merged = new Map<string, DriveLibrarySyncResponse['categories'][number]>();
+  for (const entry of [...left, ...right]) {
+    const existing = merged.get(entry.category);
+    merged.set(
+      entry.category,
+      existing === undefined
+        ? entry
+        : {
+            category: entry.category,
+            total: existing.total + entry.total,
+            created: existing.created + entry.created,
+            updated: existing.updated + entry.updated,
+            unchanged: existing.unchanged + entry.unchanged,
+            failed: existing.failed + entry.failed,
+          },
+    );
+  }
+  return [...merged.values()];
+}
+
 function parseAdoptionMap(
   raw: string,
   label: string,
@@ -920,15 +944,38 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   setDriveBusy('library-sync');
                   setDriveError(null);
                   setLibraryResult(null);
-                  void syncDriveLibrary(saveId, {
-                    confirmCrossSave,
-                    allowOverwriteEditedRemote: allowOverwrite,
-                    allowCreateMissing,
-                  })
-                    .then((result) => {
-                      setLibraryResult(result);
-                      return refreshDriveStatus();
-                    })
+                  void (async () => {
+                    let skip: number | undefined;
+                    let aggregated: DriveLibrarySyncResponse | null = null;
+                    for (let page = 0; page < 20; page += 1) {
+                      const result = await syncDriveLibrary(saveId, {
+                        confirmCrossSave,
+                        allowOverwriteEditedRemote: allowOverwrite,
+                        allowCreateMissing,
+                        ...(skip === undefined ? {} : { skip }),
+                      });
+                      aggregated = aggregated === null ? result : {
+                        ...result,
+                        totalItems: result.totalItems,
+                        truncated: result.truncated,
+                        nextSkip: result.nextSkip,
+                        dryRun: false,
+                        files: [...aggregated.files, ...result.files],
+                        categories: mergeLibraryCategories(aggregated.categories, result.categories),
+                      };
+                      if (!result.truncated || result.nextSkip === null || result.nextSkip === undefined) {
+                        if (aggregated !== null) {
+                          aggregated = { ...aggregated, truncated: false, nextSkip: null };
+                        }
+                        break;
+                      }
+                      skip = result.nextSkip;
+                    }
+                    if (aggregated !== null) {
+                      setLibraryResult(aggregated);
+                    }
+                    await refreshDriveStatus();
+                  })()
                     .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
                     .finally(() => setDriveBusy(null));
                 }}
