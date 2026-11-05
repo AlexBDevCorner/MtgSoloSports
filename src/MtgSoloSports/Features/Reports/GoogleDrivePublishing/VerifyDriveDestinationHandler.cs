@@ -125,6 +125,64 @@ public sealed class VerifyDriveDestinationHandler
         checks.Add(await CheckCupLeafAsync(
             "chaos-cups", destination.ChaosCupsFolderId, destination.ChaosCupFolderId,
             mtshistoryId, "Chaos Cup", "Cups", cancellationToken).ConfigureAwait(false));
+        await CheckAthleteFoldersAsync(destination, checks, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CheckAthleteFoldersAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        List<DriveVerifyCheck> checks,
+        CancellationToken cancellationToken)
+    {
+        string mtshistoryId = destination.MtshistoryFolderId!;
+        string rootName = string.IsNullOrWhiteSpace(destination.AthletesFolderName)
+            ? DriveAthleteColors.DefaultRootName
+            : destination.AthletesFolderName!;
+        if (string.IsNullOrWhiteSpace(destination.AthletesFolderId))
+        {
+            checks.Add(await CheckFolderNameAvailableAsync("athletes", mtshistoryId, rootName, cancellationToken).ConfigureAwait(false));
+            foreach (string color in DriveAthleteColors.All)
+            {
+                checks.Add(new DriveVerifyCheck(
+                    $"athletes-{color.ToLowerInvariant()}",
+                    "not-found",
+                    null,
+                    color,
+                    $"Adopt the Athletes/ root first; '{color}' will resolve under it. Nothing was created."));
+            }
+
+            return;
+        }
+
+        DriveVerifyCheck root = await CheckFolderAsync("athletes", destination.AthletesFolderId!, mtshistoryId, cancellationToken).ConfigureAwait(false);
+        checks.Add(root);
+        if (!string.Equals(root.Status, "ok", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        foreach (string color in DriveAthleteColors.All)
+        {
+            string? colorId = destination.AthleteColorFolderIds is not null && destination.AthleteColorFolderIds.TryGetValue(color, out string? stored)
+                ? stored
+                : null;
+            if (string.IsNullOrWhiteSpace(colorId))
+            {
+                checks.Add(await CheckFolderNameAvailableAsync($"athletes-{color.ToLowerInvariant()}", root.FileId!, color, cancellationToken).ConfigureAwait(false));
+            }
+            else
+            {
+                checks.Add(await CheckFolderAsync($"athletes-{color.ToLowerInvariant()}", colorId!, root.FileId, cancellationToken).ConfigureAwait(false));
+            }
+        }
+
+        if (destination.AthletesIndexFileId is null)
+        {
+            checks.Add(await CheckNameAvailabilityAsync("athletes-index", root.FileId, "athletes-index.md", cancellationToken).ConfigureAwait(false));
+        }
+        else
+        {
+            checks.Add(await CheckFileAsync("athletes-index", destination.AthletesIndexFileId!, destination.AthletesIndexFileName ?? "athletes-index.md", root.FileId!, cancellationToken).ConfigureAwait(false));
+        }
     }
 
     private async Task<DriveVerifyCheck> CheckCupFolderAsync(

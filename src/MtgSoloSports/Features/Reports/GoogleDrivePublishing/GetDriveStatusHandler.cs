@@ -107,7 +107,12 @@ public sealed class GetDriveStatusHandler
             destination?.LastLibraryUpdated ?? 0,
             destination?.LastLibraryUnchanged ?? 0,
             destination?.LastLibraryFailed ?? 0,
-            destination?.LastLibraryByCategory);
+            destination?.LastLibraryByCategory,
+            destination?.AthletesFolderId,
+            destination?.AthletesFolderName,
+            destination?.AthleteColorFolderIds,
+            destination?.AthletesIndexFileId,
+            destination?.AthletesIndexFileName);
     }
 
     private string AutoStatus(

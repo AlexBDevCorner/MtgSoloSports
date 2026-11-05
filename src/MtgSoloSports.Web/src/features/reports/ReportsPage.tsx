@@ -8,12 +8,14 @@ import {
   disconnectDrive,
   getDriveStatus,
   mergeLibraryAdoptionEntry,
+  previewAthleteLibrary,
   previewDriveLibrary,
   publishDriveReports,
   retryDriveAutoPublish,
   saveDriveDestination,
   setDriveAutoPublish,
   startDriveConnect,
+  syncAthleteLibrary,
   syncDriveLibrary,
   verifyDriveDestination,
   type DriveLibrarySyncResponse,
@@ -127,6 +129,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [typeTeamsFolderId, setTypeTeamsFolderId] = useState('');
   const [chaosCupFolderId, setChaosCupFolderId] = useState('');
   const [chaosCupsFolderId, setChaosCupsFolderId] = useState('');
+  const [athletesFolderId, setAthletesFolderId] = useState('');
+  const [athletesFolderName, setAthletesFolderName] = useState('');
+  const [athletesIndexFileId, setAthletesIndexFileId] = useState('');
+  const [athletesIndexFileName, setAthletesIndexFileName] = useState('');
+  const [athleteAdoptionsText, setAthleteAdoptionsText] = useState('');
+  const [athleteAdoptionKey, setAthleteAdoptionKey] = useState('');
   const [dossierAdoptionsText, setDossierAdoptionsText] = useState('');
   const [editionAdoptionsText, setEditionAdoptionsText] = useState('');
   const [teamAdoptionsText, setTeamAdoptionsText] = useState('');
@@ -208,6 +216,10 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
         setChaosCupFolderId(status.chaosCupFolderId ?? '');
         setChaosCupsFolderId(status.chaosCupsFolderId ?? '');
+        setAthletesFolderId(status.athletesFolderId ?? '');
+        setAthletesFolderName(status.athletesFolderName ?? '');
+        setAthletesIndexFileId(status.athletesIndexFileId ?? '');
+        setAthletesIndexFileName(status.athletesIndexFileName ?? '');
         setDriveLoading(false);
       })
       .catch((failure: unknown) => {
@@ -242,6 +254,10 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
       setChaosCupFolderId(status.chaosCupFolderId ?? '');
       setChaosCupsFolderId(status.chaosCupsFolderId ?? '');
+      setAthletesFolderId(status.athletesFolderId ?? '');
+      setAthletesFolderName(status.athletesFolderName ?? '');
+      setAthletesIndexFileId(status.athletesIndexFileId ?? '');
+      setAthletesIndexFileName(status.athletesIndexFileName ?? '');
     } catch (failure) {
       setDriveError(apiErrorMessage(failure));
     }
@@ -603,6 +619,46 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   onChange={(event) => setChaosCupsFolderId(event.target.value)}
                 />
               </label>
+              <label className="field">
+                <span>Athletes folder id</span>
+                <input
+                  type="text"
+                  value={athletesFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Athletes/"
+                  onChange={(event) => setAthletesFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Athletes folder name</span>
+                <input
+                  type="text"
+                  value={athletesFolderName}
+                  disabled={driveBusy !== null}
+                  placeholder="Athletes (custom root name allowed)"
+                  onChange={(event) => setAthletesFolderName(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Athletes index file id</span>
+                <input
+                  type="text"
+                  value={athletesIndexFileId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive file id for athletes-index.md"
+                  onChange={(event) => setAthletesIndexFileId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Athletes index file name</span>
+                <input
+                  type="text"
+                  value={athletesIndexFileName}
+                  disabled={driveBusy !== null}
+                  placeholder="athletes-index.md"
+                  onChange={(event) => setAthletesIndexFileName(event.target.value)}
+                />
+              </label>
             </div>
             <div className="toolbar" role="group" aria-label="Drive Picker grant">
               <button
@@ -814,6 +870,16 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   onChange={(event) => setTeamAdoptionsText(event.target.value)}
                 />
               </label>
+              <label className="field">
+                <span>Athlete adoptions (JSON)</span>
+                <input
+                  type="text"
+                  value={athleteAdoptionsText}
+                  disabled={driveBusy !== null}
+                  placeholder='{"123": {"fileId": "...", "fileName": "athlete-123-....md"}}'
+                  onChange={(event) => setAthleteAdoptionsText(event.target.value)}
+                />
+              </label>
             </div>
             <div className="toolbar" role="group" aria-label="Drive library file grants">
               <label className="field">
@@ -960,14 +1026,63 @@ export function ReportsPage({ saveId }: { saveId: string }) {
               >
                 {driveBusy === 'pick-team-file' ? 'Opening Picker…' : 'Choose team file…'}
               </button>
+              <label className="field">
+                <span>Athlete id to grant</span>
+                <input
+                  type="text"
+                  value={athleteAdoptionKey}
+                  disabled={driveBusy !== null}
+                  placeholder="123"
+                  onChange={(event) => setAthleteAdoptionKey(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || pickerConfigFromStatus(driveStatus) === null}
+                title={pickerDisabledHint(driveStatus)}
+                onClick={() => {
+                  const config = pickerConfigFromStatus(driveStatus);
+                  if (!config) {
+                    setDriveError(pickerDisabledHint(driveStatus));
+                    return;
+                  }
+                  if (athleteAdoptionKey.trim() === '') {
+                    setDriveError('Enter the athlete id (for example "123") before choosing its Drive file.');
+                    return;
+                  }
+                  setDriveBusy('pick-athlete-file');
+                  setDriveError(null);
+                  void showDrivePicker(config, 'markdown')
+                    .then((picked) => {
+                      if (picked) {
+                        try {
+                          setAthleteAdoptionsText((current) =>
+                            mergeLibraryAdoptionEntry(current, athleteAdoptionKey, picked.id, picked.name),
+                          );
+                          setDriveNotice(
+                            `Granted “${picked.name}” for athlete ${athleteAdoptionKey.trim()} — press Save destination, then Verify access.`,
+                          );
+                        } catch (failure) {
+                          setDriveError(failure instanceof Error ? failure.message : 'Could not adopt the picked file.');
+                        }
+                      }
+                    })
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'pick-athlete-file' ? 'Opening Picker…' : 'Choose athlete file…'}
+              </button>
             </div>
             <p className="muted small">
               Adopt hand-uploaded library files by semantic key: dossier seasons as <code>1</code>,{' '}
               <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>/<code>chaos:1</code>; teams as{' '}
-              <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, enter
-              the key above and grant each file with <em>Choose season/edition/team file…</em> (Google
-              Picker grants drive.file access to that exact file), then Save destination. Adopted files
-              update in place under their custom names; unknown files are never renamed or deleted.
+              <code>color:red</code>/<code>type:Dragon</code>; athletes as stable ids like <code>123</code>.
+              Preview the library to discover keys, enter the key above and grant each file with{' '}
+              <em>Choose season/edition/team/athlete file…</em> (Google Picker grants drive.file access to
+              that exact file), then Save destination. Adopted files update in place under their custom names;
+              unknown files are never renamed or deleted.
             </p>
             <p>
               <button
@@ -980,10 +1095,12 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   let dossierAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
                   let editionAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
                   let teamAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
+                  let athleteAdoptions: Record<string, { fileId: string | null; fileName: string | null }> | null = null;
                   try {
                     dossierAdoptions = parseAdoptionMap(dossierAdoptionsText, 'Dossier adoptions');
                     editionAdoptions = parseAdoptionMap(editionAdoptionsText, 'Edition adoptions');
                     teamAdoptions = parseAdoptionMap(teamAdoptionsText, 'Team adoptions');
+                    athleteAdoptions = parseAdoptionMap(athleteAdoptionsText, 'Athlete adoptions');
                   } catch (failure) {
                     setDriveError(failure instanceof Error ? failure.message : 'Invalid adoption JSON.');
                     setDriveBusy(null);
@@ -1009,6 +1126,11 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     dossierAdoptions,
                     editionAdoptions,
                     teamAdoptions,
+                    athletesFolderId,
+                    athletesFolderName,
+                    athletesIndexFileId,
+                    athletesIndexFileName,
+                    athleteAdoptions,
                   })
                     .then(() => refreshDriveStatus())
                     .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
@@ -1165,7 +1287,87 @@ export function ReportsPage({ saveId }: { saveId: string }) {
               >
                 {driveBusy === 'library-sync' ? 'Syncing…' : 'Sync all changed reports'}
               </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('athlete-preview');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void previewAthleteLibrary(saveId, {
+                    confirmCrossSave,
+                    allowOverwriteEditedRemote: allowOverwrite,
+                    allowCreateMissing,
+                  })
+                    .then((result) => setLibraryResult(result))
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'athlete-preview' ? 'Previewing…' : 'Preview athletes'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={driveBusy !== null || !driveStatus.connected}
+                onClick={() => {
+                  setDriveBusy('athlete-sync');
+                  setDriveError(null);
+                  setLibraryResult(null);
+                  void (async () => {
+                    let skip: number | undefined;
+                    let aggregated: DriveLibrarySyncResponse | null = null;
+                    for (let page = 0; page < 20; page += 1) {
+                      const result = await syncAthleteLibrary(saveId, {
+                        confirmCrossSave,
+                        allowOverwriteEditedRemote: allowOverwrite,
+                        allowCreateMissing,
+                        ...(skip === undefined ? {} : { skip }),
+                      });
+                      aggregated = aggregated === null ? result : {
+                        ...result,
+                        totalItems: result.totalItems,
+                        truncated: result.truncated,
+                        nextSkip: result.nextSkip,
+                        dryRun: false,
+                        files: [...aggregated.files, ...result.files],
+                        categories: mergeLibraryCategories(aggregated.categories, result.categories),
+                      };
+                      if (!result.truncated || result.nextSkip === null || result.nextSkip === undefined) {
+                        if (aggregated !== null) {
+                          aggregated = { ...aggregated, truncated: false, nextSkip: null };
+                        }
+                        break;
+                      }
+                      skip = result.nextSkip;
+                    }
+                    if (aggregated !== null) {
+                      setLibraryResult(aggregated);
+                    }
+                    await refreshDriveStatus();
+                  })()
+                    .catch((failure: unknown) => setDriveError(apiErrorMessage(failure)))
+                    .finally(() => setDriveBusy(null));
+                }}
+              >
+                {driveBusy === 'athlete-sync' ? 'Syncing…' : 'Publish all athletes / Sync changed athletes'}
+              </button>
             </div>
+            <p className="muted small">
+              Publish now stays dossier + almanac only. The athlete archive (one file per athlete in{' '}
+              <code>Athletes/White…Colorless</code> plus <code>athletes-index.md</code>) needs its explicit
+              first bulk import above; ordinary runs are incremental. A Drive folder with thousands of reports
+              is not ChatGPT Project uploads — use the index with ChatGPT&apos;s Drive picker for explicit
+              retrieval.
+            </p>
+            {driveStatus.athletesFolderId ?? driveStatus.athletesIndexFileId ? (
+              <p className="muted small">
+                Athletes:{' '}
+                {driveStatus.athletesFolderId ? `folder ${driveStatus.athletesFolderId}` : 'folder not adopted'}
+                {driveStatus.athletesIndexFileId ? ` · index ${driveStatus.athletesIndexFileId}` : ' · index not published'}
+              </p>
+            ) : null}
             {driveStatus.lastLibraryPublishedUtc ?? driveStatus.lastLibraryError ? (
               <p className="muted small">
                 Library:{' '}

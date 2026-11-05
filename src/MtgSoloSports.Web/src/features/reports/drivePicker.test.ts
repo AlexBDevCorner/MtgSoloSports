@@ -72,6 +72,11 @@ function statusWith(overrides: Partial<DriveStatus>): DriveStatus {
     lastLibraryUnchanged: 0,
     lastLibraryFailed: 0,
     lastLibraryByCategory: null,
+    athletesFolderId: null,
+    athletesFolderName: null,
+    athleteColorFolderIds: null,
+    athletesIndexFileId: null,
+    athletesIndexFileName: null,
     ...overrides,
   };
 }

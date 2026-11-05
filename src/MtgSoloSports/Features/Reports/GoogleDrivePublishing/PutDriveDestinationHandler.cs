@@ -122,7 +122,13 @@ public sealed class PutDriveDestinationHandler
         string? ChaosCupsFolderId,
         IReadOnlyDictionary<string, DriveLibraryAdoption>? DossierAdoptions,
         IReadOnlyDictionary<string, DriveLibraryAdoption>? EditionAdoptions,
-        IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions);
+        IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions,
+        string? AthletesFolderId,
+        string? AthletesFolderName,
+        IReadOnlyDictionary<string, string>? AthleteColorFolderIds,
+        IReadOnlyDictionary<string, DriveLibraryAdoption>? AthleteAdoptions,
+        string? AthletesIndexFileId,
+        string? AthletesIndexFileName);
 
     private static NormalizedDestination NormalizeRequest(PutDriveDestinationRequest request)
     {
@@ -144,7 +150,85 @@ public sealed class PutDriveDestinationHandler
             NormalizeId(request.ChaosCupsFolderId, "Chaos Cup Cups folder id"),
             NormalizeAdoptions(request.DossierAdoptions, "dossier adoptions"),
             NormalizeAdoptions(request.EditionAdoptions, "edition adoptions"),
-            NormalizeAdoptions(request.TeamAdoptions, "team adoptions"));
+            NormalizeAdoptions(request.TeamAdoptions, "team adoptions"),
+            NormalizeId(request.AthletesFolderId, "Athletes folder id"),
+            NormalizeOptionalName(request.AthletesFolderName, "Athletes folder name", allowWithoutExtension: true),
+            NormalizeAthleteColorFolders(request.AthleteColorFolderIds),
+            NormalizeAthleteAdoptions(request.AthleteAdoptions),
+            NormalizeId(request.AthletesIndexFileId, "athletes index file id"),
+            NormalizeReportName(request.AthletesIndexFileName, "athletes index file name"));
+    }
+
+    private static IReadOnlyDictionary<string, string>? NormalizeAthleteColorFolders(IReadOnlyDictionary<string, string>? folders)
+    {
+        if (folders is null || folders.Count == 0)
+        {
+            return null;
+        }
+
+        if (folders.Count > 8)
+        {
+            throw new ArgumentException("Invalid athlete color folders: at most 8 entries.", nameof(folders));
+        }
+
+        HashSet<string> allowed = new(DriveAthleteColors.All, StringComparer.Ordinal);
+        Dictionary<string, string> normalized = new(StringComparer.Ordinal);
+        foreach ((string key, string value) in folders)
+        {
+            if (string.IsNullOrWhiteSpace(key) || !allowed.Contains(key.Trim()))
+            {
+                throw new ArgumentException($"Invalid athlete color folders: unknown color '{key}'. Use White, Blue, Black, Red, Green, Multicolor, Hybrid, Colorless.", nameof(folders));
+            }
+
+            string color = key.Trim();
+            if (normalized.ContainsKey(color))
+            {
+                throw new ArgumentException($"Invalid athlete color folders: duplicate color '{color}'.", nameof(folders));
+            }
+
+            normalized[color] = NormalizeId(value, $"Athletes/{color} folder id")!;
+        }
+
+        return normalized;
+    }
+
+    private static IReadOnlyDictionary<string, DriveLibraryAdoption>? NormalizeAthleteAdoptions(IReadOnlyDictionary<string, DriveLibraryAdoption>? adoptions)
+    {
+        if (adoptions is null || adoptions.Count == 0)
+        {
+            return null;
+        }
+
+        if (adoptions.Count > 5000)
+        {
+            throw new ArgumentException("Invalid athlete adoptions: at most 5000 entries per request.", nameof(adoptions));
+        }
+
+        Dictionary<string, DriveLibraryAdoption> normalized = new(StringComparer.Ordinal);
+        foreach ((string key, DriveLibraryAdoption adoption) in adoptions)
+        {
+            if (!int.TryParse(key?.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int athleteId) || athleteId <= 0)
+            {
+                throw new ArgumentException("Invalid athlete adoptions: keys must be positive athlete ids.", nameof(adoptions));
+            }
+
+            string trimmedKey = athleteId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (normalized.ContainsKey(trimmedKey))
+            {
+                throw new ArgumentException($"Invalid athlete adoptions: duplicate key '{trimmedKey}'.", nameof(adoptions));
+            }
+
+            if (adoption is null)
+            {
+                throw new ArgumentException($"Invalid athlete adoptions: entry '{trimmedKey}' must not be null.", nameof(adoptions));
+            }
+
+            normalized[trimmedKey] = new DriveLibraryAdoption(
+                NormalizeId(adoption.FileId, "athlete adoptions file id"),
+                NormalizeReportName(adoption.FileName, "athlete adoptions file name"));
+        }
+
+        return normalized;
     }
 
     private static IReadOnlyDictionary<string, DriveLibraryAdoption>? NormalizeAdoptions(
@@ -202,9 +286,13 @@ public sealed class PutDriveDestinationHandler
                 || normalized.TypeTeamsFolderId is not null
                 || normalized.ChaosCupFolderId is not null
                 || normalized.ChaosCupsFolderId is not null
+                || normalized.AthletesFolderId is not null
+                || (normalized.AthleteColorFolderIds is not null && normalized.AthleteColorFolderIds.Count > 0)
+                || normalized.AthletesIndexFileId is not null
                 || (normalized.DossierAdoptions is not null && normalized.DossierAdoptions.Count > 0)
                 || (normalized.EditionAdoptions is not null && normalized.EditionAdoptions.Count > 0)
-                || (normalized.TeamAdoptions is not null && normalized.TeamAdoptions.Count > 0)))
+                || (normalized.TeamAdoptions is not null && normalized.TeamAdoptions.Count > 0)
+                || (normalized.AthleteAdoptions is not null && normalized.AthleteAdoptions.Count > 0)))
         {
             throw new DriveConflictException(
                 "A destination mtshistory folder id is required when adopting report files. Paste the mtshistory folder id first, then the file ids.");
@@ -263,27 +351,70 @@ public sealed class PutDriveDestinationHandler
             return true;
         }
 
+        return HasLibraryIdentityChanged(existing, normalized);
+    }
+
+    private static bool HasLibraryIdentityChanged(
+        DrivePublishingStore.DestinationDocument existing,
+        NormalizedDestination normalized)
+    {
         if (LibraryAdoptionsChanged(existing.CupEditionByKey, normalized.EditionAdoptions)
-            || LibraryAdoptionsChanged(existing.CupTeamByKey, normalized.TeamAdoptions))
+            || LibraryAdoptionsChanged(existing.CupTeamByKey, normalized.TeamAdoptions)
+            || LibraryAdoptionsChanged(existing.AthleteByKey, normalized.AthleteAdoptions))
         {
             return true;
         }
 
-        return false;
+        return !string.Equals(existing.AthletesIndexFileId, normalized.AthletesIndexFileId, StringComparison.Ordinal)
+            || !string.Equals(existing.AthletesIndexFileName, normalized.AthletesIndexFileName, StringComparison.Ordinal);
     }
 
     private static bool CupFoldersChanged(
         DrivePublishingStore.DestinationDocument existing,
         NormalizedDestination normalized)
     {
-        return !string.Equals(existing.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
+        if (!string.Equals(existing.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal);
+            || !string.Equals(existing.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (!string.Equals(existing.AthletesFolderId, normalized.AthletesFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing.AthletesFolderName, normalized.AthletesFolderName, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        IReadOnlyDictionary<string, string>? existingColors = existing.AthleteColorFolderIds;
+        IReadOnlyDictionary<string, string>? newColors = normalized.AthleteColorFolderIds;
+        if ((existingColors is null) != (newColors is null))
+        {
+            return true;
+        }
+
+        if (existingColors is not null && newColors is not null)
+        {
+            if (existingColors.Count != newColors.Count)
+            {
+                return true;
+            }
+
+            foreach ((string color, string folderId) in newColors)
+            {
+                if (!existingColors.TryGetValue(color, out string? stored) || !string.Equals(stored, folderId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool AdoptionsChanged(
@@ -398,54 +529,26 @@ public sealed class PutDriveDestinationHandler
         // pause (e.g. HTTP 403): clear the pause so the new destination is
         // tried once instead of staying stuck Disconnected.
         bool invalidateBaseline = destinationChanged;
-        return new DrivePublishingStore.DestinationDocument(
-            detail.SaveId,
-            detail.Name,
-            normalized.FolderId,
-            normalized.FolderName,
-            normalized.SeasonsFolderId,
-            normalized.DossierId,
-            normalized.DossierName,
-            normalized.AlmanacId,
-            normalized.AlmanacName,
-            dossier.Fingerprint,
-            dossier.SameAlmanac ? existing?.AlmanacFingerprint : null,
-            dossier.ModifiedTime,
-            dossier.SameAlmanac ? existing?.AlmanacRemoteModifiedTime : null,
-            invalidateBaseline ? null : existing?.LastPublishedUtc,
-            invalidateBaseline ? null : existing?.LastSeasonNumber,
-            invalidateBaseline ? null : existing?.LastPhase,
-            invalidateBaseline ? null : existing?.LastGlobalStage,
-            invalidateBaseline ? null : existing?.LastDossierOutcome,
-            invalidateBaseline ? null : existing?.LastAlmanacOutcome,
-            invalidateBaseline ? null : existing?.LastError,
-            dossier.Map,
-            existing?.AutoPublishEnabled ?? false,
-            existing?.AutoRequestedSeason,
-            existing?.AutoRequestedGlobalStage,
-            existing?.AutoRequestedPhase,
-            existing?.AutoRequestedUtc,
-            invalidateBaseline ? 0 : existing?.AutoAttemptCount ?? 0,
-            existing?.AutoNextRetryUtc,
-            invalidateBaseline ? null : existing?.AutoLastError,
-            invalidateBaseline ? false : (existing?.AutoPausedForAuth ?? false),
-            normalized.ColorCupFolderId,
-            normalized.ColorCupsFolderId,
-            normalized.ColorTeamsFolderId,
-            normalized.TypeCupFolderId,
-            normalized.TypeCupsFolderId,
-            normalized.TypeTeamsFolderId,
-            normalized.ChaosCupFolderId,
-            normalized.ChaosCupsFolderId,
-            tail.Editions,
-            tail.Teams,
-            tail.PublishedUtc,
-            tail.Error,
-            tail.Created,
-            tail.Updated,
-            tail.Unchanged,
-            tail.Failed,
-            tail.ByCategory);
+        return new DrivePublishingStore.DestinationDocument(detail.SaveId, detail.Name,
+            normalized.FolderId, normalized.FolderName, normalized.SeasonsFolderId,
+            normalized.DossierId, normalized.DossierName, normalized.AlmanacId, normalized.AlmanacName,
+            dossier.Fingerprint, dossier.SameAlmanac ? existing?.AlmanacFingerprint : null,
+            dossier.ModifiedTime, dossier.SameAlmanac ? existing?.AlmanacRemoteModifiedTime : null,
+            invalidateBaseline ? null : existing?.LastPublishedUtc, invalidateBaseline ? null : existing?.LastSeasonNumber,
+            invalidateBaseline ? null : existing?.LastPhase, invalidateBaseline ? null : existing?.LastGlobalStage,
+            invalidateBaseline ? null : existing?.LastDossierOutcome, invalidateBaseline ? null : existing?.LastAlmanacOutcome,
+            invalidateBaseline ? null : existing?.LastError, dossier.Map,
+            existing?.AutoPublishEnabled ?? false, existing?.AutoRequestedSeason, existing?.AutoRequestedGlobalStage,
+            existing?.AutoRequestedPhase, existing?.AutoRequestedUtc,
+            invalidateBaseline ? 0 : existing?.AutoAttemptCount ?? 0, existing?.AutoNextRetryUtc,
+            invalidateBaseline ? null : existing?.AutoLastError, invalidateBaseline ? false : (existing?.AutoPausedForAuth ?? false),
+            normalized.ColorCupFolderId, normalized.ColorCupsFolderId, normalized.ColorTeamsFolderId,
+            normalized.TypeCupFolderId, normalized.TypeCupsFolderId, normalized.TypeTeamsFolderId,
+            normalized.ChaosCupFolderId, normalized.ChaosCupsFolderId,
+            tail.Editions, tail.Teams, tail.PublishedUtc, tail.Error, tail.Created, tail.Updated, tail.Unchanged, tail.Failed, tail.ByCategory,
+            tail.AthletesFolderId, tail.AthletesFolderName, tail.AthleteColorFolderIds, tail.Athletes,
+            tail.AthletesIndexFileId, tail.AthletesIndexFileName, tail.AthletesIndexFingerprint, tail.AthletesIndexModified,
+            existing?.AthleteRecordMaxima);
     }
 
     private sealed record LibraryTail(
@@ -457,44 +560,113 @@ public sealed class PutDriveDestinationHandler
         int Updated,
         int Unchanged,
         int Failed,
-        IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? ByCategory);
+        IReadOnlyDictionary<string, DrivePublishingStore.LibraryCategoryCounts>? ByCategory,
+        string? AthletesFolderId = null,
+        string? AthletesFolderName = null,
+        IReadOnlyDictionary<string, string>? AthleteColorFolderIds = null,
+        Dictionary<string, DrivePublishingStore.LibrarySlot>? Athletes = null,
+        string? AthletesIndexFileId = null,
+        string? AthletesIndexFileName = null,
+        string? AthletesIndexFingerprint = null,
+        string? AthletesIndexModified = null);
 
     private static LibraryTail BuildLibraryTail(
         DrivePublishingStore.DestinationDocument? existing,
         NormalizedDestination normalized)
     {
-        Dictionary<string, DrivePublishingStore.LibrarySlot> editions =
-            ApplyLibraryAdoptions(existing?.CupEditionByKey, normalized.EditionAdoptions);
-        Dictionary<string, DrivePublishingStore.LibrarySlot> teams =
-            ApplyLibraryAdoptions(existing?.CupTeamByKey, normalized.TeamAdoptions);
+        Dictionary<string, DrivePublishingStore.LibrarySlot> editions = ApplyLibraryAdoptions(existing?.CupEditionByKey, normalized.EditionAdoptions);
+        Dictionary<string, DrivePublishingStore.LibrarySlot> teams = ApplyLibraryAdoptions(existing?.CupTeamByKey, normalized.TeamAdoptions);
+        Dictionary<string, DrivePublishingStore.LibrarySlot> athletes = ApplyLibraryAdoptions(existing?.AthleteByKey, normalized.AthleteAdoptions);
+        string? athletesFolderId = normalized.AthletesFolderId ?? existing?.AthletesFolderId;
+        string? athletesFolderName = normalized.AthletesFolderName ?? existing?.AthletesFolderName;
+        IReadOnlyDictionary<string, string>? mergedColors = MergeColorFolders(existing?.AthleteColorFolderIds, normalized.AthleteColorFolderIds);
+        string? indexFileId = normalized.AthletesIndexFileId ?? existing?.AthletesIndexFileId;
+        string? indexFileName = normalized.AthletesIndexFileName ?? existing?.AthletesIndexFileName;
+        bool sameIndex = string.Equals(existing?.AthletesIndexFileId, indexFileId, StringComparison.Ordinal)
+            && string.Equals(existing?.AthletesIndexFileName, indexFileName, StringComparison.Ordinal);
+        bool foldersChanged = HasFolderChanged(existing, normalized, athletesFolderId, mergedColors);
+        if (foldersChanged)
+        {
+            return new LibraryTail(editions, teams, null, null, 0, 0, 0, 0, null,
+                athletesFolderId, athletesFolderName, mergedColors, athletes, indexFileId, indexFileName,
+                sameIndex ? existing?.AthletesIndexFingerprint : null, sameIndex ? existing?.AthletesIndexRemoteModifiedTime : null);
+        }
 
-        // MSS-091: cup folder changes clear the persisted library summary so
-        // the next sync re-covers the new hierarchy; per-file edition/team
-        // maps are kept so explicit adoptions survive and files outside the
-        // new destination surface instead of being silently reset.
-        bool foldersChanged = !string.Equals(existing?.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
+        return new LibraryTail(editions, teams,
+            existing?.LastLibraryPublishedUtc, existing?.LastLibraryError,
+            existing?.LastLibraryCreated ?? 0, existing?.LastLibraryUpdated ?? 0,
+            existing?.LastLibraryUnchanged ?? 0, existing?.LastLibraryFailed ?? 0, existing?.LastLibraryByCategory,
+            athletesFolderId, athletesFolderName, mergedColors, athletes, indexFileId, indexFileName,
+            sameIndex ? existing?.AthletesIndexFingerprint : null, sameIndex ? existing?.AthletesIndexRemoteModifiedTime : null);
+    }
+
+    private static bool HasFolderChanged(
+        DrivePublishingStore.DestinationDocument? existing,
+        NormalizedDestination normalized,
+        string? athletesFolderId,
+        IReadOnlyDictionary<string, string>? mergedColors)
+    {
+        return !string.Equals(existing?.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal)
             || !string.Equals(existing?.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal)
-            || !string.Equals(existing?.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal);
-        if (foldersChanged)
+            || !string.Equals(existing?.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal)
+            || !string.Equals(existing?.AthletesFolderId, athletesFolderId, StringComparison.Ordinal)
+            || !AthleteColorFoldersEqual(existing?.AthleteColorFolderIds, mergedColors);
+    }
+
+    private static bool AthleteColorFoldersEqual(IReadOnlyDictionary<string, string>? existing, IReadOnlyDictionary<string, string>? normalized)
+    {
+        if (existing is null && normalized is null)
         {
-            return new LibraryTail(editions, teams, null, null, 0, 0, 0, 0, null);
+            return true;
         }
 
-        return new LibraryTail(
-            editions,
-            teams,
-            existing?.LastLibraryPublishedUtc,
-            existing?.LastLibraryError,
-            existing?.LastLibraryCreated ?? 0,
-            existing?.LastLibraryUpdated ?? 0,
-            existing?.LastLibraryUnchanged ?? 0,
-            existing?.LastLibraryFailed ?? 0,
-            existing?.LastLibraryByCategory);
+        if (existing is null || normalized is null)
+        {
+            return normalized is null || normalized.Count == 0;
+        }
+
+        if (existing.Count != normalized.Count)
+        {
+            return false;
+        }
+
+        foreach ((string color, string folderId) in normalized)
+        {
+            if (!existing.TryGetValue(color, out string? stored) || !string.Equals(stored, folderId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyDictionary<string, string>? ToColorMap(IReadOnlyDictionary<string, string>? source) =>
+        source is null ? null : new Dictionary<string, string>(source, StringComparer.Ordinal);
+
+    private static IReadOnlyDictionary<string, string>? MergeColorFolders(
+        IReadOnlyDictionary<string, string>? existing,
+        IReadOnlyDictionary<string, string>? normalized)
+    {
+        if (normalized is null)
+        {
+            return existing;
+        }
+
+        Dictionary<string, string> merged = existing is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(existing, StringComparer.Ordinal);
+        foreach ((string color, string folderId) in normalized)
+        {
+            merged[color] = folderId;
+        }
+
+        return merged;
     }
 
     private static void ApplyDossierAdoptions(
@@ -684,7 +856,12 @@ public sealed class PutDriveDestinationHandler
             updated.LastLibraryUpdated,
             updated.LastLibraryUnchanged,
             updated.LastLibraryFailed,
-            updated.LastLibraryByCategory);
+            updated.LastLibraryByCategory,
+            updated.AthletesFolderId,
+            updated.AthletesFolderName,
+            updated.AthleteColorFolderIds,
+            updated.AthletesIndexFileId,
+            updated.AthletesIndexFileName);
     }
 
     private async Task EnsureNoCrossSaveReuseAsync(
@@ -703,9 +880,13 @@ public sealed class PutDriveDestinationHandler
             && normalized.ColorTeamsFolderId is null && normalized.TypeCupFolderId is null
             && normalized.TypeCupsFolderId is null && normalized.TypeTeamsFolderId is null
             && normalized.ChaosCupFolderId is null && normalized.ChaosCupsFolderId is null
+            && normalized.AthletesFolderId is null
+            && (normalized.AthleteColorFolderIds is null || normalized.AthleteColorFolderIds.Count == 0)
+            && normalized.AthletesIndexFileId is null
             && (normalized.DossierAdoptions is null || normalized.DossierAdoptions.Count == 0)
             && (normalized.EditionAdoptions is null || normalized.EditionAdoptions.Count == 0)
             && (normalized.TeamAdoptions is null || normalized.TeamAdoptions.Count == 0)
+            && (normalized.AthleteAdoptions is null || normalized.AthleteAdoptions.Count == 0)
             && normalized.SeasonsFolderId is null)
         {
             return;
@@ -761,7 +942,12 @@ public sealed class PutDriveDestinationHandler
             return true;
         }
 
-        if (AdoptionReusesFile(other.DossierBySeason?.Values.Select(s => s.FileId), other.CupEditionByKey, other.CupTeamByKey, normalized))
+        if (normalized.AthletesIndexFileId is not null && string.Equals(other.AthletesIndexFileId, normalized.AthletesIndexFileId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (AdoptionReusesFile(other.DossierBySeason?.Values.Select(s => s.FileId), other.CupEditionByKey, other.CupTeamByKey, other.AthleteByKey, normalized))
         {
             return true;
         }
@@ -773,20 +959,38 @@ public sealed class PutDriveDestinationHandler
         DrivePublishingStore.DestinationDocument other,
         NormalizedDestination normalized)
     {
-        return (normalized.ColorCupFolderId is not null && string.Equals(other.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal))
+        if ((normalized.ColorCupFolderId is not null && string.Equals(other.ColorCupFolderId, normalized.ColorCupFolderId, StringComparison.Ordinal))
             || (normalized.ColorCupsFolderId is not null && string.Equals(other.ColorCupsFolderId, normalized.ColorCupsFolderId, StringComparison.Ordinal))
             || (normalized.ColorTeamsFolderId is not null && string.Equals(other.ColorTeamsFolderId, normalized.ColorTeamsFolderId, StringComparison.Ordinal))
             || (normalized.TypeCupFolderId is not null && string.Equals(other.TypeCupFolderId, normalized.TypeCupFolderId, StringComparison.Ordinal))
             || (normalized.TypeCupsFolderId is not null && string.Equals(other.TypeCupsFolderId, normalized.TypeCupsFolderId, StringComparison.Ordinal))
             || (normalized.TypeTeamsFolderId is not null && string.Equals(other.TypeTeamsFolderId, normalized.TypeTeamsFolderId, StringComparison.Ordinal))
             || (normalized.ChaosCupFolderId is not null && string.Equals(other.ChaosCupFolderId, normalized.ChaosCupFolderId, StringComparison.Ordinal))
-            || (normalized.ChaosCupsFolderId is not null && string.Equals(other.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal));
+            || (normalized.ChaosCupsFolderId is not null && string.Equals(other.ChaosCupsFolderId, normalized.ChaosCupsFolderId, StringComparison.Ordinal))
+            || (normalized.AthletesFolderId is not null && string.Equals(other.AthletesFolderId, normalized.AthletesFolderId, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        if (normalized.AthleteColorFolderIds is not null && other.AthleteColorFolderIds is not null)
+        {
+            foreach ((string color, string folderId) in normalized.AthleteColorFolderIds)
+            {
+                if (other.AthleteColorFolderIds.TryGetValue(color, out string? stored) && string.Equals(stored, folderId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool AdoptionReusesFile(
         IEnumerable<string?>? dossierIds,
         IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? editions,
         IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? teams,
+        IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? athletes,
         NormalizedDestination normalized)
     {
         HashSet<string> otherIds = new(StringComparer.Ordinal);
@@ -823,6 +1027,17 @@ public sealed class PutDriveDestinationHandler
             }
         }
 
+        if (athletes is not null)
+        {
+            foreach (DrivePublishingStore.LibrarySlot slot in athletes.Values)
+            {
+                if (slot.FileId is not null)
+                {
+                    otherIds.Add(slot.FileId);
+                }
+            }
+        }
+
         if (otherIds.Count == 0)
         {
             return false;
@@ -843,7 +1058,7 @@ public sealed class PutDriveDestinationHandler
     {
         foreach (IReadOnlyDictionary<string, DriveLibraryAdoption>? dict in new[]
                  {
-                     normalized.DossierAdoptions, normalized.EditionAdoptions, normalized.TeamAdoptions,
+                     normalized.DossierAdoptions, normalized.EditionAdoptions, normalized.TeamAdoptions, normalized.AthleteAdoptions,
                  })
         {
             if (dict is null)
