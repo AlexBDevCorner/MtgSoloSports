@@ -34,6 +34,7 @@ internal sealed class DriveLibraryInventory
         List<int> seasons = await LoadSeasonsAsync(context, cancellationToken).ConfigureAwait(false);
         List<int> colorSeasons = await LoadColorSeasonsAsync(context, cancellationToken).ConfigureAwait(false);
         List<int> typeSeasons = await LoadTypeSeasonsAsync(context, cancellationToken).ConfigureAwait(false);
+        List<int> chaosSeasons = await LoadChaosSeasonsAsync(context, cancellationToken).ConfigureAwait(false);
         List<string> colorTeams = await LoadColorTeamsAsync(context, cancellationToken).ConfigureAwait(false);
         List<string> typeTeams = await LoadTypeTeamsAsync(context, cancellationToken).ConfigureAwait(false);
 
@@ -42,6 +43,7 @@ internal sealed class DriveLibraryInventory
         items.AddRange(seasons.Select(DossierItem));
         items.AddRange(colorSeasons.Select(ColorEditionItem));
         items.AddRange(typeSeasons.Select(TypeEditionItem));
+        items.AddRange(chaosSeasons.Select(ChaosEditionItem));
         items.AddRange(colorTeams.Select(ColorTeamItem));
         items.AddRange(typeTeams.Select(TypeTeamItem));
 
@@ -88,6 +90,16 @@ internal sealed class DriveLibraryInventory
             "type",
             null);
 
+    private static DriveLibraryItem ChaosEditionItem(int season) =>
+        new(
+            DriveLibraryKind.ChaosEdition,
+            DriveLibraryKind.EditionReport("chaos", season),
+            ReportFilenames.CupEditionFileName("chaos", season, "md"),
+            "the Chaos Cup/Cups folder",
+            season,
+            "chaos",
+            null);
+
     private static DriveLibraryItem ColorTeamItem(string teamKey) =>
         new(
             DriveLibraryKind.ColorTeam,
@@ -126,6 +138,14 @@ internal sealed class DriveLibraryInventory
 
     private static Task<List<int>> LoadTypeSeasonsAsync(SaveDbContext context, CancellationToken cancellationToken) =>
         context.TypeCupSelections
+            .AsNoTracking()
+            .Select(e => e.SourceSeasonNumber)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(cancellationToken);
+
+    private static Task<List<int>> LoadChaosSeasonsAsync(SaveDbContext context, CancellationToken cancellationToken) =>
+        context.ChaosCupEditions
             .AsNoTracking()
             .Select(e => e.SourceSeasonNumber)
             .Distinct()

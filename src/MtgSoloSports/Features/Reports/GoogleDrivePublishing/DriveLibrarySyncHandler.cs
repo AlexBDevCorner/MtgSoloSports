@@ -82,6 +82,7 @@ public sealed class DriveLibrarySyncHandler
         FolderResolution ColorTeams,
         FolderResolution TypeCups,
         FolderResolution TypeTeams,
+        FolderResolution ChaosCups,
         DrivePublishingStore.DestinationDocument Destination);
 
     private sealed record GenerationResult(bool Ok, string Value);
@@ -215,11 +216,20 @@ public sealed class DriveLibrarySyncHandler
             .OrderBy(n => n)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        List<int> chaosSeasons = await context.ChaosCupEditions
+            .AsNoTracking()
+            .Where(e => e.SourceSeasonNumber >= cutoff)
+            .Select(e => e.SourceSeasonNumber)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         List<string> recentTeams = await LoadRecentTeamKeysAsync(context, cutoff, cancellationToken).ConfigureAwait(false);
 
         List<string> keys = [];
         keys.AddRange(colorSeasons.Select(s => DriveLibraryKind.EditionReport("color", s)));
         keys.AddRange(typeSeasons.Select(s => DriveLibraryKind.EditionReport("type", s)));
+        keys.AddRange(chaosSeasons.Select(s => DriveLibraryKind.EditionReport("chaos", s)));
         keys.AddRange(recentTeams);
         return keys;
     }
@@ -359,7 +369,7 @@ public sealed class DriveLibrarySyncHandler
             if (!IsKnownCategory(trimmed))
             {
                 throw new ArgumentException(
-                    $"Unsupported library category '{category}'. Use season-dossier, color-edition, type-edition, color-team, type-team or almanac.",
+                    $"Unsupported library category '{category}'. Use season-dossier, color-edition, type-edition, chaos-edition, color-team, type-team or almanac.",
                     nameof(categories));
             }
 
@@ -373,6 +383,7 @@ public sealed class DriveLibrarySyncHandler
         string.Equals(category, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
+        || string.Equals(category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.ColorTeam, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.TypeTeam, StringComparison.Ordinal)
         || string.Equals(category, DriveLibraryKind.Almanac, StringComparison.Ordinal);
@@ -440,11 +451,17 @@ public sealed class DriveLibrarySyncHandler
             static (doc, id) => doc with { TypeTeamsFolderId = id },
             destination, destination.TypeCupFolderId, destination.TypeTeamsFolderId,
             mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
+        FolderResolution chaosCups = await EnsureCupLeafAsync(
+            "Chaos Cup", "Cups",
+            static (doc, id) => doc with { ChaosCupFolderId = id },
+            static (doc, id) => doc with { ChaosCupsFolderId = id },
+            destination, destination.ChaosCupFolderId, destination.ChaosCupsFolderId,
+            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
 
         DrivePublishingStore.DestinationDocument current =
             await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false)
             ?? destination;
-        return new LibraryFolders(mtshistoryId, seasons, colorCups, colorTeams, typeCups, typeTeams, current);
+        return new LibraryFolders(mtshistoryId, seasons, colorCups, colorTeams, typeCups, typeTeams, chaosCups, current);
     }
 
     private async Task<string> LoadMtshistoryAsync(
@@ -910,6 +927,7 @@ public sealed class DriveLibrarySyncHandler
             var c when string.Equals(c, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal) => folders.Seasons,
             var c when string.Equals(c, DriveLibraryKind.ColorEdition, StringComparison.Ordinal) => folders.ColorCups,
             var c when string.Equals(c, DriveLibraryKind.TypeEdition, StringComparison.Ordinal) => folders.TypeCups,
+            var c when string.Equals(c, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal) => folders.ChaosCups,
             var c when string.Equals(c, DriveLibraryKind.ColorTeam, StringComparison.Ordinal) => folders.ColorTeams,
             var c when string.Equals(c, DriveLibraryKind.TypeTeam, StringComparison.Ordinal) => folders.TypeTeams,
             _ => new FolderResolution(folders.MtshistoryId, false, null),
@@ -947,7 +965,8 @@ public sealed class DriveLibrarySyncHandler
                 var c when string.Equals(c, DriveLibraryKind.SeasonDossier, StringComparison.Ordinal) =>
                     await GenerateDossierAsync(saveId, item.SeasonNumber!.Value, cancellationToken).ConfigureAwait(false),
                 var c when string.Equals(c, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
-                    || string.Equals(c, DriveLibraryKind.TypeEdition, StringComparison.Ordinal) =>
+                    || string.Equals(c, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
+                    || string.Equals(c, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal) =>
                     await GenerateEditionAsync(saveId, item, cancellationToken).ConfigureAwait(false),
                 _ => await GenerateTeamAsync(saveId, item, cancellationToken).ConfigureAwait(false),
             };
@@ -1115,7 +1134,8 @@ public sealed class DriveLibrarySyncHandler
         }
 
         bool isEdition = string.Equals(item.Category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
-            || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal);
+            || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
+            || string.Equals(item.Category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal);
         IReadOnlyDictionary<string, DrivePublishingStore.LibrarySlot>? map =
             isEdition ? current.CupEditionByKey : current.CupTeamByKey;
         string key = isEdition
@@ -1147,7 +1167,8 @@ public sealed class DriveLibrarySyncHandler
         }
 
         bool isEdition = string.Equals(item.Category, DriveLibraryKind.ColorEdition, StringComparison.Ordinal)
-            || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal);
+            || string.Equals(item.Category, DriveLibraryKind.TypeEdition, StringComparison.Ordinal)
+            || string.Equals(item.Category, DriveLibraryKind.ChaosEdition, StringComparison.Ordinal);
         string key = isEdition
             ? DriveLibraryKind.EditionKey(item.Cup!, item.SeasonNumber!.Value)
             : DriveLibraryKind.TeamKey(item.Cup!, item.TeamKey!);
@@ -1472,6 +1493,7 @@ public sealed class DriveLibrarySyncHandler
         yield return DriveLibraryKind.SeasonDossier;
         yield return DriveLibraryKind.ColorEdition;
         yield return DriveLibraryKind.TypeEdition;
+        yield return DriveLibraryKind.ChaosEdition;
         yield return DriveLibraryKind.ColorTeam;
         yield return DriveLibraryKind.TypeTeam;
     }
@@ -1513,6 +1535,8 @@ public sealed class DriveLibrarySyncHandler
                      destination.TypeCupFolderId,
                      destination.TypeCupsFolderId,
                      destination.TypeTeamsFolderId,
+                     destination.ChaosCupFolderId,
+                     destination.ChaosCupsFolderId,
                  })
         {
             if (folderId is null)
@@ -1527,7 +1551,9 @@ public sealed class DriveLibrarySyncHandler
                 || string.Equals(other.ColorTeamsFolderId, folderId, StringComparison.Ordinal)
                 || string.Equals(other.TypeCupFolderId, folderId, StringComparison.Ordinal)
                 || string.Equals(other.TypeCupsFolderId, folderId, StringComparison.Ordinal)
-                || string.Equals(other.TypeTeamsFolderId, folderId, StringComparison.Ordinal))
+                || string.Equals(other.TypeTeamsFolderId, folderId, StringComparison.Ordinal)
+                || string.Equals(other.ChaosCupFolderId, folderId, StringComparison.Ordinal)
+                || string.Equals(other.ChaosCupsFolderId, folderId, StringComparison.Ordinal))
             {
                 return true;
             }

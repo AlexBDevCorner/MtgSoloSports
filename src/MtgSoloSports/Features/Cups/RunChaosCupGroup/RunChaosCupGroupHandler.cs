@@ -27,10 +27,12 @@ namespace MtgSoloSports.Features.Cups.RunChaosCupGroup;
 public sealed class RunChaosCupGroupHandler
 {
     private readonly SaveStore _store;
+    private readonly MtgSoloSports.Features.Reports.GoogleDrivePublishing.DriveAutoPublishNotifier? _autoPublish;
 
-    public RunChaosCupGroupHandler(SaveStore store)
+    public RunChaosCupGroupHandler(SaveStore store, MtgSoloSports.Features.Reports.GoogleDrivePublishing.DriveAutoPublishNotifier? autoPublish = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _autoPublish = autoPublish;
     }
 
     public async Task<RunChaosCupGroupResponse> PlayNextAsync(
@@ -43,14 +45,24 @@ public sealed class RunChaosCupGroupHandler
         ValidateRequest(saveId, stageIndex, groupNumber, sourceSeasonNumber);
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        RunChaosCupGroupResponse response;
         try
         {
-            return await PlayNextUnderLockAsync(saveId, stageIndex, groupNumber, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await PlayNextUnderLockAsync(saveId, stageIndex, groupNumber, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-116: post-commit checkpoint note only (local file write, never
+        // Google calls). Never throws, never fails the sporting command.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     public async Task<RunChaosCupGroupResponse> FinishGroupAsync(
@@ -63,14 +75,24 @@ public sealed class RunChaosCupGroupHandler
         ValidateRequest(saveId, stageIndex, groupNumber, sourceSeasonNumber);
         SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        RunChaosCupGroupResponse response;
         try
         {
-            return await FinishUnderLockAsync(saveId, stageIndex, groupNumber, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
+            response = await FinishUnderLockAsync(saveId, stageIndex, groupNumber, sourceSeasonNumber, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             gate.Release();
         }
+
+        // MSS-116: post-commit checkpoint note only (local file write, never
+        // Google calls). Never throws, never fails the sporting command.
+        if (_autoPublish is not null)
+        {
+            await _autoPublish.NotifyStageCheckpointAsync(saveId, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     public async Task<RunChaosCupGroupResponse> GetAsync(

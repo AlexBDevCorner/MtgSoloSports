@@ -112,6 +112,8 @@ public sealed class DrivePublishingStore
         string? TypeCupFolderId = null,
         string? TypeCupsFolderId = null,
         string? TypeTeamsFolderId = null,
+        string? ChaosCupFolderId = null,
+        string? ChaosCupsFolderId = null,
         IReadOnlyDictionary<string, LibrarySlot>? CupEditionByKey = null,
         IReadOnlyDictionary<string, LibrarySlot>? CupTeamByKey = null,
         DateTimeOffset? LastLibraryPublishedUtc = null,

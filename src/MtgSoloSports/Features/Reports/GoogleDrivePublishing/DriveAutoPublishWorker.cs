@@ -472,7 +472,7 @@ public sealed class DriveAutoPublishWorker : BackgroundService
                     ConfirmCrossSave: false,
                     AllowOverwriteEditedRemote: false,
                     AllowCreateMissing: cupsReady,
-                    Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
+                    Categories: [DriveLibraryKind.ColorEdition, DriveLibraryKind.TypeEdition, DriveLibraryKind.ChaosEdition, DriveLibraryKind.ColorTeam, DriveLibraryKind.TypeTeam],
                     OnlyKeys: keys,
                     MaxFiles: 5000),
                 cancellationToken).ConfigureAwait(false);
@@ -498,7 +498,8 @@ public sealed class DriveAutoPublishWorker : BackgroundService
         !string.IsNullOrWhiteSpace(destination.ColorCupsFolderId)
         && !string.IsNullOrWhiteSpace(destination.ColorTeamsFolderId)
         && !string.IsNullOrWhiteSpace(destination.TypeCupsFolderId)
-        && !string.IsNullOrWhiteSpace(destination.TypeTeamsFolderId);
+        && !string.IsNullOrWhiteSpace(destination.TypeTeamsFolderId)
+        && !string.IsNullOrWhiteSpace(destination.ChaosCupsFolderId);
 
     private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
     {

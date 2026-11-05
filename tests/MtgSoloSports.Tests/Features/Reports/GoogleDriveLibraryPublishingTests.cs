@@ -3,12 +3,16 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Persistence.Catalog;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Tests.Features;
 using Shouldly;
 using Xunit;
+
+#pragma warning disable MA0004 // Test methods must omit ConfigureAwait per xUnit1030; helpers stay plain for consistency.
 
 namespace MtgSoloSports.Tests.Features.Reports;
 
@@ -65,6 +69,8 @@ public sealed class GoogleDriveLibraryPublishingTests
             drive.SeedFolder("folder-type-cup", "folder-mtshistory", "Type Cup");
             drive.SeedFolder("folder-type-cups", "folder-type-cup", "Cups");
             drive.SeedFolder("folder-type-teams", "folder-type-cup", "Teams Histories");
+            drive.SeedFolder("folder-chaos-cup", "folder-mtshistory", "Chaos Cup");
+            drive.SeedFolder("folder-chaos-cups", "folder-chaos-cup", "Cups");
             using HttpClient client = factory.CreateClient();
             await SeedConnectionAsync(factory);
             await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
@@ -666,14 +672,19 @@ public sealed class GoogleDriveLibraryPublishingTests
             before["color-teams"].ShouldBe("not-found");
             before["type-cups"].ShouldBe("not-found");
             before["type-teams"].ShouldBe("not-found");
+            before["chaos-cups"].ShouldBe("not-found");
 
             drive.SeedFolder("folder-color-cup", "folder-mtshistory", "Color Cup");
             drive.SeedFolder("folder-color-cups", "folder-color-cup", "Cups");
+            drive.SeedFolder("folder-chaos-cup", "folder-mtshistory", "Chaos Cup");
+            drive.SeedFolder("folder-chaos-cups", "folder-chaos-cup", "Cups");
             await PutDestinationAsync(client, saveId,
-                """{"mtshistoryFolderId":"folder-mtshistory","colorCupFolderId":"folder-color-cup","colorCupsFolderId":"folder-color-cups"}""");
+                """{"mtshistoryFolderId":"folder-mtshistory","colorCupFolderId":"folder-color-cup","colorCupsFolderId":"folder-color-cups","chaosCupFolderId":"folder-chaos-cup","chaosCupsFolderId":"folder-chaos-cups"}""");
             Dictionary<string, string> after = await PostVerifyAsync(client, saveId);
             after["color-cups"].ShouldBe("ok");
             after["color-cup"].ShouldBe("ok");
+            after["chaos-cups"].ShouldBe("ok");
+            after["chaos-cup"].ShouldBe("ok");
         }
         finally
         {
@@ -914,12 +925,255 @@ public sealed class GoogleDriveLibraryPublishingTests
                      typeof(MtgSoloSports.Features.Cups.PlayColorCupTeamRound.PlayColorCupTeamRoundHandler),
                      typeof(MtgSoloSports.Features.Cups.PlayTypeCupTeamRound.PlayTypeCupTeamRoundHandler),
                      typeof(MtgSoloSports.Features.Cups.FinishTypeCupTeamStage.FinishTypeCupTeamStageHandler),
+                     typeof(MtgSoloSports.Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler),
+                     typeof(MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler),
                  })
         {
             bool hasNotifier = handler.GetConstructors()
                 .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(DriveAutoPublishNotifier)));
             hasNotifier.ShouldBeTrue($"Live handler {handler.Name} must accept DriveAutoPublishNotifier.");
         }
+    }
+
+    [Fact]
+    public async Task LibrarySync_IncludesChaosEdition_RepeatSyncIdempotent()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            string savesRoot = Path.Combine(root, "saves");
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(savesRoot);
+            await CompleteChaosSeasonAsync(savesRoot, saveId);
+
+            SeedLibraryFolders(drive);
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            LibrarySyncResult first = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            first.Status.ShouldBe(HttpStatusCode.OK, first.Body);
+            first.Truncated.ShouldBeFalse();
+            // Completed Chaos dossier is included alongside dossiers/almanac;
+            // saves without Color/Type Cups still sync only what exists.
+            first.ReportsForCategory("chaos-edition").ShouldBe(["chaos-edition:1"]);
+            first.Outcome("chaos-edition:1").ShouldBe("created");
+            first.CategoryTotal("season-dossier").ShouldBe(1);
+            first.CategoryTotal("almanac").ShouldBe(1);
+            drive.Files[first.FileId("chaos-edition:1")!].Content.ShouldContain("Chaos Cup");
+            await AssertChaosMatchesDownloadAsync(client, saveId, drive, first.FileId("chaos-edition:1")!);
+
+            // Selective category routing covers only the Chaos edition.
+            LibrarySyncResult chaosOnly = await PostLibrarySyncCategoriesAsync(
+                client, saveId, ["chaos-edition"], null);
+            chaosOnly.Status.ShouldBe(HttpStatusCode.OK, chaosOnly.Body);
+            chaosOnly.Files.Select(f => f.Report).ShouldBe(["chaos-edition:1"]);
+            chaosOnly.Outcome("chaos-edition:1").ShouldBe("unchanged");
+
+            await AssertRecentContainsChaosAsync(factory, saveId);
+
+            // Repeat sync performs no Drive writes; existing mappings preserved.
+            int filesAfterFirst = drive.Files.Count;
+            LibrarySyncResult second = await PostLibrarySyncAsync(client, saveId);
+            second.Status.ShouldBe(HttpStatusCode.OK, second.Body);
+            second.Files.ShouldAllBe(f => string.Equals(f.Outcome, "unchanged", StringComparison.Ordinal));
+            second.Outcome("chaos-edition:1").ShouldBe("unchanged");
+            second.FileId("chaos-edition:1").ShouldBe(first.FileId("chaos-edition:1"));
+            drive.Files.Count.ShouldBe(filesAfterFirst);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private static async Task CompleteChaosSeasonAsync(string savesRoot, Guid saveId)
+    {
+        // Named action: select the Chaos field and run the full tournament
+        // for Season 1 (the MSS-116 regression trigger). Uses production
+        // handlers on the factory save; no synthetic sporting rows.
+        var handlerStore = TestSaveStores.CreateStoreForRoot(savesRoot);
+        await new MtgSoloSports.Features.Cups.SelectChaosCupField.SelectChaosCupFieldHandler(handlerStore)
+            .HandleAsync(saveId, sourceSeasonNumber: 1).ConfigureAwait(false);
+        await new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(handlerStore)
+            .CompleteCupAsync(saveId, sourceSeasonNumber: 1).ConfigureAwait(false);
+    }
+
+    private static async Task AssertChaosMatchesDownloadAsync(
+        HttpClient client,
+        Guid saveId,
+        FakeDriveClient drive,
+        string fileId)
+    {
+        // Stored Chaos bytes match the user-facing download.
+        using HttpResponseMessage download = await client.GetAsync(
+            $"/api/saves/{saveId:D}/cups/chaos/editions/1/report?format=md").ConfigureAwait(false);
+        download.StatusCode.ShouldBe(HttpStatusCode.OK);
+        Normalize(await download.Content.ReadAsStringAsync().ConfigureAwait(false))
+            .ShouldBe(Normalize(drive.Files[fileId].Content));
+    }
+
+    private static async Task AssertRecentContainsChaosAsync(
+        WebApplicationFactory<Program> factory,
+        Guid saveId)
+    {
+        // Auto selective-refresh keys include the completed Chaos edition.
+        IReadOnlyList<string> recent;
+        using (IServiceScope scope = factory.Services.CreateScope())
+        {
+            var library = scope.ServiceProvider.GetRequiredService<DriveLibrarySyncHandler>();
+            recent = await library.RecentCupKeysAsync(saveId, 1, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        recent.ShouldContain("chaos-edition:1", StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public async Task LibrarySync_ChaosPartialFailure_RetrySucceedsWithoutDuplicates()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            string savesRoot = Path.Combine(root, "saves");
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(savesRoot);
+            // Named action: Chaos selection only (partial dossier, honest
+            // InProgress) keeps this test fast while exercising the same
+            // Chaos edition file path, fingerprint and retry logic.
+            var handlerStore = TestSaveStores.CreateStoreForRoot(savesRoot);
+            await new MtgSoloSports.Features.Cups.SelectChaosCupField.SelectChaosCupFieldHandler(handlerStore)
+                .HandleAsync(saveId, sourceSeasonNumber: 1);
+
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            LibrarySyncResult firstSync = await PostLibrarySyncAsync(client, saveId, allowCreateMissing: true);
+            firstSync.Status.ShouldBe(HttpStatusCode.OK, firstSync.Body);
+            firstSync.Outcome("chaos-edition:1").ShouldBe("created");
+            string chaosFile = firstSync.FileId("chaos-edition:1")!;
+
+            // Mock partial failure: finishing one Chaos group changes the
+            // partial dossier, the Chaos update fails while the dossier
+            // settles; retry reuses the same file id without duplicating.
+            var groups = new MtgSoloSports.Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler(handlerStore);
+            await groups.FinishGroupAsync(saveId, 0, 1, 1);
+            drive.FailUpdatesFor.Add(chaosFile);
+            LibrarySyncResult failed = await PostLibrarySyncAsync(client, saveId);
+            failed.Status.ShouldBe(HttpStatusCode.OK, failed.Body);
+            failed.Outcome("chaos-edition:1").ShouldBe("failed");
+            drive.FailUpdatesFor.Clear();
+            int filesAfterFailure = drive.Files.Count;
+            LibrarySyncResult retried = await PostLibrarySyncAsync(client, saveId);
+            retried.Status.ShouldBe(HttpStatusCode.OK, retried.Body);
+            retried.Outcome("chaos-edition:1").ShouldBe("updated");
+            retried.FileId("chaos-edition:1").ShouldBe(chaosFile);
+            drive.Files.Count.ShouldBe(filesAfterFailure);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LibrarySync_ChaosDestination_CrossSaveReuseNeedsConfirmation()
+    {
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-shared", "root", "mtshistory");
+            drive.SeedFolder("folder-chaos-cup", "folder-shared", "Chaos Cup");
+            drive.SeedFolder("folder-chaos-cups", "folder-chaos-cup", "Cups");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            await store.SaveDestinationAsync(new DrivePublishingStore.DestinationDocument(
+                Guid.NewGuid(), "Other save", "folder-shared", "mtshistory", null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null) with
+            {
+                ChaosCupFolderId = "folder-chaos-cup",
+                ChaosCupsFolderId = "folder-chaos-cups",
+            }, CancellationToken.None);
+            await PutDestinationAsync(client, saveId,
+                """{"mtshistoryFolderId":"folder-shared","confirmCrossSave":true}""");
+            // The shared Chaos Cups folder is already mapped: sync without
+            // confirmation refuses instead of mixing histories.
+            using HttpResponseMessage conflict = await PostLibrarySyncRawAsync(
+                client, saveId, """{"confirmCrossSave":false}""");
+            conflict.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+            LibrarySyncResult accepted = await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(
+                client, saveId, """{"confirmCrossSave":true,"allowCreateMissing":true}"""));
+            accepted.Status.ShouldBe(HttpStatusCode.OK);
+            accepted.Files.ShouldNotBeEmpty();
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task ChaosCompletion_DriveFailure_DoesNotBlockSporting()
+    {
+        // Drive failure must never block a completed Chaos simulation: the
+        // post-commit checkpoint note is local-only and never throws, and no
+        // Drive upload happens inside the sporting transaction.
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-chaos-drive-fail-");
+        try
+        {
+            await new MtgSoloSports.Features.Cups.SelectChaosCupField.SelectChaosCupFieldHandler(store)
+                .HandleAsync(saveId, sourceSeasonNumber: 1);
+
+            string driveRoot = Path.Combine(root, "drive-no-connection");
+            Directory.CreateDirectory(driveRoot);
+            var publishing = new DrivePublishingStore(
+                Microsoft.Extensions.Options.Options.Create(new DrivePublishingOptions { StorePath = driveRoot }),
+                new TestHostEnvironment(driveRoot),
+                TimeProvider.System,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<DrivePublishingStore>.Instance);
+            var tracker = new DriveAutoPublishTracker();
+            var status = new MtgSoloSports.Features.Seasons.GetSeasonStatus.GetSeasonStatusHandler(store);
+            var notifier = new DriveAutoPublishNotifier(
+                store,
+                publishing,
+                tracker,
+                status,
+                TimeProvider.System,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<DriveAutoPublishNotifier>.Instance);
+
+            var completer = new MtgSoloSports.Features.Cups.CompleteChaosCup.CompleteChaosCupHandler(store, notifier);
+            var response = await completer.CompleteCupAsync(saveId, sourceSeasonNumber: 1);
+            response.IsComplete.ShouldBeTrue();
+            response.Stages.Count.ShouldBe(6);
+
+            using SaveDbContext context = store.OpenDbContext(saveId);
+            (await context.ChaosCupEditions.AsNoTracking().CountAsync(e => e.SourceSeasonNumber == 1)).ShouldBe(1);
+            (await context.ChaosCupGroupStandings.AsNoTracking().CountAsync(e => e.SourceSeasonNumber == 1)).ShouldBe(2016);
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    private sealed class TestHostEnvironment : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public TestHostEnvironment(string contentRoot)
+        {
+            ContentRootPath = contentRoot;
+        }
+
+        public string EnvironmentName { get; set; } = "Test";
+
+        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
+
+        public string ContentRootPath { get; set; }
+
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
     }
 
     [Fact]
@@ -1003,10 +1257,12 @@ public sealed class GoogleDriveLibraryPublishingTests
         drive.FoldersFor("folder-mtshistory", "Seasons").Count.ShouldBe(1);
         drive.FoldersFor("folder-mtshistory", "Color Cup").Count.ShouldBe(1);
         drive.FoldersFor("folder-mtshistory", "Type Cup").Count.ShouldBe(1);
+        drive.FoldersFor("folder-mtshistory", "Chaos Cup").Count.ShouldBe(1);
         drive.FoldersFor("folder-color-cup", "Cups").Count.ShouldBe(1);
         drive.FoldersFor("folder-color-cup", "Teams Histories").Count.ShouldBe(1);
         drive.FoldersFor("folder-type-cup", "Cups").Count.ShouldBe(1);
         drive.FoldersFor("folder-type-cup", "Teams Histories").Count.ShouldBe(1);
+        drive.FoldersFor("folder-chaos-cup", "Cups").Count.ShouldBe(1);
         // Adopted folders are persisted for later syncs and status.
         DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
         DrivePublishingStore.DestinationDocument? after =
@@ -1019,6 +1275,8 @@ public sealed class GoogleDriveLibraryPublishingTests
         after.TypeCupFolderId.ShouldBe("folder-type-cup");
         after.TypeCupsFolderId.ShouldBe("folder-type-cups");
         after.TypeTeamsFolderId.ShouldBe("folder-type-teams");
+        after.ChaosCupFolderId.ShouldBe("folder-chaos-cup");
+        after.ChaosCupsFolderId.ShouldBe("folder-chaos-cups");
         after.LastLibraryPublishedUtc.ShouldNotBeNull();
         after.LastLibraryFailed.ShouldBe(0);
     }
@@ -1071,6 +1329,8 @@ public sealed class GoogleDriveLibraryPublishingTests
         drive.SeedFolder("folder-type-cup", "folder-mtshistory", "Type Cup");
         drive.SeedFolder("folder-type-cups", "folder-type-cup", "Cups");
         drive.SeedFolder("folder-type-teams", "folder-type-cup", "Teams Histories");
+        drive.SeedFolder("folder-chaos-cup", "folder-mtshistory", "Chaos Cup");
+        drive.SeedFolder("folder-chaos-cups", "folder-chaos-cup", "Cups");
     }
 
     private static Dictionary<string, string> SnapshotContents(FakeDriveClient drive) =>
@@ -1138,6 +1398,23 @@ public sealed class GoogleDriveLibraryPublishingTests
             allowOverwriteEditedRemote = false,
             allowCreateMissing = false,
             categories = new[] { "color-edition", "color-team" },
+            onlyKeys,
+        });
+        return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);
+    }
+
+    private static async Task<LibrarySyncResult> PostLibrarySyncCategoriesAsync(
+        HttpClient client,
+        Guid saveId,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<string>? onlyKeys)
+    {
+        string body = JsonSerializer.Serialize(new
+        {
+            confirmCrossSave = false,
+            allowOverwriteEditedRemote = false,
+            allowCreateMissing = false,
+            categories,
             onlyKeys,
         });
         return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);

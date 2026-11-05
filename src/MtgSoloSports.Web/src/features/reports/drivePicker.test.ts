@@ -63,6 +63,8 @@ function statusWith(overrides: Partial<DriveStatus>): DriveStatus {
     typeCupFolderId: null,
     typeCupsFolderId: null,
     typeTeamsFolderId: null,
+    chaosCupFolderId: null,
+    chaosCupsFolderId: null,
     lastLibraryPublishedUtc: null,
     lastLibraryError: null,
     lastLibraryCreated: 0,

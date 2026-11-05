@@ -184,15 +184,16 @@ MtgSoloSports/mtshistory/Color Cup/Cups/cup-color-season-<N>-edition.md
 MtgSoloSports/mtshistory/Color Cup/Teams Histories/cup-color-team-<key>.md
 MtgSoloSports/mtshistory/Type Cup/Cups/cup-type-season-<N>-edition.md
 MtgSoloSports/mtshistory/Type Cup/Teams Histories/cup-type-team-<key>.md
+MtgSoloSports/mtshistory/Chaos Cup/Cups/cup-chaos-season-<N>-edition.md
 MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
 ```
 
 - **Preview first.** *Preview library* inventories every supported report and reports
   `created`/`updated`/`unchanged`/`failed` counts per category without any Drive write or
   destination save, so you can see what a sync would do.
-- **Folder adoption, not duplication.** The destination now maps the six Cup folders
+- **Folder adoption, not duplication.** The destination now maps the eight Cup folders
   (`Color Cup`, `Color Cup/Cups`, `Color Cup/Teams Histories`, `Type Cup`, `Type Cup/Cups`,
-  `Type Cup/Teams Histories`) alongside `Seasons/`. Explicitly adopted folders keep custom
+  `Type Cup/Teams Histories`, `Chaos Cup`, `Chaos Cup/Cups`) alongside `Seasons/`. Explicitly adopted folders keep custom
   names; unadopted folders are auto-resolved by default name (`Color Cup`, `Cups`,
   `Teams Histories`, ...) and only created when **Allow creating missing folders/files** is
   ticked. An invisible-but-existing folder is never duplicated: resolution fails closed with
@@ -200,7 +201,7 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
 - **File adoption.** Existing hand-uploaded reports are adopted by stable semantic identity
   (save id, report type, season number or team key): same content adopts the existing file
   with no write; changed content updates that exact file id. Enter the semantic key
-  (`1` for dossiers, `color:1`/`type:2` for editions, `color:red`/`type:Dragon` for teams)
+  (`1` for dossiers, `color:1`/`type:2`/`chaos:1` for editions, `color:red`/`type:Dragon` for teams)
   and use **Choose season/edition/team file…** (Google Picker Markdown grant) so the
   hand-uploaded file becomes visible under the `drive.file` scope, then Save destination.
   One same-named file with
@@ -234,8 +235,8 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
 - Publishing needs the app running and an internet connection; automatic sync
   works only while the app runs and is authorized (no background processing
   when shut down).
-- Only the curated library above is published (season dossiers, Color/Type Cup
-  editions and team histories, almanac). Athlete, standings and league profile
+- Only the curated library above is published (season dossiers, Color/Type/Chaos Cup
+  editions and Color/Type team histories, almanac). Athlete, standings and league profile
   reports stay download-only until explicitly configured later.
 - Drive updates do **not** replace separately uploaded ChatGPT Project copies:
   re-attach the files in ChatGPT after publishing.
@@ -257,11 +258,12 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
 10. Remove server credentials; connect: recoverable `503`.
 11. Simulate a transient failure; publish: recoverable `failed` outcome, retry clean.
 12. Adopt the Cup folders (`Color Cup/Cups`, `Color Cup/Teams Histories`, `Type Cup/Cups`,
-    `Type Cup/Teams Histories`) with **Choose from Drive** or folder ids, then Save + Verify:
-    all six Cup checks report `ok`. Adopt hand-uploaded season/Cup/team files by key with
+    `Type Cup/Teams Histories`, `Chaos Cup/Cups`) with **Choose from Drive** or folder ids, then Save + Verify:
+    all eight Cup checks report `ok`. Adopt hand-uploaded season/Cup/team files by key with
     **Choose season/edition/team file…**, then Save + Verify (pasted ids alone do not grant
     `drive.file` access).
 13. Preview library: per-category created/updated/unchanged/failed counts with no Drive writes.
-14. Sync all changed reports: every season dossier, Cup edition/team history and the almanac
+14. Sync all changed reports: every season dossier, Cup edition/team history (including completed
+    Chaos Cup dossiers in `Chaos Cup/Cups`) and the almanac
     land in place (same ids); repeat sync writes nothing. A manually uploaded ` (1)` duplicate
     surfaces as `duplicate` with no new file until resolved in Drive.

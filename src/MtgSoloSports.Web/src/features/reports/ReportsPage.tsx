@@ -125,6 +125,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
   const [typeCupFolderId, setTypeCupFolderId] = useState('');
   const [typeCupsFolderId, setTypeCupsFolderId] = useState('');
   const [typeTeamsFolderId, setTypeTeamsFolderId] = useState('');
+  const [chaosCupFolderId, setChaosCupFolderId] = useState('');
+  const [chaosCupsFolderId, setChaosCupsFolderId] = useState('');
   const [dossierAdoptionsText, setDossierAdoptionsText] = useState('');
   const [editionAdoptionsText, setEditionAdoptionsText] = useState('');
   const [teamAdoptionsText, setTeamAdoptionsText] = useState('');
@@ -204,6 +206,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         setTypeCupFolderId(status.typeCupFolderId ?? '');
         setTypeCupsFolderId(status.typeCupsFolderId ?? '');
         setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
+        setChaosCupFolderId(status.chaosCupFolderId ?? '');
+        setChaosCupsFolderId(status.chaosCupsFolderId ?? '');
         setDriveLoading(false);
       })
       .catch((failure: unknown) => {
@@ -236,6 +240,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
       setTypeCupFolderId(status.typeCupFolderId ?? '');
       setTypeCupsFolderId(status.typeCupsFolderId ?? '');
       setTypeTeamsFolderId(status.typeTeamsFolderId ?? '');
+      setChaosCupFolderId(status.chaosCupFolderId ?? '');
+      setChaosCupsFolderId(status.chaosCupsFolderId ?? '');
     } catch (failure) {
       setDriveError(apiErrorMessage(failure));
     }
@@ -390,7 +396,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
         <p className="muted small">
           Updates the current season dossier and universe almanac <em>in place</em> in your own{' '}
           <code>mtshistory</code> Drive hierarchy. <em>Sync all changed reports</em> extends the same
-          in-place rules to every season dossier, Color/Type Cup edition and team history. Unchanged
+          in-place rules to every season dossier, Color/Type/Chaos Cup edition and Color/Type team history. Unchanged
           reports are skipped; retries never create duplicates. Publishing never changes simulation data.
         </p>
         {driveLoading ? <Loading label="Loading Drive status…" /> : null}
@@ -577,6 +583,26 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   onChange={(event) => setTypeTeamsFolderId(event.target.value)}
                 />
               </label>
+              <label className="field">
+                <span>Chaos Cup folder id</span>
+                <input
+                  type="text"
+                  value={chaosCupFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Chaos Cup/"
+                  onChange={(event) => setChaosCupFolderId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Chaos Cups folder id</span>
+                <input
+                  type="text"
+                  value={chaosCupsFolderId}
+                  disabled={driveBusy !== null}
+                  placeholder="Drive folder id for Chaos Cup/Cups"
+                  onChange={(event) => setChaosCupsFolderId(event.target.value)}
+                />
+              </label>
             </div>
             <div className="toolbar" role="group" aria-label="Drive Picker grant">
               <button
@@ -710,6 +736,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                   ['pick-type-cup', 'Choose Type Cup…', 'typeCupFolderId'],
                   ['pick-type-cups', 'Choose Type Cups…', 'typeCupsFolderId'],
                   ['pick-type-teams', 'Choose Type Teams…', 'typeTeamsFolderId'],
+                  ['pick-chaos-cup', 'Choose Chaos Cup…', 'chaosCupFolderId'],
+                  ['pick-chaos-cups', 'Choose Chaos Cups…', 'chaosCupsFolderId'],
                 ] as const
               ).map(([busyKey, label, target]) => (
                 <button
@@ -734,7 +762,9 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                           else if (target === 'colorTeamsFolderId') setColorTeamsFolderId(picked.id);
                           else if (target === 'typeCupFolderId') setTypeCupFolderId(picked.id);
                           else if (target === 'typeCupsFolderId') setTypeCupsFolderId(picked.id);
-                          else setTypeTeamsFolderId(picked.id);
+                          else if (target === 'typeTeamsFolderId') setTypeTeamsFolderId(picked.id);
+                          else if (target === 'chaosCupFolderId') setChaosCupFolderId(picked.id);
+                          else setChaosCupsFolderId(picked.id);
                           setDriveNotice(
                             `Picked folder “${picked.name}” — press Save destination, then Verify access.`,
                           );
@@ -933,7 +963,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
             </div>
             <p className="muted small">
               Adopt hand-uploaded library files by semantic key: dossier seasons as <code>1</code>,{' '}
-              <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>; teams as{' '}
+              <code>2</code>; editions as <code>color:1</code>/<code>type:2</code>/<code>chaos:1</code>; teams as{' '}
               <code>color:red</code>/<code>type:Dragon</code>. Preview the library to discover keys, enter
               the key above and grant each file with <em>Choose season/edition/team file…</em> (Google
               Picker grants drive.file access to that exact file), then Save destination. Adopted files
@@ -974,6 +1004,8 @@ export function ReportsPage({ saveId }: { saveId: string }) {
                     typeCupFolderId,
                     typeCupsFolderId,
                     typeTeamsFolderId,
+                    chaosCupFolderId,
+                    chaosCupsFolderId,
                     dossierAdoptions,
                     editionAdoptions,
                     teamAdoptions,

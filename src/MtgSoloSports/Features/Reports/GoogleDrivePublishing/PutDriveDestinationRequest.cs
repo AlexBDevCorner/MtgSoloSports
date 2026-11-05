@@ -15,6 +15,8 @@ public sealed record PutDriveDestinationRequest(
     string? TypeCupFolderId = null,
     string? TypeCupsFolderId = null,
     string? TypeTeamsFolderId = null,
+    string? ChaosCupFolderId = null,
+    string? ChaosCupsFolderId = null,
     IReadOnlyDictionary<string, DriveLibraryAdoption>? DossierAdoptions = null,
     IReadOnlyDictionary<string, DriveLibraryAdoption>? EditionAdoptions = null,
     IReadOnlyDictionary<string, DriveLibraryAdoption>? TeamAdoptions = null);
