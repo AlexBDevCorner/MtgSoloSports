@@ -220,14 +220,18 @@ MtgSoloSports/mtshistory/universe-almanac-<save-slug>.md
   edition/team histories that actually changed after the relevant Cup selection or
   finalization (every changed source season since the last settled publish, so a bulk
   `SimulateSeasons` run refreshes all its new Cup reports, not just the latest season).
-  New Cup edition/team files are created
-  automatically once the four Cup leaf folders are adopted; otherwise auto mode stays
-  fail-closed and the next manual **Sync all changed reports** (with creation confirmed)
-  is the prerequisite. Ordinary league stages never re-upload the
+  New Color/Type Cup edition/team files are created
+  automatically once the four Color/Type leaf folders are adopted; new Chaos Cup
+  edition files additionally require the adopted Chaos Cup/Cups leaf. Otherwise
+  auto mode stays fail-closed per category and the next manual **Sync all changed
+  reports** (with creation confirmed) is the prerequisite. Selective refreshes only
+  resolve the folders for the requested categories, so a legacy auto refresh never
+  creates or adopts the Chaos Cup/Cups tree. Ordinary league stages never re-upload the
   whole team-history archive: unchanged fingerprints report `unchanged` with no writes.
 - **Freshness per category.** Status shows the last library sync time, per-category
   created/updated/unchanged/failed counts and the last library error, alongside the
-  single-publish checkpoint. Verify access now also checks the six Cup folders
+  single-publish checkpoint. Verify access now also checks the eight Cup folders
+  (Color/Type/Chaos containers and leaves)
   (`ok`/`needs-grant`/`not-found`/`needs-adoption`/`duplicate`/`outside-destination`).
 
 ## Limitations

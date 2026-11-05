@@ -87,6 +87,14 @@ public sealed class DriveLibrarySyncHandler
 
     private sealed record GenerationResult(bool Ok, string Value);
 
+    // Unrequested categories keep a fail-closed placeholder: no Drive lookup,
+    // no folder creation/adoption, and a failure if ever used by mistake.
+    private static readonly FolderResolution SkippedFolder =
+        new(null, false, "Category not requested; folder was not resolved.");
+
+    private static bool NeedsFolder(HashSet<string>? categories, string category) =>
+        categories is null || categories.Contains(category);
+
     public async Task<DriveLibrarySyncResponse> HandleAsync(
         Guid saveId,
         DriveLibrarySyncRequest request,
@@ -425,38 +433,57 @@ public sealed class DriveLibrarySyncHandler
         CancellationToken cancellationToken)
     {
         string mtshistoryId = await LoadMtshistoryAsync(destination, cancellationToken).ConfigureAwait(false);
-        FolderResolution seasons = await EnsureSeasonsFolderAsync(
-            destination, mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
-        FolderResolution colorCups = await EnsureCupLeafAsync(
-            "Color Cup", "Cups",
-            static (doc, id) => doc with { ColorCupFolderId = id },
-            static (doc, id) => doc with { ColorCupsFolderId = id },
-            destination, destination.ColorCupFolderId, destination.ColorCupsFolderId,
-            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
-        FolderResolution colorTeams = await EnsureCupLeafAsync(
-            "Color Cup", "Teams Histories",
-            static (doc, id) => doc with { ColorCupFolderId = id },
-            static (doc, id) => doc with { ColorTeamsFolderId = id },
-            destination, destination.ColorCupFolderId, destination.ColorTeamsFolderId,
-            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
-        FolderResolution typeCups = await EnsureCupLeafAsync(
-            "Type Cup", "Cups",
-            static (doc, id) => doc with { TypeCupFolderId = id },
-            static (doc, id) => doc with { TypeCupsFolderId = id },
-            destination, destination.TypeCupFolderId, destination.TypeCupsFolderId,
-            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
-        FolderResolution typeTeams = await EnsureCupLeafAsync(
-            "Type Cup", "Teams Histories",
-            static (doc, id) => doc with { TypeCupFolderId = id },
-            static (doc, id) => doc with { TypeTeamsFolderId = id },
-            destination, destination.TypeCupFolderId, destination.TypeTeamsFolderId,
-            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
-        FolderResolution chaosCups = await EnsureCupLeafAsync(
-            "Chaos Cup", "Cups",
-            static (doc, id) => doc with { ChaosCupFolderId = id },
-            static (doc, id) => doc with { ChaosCupsFolderId = id },
-            destination, destination.ChaosCupFolderId, destination.ChaosCupsFolderId,
-            mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false);
+        // MSS-116: selective (category-filtered) refreshes must not touch
+        // unrequested Cup trees. Resolving every Cup folder with a shared
+        // AllowCreateMissing would create/adopt a Chaos Cup/Cups tree during
+        // an ordinary legacy auto refresh, duplicating an invisible-but-
+        // existing user folder under drive.file. Gate each leaf on its
+        // category (null categories = full sync = all folders).
+        HashSet<string>? categories = NormalizeCategories(request.Categories);
+        FolderResolution seasons = NeedsFolder(categories, DriveLibraryKind.SeasonDossier)
+            ? await EnsureSeasonsFolderAsync(
+                destination, mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
+        FolderResolution colorCups = NeedsFolder(categories, DriveLibraryKind.ColorEdition)
+            ? await EnsureCupLeafAsync(
+                "Color Cup", "Cups",
+                static (doc, id) => doc with { ColorCupFolderId = id },
+                static (doc, id) => doc with { ColorCupsFolderId = id },
+                destination, destination.ColorCupFolderId, destination.ColorCupsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
+        FolderResolution colorTeams = NeedsFolder(categories, DriveLibraryKind.ColorTeam)
+            ? await EnsureCupLeafAsync(
+                "Color Cup", "Teams Histories",
+                static (doc, id) => doc with { ColorCupFolderId = id },
+                static (doc, id) => doc with { ColorTeamsFolderId = id },
+                destination, destination.ColorCupFolderId, destination.ColorTeamsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
+        FolderResolution typeCups = NeedsFolder(categories, DriveLibraryKind.TypeEdition)
+            ? await EnsureCupLeafAsync(
+                "Type Cup", "Cups",
+                static (doc, id) => doc with { TypeCupFolderId = id },
+                static (doc, id) => doc with { TypeCupsFolderId = id },
+                destination, destination.TypeCupFolderId, destination.TypeCupsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
+        FolderResolution typeTeams = NeedsFolder(categories, DriveLibraryKind.TypeTeam)
+            ? await EnsureCupLeafAsync(
+                "Type Cup", "Teams Histories",
+                static (doc, id) => doc with { TypeCupFolderId = id },
+                static (doc, id) => doc with { TypeTeamsFolderId = id },
+                destination, destination.TypeCupFolderId, destination.TypeTeamsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
+        FolderResolution chaosCups = NeedsFolder(categories, DriveLibraryKind.ChaosEdition)
+            ? await EnsureCupLeafAsync(
+                "Chaos Cup", "Cups",
+                static (doc, id) => doc with { ChaosCupFolderId = id },
+                static (doc, id) => doc with { ChaosCupsFolderId = id },
+                destination, destination.ChaosCupFolderId, destination.ChaosCupsFolderId,
+                mtshistoryId, request.AllowCreateMissing, request.DryRun, cancellationToken).ConfigureAwait(false)
+            : SkippedFolder;
 
         DrivePublishingStore.DestinationDocument current =
             await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false)

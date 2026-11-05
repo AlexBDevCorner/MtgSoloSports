@@ -1246,6 +1246,56 @@ public sealed class GoogleDriveLibraryPublishingTests
         }
     }
 
+    [Fact]
+    public async Task LibrarySync_SelectiveLegacyCategories_DoesNotCreateChaosFolders()
+    {
+        // MSS-116 blocking regression: a legacy selective refresh (the auto
+        // partition shape) with creation allowed must not create or adopt a
+        // Chaos Cup/Cups tree when no Chaos leaf was adopted (fail-closed
+        // folder adoption under drive.file).
+        var (factory, root, _, drive) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            drive.SeedFolder("folder-mtshistory", "root", "mtshistory");
+            drive.SeedFolder("folder-seasons", "folder-mtshistory", "Seasons");
+            drive.SeedFolder("folder-color-cup", "folder-mtshistory", "Color Cup");
+            drive.SeedFolder("folder-color-cups", "folder-color-cup", "Cups");
+            drive.SeedFolder("folder-color-teams", "folder-color-cup", "Teams Histories");
+            drive.SeedFolder("folder-type-cup", "folder-mtshistory", "Type Cup");
+            drive.SeedFolder("folder-type-cups", "folder-type-cup", "Cups");
+            drive.SeedFolder("folder-type-teams", "folder-type-cup", "Teams Histories");
+            using HttpClient client = factory.CreateClient();
+            await SeedConnectionAsync(factory);
+            await PutDestinationAsync(client, saveId, """{"mtshistoryFolderId":"folder-mtshistory"}""");
+
+            LibrarySyncResult legacy = await PostLibrarySyncCategoriesCreateAsync(
+                client, saveId,
+                ["color-edition", "type-edition", "color-team", "type-team"], null);
+            legacy.Status.ShouldBe(HttpStatusCode.OK, legacy.Body);
+            legacy.Files.ShouldNotBeEmpty();
+            legacy.Files.Select(f => f.Report)
+                .ShouldNotContain(r => r.StartsWith("chaos-edition:", StringComparison.Ordinal));
+            legacy.Files.ShouldAllBe(f => string.Equals(f.Outcome, "created", StringComparison.Ordinal));
+
+            // No Chaos Cup tree is created or adopted.
+            drive.FoldersFor("folder-mtshistory", "Chaos Cup").ShouldBeEmpty();
+            DrivePublishingStore store = factory.Services.GetRequiredService<DrivePublishingStore>();
+            DrivePublishingStore.DestinationDocument? after =
+                await store.GetDestinationAsync(saveId, CancellationToken.None);
+            after.ShouldNotBeNull();
+            after!.ChaosCupFolderId.ShouldBeNull();
+            after.ChaosCupsFolderId.ShouldBeNull();
+            after.ColorCupsFolderId.ShouldNotBeNull();
+            after.TypeCupsFolderId.ShouldNotBeNull();
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
     private static async Task SimulateLegacyDestinationWithoutChaosAsync(
         WebApplicationFactory<Program> factory,
         Guid saveId)
@@ -1565,6 +1615,23 @@ public sealed class GoogleDriveLibraryPublishingTests
             confirmCrossSave = false,
             allowOverwriteEditedRemote = false,
             allowCreateMissing = false,
+            categories,
+            onlyKeys,
+        });
+        return await ParseLibraryResultAsync(await PostLibrarySyncRawAsync(client, saveId, body).ConfigureAwait(false)).ConfigureAwait(false);
+    }
+
+    private static async Task<LibrarySyncResult> PostLibrarySyncCategoriesCreateAsync(
+        HttpClient client,
+        Guid saveId,
+        IReadOnlyList<string> categories,
+        IReadOnlyList<string>? onlyKeys)
+    {
+        string body = JsonSerializer.Serialize(new
+        {
+            confirmCrossSave = false,
+            allowOverwriteEditedRemote = false,
+            allowCreateMissing = true,
             categories,
             onlyKeys,
         });

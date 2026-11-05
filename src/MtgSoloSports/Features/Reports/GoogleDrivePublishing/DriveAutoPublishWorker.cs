@@ -563,9 +563,6 @@ public sealed class DriveAutoPublishWorker : BackgroundService
     internal static bool IsChaosCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
         !string.IsNullOrWhiteSpace(destination.ChaosCupsFolderId);
 
-    private static bool IsCupLibraryReady(DrivePublishingStore.DestinationDocument destination) =>
-        IsLegacyCupLibraryReady(destination) && IsChaosCupLibraryReady(destination);
-
     private void LogCupRefresh(Guid saveId, DriveLibrarySyncResponse response, bool cupsReady)
     {
         int changed = response.Files.Count(f =>
