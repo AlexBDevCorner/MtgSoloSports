@@ -282,6 +282,12 @@ journalist-archive/save-<saveId>/
 | `with provenance conflict` | Same stage, different fingerprint (restore/replay) | Deliberate `--revision` or new `--archive`; earlier text preserved |
 | `Article file must have '.md'` / `exceeds 32000+` | Article shape | Keep articles Markdown, compact (32 KB max) |
 | Offline staleness | `--bundle` used / game advanced | Disclose `exportedUtc`/`databaseSha256` in chat and in the note |
+| Large save slow `acquire` | Multi-GB loopback download/extraction | Keep the app running; cancellation stays effective, no timeout ceiling, temp files clean on cancel; ensure free disk ≥ 3× save size (live + bundle + snapshot) |
+
+Large saves (MSS-136) need no size flag: both HTTP and `--bundle`
+acquisition stream with bounded buffers and no fixed ceiling. See
+[journalist-snapshot.md](journalist-snapshot.md) for disk/temp, refresh,
+and Docker smoke details.
 
 ## Illustrative fixture example (not a real-save report)
 

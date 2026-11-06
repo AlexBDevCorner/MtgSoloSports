@@ -191,6 +191,64 @@ extraction time on CI (Ubuntu runner, `dotnet test` Release; 58 s of that run
 is one-time Season 2 template construction, not extraction). Ordinary
 single-stage evidence is smaller (same shape, fewer prior seasons).
 
+## Large saves (MSS-136)
+
+No fixed bundle/database size ceiling applies to the normal snapshot
+workflow. Both `acquire` (HTTP from the loopback export endpoint) and
+`acquire --bundle` (explicit offline file) accept valid saves above the
+former 256 MiB thresholds with no opt-in flag, no configured limit, and no
+code edit. Only disk space and platform limits apply. The small manifest
+(`manifest.json`, 1 MiB cap) and bounded query output (`--limit`, default
+200, max 1000) stay bounded; they are unrelated to save size.
+
+Streaming: archive creation (`SaveBundle.CreateToFileAsync`), HTTP download
+(`SnapshotAcquirer.DownloadBundleToFileAsync`), archive reading/extraction
+(`SaveBundle.ExtractFileToStagingAsync`) and checksum
+(`SaveBundle.ComputeFileSha256Hex`) all stream through temporary files with
+bounded 80 KB buffers. Production acquisition never holds the whole ZIP or
+SQLite database in a `byte[]`/`MemoryStream` and uses wide (`long`) byte
+counts so multi-gigabyte artifacts are not constrained by array lengths or
+32-bit arithmetic. The existing ZIP/manifest contract is unchanged; old
+small bundles remain readable. Ordinary game import (`POST
+/api/saves/import`, `SaveStore.ImportAsync`) keeps its 256 MiB policy
+unchanged and never inherits the snapshot path.
+
+Disk/temp expectations: export builds one consistent `VACUUM INTO`
+snapshot, then writes the ZIP to a temp file (server: OS temp with
+`DeleteOnClose`; client download: OS temp; extraction: `.staging-*` under
+the working directory). On success the working snapshot (`save.db`,
+`manifest.json`, `snapshot.json`) is replaced atomically, metadata last; on
+failed/cancelled downloads, truncated/corrupt archives, validation errors
+or file/disk failures the previous valid snapshot is kept and stale data is
+never labeled fresh. Temp download/extraction/export files and streams are
+disposed and deleted on success and failure (Windows file-sharing safe via
+pooled-handle clearing). Refresh replaces `save.db`, so stale `-wal`/`-shm`
+bookkeeping is dropped first; reads recreate it empty.
+
+Timeouts: the helper `HttpClient` uses an infinite timeout so large
+loopback downloads are not cut by a size-implying timeout.
+Cancellation (Ctrl+C) remains effective during long transfers; a cancelled
+download preserves the previous snapshot and cleans its temp file.
+
+Manual smoke against the default Docker deployment (requires a local Docker
+daemon and a large test save; not run in CI):
+
+```powershell
+docker compose up --build -d
+dotnet build tools/SaveSnapshot/MtgSoloSports.SaveSnapshot.csproj --configuration Release
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- acquire --config tools/SaveSnapshot/snapshot.config.json
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- query --config tools/SaveSnapshot/snapshot.config.json --sql "SELECT SeasonNumber, HasSuperleague, IsComplete FROM Seasons ORDER BY SeasonNumber;"
+dotnet run --project tools/SaveSnapshot --configuration Release --no-build -- evidence --config tools/SaveSnapshot/snapshot.config.json
+```
+
+Expected: acquisition succeeds above the old limits, queries match the
+selected save, and evidence resolves the latest completed Superleague stage
+when one exists. Also exercise offline acquisition of the same exported
+bundle (`acquire --config ... --bundle ./my-save.mtgsave.zip`). Record
+actual sizes and completed checks; unavailable manual checks must be
+reported rather than claimed. Never commit snapshots, generated large
+fixtures, real save ids, user archives or local configuration.
+
 ## Verification
 
 Focused tests drive the real CLI in-process against a loopback stub serving
@@ -199,6 +257,25 @@ a genuine `SaveStore.ExportAsync` artifact, plus offline-bundle acquisition:
 ```powershell
 dotnet test tests/MtgSoloSports.Tests/MtgSoloSports.Tests.csproj --configuration Release --no-build --no-restore --filter "FullyQualifiedName~SnapshotHelper"
 ```
+
+Large-save regression (`SnapshotLargeSaveTests`, MSS-136) builds one cheap
+fresh universe plus temporary SQLite `randomblob` filler (test size only,
+not sporting RNG; no seasons simulated, no large artifacts committed) so
+the extracted database and the compressed bundle each exceed the former
+256 MiB limits. It exercises the real production paths — file export
+(`ExportToFileAsync`), offline CLI acquisition, HTTP acquisition with a
+`Content-Length`-less stub body, file extraction, successful read-only
+queries after acquisition, and preservation of the prior snapshot after a
+truncated large transfer and after a wrong-save-id validation — and asserts
+source database/RNG immutability plus temp/staging cleanup. Existing
+malformed-bundle checks (not a ZIP, wrong entry count, traversal entry,
+tampered checksum, future schema/rules/RNG) remain covered by
+`SnapshotAcquireTests`/`SaveExportImportTests`.
+
+Executed in this worker: `SnapshotHelper` + `Features.Saves` focused suite
+(95 tests, passed) and `SnapshotLargeSaveTests` (2 tests, passed, ~34 s for
+280 MB filler + Optimal ZIP). Docker/user-save manual smoke was not
+available in this environment and is reported as not performed, not claimed.
 
 Stage-evidence tests (`StageEvidenceTests`) fork the cheapest applicable
 prepared save (`Season1PlusCups` for incidental history, `Season2Complete`

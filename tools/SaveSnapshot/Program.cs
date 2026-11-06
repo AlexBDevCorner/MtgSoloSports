@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json;
-using MtgSoloSports.Persistence.Saves;
 
 namespace MtgSoloSports.SaveSnapshot;
 
@@ -102,9 +101,9 @@ internal static class Program
         {
             string fullBundlePath = Path.GetFullPath(bundlePath);
             await stderr.WriteLineAsync($"[snapshot] acquiring save '{config.SaveId:D}' offline from bundle '{fullBundlePath}'.").ConfigureAwait(false);
-            byte[] bundleBytes = await ReadBundleFileAsync(fullBundlePath).ConfigureAwait(false);
-            info = await SnapshotAcquirer.AcquireFromBundleAsync(
-                bundleBytes, config.SaveId, config.WorkingDirectory, DateTimeOffset.UtcNow).ConfigureAwait(false);
+            ValidateBundleFile(fullBundlePath);
+            info = await SnapshotAcquirer.AcquireFromBundleFileAsync(
+                fullBundlePath, config.SaveId, config.WorkingDirectory, DateTimeOffset.UtcNow).ConfigureAwait(false);
         }
         else
         {
@@ -363,26 +362,37 @@ internal static class Program
 
     private static HttpClient CreateHttpClient(HttpMessageHandler? overrideHandler)
     {
+        // MSS-136: no download timeout ceiling for large saves. Multi-gigabyte
+        // loopback downloads stream to a temp file with bounded buffers;
+        // cancellation (Ctrl+C) remains effective during long transfers.
+        // List-saves uses the same client; a hung app is surfaced by
+        // cancellation, not by a size-implying timeout.
         if (overrideHandler is not null)
         {
             return new HttpClient(overrideHandler, disposeHandler: false)
             {
-                Timeout = TimeSpan.FromMinutes(5),
+                Timeout = Timeout.InfiniteTimeSpan,
             };
         }
 
         return new HttpClient
         {
-            Timeout = TimeSpan.FromMinutes(5),
+            Timeout = Timeout.InfiniteTimeSpan,
         };
     }
 
-    private static async Task<byte[]> ReadBundleFileAsync(string fullBundlePath)
+    private static void ValidateBundleFile(string fullBundlePath)
     {
         long length;
         try
         {
-            length = new FileInfo(fullBundlePath).Length;
+            FileInfo info = new(fullBundlePath);
+            if (!info.Exists)
+            {
+                throw new InvalidOperationException($"Offline bundle file could not be read: '{fullBundlePath}'.");
+            }
+
+            length = info.Length;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -394,20 +404,9 @@ internal static class Program
             throw new InvalidOperationException($"Offline bundle file is empty: '{fullBundlePath}'.");
         }
 
-        if (length > SaveBundle.MaxBundleBytes)
-        {
-            throw new InvalidOperationException(
-                $"Offline bundle exceeds the {SaveBundle.MaxBundleBytes} byte import limit: '{fullBundlePath}'.");
-        }
-
-        try
-        {
-            return await File.ReadAllBytesAsync(fullBundlePath).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            throw new InvalidOperationException($"Offline bundle file could not be read: '{fullBundlePath}'.", ex);
-        }
+        // MSS-136: no fixed bundle size ceiling. Offline input streams from
+        // the file with bounded buffers; only disk space and platform limits
+        // apply. The small manifest inside stays bounded.
     }
 
     private static string? TryBaseUrlFromConfig(string? configPath)
