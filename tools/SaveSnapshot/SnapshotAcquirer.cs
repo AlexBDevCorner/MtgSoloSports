@@ -13,11 +13,59 @@ namespace MtgSoloSports.SaveSnapshot;
 /// be used offline instead. Every failure mode rejects the artifact before
 /// anything is published, so a failed download or validation never replaces
 /// the previous valid snapshot or represents it as fresh.
+/// MSS-136: acquisition streams through temporary files with bounded buffers
+/// and no fixed bundle/database ceiling, subject only to disk space and
+/// platform limits. Only the small manifest stays bounded.
 /// </summary>
 public static class SnapshotAcquirer
 {
     /// <summary>
+    /// Validates a bundle file and publishes the new working snapshot atomically,
+    /// streaming with bounded buffers and no fixed size ceiling. This is the
+    /// production snapshot path for both HTTP downloads (via a temp file) and
+    /// offline <c>--bundle</c> input.
+    /// </summary>
+    public static async Task<SnapshotInfo> AcquireFromBundleFileAsync(
+        string bundlePath,
+        Guid expectedSaveId,
+        string workingDirectory,
+        DateTimeOffset acquiredUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundlePath);
+        if (expectedSaveId == Guid.Empty)
+        {
+            throw new ArgumentException("Expected save id must not be empty.", nameof(expectedSaveId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
+        if (!File.Exists(bundlePath))
+        {
+            throw new InvalidOperationException($"Offline bundle file could not be read: '{Path.GetFullPath(bundlePath)}'.");
+        }
+
+        string root = Path.GetFullPath(workingDirectory);
+        Directory.CreateDirectory(root);
+        string stagingDirectory = Path.Combine(root, ".staging-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stagingDirectory);
+        try
+        {
+            return await ValidateAndPublishAsync(
+                bundlePath, expectedSaveId, root, stagingDirectory, acquiredUtc, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            DeleteDirectoryBestEffort(stagingDirectory);
+        }
+    }
+
+    /// <summary>
     /// Validates bundle bytes and publishes the new working snapshot atomically.
+    /// Retained for small-save compatibility; delegates to the file-streaming
+    /// path so extraction itself never holds the database in memory. Large
+    /// saves must use <see cref="AcquireFromBundleFileAsync"/> (or HTTP
+    /// acquisition) to avoid holding the whole ZIP in a byte array.
     /// </summary>
     public static async Task<SnapshotInfo> AcquireFromBundleAsync(
         byte[] bundleBytes,
@@ -38,30 +86,23 @@ public static class SnapshotAcquirer
             throw new InvalidOperationException("Save bundle is empty. The download did not produce any bytes.");
         }
 
-        if (bundleBytes.LongLength > SaveBundle.MaxBundleBytes)
-        {
-            throw new InvalidOperationException(
-                $"Save bundle exceeds the {SaveBundle.MaxBundleBytes} byte import limit.");
-        }
-
-        string root = Path.GetFullPath(workingDirectory);
-        Directory.CreateDirectory(root);
-        string stagingDirectory = Path.Combine(root, ".staging-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(stagingDirectory);
+        string tempBundlePath = Path.Combine(
+            Path.GetTempPath(),
+            ".mtgsolosports-bundle-" + Guid.NewGuid().ToString("N") + ".tmp");
         try
         {
-            return await ValidateAndPublishAsync(
-                bundleBytes, expectedSaveId, root, stagingDirectory, acquiredUtc, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(tempBundlePath, bundleBytes, cancellationToken).ConfigureAwait(false);
+            return await AcquireFromBundleFileAsync(
+                tempBundlePath, expectedSaveId, workingDirectory, acquiredUtc, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            DeleteDirectoryBestEffort(stagingDirectory);
+            DeleteFileBestEffort(tempBundlePath);
         }
     }
 
     private static async Task<SnapshotInfo> ValidateAndPublishAsync(
-        byte[] bundleBytes,
+        string bundlePath,
         Guid expectedSaveId,
         string root,
         string stagingDirectory,
@@ -69,7 +110,7 @@ public static class SnapshotAcquirer
         CancellationToken cancellationToken)
     {
         SaveBundle.Extraction extraction = await SaveBundle
-            .ExtractToStagingAsync(bundleBytes, stagingDirectory, cancellationToken)
+            .ExtractFileToStagingAsync(bundlePath, stagingDirectory, cancellationToken)
             .ConfigureAwait(false);
         SaveBundleManifest manifest = ValidateManifestIdentity(extraction.Manifest, expectedSaveId);
         SaveRulesCompatibility.EnsureImportableRules(manifest);
@@ -153,7 +194,13 @@ public static class SnapshotAcquirer
     }
 
     /// <summary>
-    /// Downloads the export for the configured save and publishes the snapshot.
+    /// Downloads the export for the configured save and publishes the snapshot,
+    /// streaming the HTTP body to a temporary file with bounded buffers and no
+    /// fixed size ceiling. Cancellation remains effective during long
+    /// transfers; there is no download timeout ceiling (the HttpClient uses an
+    /// infinite timeout, documented in the snapshot guide). A failed,
+    /// truncated, or cancelled download never replaces a previous snapshot and
+    /// always cleans its temp file.
     /// </summary>
     public static async Task<SnapshotInfo> AcquireFromHttpAsync(
         HttpClient httpClient,
@@ -164,17 +211,66 @@ public static class SnapshotAcquirer
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
-        byte[] bundleBytes = await DownloadBundleAsync(httpClient, baseUrl, expectedSaveId, cancellationToken).ConfigureAwait(false);
-        return await AcquireFromBundleAsync(bundleBytes, expectedSaveId, workingDirectory, acquiredUtc, cancellationToken).ConfigureAwait(false);
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
+        if (expectedSaveId == Guid.Empty)
+        {
+            throw new ArgumentException("Expected save id must not be empty.", nameof(expectedSaveId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(workingDirectory);
+
+        string downloadPath = Path.Combine(
+            Path.GetTempPath(),
+            ".mtgsolosports-download-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            await DownloadBundleToFileAsync(httpClient, baseUrl, expectedSaveId, downloadPath, cancellationToken).ConfigureAwait(false);
+            return await AcquireFromBundleFileAsync(
+                downloadPath, expectedSaveId, workingDirectory, acquiredUtc, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeleteFileBestEffort(downloadPath);
+        }
     }
 
     /// <summary>
-    /// Fetches the existing export artifact with a bounded body read.
+    /// Fetches the existing export artifact to a caller-owned file, streaming
+    /// with bounded buffers, no fixed size ceiling, and no reliance on
+    /// Content-Length. Retained byte-array overload delegates to the file path
+    /// for small-save compatibility only; production acquisition uses
+    /// <see cref="DownloadBundleToFileAsync"/>.
     /// </summary>
     public static async Task<byte[]> DownloadBundleAsync(
         HttpClient httpClient,
         string baseUrl,
         Guid saveId,
+        CancellationToken cancellationToken = default)
+    {
+        string tempPath = Path.Combine(
+            Path.GetTempPath(),
+            ".mtgsolosports-download-" + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            await DownloadBundleToFileAsync(httpClient, baseUrl, saveId, tempPath, cancellationToken).ConfigureAwait(false);
+            return await File.ReadAllBytesAsync(tempPath, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            DeleteFileBestEffort(tempPath);
+        }
+    }
+
+    /// <summary>
+    /// Streams the export artifact to <paramref name="destinationPath"/> with
+    /// bounded buffers and no fixed size ceiling. Does not rely on
+    /// Content-Length; unknown or chunked lengths stream until EOF.
+    /// </summary>
+    public static async Task DownloadBundleToFileAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        Guid saveId,
+        string destinationPath,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -184,12 +280,28 @@ public static class SnapshotAcquirer
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
         string baseRoot = baseUrl.Trim().TrimEnd('/');
         string requestUri = $"{baseRoot}/api/saves/{saveId:D}/export";
-        HttpResponseMessage response;
+        HttpResponseMessage response = await GetExportResponseAsync(httpClient, requestUri, baseRoot, cancellationToken).ConfigureAwait(false);
+
+        using (response)
+        {
+            EnsureExportSuccess(response, saveId, baseRoot);
+            await StreamResponseToFileAsync(response, saveId, destinationPath, cancellationToken).ConfigureAwait(false);
+            EnsureDownloadedNotEmpty(destinationPath);
+        }
+    }
+
+    private static async Task<HttpResponseMessage> GetExportResponseAsync(
+        HttpClient httpClient,
+        string requestUri,
+        string baseRoot,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            response = await httpClient.GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            return await httpClient.GetAsync(requestUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -203,25 +315,69 @@ public static class SnapshotAcquirer
                 $"Game app at '{baseRoot}' did not answer in time ({ex.Message}). " +
                 "Start the default container with 'docker compose up --build' and retry.", ex);
         }
+    }
 
-        using (response)
+    private static void EnsureExportSuccess(HttpResponseMessage response, Guid saveId, string baseRoot)
+    {
+        if (response.StatusCode == HttpStatusCode.NotFound)
         {
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new InvalidOperationException(
+                $"Save '{saveId:D}' was not found on the game app at '{baseRoot}'. " +
+                "Run 'list-saves' to pick the exact save id.");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Game app export failed with {(int)response.StatusCode} ({response.ReasonPhrase}) " +
+                $"for save '{saveId:D}' at '{baseRoot}'.");
+        }
+    }
+
+    private static async Task StreamResponseToFileAsync(
+        HttpResponseMessage response,
+        Guid saveId,
+        string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        string? directory = Path.GetDirectoryName(Path.GetFullPath(destinationPath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        try
+        {
+            using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using FileStream target = new(
+                destinationPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                81920,
+                FileOptions.SequentialScan);
+            await CopyStreamAsync(source, target, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteFileBestEffort(destinationPath);
+            if (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                throw new InvalidOperationException(
-                    $"Save '{saveId:D}' was not found on the game app at '{baseRoot}'. " +
-                    "Run 'list-saves' to pick the exact save id.");
+                throw;
             }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(
-                    $"Game app export failed with {(int)response.StatusCode} ({response.ReasonPhrase}) " +
-                    $"for save '{saveId:D}' at '{baseRoot}'.");
-            }
+            throw new InvalidOperationException(
+                $"Game app export download failed for save '{saveId:D}'.", ex);
+        }
+    }
 
-            using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            return await ReadCappedAsync(stream, cancellationToken).ConfigureAwait(false);
+    private static void EnsureDownloadedNotEmpty(string destinationPath)
+    {
+        FileInfo downloaded = new(destinationPath);
+        if (!downloaded.Exists || downloaded.Length == 0)
+        {
+            DeleteFileBestEffort(destinationPath);
+            throw new InvalidOperationException("Game app export returned an empty bundle.");
         }
     }
 
@@ -320,32 +476,18 @@ public static class SnapshotAcquirer
         }
     }
 
-    private static async Task<byte[]> ReadCappedAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task CopyStreamAsync(Stream source, Stream destination, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(stream);
-        using MemoryStream buffer = new();
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destination);
         byte[] chunk = new byte[81920];
-        long total = 0;
         int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        while ((read = await source.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
         {
-            total = checked(total + read);
-            if (total > SaveBundle.MaxBundleBytes)
-            {
-                throw new InvalidOperationException(
-                    $"Save bundle exceeds the {SaveBundle.MaxBundleBytes} byte import limit.");
-            }
-
-            buffer.Write(chunk, 0, read);
+            await destination.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
         }
 
-        byte[] bytes = buffer.ToArray();
-        if (bytes.Length == 0)
-        {
-            throw new InvalidOperationException("Game app export returned an empty bundle.");
-        }
-
-        return bytes;
+        await destination.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void DeleteDirectoryBestEffort(string path)

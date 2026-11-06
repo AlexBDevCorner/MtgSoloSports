@@ -1288,7 +1288,94 @@ public sealed class SaveStore
         }
     }
 
-    private static ExportRecord BuildExportFromSnapshot(
+    /// <summary>
+    /// File-backed export descriptor. The ZIP lives at
+    /// <see cref="BundlePath"/> and is streamed to the caller; no
+    /// whole-artifact byte array is retained.
+    /// </summary>
+    public sealed record ExportFileRecord(
+        Guid SaveId,
+        string FileName,
+        string ContentType,
+        string BundlePath,
+        SaveBundleManifest Manifest);
+
+    /// <summary>
+    /// Exports a complete save as a portable artifact directly to a
+    /// caller-owned destination file, streaming with bounded buffers and no
+    /// fixed size ceiling. Uses the same consistent <c>VACUUM INTO</c>
+    /// snapshot, identity, and checksum guarantees as <see cref="ExportAsync"/>
+    /// but never holds the ZIP in memory, so multi-gigabyte saves are limited
+    /// only by disk space and platform limits. A failed export deletes any
+    /// partial destination file.
+    /// </summary>
+    public async Task<ExportFileRecord> ExportToFileAsync(
+        Guid saveId,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+
+        string path = GetSaveFilePath(saveId);
+        if (!File.Exists(path))
+        {
+            throw new SaveNotFoundException(saveId);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        string root = GetSavesRoot();
+        string snapshotPath = Path.Combine(root, $".export-{saveId:N}-{Guid.NewGuid():N}.tmp");
+        SemaphoreSlim snapshotGate = AcquireSnapshotGate(saveId);
+        await snapshotGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                throw new SaveNotFoundException(saveId);
+            }
+
+            await CaptureDatabaseSnapshotAsync(path, snapshotPath, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                SaveDetailRecord detail = await ReadDetailFromSnapshotAsync(snapshotPath, saveId, cancellationToken).ConfigureAwait(false);
+                DateTimeOffset exportedUtc = _timeProvider.GetUtcNow();
+                SaveBundleManifest manifest = BuildManifestFromSnapshot(snapshotPath, detail, exportedUtc);
+                try
+                {
+                    await SaveBundle.CreateToFileAsync(snapshotPath, manifest, destinationPath, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    DeleteFileBestEffort(destinationPath);
+                    throw;
+                }
+
+                return new ExportFileRecord(
+                    detail.SaveId,
+                    $"{detail.SaveId:N}.mtgsave.zip",
+                    "application/zip",
+                    destinationPath,
+                    manifest);
+            }
+            finally
+            {
+                ClearSaveConnections(snapshotPath);
+                DeleteFileBestEffort(snapshotPath);
+                DeleteCompanionFiles(snapshotPath);
+            }
+        }
+        finally
+        {
+            snapshotGate.Release();
+        }
+    }
+
+    private static SaveBundleManifest BuildManifestFromSnapshot(
         string snapshotPath,
         SaveDetailRecord detail,
         DateTimeOffset exportedUtc)
@@ -1296,7 +1383,7 @@ public sealed class SaveStore
         ArgumentException.ThrowIfNullOrWhiteSpace(snapshotPath);
         ArgumentNullException.ThrowIfNull(detail);
         string sha256 = SaveBundle.ComputeFileSha256Hex(snapshotPath);
-        SaveBundleManifest manifest = new(
+        return new(
             SaveBundleManifest.ExpectedFormat,
             SaveBundleManifest.CurrentFormatVersion,
             detail.SaveId,
@@ -1312,6 +1399,14 @@ public sealed class SaveStore
             sha256,
             exportedUtc,
             "MtgSoloSports");
+    }
+
+    private static ExportRecord BuildExportFromSnapshot(
+        string snapshotPath,
+        SaveDetailRecord detail,
+        DateTimeOffset exportedUtc)
+    {
+        SaveBundleManifest manifest = BuildManifestFromSnapshot(snapshotPath, detail, exportedUtc);
         byte[] zipBytes = SaveBundle.Create(snapshotPath, manifest);
         return new ExportRecord(
             detail.SaveId,

@@ -34,4 +34,23 @@ public sealed class ExportSaveHandler
             exported.Manifest.DatabaseSha256,
             exported.Manifest.ExportedUtc);
     }
+
+    /// <summary>
+    /// File-streaming export for the production download path (MSS-136).
+    /// Writes the ZIP directly to <paramref name="destinationPath"/> with
+    /// bounded buffers and no fixed size ceiling.
+    /// </summary>
+    public async Task<SaveStore.ExportFileRecord> HandleFileAsync(
+        Guid saveId,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (saveId == Guid.Empty)
+        {
+            throw new ArgumentException("Save id must not be empty.", nameof(saveId));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
+        return await _store.ExportToFileAsync(saveId, destinationPath, cancellationToken).ConfigureAwait(false);
+    }
 }

@@ -14,14 +14,20 @@ namespace MtgSoloSports.Persistence.Saves;
 public static class SaveBundle
 {
     /// <summary>
-    /// Upper bound for an uploaded bundle. Large enough for long-run saves,
-    /// small enough to keep import memory-bounded on localhost.
+    /// Upper bound for an ordinary game import bundle. Large enough for
+    /// long-run saves, small enough to keep import memory-bounded on
+    /// localhost. The local snapshot workflow (MSS-136) does not use this
+    /// limit: snapshot acquisition streams through temporary files with no
+    /// fixed bundle/database ceiling, subject only to disk space and
+    /// platform limits.
     /// </summary>
     public const long MaxBundleBytes = 256L * 1024L * 1024L;
 
     /// <summary>
-    /// Upper bound for the embedded database payload. Rejects zip bombs
-    /// before extraction commits disk outside staging.
+    /// Upper bound for the embedded database payload on the ordinary game
+    /// import path. Rejects zip bombs before extraction commits disk
+    /// outside staging. Snapshot acquisition (MSS-136) streams without this
+    /// ceiling; only the small manifest stays bounded there.
     /// </summary>
     public const long MaxDatabaseBytes = 256L * 1024L * 1024L;
 
@@ -31,8 +37,82 @@ public static class SaveBundle
     public const long MaxManifestBytes = 1L * 1024L * 1024L;
 
     /// <summary>
+    /// Builds a portable bundle from a save database file plus its manifest,
+    /// streaming through bounded buffers into a caller-owned destination file
+    /// without ever holding the whole ZIP or database in memory. Wide file
+    /// streams impose no 2 GiB array ceiling; multi-gigabyte saves are
+    /// constrained only by disk space and platform limits.
+    /// Source reads allow concurrent pooled SQLite handles (Windows share mode).
+    /// </summary>
+    public static async Task CreateToFileAsync(
+        string saveDbPath,
+        SaveBundleManifest manifest,
+        string bundlePath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(saveDbPath);
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundlePath);
+        if (!File.Exists(saveDbPath))
+        {
+            throw new FileNotFoundException("Save database file was not found.", saveDbPath);
+        }
+
+        manifest.ValidateForExport();
+
+        string? directory = Path.GetDirectoryName(Path.GetFullPath(bundlePath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        try
+        {
+            using FileStream destination = new(
+                bundlePath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                81920,
+                FileOptions.SequentialScan);
+            using (ZipArchive archive = new(destination, ZipArchiveMode.Create, leaveOpen: false))
+            {
+                ZipArchiveEntry databaseEntry = archive.CreateEntry(
+                    SaveBundleManifest.DatabaseEntryName, CompressionLevel.Optimal);
+                using (Stream entryStream = databaseEntry.Open())
+                using (FileStream source = OpenSharedRead(saveDbPath))
+                {
+                    await source.CopyToAsync(entryStream, cancellationToken).ConfigureAwait(false);
+                }
+
+                byte[] manifestBytes = System.Text.Encoding.UTF8.GetBytes(manifest.ToJson());
+                ZipArchiveEntry manifestEntry = archive.CreateEntry(
+                    SaveBundleManifest.ManifestEntryName, CompressionLevel.Optimal);
+                using (Stream entryStream = manifestEntry.Open())
+                {
+                    await entryStream.WriteAsync(manifestBytes, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteFileBestEffort(bundlePath);
+            if (ex is IOException or UnauthorizedAccessException or InvalidOperationException or FileNotFoundException)
+            {
+                throw;
+            }
+
+            throw new InvalidOperationException(
+                $"Save bundle could not be written to '{bundlePath}'.", ex);
+        }
+    }
+
+    /// <summary>
     /// Builds a portable bundle from a live save database file plus its manifest.
     /// Source reads allow concurrent pooled SQLite handles (Windows share mode).
+    /// Retained for ordinary small-save import/export compatibility; the
+    /// production snapshot path uses <see cref="CreateToFileAsync"/> to avoid
+    /// whole-artifact byte arrays.
     /// </summary>
     public static byte[] Create(string saveDbPath, SaveBundleManifest manifest)
     {
@@ -195,6 +275,124 @@ public static class SaveBundle
         return (databaseEntry, manifestEntry);
     }
 
+    /// <summary>
+    /// Validates archive shape and extracts the database payload plus manifest
+    /// from a bundle file into a caller-owned staging directory, streaming
+    /// with bounded buffers and no fixed bundle/database ceiling. Only the
+    /// small manifest stays bounded. Used by the local snapshot workflow
+    /// (MSS-136) so multi-gigabyte saves work subject only to disk space and
+    /// platform limits. Entry names stay fixed and output paths stay
+    /// staging-controlled (no Zip Slip); checksum, identity and
+    /// schema/rules/RNG checks still apply at the caller.
+    /// </summary>
+    public static async Task<Extraction> ExtractFileToStagingAsync(
+        string bundlePath,
+        string stagingDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundlePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stagingDirectory);
+        EnsureBundleFileNotEmpty(bundlePath);
+
+        Directory.CreateDirectory(stagingDirectory);
+        string stagedDatabasePath = Path.Combine(stagingDirectory, SaveBundleManifest.DatabaseEntryName);
+
+        FileStream bundleStream = OpenBundleFile(bundlePath);
+        try
+        {
+            return await ExtractArchiveToStagingAsync(bundleStream, stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            DeleteFileBestEffort(stagedDatabasePath);
+            if (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            {
+                throw;
+            }
+
+            throw new InvalidOperationException(
+                "Save bundle could not be extracted.", ex);
+        }
+    }
+
+    private static void EnsureBundleFileNotEmpty(string bundlePath)
+    {
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(bundlePath);
+            if (!info.Exists)
+            {
+                throw new FileNotFoundException("Save bundle file was not found.", bundlePath);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"Save bundle file could not be read: '{bundlePath}'.", ex);
+        }
+
+        if (info.Length == 0)
+        {
+            throw new InvalidOperationException("Save bundle is empty. The download did not produce any bytes.");
+        }
+    }
+
+    private static FileStream OpenBundleFile(string bundlePath)
+    {
+        try
+        {
+            return new FileStream(
+                bundlePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                81920,
+                FileOptions.SequentialScan);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException($"Save bundle file could not be read: '{bundlePath}'.", ex);
+        }
+    }
+
+    private static async Task<Extraction> ExtractArchiveToStagingAsync(
+        FileStream bundleStream,
+        string stagedDatabasePath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(bundleStream);
+        ZipArchive archive;
+        try
+        {
+            archive = new ZipArchive(bundleStream, ZipArchiveMode.Read, leaveOpen: false);
+        }
+        catch (InvalidDataException ex)
+        {
+            bundleStream.Dispose();
+            throw new InvalidOperationException("Uploaded file is not a valid save bundle (not a ZIP archive).", ex);
+        }
+
+        using (archive)
+        {
+            (ZipArchiveEntry databaseEntry, ZipArchiveEntry manifestEntry) = FindBundleEntries(archive);
+            EnsureManifestSize(manifestEntry);
+            SaveBundleManifest manifest = await ReadManifestCappedAsync(manifestEntry, cancellationToken).ConfigureAwait(false);
+            await WriteDatabaseEntryAsync(databaseEntry, stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+            EnsureChecksumMatches(stagedDatabasePath, manifest);
+            return new Extraction(stagedDatabasePath, manifest);
+        }
+    }
+
+    private static void EnsureChecksumMatches(string stagedDatabasePath, SaveBundleManifest manifest)
+    {
+        string actualChecksum = ComputeFileSha256Hex(stagedDatabasePath);
+        if (!string.Equals(actualChecksum, manifest.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Save bundle database checksum does not match the manifest. The artifact is corrupt or tampered with.");
+        }
+    }
+
     private static void EnsureEntrySizes(ZipArchiveEntry databaseEntry, ZipArchiveEntry manifestEntry)
     {
         ArgumentNullException.ThrowIfNull(databaseEntry);
@@ -204,6 +402,12 @@ public static class SaveBundle
             throw new InvalidOperationException("Save bundle database payload has an unsupported size.");
         }
 
+        EnsureManifestSize(manifestEntry);
+    }
+
+    private static void EnsureManifestSize(ZipArchiveEntry manifestEntry)
+    {
+        ArgumentNullException.ThrowIfNull(manifestEntry);
         if (manifestEntry.Length > MaxManifestBytes || manifestEntry.Length <= 0)
         {
             throw new InvalidOperationException("Save bundle manifest payload has an unsupported size.");
@@ -215,16 +419,49 @@ public static class SaveBundle
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(manifestEntry);
-        string manifestJson;
-        using (Stream manifestStream = manifestEntry.Open())
-        using (StreamReader reader = new(manifestStream, System.Text.Encoding.UTF8))
-        {
-            manifestJson = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-        }
+        string manifestJson = await ReadManifestTextAsync(manifestEntry, cancellationToken).ConfigureAwait(false);
 
         SaveBundleManifest manifest = SaveBundleManifest.FromJson(manifestJson);
         manifest.ValidateForImport();
         return manifest;
+    }
+
+    private static Task<SaveBundleManifest> ReadManifestCappedAsync(
+        ZipArchiveEntry manifestEntry,
+        CancellationToken cancellationToken)
+    {
+        // Same manifest validation as the import path; only the small manifest
+        // stays bounded on the uncapped snapshot path.
+        return ReadManifestAsync(manifestEntry, cancellationToken);
+    }
+
+    private static async Task<string> ReadManifestTextAsync(
+        ZipArchiveEntry manifestEntry,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(manifestEntry);
+        using Stream manifestStream = manifestEntry.Open();
+        using MemoryStream buffer = new();
+        byte[] chunk = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await manifestStream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            total = checked(total + read);
+            if (total > MaxManifestBytes)
+            {
+                throw new InvalidOperationException("Save bundle manifest payload has an unsupported size.");
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        if (buffer.Length == 0)
+        {
+            throw new InvalidOperationException("Save bundle manifest payload has an unsupported size.");
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static async Task WriteDatabaseEntryAsync(
@@ -276,5 +513,19 @@ public static class SaveBundle
         ArgumentNullException.ThrowIfNull(stream);
         byte[] hash = SHA256.HashData(stream);
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static void DeleteFileBestEffort(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }
