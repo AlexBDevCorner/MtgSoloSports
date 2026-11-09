@@ -10,6 +10,7 @@ using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Tests.Features;
+using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
 
@@ -248,6 +249,97 @@ public sealed class ChaosLifecycleTests
             {
                 (await context.ChaosCupActivations.CountAsync()).ShouldBe(1);
             }
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LeaguePlay_EligibleSeason_ReportsUpcomingChaos_WithoutUnlockingAction()
+    {
+        // MSS-137: Stage 1 league play in an eligible season surfaces Chaos as
+        // upcoming (persisted activation + current season) while league play
+        // stays the only legal next action. Fresh save is the cheapest Stage 1
+        // state; the named gating checks below still execute.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-chaos137-eligible-");
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync(
+                "Chaos137 Eligible", 13701UL, 13702UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+
+            GetSeasonStatusHandler status = new(store);
+            GetSeasonStatusResponse running = await status.HandleAsync(saveId);
+            running.IsCurrentSeasonComplete.ShouldBeFalse();
+            running.GlobalStage.ShouldBe(1);
+            running.LegalNextActions.ShouldBe([SeasonLifecycleActions.CompleteNextGlobalStage]);
+            running.ChaosEligible.ShouldBeTrue();
+            running.ChaosSelectionResolved.ShouldBeFalse();
+            running.ChaosComplete.ShouldBeFalse();
+
+            // Early visibility must not unlock any Chaos action.
+            Should.Throw<AdvanceToNextEventConflictException>(
+                () => AdvanceToNextEventHandler.ValidateAction(SeasonLifecycleActions.SelectChaosCup, running));
+            Should.Throw<AdvanceToNextEventConflictException>(
+                () => AdvanceToNextEventHandler.ValidateAction(SeasonLifecycleActions.RunChaosCup, running));
+
+            SelectChaosCupFieldHandler selector = new(store);
+            await Should.ThrowAsync<SelectChaosCupFieldConflictException>(
+                () => selector.HandleAsync(saveId));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task LeaguePlay_BeforeActivation_HidesChaos_ThenFirstEligibleShowsSteps()
+    {
+        // MSS-137: seasons earlier than the persisted activation keep the
+        // original timeline; the same save at its first eligible season shows
+        // both steps from Stage 1. Activation toggling simulates the legacy
+        // boundary without an avoidable multi-season run.
+        var (store, root) = TestSaveStores.CreateStore("mtgsolosports-chaos137-activation-");
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync(
+                "Chaos137 Activation", 13711UL, 13712UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                ChaosCupActivationEntity activation = await context.ChaosCupActivations.SingleAsync(e => e.Id == 1);
+                activation.EffectiveFromSeasonNumber = 2;
+                await context.SaveChangesAsync();
+            }
+
+            store.InvalidateMigrationVerified(saveId);
+
+            GetSeasonStatusHandler status = new(store);
+            GetSeasonStatusResponse ineligible = await status.HandleAsync(saveId);
+            ineligible.IsCurrentSeasonComplete.ShouldBeFalse();
+            ineligible.LegalNextActions.ShouldBe([SeasonLifecycleActions.CompleteNextGlobalStage]);
+            ineligible.ChaosEligible.ShouldBeFalse();
+
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                ChaosCupActivationEntity activation = await context.ChaosCupActivations.SingleAsync(e => e.Id == 1);
+                activation.EffectiveFromSeasonNumber = 1;
+                await context.SaveChangesAsync();
+            }
+
+            store.InvalidateMigrationVerified(saveId);
+
+            GetSeasonStatusResponse eligible = await status.HandleAsync(saveId);
+            eligible.IsCurrentSeasonComplete.ShouldBeFalse();
+            eligible.GlobalStage.ShouldBe(1);
+            eligible.LegalNextActions.ShouldBe([SeasonLifecycleActions.CompleteNextGlobalStage]);
+            eligible.ChaosEligible.ShouldBeTrue();
+            eligible.ChaosSelectionResolved.ShouldBeFalse();
+            eligible.ChaosComplete.ShouldBeFalse();
         }
         finally
         {

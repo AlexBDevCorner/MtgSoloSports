@@ -143,6 +143,11 @@ public static class SeasonLifecycleEvaluator
         }
 
         string detail = $"Stage {global.CurrentStage} must complete for every active league before stage {global.CurrentStage + 1} can begin. Next backend step completes the global stage.";
+        // MSS-137: surface upcoming Chaos Cup steps from the first league
+        // stage. Eligibility is the persisted activation plus current season;
+        // selection/completion stay false and the only legal action stays
+        // league play until the final stage completes.
+        bool chaosEligible = await ResolveInProgressChaosEligibilityAsync(context, current.SeasonNumber, cancellationToken).ConfigureAwait(false);
         return new SeasonLifecycleSnapshot(
             saveId,
             current.SeasonNumber,
@@ -164,7 +169,29 @@ public static class SeasonLifecycleEvaluator
             ReadyToStartNextSeason: false,
             CupExtensionPoint.NoCup,
             [SeasonLifecycleActions.CompleteNextGlobalStage],
-            detail);
+            detail,
+            ChaosEligible: chaosEligible,
+            ChaosSelectionResolved: false,
+            ChaosComplete: false);
+    }
+
+    internal static async Task<bool> ResolveInProgressChaosEligibilityAsync(
+        SaveDbContext context,
+        int currentSeasonNumber,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ChaosCupActivationEntity activation;
+        try
+        {
+            activation = await Cups.ChaosCup.ChaosCupLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Chaos", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return Cups.ChaosCup.ChaosCupLifecycle.IsEligible(activation, currentSeasonNumber);
     }
 
     internal static async Task<SeasonLifecycleSnapshot> EvaluateCompletedAsync(
