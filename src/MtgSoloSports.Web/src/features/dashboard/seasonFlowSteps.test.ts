@@ -310,6 +310,73 @@ describe('chaos flow (MSS-110)', () => {
   });
 });
 
+describe('upcoming Chaos Cup during league play (MSS-137)', () => {
+  it('shows both Chaos steps as upcoming from Stage 1 in an eligible season', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 1, globalStage: 1, isSeasonComplete: false }),
+      status({
+        currentSeasonNumber: 1,
+        globalStage: 1,
+        isCurrentSeasonComplete: false,
+        legalNextActions: ['CompleteNextGlobalStage'],
+        chaosEligible: true,
+        chaosSelectionResolved: false,
+        chaosComplete: false,
+      }),
+    );
+    assert.deepEqual(
+      flow.steps.map((step) => step.key),
+      ['league', 'chaosField', 'chaosCup', 'movement', 'rebalance', 'cupField', 'cupIndividual', 'cupTeam', 'nextSeason'],
+    );
+    assert.deepEqual(labels(flow).slice(0, 3), ['League play:current', 'Chaos Cup field:upcoming', 'Chaos Cup:upcoming']);
+    assert.equal(flow.next?.kind, 'live');
+  });
+
+  it('keeps Chaos steps upcoming during intermediate stages without unlocking any Chaos action', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 19, globalStage: 17, isSeasonComplete: false }),
+      status({
+        currentSeasonNumber: 19,
+        globalStage: 17,
+        isCurrentSeasonComplete: false,
+        expectedCup: 'ColorCup',
+        legalNextActions: ['CompleteNextGlobalStage'],
+        chaosEligible: true,
+        chaosSelectionResolved: false,
+        chaosComplete: false,
+      }),
+    );
+    assert.deepEqual(
+      flow.steps.map((step) => step.key),
+      ['league', 'chaosField', 'chaosCup', 'movement', 'qualifier', 'rebalance', 'cupField', 'cupIndividual', 'cupTeam', 'nextSeason'],
+    );
+    assert.equal(flow.steps[0].state, 'current');
+    assert.equal(flow.steps[1].state, 'upcoming');
+    assert.equal(flow.steps[2].state, 'upcoming');
+    // League play stays the only next action; no Chaos event is offered early.
+    assert.equal(flow.next?.kind, 'live');
+    assert.equal(flow.next?.kind === 'live' ? flow.next.label : null, 'Play stage 17');
+  });
+
+  it('hides both Chaos steps before the activation season', () => {
+    const flow = seasonFlow(
+      progress({ seasonNumber: 1, globalStage: 1, isSeasonComplete: false }),
+      status({
+        currentSeasonNumber: 1,
+        globalStage: 1,
+        isCurrentSeasonComplete: false,
+        legalNextActions: ['CompleteNextGlobalStage'],
+        chaosEligible: false,
+        chaosSelectionResolved: false,
+        chaosComplete: false,
+      }),
+    );
+    assert.ok(!flow.steps.some((step) => step.key.startsWith('chaos')), 'no Chaos steps before activation');
+    assert.equal(flow.steps[0].state, 'current');
+    assert.equal(flow.next?.kind, 'live');
+  });
+});
+
 describe('tiered pyramid flow (MSS-060)', () => {
   function tieredProgress(): SeasonProgress {
     const leagues: SeasonProgress['leagues'] = [];
