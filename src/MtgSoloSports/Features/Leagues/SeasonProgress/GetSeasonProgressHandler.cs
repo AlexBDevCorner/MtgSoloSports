@@ -65,7 +65,8 @@ public sealed class GetSeasonProgressHandler
                 status.LeagueLevel,
                 status.CurrentStage,
                 status.CompletedStages,
-                status.IsLeagueComplete));
+                status.IsLeagueComplete,
+                status.SportingColor));
         }
 
         return new GetSeasonProgressResponse(

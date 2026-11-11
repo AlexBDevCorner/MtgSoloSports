@@ -25,7 +25,8 @@ public static class GlobalStageGate
         string LeagueLevel,
         int? CurrentStage,
         int CompletedStages,
-        bool IsLeagueComplete);
+        bool IsLeagueComplete,
+        int SportingColor = 0);
 
     public sealed record GlobalStageView(
         int CurrentStage,
@@ -116,7 +117,7 @@ public static class GlobalStageGate
         if (leagueStages.Count == 0)
         {
             SimulationKernel.Leagues.LeagueLevel emptyLevel = LeagueEntityLevels.GetLevel(league);
-            return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), league.FeederDivision, emptyLevel.ToString(), 1, 0, false);
+            return new LeagueStageStatus(league.Id, league.Name, DescribeKind(league), league.FeederDivision, emptyLevel.ToString(), 1, 0, false, league.SportingColor);
         }
 
         List<StageEntity> ordered = CheckContiguous(league, leagueStages);
@@ -178,7 +179,7 @@ public static class GlobalStageGate
         {
             if (max.StageNumber == rules.StagesPerSeason)
             {
-                return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, null, rules.StagesPerSeason, true);
+                return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, null, rules.StagesPerSeason, true, league.SportingColor);
             }
 
             throw new InvalidOperationException(
@@ -192,7 +193,7 @@ public static class GlobalStageGate
                 $"League '{league.Name}' has non-contiguous completion; all stages before {max.StageNumber} must be complete.");
         }
 
-        return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, max.StageNumber, completed, false);
+        return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, max.StageNumber, completed, false, league.SportingColor);
     }
 
     internal static string DescribeKind(LeagueEntity league)

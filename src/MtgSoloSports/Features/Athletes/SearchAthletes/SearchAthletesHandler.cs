@@ -37,7 +37,8 @@ public sealed class SearchAthletesHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates = await LoadCandidatesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<string, (string Level, int Division)> levels = await LoadLeagueLevelsByNameAsync(context, cancellationToken).ConfigureAwait(false);
-        return MapPaged(saveId, candidates, query, levels);
+        Dictionary<string, string> leagueKeys = await LoadLeagueKeysByNameAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapPaged(saveId, candidates, query, levels, leagueKeys);
     }
 
     public async Task<SearchAthletesOptionsResponse> HandleOptionsAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -81,11 +82,38 @@ public sealed class SearchAthletesHandler
         return levels;
     }
 
+    /// <summary>
+    /// Stable cross-season league key per league name for search links
+    /// (MSS-139). Same first-persisted-row-wins rule as levels; pool athletes
+    /// carry no key and render as plain text.
+    /// </summary>
+    internal static async Task<Dictionary<string, string>> LoadLeagueKeysByNameAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .OrderBy(e => e.SeasonId)
+            .ThenBy(e => e.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<string, string> keys = new(StringComparer.Ordinal);
+        foreach (LeagueEntity league in leagues)
+        {
+            if (!keys.ContainsKey(league.Name))
+            {
+                keys[league.Name] = Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
+            }
+        }
+
+        return keys;
+    }
+
     internal static SearchAthletesResponse MapPaged(
         Guid saveId,
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
         SearchAthletesQuery query,
-        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null,
+        IReadOnlyDictionary<string, string>? leagueKeysByName = null)
     {
         IReadOnlyList<SearchAthletesFilter.Candidate> filtered = SearchAthletesFilter.ApplyFilters(candidates, query);
         (string sort, string dir) = query.EffectiveSort();
@@ -95,14 +123,15 @@ public sealed class SearchAthletesHandler
         List<AthleteSearchResultDto> page = sorted
             .Skip(skip)
             .Take(take)
-            .Select(c => MapResult(c, levelsByName))
+            .Select(c => MapResult(c, levelsByName, leagueKeysByName))
             .ToList();
         return new SearchAthletesResponse(saveId, filtered.Count, skip, take, page);
     }
 
     internal static AthleteSearchResultDto MapResult(
         SearchAthletesFilter.Candidate candidate,
-        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null,
+        IReadOnlyDictionary<string, string>? leagueKeysByName = null)
     {
         string? level = null;
         int? division = null;
@@ -111,6 +140,13 @@ public sealed class SearchAthletesHandler
         {
             level = resolved.Level;
             division = resolved.Division;
+        }
+
+        string? leagueKey = null;
+        if (candidate.IsActive && candidate.CurrentLeagueName is not null && leagueKeysByName is not null
+            && leagueKeysByName.TryGetValue(candidate.CurrentLeagueName, out string? resolvedKey))
+        {
+            leagueKey = resolvedKey;
         }
 
         return new AthleteSearchResultDto(
@@ -135,7 +171,8 @@ public sealed class SearchAthletesHandler
             candidate.CupPodiums,
             candidate.CupTitles,
             level,
-            division);
+            division,
+            leagueKey);
     }
 
     internal static SearchAthletesOptionsResponse MapOptions(

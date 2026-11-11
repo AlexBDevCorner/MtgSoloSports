@@ -212,12 +212,13 @@ public sealed class GetQualifierRoundsHandler
             : string.Empty;
 
         Dictionary<int, string> leagueNames = await GetQualifierListHandler.LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> leagueKeys = await GetQualifierListHandler.LoadLeagueKeysAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SaveAthleteEntity> cards = await LoadCardsAsync(context, field, cancellationToken).ConfigureAwait(false);
-        List<QualifierFieldMember> fieldMembers = MapField(field, leagueNames, cards);
+        List<QualifierFieldMember> fieldMembers = MapField(field, leagueNames, cards, leagueKeys);
         List<QualifierRoundSummary> rounds = roundRows
             .Select(r => new QualifierRoundSummary(r.RoundNumber, r.RulesVersion, r.PayloadChecksum))
             .ToList();
-        List<QualifierEventMember> standings = GetQualifierListHandler.MapMembers(standingRows, namesByAthlete, leagueNames);
+        List<QualifierEventMember> standings = GetQualifierListHandler.MapMembers(standingRows, namesByAthlete, leagueNames, leagueKeys);
 
         return new GetQualifierRoundsResponse(
             saveId,
@@ -274,13 +275,16 @@ public sealed class GetQualifierRoundsHandler
     internal static List<QualifierFieldMember> MapField(
         FeederQualifierFieldSelection.FeederField field,
         IReadOnlyDictionary<int, string> leagueNames,
-        IReadOnlyDictionary<int, SaveAthleteEntity> cards)
+        IReadOnlyDictionary<int, SaveAthleteEntity> cards,
+        IReadOnlyDictionary<int, string>? leagueKeys = null)
     {
         List<QualifierFieldMember> members = new(field.All.Count);
         foreach (FeederQualifierFieldSelection.FeederPick pick in field.All.OrderBy(p => p.Role).ThenBy(p => p.FromSeasonRank))
         {
             leagueNames.TryGetValue(pick.FromLeagueId, out string? leagueName);
             cards.TryGetValue(pick.SaveAthleteId, out SaveAthleteEntity? card);
+            string? leagueKey = null;
+            leagueKeys?.TryGetValue(pick.FromLeagueId, out leagueKey);
             members.Add(new QualifierFieldMember(
                 pick.SaveAthleteId,
                 pick.Name,
@@ -291,7 +295,8 @@ public sealed class GetQualifierRoundsHandler
                 pick.FromSeasonRank,
                 card?.ImageUrl,
                 card?.SetCode,
-                card?.TypeLine ?? string.Empty));
+                card?.TypeLine ?? string.Empty,
+                leagueKey));
         }
 
         return members;

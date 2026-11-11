@@ -1842,6 +1842,12 @@ public sealed class RebalanceFeedersHandler
             string toName = movement.ToLeagueId == PoolSentinelLeagueId
                 ? "Common Pool"
                 : leaguesById.TryGetValue(movement.ToLeagueId, out LeagueEntity? to) ? to.Name : $"League {movement.ToLeagueId}";
+            string? fromKey = movement.FromLeagueId == PoolSentinelLeagueId
+                ? null
+                : leaguesById.TryGetValue(movement.FromLeagueId, out LeagueEntity? fromLeague) ? BuildLeagueKey(fromLeague) : null;
+            string? toKey = movement.ToLeagueId == PoolSentinelLeagueId
+                ? null
+                : leaguesById.TryGetValue(movement.ToLeagueId, out LeagueEntity? toLeague) ? BuildLeagueKey(toLeague) : null;
             members.Add(new RebalanceMovementMember(
                 movement.SaveAthleteId,
                 name ?? $"Athlete {movement.SaveAthleteId}",
@@ -1852,9 +1858,21 @@ public sealed class RebalanceFeedersHandler
                 toName,
                 kind.ToString(),
                 movement.FromSeasonRank,
-                imageUrl));
+                imageUrl,
+                fromKey,
+                toKey));
         }
 
         return members;
+    }
+
+    /// <summary>
+    /// Stable cross-season league identity for rebalance links (MSS-139). Keys
+    /// derive from league rows via <c>LeagueKey</c>, never from names.
+    /// </summary>
+    internal static string BuildLeagueKey(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return Features.Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
     }
 }

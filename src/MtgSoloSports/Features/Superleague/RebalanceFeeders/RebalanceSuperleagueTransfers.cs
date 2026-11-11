@@ -172,7 +172,9 @@ public static class RebalanceSuperleagueTransfers
             nextSuperleague.Name,
             DepartureKind,
             rank,
-            imageUrl);
+            imageUrl,
+            from is null ? null : RebalanceFeedersHandler.BuildLeagueKey(from),
+            RebalanceFeedersHandler.BuildLeagueKey(nextSuperleague));
     }
 
     internal static RebalanceMovementMember MapReturn(
@@ -199,7 +201,9 @@ public static class RebalanceSuperleagueTransfers
             to?.Name ?? $"League {next.LeagueId.Value}",
             ReturnKind,
             rank,
-            imageUrl);
+            imageUrl,
+            from is null ? null : RebalanceFeedersHandler.BuildLeagueKey(from),
+            to is null ? null : RebalanceFeedersHandler.BuildLeagueKey(to));
     }
 
     private static int RequireSourceRank(IReadOnlyDictionary<int, int> ranks, int athleteId, string label)

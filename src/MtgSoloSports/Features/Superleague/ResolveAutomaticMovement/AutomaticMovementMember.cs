@@ -10,6 +10,9 @@ namespace MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 /// "Feeder1", "Feeder2", "Feeder3") derived from league rows without parsing
 /// league names, so the reveal can group by boundary (MSS-060). Pool
 /// sentinels (league id 0) carry null levels.
+/// FromLeagueKey/ToLeagueKey (MSS-139 additive) carry the stable cross-season
+/// league identity for profile links; null for pool sentinels and legacy rows
+/// so text without identity renders as plain text.
 /// </summary>
 public sealed record AutomaticMovementMember(
     int AthleteId,
@@ -23,4 +26,6 @@ public sealed record AutomaticMovementMember(
     string MovementKind,
     string? ImageUrl = null,
     string? FromLeagueLevel = null,
-    string? ToLeagueLevel = null);
+    string? ToLeagueLevel = null,
+    string? FromLeagueKey = null,
+    string? ToLeagueKey = null);

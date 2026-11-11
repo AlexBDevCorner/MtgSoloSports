@@ -28,4 +28,5 @@ public sealed record AthleteSearchResultDto(
     int CupPodiums,
     int CupTitles,
     string? CurrentLeagueLevel = null,
-    int? CurrentLeagueDivision = null);
+    int? CurrentLeagueDivision = null,
+    string? CurrentLeagueKey = null);

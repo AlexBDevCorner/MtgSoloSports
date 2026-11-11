@@ -9,6 +9,9 @@ namespace MtgSoloSports.Features.Superleague.RebalanceFeeders;
 /// decisions are never recomputed here.
 /// ImageUrl carries the existing card artwork (null when unavailable) so the
 /// rebalance reveal renders recognizable tiles.
+/// FromLeagueKey/ToLeagueKey (MSS-139 additive) carry the stable cross-season
+/// league identity for profile links; null for the common pool and legacy rows
+/// so text without identity renders as plain text.
 /// </summary>
 public sealed record RebalanceMovementMember(
     int AthleteId,
@@ -20,4 +23,6 @@ public sealed record RebalanceMovementMember(
     string ToLeagueName,
     string Kind,
     int FromSeasonRank,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    string? FromLeagueKey = null,
+    string? ToLeagueKey = null);

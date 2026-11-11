@@ -336,7 +336,9 @@ public sealed class GetAutomaticMovementHandler
                 "Safe",
                 imageUrl,
                 level,
-                level));
+                level,
+                BuildLeagueKey(sourceSuperleague),
+                BuildLeagueKey(nextSuperleague)));
         }
 
         if (members.Count != 16)
@@ -387,9 +389,21 @@ public sealed class GetAutomaticMovementHandler
                 kind.ToString(),
                 imageUrl,
                 from is null ? null : LeagueEntityLevels.GetLevel(from).ToString(),
-                toLevel));
+                toLevel,
+                from is null ? null : BuildLeagueKey(from),
+                leaguesById.TryGetValue(toLeague, out LeagueEntity? toKey) ? BuildLeagueKey(toKey) : null));
         }
 
         return members;
+    }
+
+    /// <summary>
+    /// Stable cross-season league identity for movement links (MSS-139). Keys
+    /// derive from league rows via <c>LeagueKey</c>, never from names.
+    /// </summary>
+    internal static string BuildLeagueKey(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
     }
 }
