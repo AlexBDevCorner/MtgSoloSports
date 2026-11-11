@@ -63,7 +63,9 @@ public sealed class GetAthleteProfileHandler
         List<AthleteChaosHistoryDto> chaosHistory = await LoadChaosHistoryAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         Dictionary<int, (string Level, int Division)> levels = await LoadLeagueLevelsAsync(
             context, summaries, cancellationToken).ConfigureAwait(false);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, levels);
+        Dictionary<int, string> leagueKeys = await LoadLeagueKeysAsync(
+            context, summaries, career.CurrentLeagueId, cancellationToken).ConfigureAwait(false);
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, levels, leagueKeys);
     }
 
     internal static async Task<SaveAthleteEntity> LoadAthleteAsync(
@@ -141,13 +143,21 @@ public sealed class GetAthleteProfileHandler
         IReadOnlyList<AthleteCupSelectionDto>? selections = null,
         IReadOnlyList<AthleteCupHistoryDto>? cupHistory = null,
         IReadOnlyList<AthleteChaosHistoryDto>? chaosHistory = null,
-        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null)
+        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null,
+        IReadOnlyDictionary<int, string>? leagueKeysByLeague = null)
     {
         AthleteCardDto card = MapCard(athlete);
-        AthleteCareerDto careerDto = MapCareer(career);
+        string? currentLeagueKey = null;
+        if (career.CurrentLeagueId.HasValue && leagueKeysByLeague is not null
+            && leagueKeysByLeague.TryGetValue(career.CurrentLeagueId.Value, out string? resolvedKey))
+        {
+            currentLeagueKey = resolvedKey;
+        }
+
+        AthleteCareerDto careerDto = MapCareer(career, currentLeagueKey);
         List<AthleteSeasonDto> seasons = summaries
             .OrderBy(s => s.SeasonNumber)
-            .Select(s => MapSeason(s, levelsByLeague))
+            .Select(s => MapSeason(s, levelsByLeague, leagueKeysByLeague))
             .ToList();
         return new GetAthleteProfileResponse(
             saveId,
@@ -213,7 +223,7 @@ public sealed class GetAthleteProfileHandler
         }
 
         AthleteCareerEntity career = AthleteProjectionUpdater.BuildCareer(athlete.Id, history, rules);
-        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, ToLevels(history.LeaguesById));
+        return MapPersisted(saveId, athlete, career, summaries, honours, movements, selections, cupHistory, chaosHistory, ToLevels(history.LeaguesById), ToLeagueKeys(history.LeaguesById));
     }
 
     internal static async Task<List<AthleteHonourDto>> LoadHonoursAsync(
@@ -242,13 +252,57 @@ public sealed class GetAthleteProfileHandler
 
         if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
         {
-            return MapPersistedHonours(rows);
+            Dictionary<int, LeagueEntity> leaguesById = await LoadHonourLeaguesAsync(context, rows, cancellationToken).ConfigureAwait(false);
+            return MapPersistedHonours(rows, leaguesById);
         }
 
         return await DerivePodiumHonoursAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static List<AthleteHonourDto> MapPersistedHonours(List<HonourEntity> rows)
+    internal static async Task<Dictionary<int, LeagueEntity>> LoadHonourLeaguesAsync(
+        SaveDbContext context,
+        IReadOnlyList<HonourEntity> rows,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> leagueIds = rows
+            .Where(e => Records.HonourKindMapper.IsLeagueHonourKind(e.Kind) && e.LeagueId > 0)
+            .Select(e => e.LeagueId)
+            .ToHashSet();
+        if (leagueIds.Count == 0)
+        {
+            return new Dictionary<int, LeagueEntity>();
+        }
+
+        return await context.Leagues
+            .AsNoTracking()
+            .Where(e => leagueIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static string? CupForHonourKind(int kind)
+    {
+        return kind switch
+        {
+            (int)Records.HonourKind.ColorCupIndividualChampion => "color",
+            (int)Records.HonourKind.ColorCupIndividualRunnerUp => "color",
+            (int)Records.HonourKind.ColorCupIndividualThirdPlace => "color",
+            (int)Records.HonourKind.ColorCupTeamChampion => "color",
+            (int)Records.HonourKind.ColorCupTeamRunnerUp => "color",
+            (int)Records.HonourKind.ColorCupTeamThirdPlace => "color",
+            (int)Records.HonourKind.TypeCupTeamChampion => "type",
+            (int)Records.HonourKind.TypeCupTeamRunnerUp => "type",
+            (int)Records.HonourKind.TypeCupTeamThirdPlace => "type",
+            (int)Records.HonourKind.ChaosCupIndividualChampion => "chaos",
+            (int)Records.HonourKind.ChaosCupIndividualRunnerUp => "chaos",
+            (int)Records.HonourKind.ChaosCupIndividualThirdPlace => "chaos",
+            _ => null,
+        };
+    }
+
+    internal static List<AthleteHonourDto> MapPersistedHonours(
+        List<HonourEntity> rows,
+        IReadOnlyDictionary<int, LeagueEntity>? leaguesById = null)
     {
         List<AthleteHonourDto> honours = new(rows.Count);
         foreach (HonourEntity row in rows.OrderBy(e => e.SeasonNumber).ThenBy(e => e.LeagueName, StringComparer.Ordinal))
@@ -256,7 +310,16 @@ public sealed class GetAthleteProfileHandler
             string kind = Enum.IsDefined(typeof(Records.HonourKind), row.Kind)
                 ? ((Records.HonourKind)row.Kind).ToString()
                 : $"Honour{row.Kind}";
-            honours.Add(new AthleteHonourDto(row.SeasonNumber, row.LeagueName, kind));
+            string? leagueKey = null;
+            if (Records.HonourKindMapper.IsLeagueHonourKind(row.Kind)
+                && leaguesById is not null
+                && leaguesById.TryGetValue(row.LeagueId, out LeagueEntity? league))
+            {
+                leagueKey = BuildLeagueKey(league);
+            }
+
+            string? cup = CupForHonourKind(row.Kind);
+            honours.Add(new AthleteHonourDto(row.SeasonNumber, row.LeagueName, kind, leagueKey, cup));
         }
 
         return honours;
@@ -400,7 +463,9 @@ public sealed class GetAthleteProfileHandler
             honours.Add(new AthleteHonourDto(
                 row.SourceSeasonNumber,
                 Features.Cups.RunChaosCupGroup.RunChaosCupGroupHandler.ChaosHonourLeagueName,
-                kind.ToString()));
+                kind.ToString(),
+                LeagueKey: null,
+                Cup: "chaos"));
         }
 
         return honours;
@@ -447,7 +512,7 @@ public sealed class GetAthleteProfileHandler
             }
 
             Records.HonourKind kind = Records.HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
-            honours.Add(new AthleteHonourDto(season.SeasonNumber, league.Name, kind.ToString()));
+            honours.Add(new AthleteHonourDto(season.SeasonNumber, league.Name, kind.ToString(), BuildLeagueKey(league), Cup: null));
         }
 
         return honours;
@@ -467,7 +532,7 @@ public sealed class GetAthleteProfileHandler
         foreach (ColorCupIndividualStandingEntity row in rows)
         {
             Records.HonourKind kind = Records.HonourKindMapper.FromColorCupIndividualRank(row.CupRank);
-            honours.Add(new AthleteHonourDto(row.SourceSeasonNumber, "Color Cup", kind.ToString()));
+            honours.Add(new AthleteHonourDto(row.SourceSeasonNumber, "Color Cup", kind.ToString(), LeagueKey: null, Cup: "color"));
         }
 
         return honours;
@@ -504,7 +569,7 @@ public sealed class GetAthleteProfileHandler
             }
 
             Records.HonourKind kind = Records.HonourKindMapper.FromColorCupTeamRank(team.TeamRank);
-            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Color Cup Team", kind.ToString()));
+            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Color Cup Team", kind.ToString(), LeagueKey: null, Cup: "color"));
         }
 
         return honours;
@@ -554,7 +619,7 @@ public sealed class GetAthleteProfileHandler
             }
 
             Records.HonourKind kind = Records.HonourKindMapper.FromTypeCupTeamRank(team.TeamRank);
-            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Type Cup Team", kind.ToString()));
+            honours.Add(new AthleteHonourDto(team.SourceSeasonNumber, "Type Cup Team", kind.ToString(), LeagueKey: null, Cup: "type"));
         }
 
         return honours;
@@ -633,6 +698,12 @@ public sealed class GetAthleteProfileHandler
         string kind = Enum.IsDefined(typeof(MovementKind), row.Kind)
             ? ((MovementKind)row.Kind).ToString()
             : $"Movement{row.Kind}";
+        string? fromKey = row.FromLeagueId != 0 && leaguesById.TryGetValue(row.FromLeagueId, out LeagueEntity? fromLeagueEntity)
+            ? BuildLeagueKey(fromLeagueEntity)
+            : null;
+        string? toKey = row.ToLeagueId != 0 && leaguesById.TryGetValue(row.ToLeagueId, out LeagueEntity? toLeagueEntity)
+            ? BuildLeagueKey(toLeagueEntity)
+            : null;
         return new AthleteMovementDto(
             fromSeason,
             toSeason,
@@ -641,7 +712,9 @@ public sealed class GetAthleteProfileHandler
             kind,
             row.FromSeasonRank,
             fromLevel,
-            toLevel);
+            toLevel,
+            fromKey,
+            toKey);
     }
 
     internal static async Task<List<AthleteCupSelectionDto>> LoadCupSelectionsAsync(
@@ -669,12 +742,18 @@ public sealed class GetAthleteProfileHandler
             string team = Enum.IsDefined(typeof(SportingColor), row.SportingColor)
                 ? ((SportingColor)row.SportingColor).ToString()
                 : $"Color{row.SportingColor}";
-            selections.Add(new AthleteCupSelectionDto("ColorCup", row.SourceSeasonNumber, team, row.SelectionRank));
+            string? teamKey = Enum.IsDefined(typeof(SportingColor), row.SportingColor)
+                ? CupTeamKeys.ColorKey((SportingColor)row.SportingColor)
+                : null;
+            string? cup = teamKey is null ? null : "color";
+            selections.Add(new AthleteCupSelectionDto("ColorCup", row.SourceSeasonNumber, team, row.SelectionRank, cup, teamKey));
         }
 
         foreach (TypeCupSelectionEntity row in typeRows)
         {
-            selections.Add(new AthleteCupSelectionDto("TypeCup", row.SourceSeasonNumber, row.CreatureType, row.SelectionRank));
+            string? teamKey = string.IsNullOrWhiteSpace(row.CreatureType) ? null : row.CreatureType;
+            string? cup = teamKey is null ? null : "type";
+            selections.Add(new AthleteCupSelectionDto("TypeCup", row.SourceSeasonNumber, row.CreatureType, row.SelectionRank, cup, teamKey));
         }
 
         return selections
@@ -1283,6 +1362,9 @@ public sealed class GetAthleteProfileHandler
     {
         List<string>? types = JsonSerializer.Deserialize<List<string>>(athlete.CreatureTypesJson);
         SportingColor color = (SportingColor)athlete.SportingColor;
+        string? colorTeamKey = Enum.IsDefined(typeof(SportingColor), athlete.SportingColor)
+            ? CupTeamKeys.ColorKey((SportingColor)athlete.SportingColor)
+            : null;
         return new AthleteCardDto(
             athlete.Name,
             athlete.SportingColor,
@@ -1296,10 +1378,11 @@ public sealed class GetAthleteProfileHandler
             athlete.IsArtifact,
             athlete.HasDevoid,
             athlete.HasHybridMana,
-            string.IsNullOrWhiteSpace(athlete.TypeCupNationality) ? null : athlete.TypeCupNationality.Trim());
+            string.IsNullOrWhiteSpace(athlete.TypeCupNationality) ? null : athlete.TypeCupNationality.Trim(),
+            colorTeamKey);
     }
 
-    internal static AthleteCareerDto MapCareer(AthleteCareerEntity career)
+    internal static AthleteCareerDto MapCareer(AthleteCareerEntity career, string? currentLeagueKey = null)
     {
         checked
         {
@@ -1320,13 +1403,15 @@ public sealed class GetAthleteProfileHandler
                 career.LifetimeEarnedBonusThousandths,
                 career.CurrentEffectiveBonusThousandths,
                 career.LastSeasonNumber,
-                career.LastStageNumber);
+                career.LastStageNumber,
+                currentLeagueKey);
         }
     }
 
     internal static AthleteSeasonDto MapSeason(
         AthleteSeasonSummaryEntity summary,
-        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null)
+        IReadOnlyDictionary<int, (string Level, int Division)>? levelsByLeague = null,
+        IReadOnlyDictionary<int, string>? leagueKeysByLeague = null)
     {
         string? level = null;
         int? division = null;
@@ -1335,6 +1420,13 @@ public sealed class GetAthleteProfileHandler
         {
             level = resolved.Level;
             division = resolved.Division;
+        }
+
+        string? leagueKey = null;
+        if (summary.LeagueId.HasValue && leagueKeysByLeague is not null
+            && leagueKeysByLeague.TryGetValue(summary.LeagueId.Value, out string? resolvedKey))
+        {
+            leagueKey = resolvedKey;
         }
 
         return new AthleteSeasonDto(
@@ -1355,7 +1447,8 @@ public sealed class GetAthleteProfileHandler
             summary.TotalStageScoreThousandths,
             summary.TotalBaseScoreThousandths,
             level,
-            division);
+            division,
+            leagueKey);
     }
 
     /// <summary>
@@ -1394,5 +1487,56 @@ public sealed class GetAthleteProfileHandler
         }
 
         return levels;
+    }
+
+    internal static string BuildLeagueKey(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
+    }
+
+    internal static Dictionary<int, string> ToLeagueKeys(Dictionary<int, LeagueEntity> leaguesById)
+    {
+        Dictionary<int, string> keys = new(leaguesById.Count);
+        foreach ((int id, LeagueEntity league) in leaguesById)
+        {
+            keys[id] = BuildLeagueKey(league);
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// Targeted stable-key lookup for one athlete's season leagues plus the
+    /// current league: only the league rows referenced by the athlete's own
+    /// season summaries and career row, never the full save dictionary. Keys
+    /// derive from league rows via <c>LeagueKey</c>, never from names.
+    /// </summary>
+    internal static async Task<Dictionary<int, string>> LoadLeagueKeysAsync(
+        SaveDbContext context,
+        List<AthleteSeasonSummaryEntity> summaries,
+        int? currentLeagueId,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> leagueIds = summaries
+            .Where(s => s.LeagueId.HasValue)
+            .Select(s => s.LeagueId!.Value)
+            .ToHashSet();
+        if (currentLeagueId.HasValue)
+        {
+            leagueIds.Add(currentLeagueId.Value);
+        }
+
+        if (leagueIds.Count == 0)
+        {
+            return new Dictionary<int, string>();
+        }
+
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => leagueIds.Contains(e.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return ToLeagueKeys(leagues.ToDictionary(e => e.Id));
     }
 }
