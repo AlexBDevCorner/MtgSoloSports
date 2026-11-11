@@ -17,8 +17,12 @@ export interface MovementStep {
   name: string;
   sportingColor: string;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null renders plain text. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   toLeagueName: string;
+  /** MSS-139 additive: stable league key of the destination league; null renders plain text. */
+  toLeagueKey?: string | null;
   direction: MovementDirection;
   imageUrl: string | null;
 }
@@ -56,8 +60,10 @@ function toStep(member: MovementMember, direction: MovementDirection): MovementS
     name: member.name,
     sportingColor: member.sportingColor,
     fromLeagueName: member.fromLeagueName,
+    fromLeagueKey: member.fromLeagueKey ?? null,
     fromSeasonRank: member.fromSeasonRank,
     toLeagueName: member.toLeagueName,
+    toLeagueKey: member.toLeagueKey ?? null,
     direction,
     imageUrl: member.imageUrl,
   };
@@ -292,7 +298,7 @@ function tieredFeederBoundaries(feeders: FeederMovements): MovementBoundary[] {
 }
 
 function toFeederStep(
-  member: { athleteId: number; name: string; sportingColorName: string; fromLeagueName: string; fromSeasonRank: number; toLeagueName: string; imageUrl: string | null },
+  member: { athleteId: number; name: string; sportingColorName: string; fromLeagueName: string; fromSeasonRank: number; toLeagueName: string; imageUrl: string | null; fromLeagueKey?: string | null; toLeagueKey?: string | null },
   direction: MovementDirection,
 ): MovementStep {
   return {
@@ -301,8 +307,10 @@ function toFeederStep(
     name: member.name,
     sportingColor: member.sportingColorName,
     fromLeagueName: member.fromLeagueName,
+    fromLeagueKey: member.fromLeagueKey ?? null,
     fromSeasonRank: member.fromSeasonRank,
     toLeagueName: member.toLeagueName,
+    toLeagueKey: member.toLeagueKey ?? null,
     direction,
     imageUrl: member.imageUrl,
   };

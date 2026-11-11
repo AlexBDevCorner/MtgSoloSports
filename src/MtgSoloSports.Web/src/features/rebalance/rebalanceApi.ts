@@ -15,8 +15,12 @@ export interface RebalanceMovementMember {
   sportingColor: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null for pool/legacy. */
+  fromLeagueKey?: string | null;
   toLeagueId: number;
   toLeagueName: string;
+  /** MSS-139 additive: stable league key of the destination league; null for pool/legacy. */
+  toLeagueKey?: string | null;
   kind: string;
   fromSeasonRank: number;
   imageUrl: string | null;

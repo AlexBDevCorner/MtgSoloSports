@@ -3,6 +3,8 @@ import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink } from '../routing/router';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { colorIndex, leagueKeyFor } from '../leagues/leagueKeys';
 import {
   arrivalClass,
   balancedText,
@@ -63,6 +65,42 @@ function MovementBadge({ step }: { step: RebalanceStep }) {
       {movementLabel(step.movementType)}
     </span>
   );
+}
+
+/**
+ * MSS-139 league name link for rebalance content. Renders the profile link
+ * when a stable key is known; otherwise the plain name.
+ */
+function LeagueName({
+  saveId,
+  name,
+  leagueKey,
+}: {
+  saveId?: string | null;
+  name: string;
+  leagueKey?: string | null;
+}) {
+  if (saveId && leagueKey) {
+    return (
+      <LeagueLink saveId={saveId} leagueKey={leagueKey} title={`Open the ${name} league profile`}>
+        {name}
+      </LeagueLink>
+    );
+  }
+  return <>{name}</>;
+}
+
+/**
+ * MSS-139 stable league key for a rebalance league entry. Rebalance is
+ * feeder-only, so the kind is always feeder; the key derives from the
+ * persisted division and sporting color, never from names.
+ */
+function rebalanceLeagueKey(league: RebalanceLeague): string | null {
+  return leagueKeyFor({
+    kind: 'feeder',
+    feederDivision: league.feederDivision ?? null,
+    sportingColor: colorIndex(league.sportingColor),
+  });
 }
 
 /**
@@ -322,7 +360,10 @@ export function RebalanceReveal({
                 aria-label={`${league.leagueName} unchanged`}
               >
                 <header className="rebalance-league-head">
-                  <h3 className="rebalance-league-title">{league.leagueName}{tiered ? ` · ${leagueTier}` : ''}</h3>
+                  <h3 className="rebalance-league-title">
+                    <LeagueName saveId={saveId} name={league.leagueName} leagueKey={rebalanceLeagueKey(league)} />
+                    {tiered ? ` · ${leagueTier}` : ''}
+                  </h3>
                   <p className="muted small">No changes · 32 / 32 — BALANCED</p>
                 </header>
                 <p className="muted small">
@@ -355,7 +396,7 @@ export function RebalanceReveal({
             >
               <header className="rebalance-league-head">
                 <h3 className="rebalance-league-title">
-                  {league.leagueName} · {league.sportingColor}{tiered ? ` · ${leagueTier}` : ''}
+                  <LeagueName saveId={saveId} name={league.leagueName} leagueKey={rebalanceLeagueKey(league)} /> · {league.sportingColor}{tiered ? ` · ${leagueTier}` : ''}
                 </h3>
                 <p className="muted small">
                   {league.departed.length} to Superleague · {league.returned.length} returning ·{' '}
@@ -613,7 +654,13 @@ export function RebalanceReveal({
                   );
                   return (
                     <tr key={step.key}>
-                      <td>{league?.leagueName ?? '—'}</td>
+                      <td>
+                        {league ? (
+                          <LeagueName saveId={saveId} name={league.leagueName} leagueKey={rebalanceLeagueKey(league)} />
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td>
                         <MovementBadge step={step} />
                       </td>
@@ -630,7 +677,9 @@ export function RebalanceReveal({
                         )}
                       </td>
                       <td>
-                        {step.fromLeagueName} → {step.toLeagueName}
+                        <LeagueName saveId={saveId} name={step.fromLeagueName} leagueKey={step.fromLeagueKey} />
+                        {' → '}
+                        <LeagueName saveId={saveId} name={step.toLeagueName} leagueKey={step.toLeagueKey} />
                       </td>
                     </tr>
                   );
@@ -654,7 +703,9 @@ export function RebalanceReveal({
               <tbody>
                 {leagues.map((league) => (
                   <tr key={league.key}>
-                    <td>{league.leagueName}</td>
+                    <td>
+                      <LeagueName saveId={saveId} name={league.leagueName} leagueKey={rebalanceLeagueKey(league)} />
+                    </td>
                     <td className="numeric">{league.departed.length}</td>
                     <td className="numeric">{league.returned.length}</td>
                     <td className="numeric">{league.displaced.length}</td>
@@ -717,7 +768,9 @@ function RebalanceTile({
           {step.fromSeasonRank > 0 ? ` · P${step.fromSeasonRank} last season` : ' · pool draw'}
         </span>
         <span className="rebalance-leagues">
-          {step.fromLeagueName} → {step.toLeagueName}
+          <LeagueName saveId={saveId} name={step.fromLeagueName} leagueKey={step.fromLeagueKey} />
+          {' → '}
+          <LeagueName saveId={saveId} name={step.toLeagueName} leagueKey={step.toLeagueKey} />
         </span>
       </div>
     </li>

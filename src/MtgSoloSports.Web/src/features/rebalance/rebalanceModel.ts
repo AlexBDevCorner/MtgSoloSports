@@ -24,7 +24,11 @@ export interface RebalanceStep {
   name: string;
   sportingColor: string;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null renders plain text. */
+  fromLeagueKey?: string | null;
   toLeagueName: string;
+  /** MSS-139 additive: stable league key of the destination league; null renders plain text. */
+  toLeagueKey?: string | null;
   fromSeasonRank: number;
   kind: string;
   movementType: RebalanceMovementType;
@@ -109,7 +113,9 @@ function toStep(member: RebalanceMovementMember): RebalanceStep {
     name: member.name,
     sportingColor: member.sportingColor,
     fromLeagueName: member.fromLeagueName,
+    fromLeagueKey: member.fromLeagueKey ?? null,
     toLeagueName: member.toLeagueName,
+    toLeagueKey: member.toLeagueKey ?? null,
     fromSeasonRank: member.fromSeasonRank,
     kind: member.kind,
     movementType,

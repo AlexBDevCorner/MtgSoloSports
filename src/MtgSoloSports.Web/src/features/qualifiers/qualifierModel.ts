@@ -169,6 +169,8 @@ export interface QualifierFieldRow {
   role: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null renders plain text. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   qualifierRank: number;
   qualifierScoreThousandths: number;

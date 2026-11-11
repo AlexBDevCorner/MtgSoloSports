@@ -23,6 +23,7 @@ import {
 import { AthleteLink, Link } from '../routing/router';
 import { historyPath, leaguePath, livePath, savesPath, type StandingsView } from '../routing/routes';
 import { leagueKeyFor } from '../leagues/leagueKeys';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import { downloadReport, standingsReportUrl } from '../reports/reportApi';
 import {
@@ -496,6 +497,7 @@ export function StandingsPage({
         totalChampionshipPointsThousandths: totals?.totalChampionshipPointsThousandths ?? null,
         stageWins: totals?.stageWins ?? (placements.completedStages === 0 ? 0 : null),
         roundWins: totals?.roundWins ?? null,
+        sportingColor: athlete.sportingColor,
         sportingColorName: athlete.sportingColorName,
         imageUrl: athlete.imageUrl,
         currentEffectiveBonusThousandths: athlete.currentEffectiveBonusThousandths,
@@ -1034,7 +1036,13 @@ export function StandingsPage({
                             )}
                             <span className="card-identity">
                               <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                              <span className="card-sub">{row.sportingColorName}</span>
+                              <span className="card-sub">
+                                <ColorTeamLink
+                                  saveId={saveId}
+                                  sportingColor={row.sportingColor}
+                                  sportingColorName={row.sportingColorName}
+                                />
+                              </span>
                             </span>
                           </div>
                         </td>

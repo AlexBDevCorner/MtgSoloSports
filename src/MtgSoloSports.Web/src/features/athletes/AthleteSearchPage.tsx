@@ -5,6 +5,8 @@ import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
 import { athletePath, dashboardPath } from '../routing/routes';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
 import {
   fetchAthleteSearch,
   fetchAthleteSearchOptions,
@@ -20,6 +22,15 @@ import {
   toAthleteSearchRequest,
   type AthleteSearchParams,
 } from './athleteSearchParams';
+
+/** Non-empty trimmed text, or null when there is no reliable identity to link. */
+function nonEmpty(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 function NumberField({
   label,
@@ -657,7 +668,12 @@ export function AthleteSearchPage({
                           <span className="card-identity">
                             <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                             <span className="card-sub">
-                              {row.sportingColorName} · {(row.creatureTypes ?? []).join(', ') || 'Unknown type'}
+                              <ColorTeamLink
+                                saveId={saveId}
+                                sportingColor={row.sportingColor}
+                                sportingColorName={row.sportingColorName}
+                              />{' '}
+                              · {(row.creatureTypes ?? []).join(', ') || 'Unknown type'}
                             </span>
                           </span>
                         </div>
@@ -665,7 +681,21 @@ export function AthleteSearchPage({
                       <td>
                         {row.isActive ? (
                           <>
-                            {row.currentLeagueName ?? 'Active'}
+                            {(() => {
+                              const leagueKey = nonEmpty(row.currentLeagueKey);
+                              const leagueName = nonEmpty(row.currentLeagueName) ?? 'Active';
+                              return leagueKey ? (
+                                <LeagueLink
+                                  saveId={saveId}
+                                  leagueKey={leagueKey}
+                                  title={`Open the ${leagueName} league profile`}
+                                >
+                                  {leagueName}
+                                </LeagueLink>
+                              ) : (
+                                leagueName
+                              );
+                            })()}
                             {row.currentLeagueLevel != null || row.currentLeagueDivision != null ? (
                               <span className="card-sub">
                                 {' '}

@@ -48,6 +48,8 @@ import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { Link } from '../routing/router';
 import { cupsPath, dashboardPath, qualifierLivePath, qualifiersPath, standingsPath } from '../routing/routes';
+import { TeamBadge } from '../cups/TeamBadge';
+import { cupTeamKey } from '../cups/cupTeamKeys';
 import { fetchSeasonProgress } from '../dashboard/dashboardApi';
 import { runRemainingQualifiers } from '../qualifiers/qualifierApi';
 import { nextQualifierLiveParam } from '../qualifiers/qualifierModel';
@@ -56,6 +58,28 @@ import './LivePage.css';
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
+}
+
+/**
+ * MSS-139 Cup team link for team standings rows. The event identity tells the
+ * Cup (color vs type); the persisted team name is the team identity. Unknown
+ * or empty names render as plain text, never a guessed URL.
+ */
+function CupTeamCell({
+  saveId,
+  event,
+  teamName,
+}: {
+  saveId: string;
+  event: EventKey;
+  teamName: string;
+}) {
+  const cup = event === 'color-cup-team' ? 'color' : event === 'type-cup-team' ? 'type' : null;
+  const key = cup ? cupTeamKey(cup, teamName) : null;
+  if (!cup || !key) {
+    return <>{teamName}</>;
+  }
+  return <TeamBadge saveId={saveId} cup={cup} teamKey={key} teamName={teamName} />;
 }
 
 /** MSS-079: the backend rejects re-execution of a completed Cup with 409. */
@@ -1162,7 +1186,7 @@ export function LiveEventView({
                         <Fragment key={row.teamName}>
                           <tr className={rowClass}>
                             <td>
-                              {row.teamName}
+                              <CupTeamCell saveId={saveId} event={event} teamName={row.teamName} />
                               {wildcardQualified ? (
                                 <span className="live-contested-note"> · wildcard</span>
                               ) : contested ? (
@@ -1217,7 +1241,9 @@ export function LiveEventView({
                 <tbody>
                   {pendingStageStandings.standings.teams.map((row) => (
                     <tr key={row.teamName}>
-                      <td>{row.teamName}</td>
+                      <td>
+                        <CupTeamCell saveId={saveId} event={event} teamName={row.teamName} />
+                      </td>
                       <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
                     </tr>
                   ))}
@@ -1251,7 +1277,7 @@ export function LiveEventView({
                   <tr key={row.teamName}>
                     <td>
                       {row.rank !== null ? `${row.rank}. ` : ''}
-                      {row.teamName}
+                      <CupTeamCell saveId={saveId} event={event} teamName={row.teamName} />
                     </td>
                     <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
                   </tr>

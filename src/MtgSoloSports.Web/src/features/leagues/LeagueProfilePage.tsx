@@ -9,6 +9,8 @@ import { historyPath, leaguePath, leaguesPath, standingsLeaguePath } from '../ro
 import { formatPoints } from '../standings/matrix';
 import { fetchLeagueProfile, type LeagueProfile } from './leaguesApi';
 import { leagueKeyLabel } from './leagueKeys';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
+import { colorTeamKeyFromSportingColor } from '../cups/cupTeamKeys';
 import './Leagues.css';
 
 const LEADERBOARD_PREVIEW = 10;
@@ -111,6 +113,10 @@ export function LeagueProfilePage({ saveId, leagueKey }: { saveId: string; leagu
 
   const tier = leagueLevelLabel(profile.leagueLevel, profile.feederDivision, profile.kind);
   const latest = profile.podiumHistory.length > 0 ? profile.podiumHistory[0]! : null;
+  // MSS-139: a colored feeder league links to that color's Color Cup team.
+  // Superleague and legacy rows without a known color render no link.
+  const isFeeder = profile.kind === 'Feeder';
+  const colorTeamKey = isFeeder ? colorTeamKeyFromSportingColor(profile.sportingColor) : null;
 
   return (
     <div className="dashboard">
@@ -163,6 +169,18 @@ export function LeagueProfilePage({ saveId, leagueKey }: { saveId: string; leagu
               )}
             </dd>
           </div>
+          {colorTeamKey ? (
+            <div>
+              <dt>Color Cup team</dt>
+              <dd>
+                <ColorTeamLink
+                  saveId={saveId}
+                  sportingColor={profile.sportingColor}
+                  sportingColorName={profile.sportingColorName}
+                />
+              </dd>
+            </div>
+          ) : null}
         </dl>
         {legends.length > 0 ? (
           <p className="muted">

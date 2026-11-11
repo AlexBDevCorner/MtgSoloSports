@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink } from '../routing/router';
+import { LeagueLink } from '../leagues/LeagueLink';
 import {
   buildRevealOrder,
   directionGlyph,
@@ -56,6 +57,54 @@ function MovementBadge({ direction }: { direction: MovementDirection }) {
       {directionLabel(direction)}
     </span>
   );
+}
+
+/**
+ * Stable key for a league name from revealed steps in one boundary (MSS-139).
+ * Only revealed steps contribute, so heading links never expose an unrevealed
+ * placement. Returns null when no revealed step names that league.
+ */
+function revealedBoundaryKey(
+  steps: readonly MovementStep[],
+  revealedSteps: ReadonlySet<string>,
+  leagueName: string,
+): string | null {
+  for (const step of steps) {
+    if (!revealedSteps.has(step.key)) {
+      continue;
+    }
+    if (step.fromLeagueName === leagueName && step.fromLeagueKey) {
+      return step.fromLeagueKey;
+    }
+    if (step.toLeagueName === leagueName && step.toLeagueKey) {
+      return step.toLeagueKey;
+    }
+  }
+  return null;
+}
+
+/**
+ * MSS-139 league name link for revealed movement content. Renders the profile
+ * link when a revealed step carries a stable key for the name; otherwise the
+ * plain name.
+ */
+function LeagueName({
+  saveId,
+  name,
+  leagueKey,
+}: {
+  saveId?: string | null;
+  name: string;
+  leagueKey?: string | null;
+}) {
+  if (saveId && leagueKey) {
+    return (
+      <LeagueLink saveId={saveId} leagueKey={leagueKey} title={`Open the ${name} league profile`}>
+        {name}
+      </LeagueLink>
+    );
+  }
+  return <>{name}</>;
 }
 
 /**
@@ -299,7 +348,17 @@ export function MovementReveal({
               >
               <header className="movement-boundary-head">
                 <h3 className="movement-boundary-title">
-                  {boundary.feederLeagueName} ⇄ {boundary.superleagueName}
+                  <LeagueName
+                    saveId={saveId}
+                    name={boundary.feederLeagueName}
+                    leagueKey={revealedBoundaryKey(boundary.steps, revealed, boundary.feederLeagueName)}
+                  />
+                  {' ⇄ '}
+                  <LeagueName
+                    saveId={saveId}
+                    name={boundary.superleagueName}
+                    leagueKey={revealedBoundaryKey(boundary.steps, revealed, boundary.superleagueName)}
+                  />
                 </h3>
                 <p className="muted small">
                   {boundary.relegated.length} relegated · {boundary.promoted.length} promoted ·{' '}
@@ -314,7 +373,12 @@ export function MovementReveal({
               <div className="movement-board">
                 <div className="movement-zone movement-zone-upper">
                   <p className="movement-zone-label">
-                    {boundary.superleagueName} · higher league
+                    <LeagueName
+                      saveId={saveId}
+                      name={boundary.superleagueName}
+                      leagueKey={revealedBoundaryKey(boundary.steps, revealed, boundary.superleagueName)}
+                    />{' '}
+                    · higher league
                   </p>
                   <ol className="movement-tiles" aria-label={`${boundary.superleagueName} arrivals`}>
                     {upperSteps.map((step) => (
@@ -350,7 +414,12 @@ export function MovementReveal({
 
                 <div className="movement-zone movement-zone-lower">
                   <p className="movement-zone-label">
-                    {boundary.feederLeagueName} · lower league
+                    <LeagueName
+                      saveId={saveId}
+                      name={boundary.feederLeagueName}
+                      leagueKey={revealedBoundaryKey(boundary.steps, revealed, boundary.feederLeagueName)}
+                    />{' '}
+                    · lower league
                   </p>
                   <ol className="movement-tiles" aria-label={`${boundary.feederLeagueName} arrivals`}>
                     {lowerSteps.map((step) => (
@@ -404,7 +473,13 @@ export function MovementReveal({
                   );
                   return (
                     <tr key={step.key}>
-                      <td>{boundary?.feederLeagueName ?? '—'}</td>
+                      <td>
+                        <LeagueName
+                          saveId={saveId}
+                          name={boundary?.feederLeagueName ?? '—'}
+                          leagueKey={boundary ? revealedBoundaryKey(boundary.steps, revealed, boundary.feederLeagueName) : null}
+                        />
+                      </td>
                       <td>
                         <MovementBadge direction={step.direction} />
                       </td>
@@ -417,7 +492,9 @@ export function MovementReveal({
                         <span className="card-sub"> · P{step.fromSeasonRank} last season</span>
                       </td>
                       <td>
-                        {step.fromLeagueName} → {step.toLeagueName}
+                        <LeagueName saveId={saveId} name={step.fromLeagueName} leagueKey={step.fromLeagueKey} />
+                        {' → '}
+                        <LeagueName saveId={saveId} name={step.toLeagueName} leagueKey={step.toLeagueKey} />
                       </td>
                     </tr>
                   );
@@ -477,7 +554,9 @@ function MovementTile({
           {step.sportingColor} · P{step.fromSeasonRank} last season
         </span>
         <span className="movement-leagues">
-          {step.fromLeagueName} → {step.toLeagueName}
+          <LeagueName saveId={saveId} name={step.fromLeagueName} leagueKey={step.fromLeagueKey} />
+          {' → '}
+          <LeagueName saveId={saveId} name={step.toLeagueName} leagueKey={step.toLeagueKey} />
         </span>
       </div>
     </li>
