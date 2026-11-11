@@ -14,6 +14,8 @@ export interface AthleteCard {
   hasDevoid: boolean;
   hasHybridMana: boolean;
   typeCupNationality?: string | null;
+  /** MSS-138 additive: stable Color Cup team key for the sporting color; absent on older payloads. */
+  sportingColorTeamKey?: string | null;
 }
 
 export interface AthleteCareer {
@@ -22,6 +24,8 @@ export interface AthleteCareer {
   currentLeagueId: number | null;
   currentLeagueName: string | null;
   currentLeagueKind: number | null;
+  /** MSS-138 additive: stable league key for the current league; absent on older payloads. */
+  currentLeagueKey?: string | null;
   roundWins: number;
   stageWins: number;
   stageSeconds: number;
@@ -46,6 +50,8 @@ export interface AthleteSeason {
   leagueLevel?: string | null;
   /** Persisted feeder division (0 legacy v1); null for pool seasons. */
   feederDivision?: number | null;
+  /** MSS-138 additive: stable league key for the season league; absent on older payloads. */
+  leagueKey?: string | null;
   roundWins: number;
   stageWins: number;
   stageSeconds: number;
@@ -62,6 +68,10 @@ export interface AthleteHonour {
   seasonNumber: number;
   leagueName: string;
   honourKind: string;
+  /** MSS-138 additive: stable league key for league honours; null for Cup honours. */
+  leagueKey?: string | null;
+  /** MSS-138 additive: route-ready Cup ("color" | "type" | "chaos") for Cup honours. */
+  cup?: string | null;
 }
 
 export interface AthleteMovement {
@@ -74,6 +84,9 @@ export interface AthleteMovement {
   /** Adjacent-tier source/destination; null for the common pool. */
   fromLeagueLevel?: string | null;
   toLeagueLevel?: string | null;
+  /** MSS-138 additive: stable league keys; null for the common pool. */
+  fromLeagueKey?: string | null;
+  toLeagueKey?: string | null;
 }
 
 export interface AthleteCupSelection {
@@ -81,6 +94,10 @@ export interface AthleteCupSelection {
   sourceSeasonNumber: number;
   team: string;
   selectionRank: number;
+  /** MSS-138 additive: route-ready Cup ("color" | "type"); absent on older payloads. */
+  cup?: string | null;
+  /** MSS-138 additive: stable team key (lower-case color or creature type as stored). */
+  teamKey?: string | null;
 }
 
 export interface AthleteCupHistory {

@@ -12,8 +12,18 @@ import {
   storyEventLabel,
 } from '../../shared/displayLabels';
 import { Link } from '../routing/router';
-import { chaosLivePath, cupEditionPath, dashboardPath, livePath, savesPath } from '../routing/routes';
+import {
+  chaosLivePath,
+  cupEditionPath,
+  dashboardPath,
+  livePath,
+  savesPath,
+  standingsLeaguePath,
+  type CupKind,
+} from '../routing/routes';
 import { medalBadge } from '../cups/cupFormat';
+import { TeamBadge } from '../cups/TeamBadge';
+import { LeagueLink } from '../leagues/LeagueLink';
 import { summarizeCareer } from './athleteCareerSummary';
 import type { AthleteChaosHistory } from './athleteApi';
 import type { AthleteProfileState } from './useAthleteProfile';
@@ -56,6 +66,42 @@ function movementTierPrefix(level: string | null | undefined): string {
 function formatBonus(thousandths: number): string {
   const sign = thousandths >= 0 ? '+' : '';
   return `${sign}${(thousandths / 1000).toFixed(3)}%`;
+}
+
+/** Non-empty trimmed text, or null when there is no reliable identity to link. */
+function nonEmpty(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Route-ready Cup for selections ("color" | "type"); null renders plain text. */
+function selectionCupKind(cup: string | null | undefined): CupKind | null {
+  if (cup === 'color' || cup === 'type') {
+    return cup;
+  }
+  return null;
+}
+
+/** Route-ready Cup for honours ("color" | "type" | "chaos"); null renders plain text. */
+function honourCupKind(cup: string | null | undefined): CupKind | null {
+  if (cup === 'color' || cup === 'type' || cup === 'chaos') {
+    return cup;
+  }
+  return null;
+}
+
+/** Route-ready Cup for Cup history rows ("Color" | "Type"); null renders plain text. */
+function cupHistoryRouteKind(cup: string | null | undefined): Exclude<CupKind, 'chaos'> | null {
+  if (cup === 'Color') {
+    return 'color';
+  }
+  if (cup === 'Type') {
+    return 'type';
+  }
+  return null;
 }
 
 export function AthleteProfilePage({
@@ -151,6 +197,11 @@ export function AthleteProfilePage({
   const currentLeagueText = career.isActive ? (career.currentLeagueName ?? 'League') : '—';
   const creatureText = card.creatureTypes.join(' ') || '—';
   const nationalityText = card.typeCupNationality ?? 'Uncapped';
+  // MSS-138 link identities from backend fields only; absent stays plain text.
+  const colorTeamKey = nonEmpty(card.sportingColorTeamKey);
+  const nationality = nonEmpty(card.typeCupNationality);
+  const currentLeagueKey = career.isActive ? nonEmpty(career.currentLeagueKey) : null;
+  const currentLeagueName = career.isActive ? nonEmpty(career.currentLeagueName) : null;
   const bonusNote =
     career.currentEffectiveBonusThousandths === 0
       ? 'No active bonus'
@@ -208,7 +259,18 @@ export function AthleteProfilePage({
             <dl className="athlete-identity">
               <div className="athlete-identity-item athlete-identity-item--color">
                 <dt>Color</dt>
-                <dd>{card.sportingColorName}</dd>
+                <dd>
+                  {colorTeamKey ? (
+                    <TeamBadge
+                      saveId={saveId}
+                      cup="color"
+                      teamKey={colorTeamKey}
+                      teamName={card.sportingColorName}
+                    />
+                  ) : (
+                    card.sportingColorName
+                  )}
+                </dd>
               </div>
               <div className="athlete-identity-item">
                 <dt>Type</dt>
@@ -216,11 +278,29 @@ export function AthleteProfilePage({
               </div>
               <div className="athlete-identity-item">
                 <dt>Type Cup nationality</dt>
-                <dd>{nationalityText}</dd>
+                <dd>
+                  {nationality ? (
+                    <TeamBadge saveId={saveId} cup="type" teamKey={nationality} teamName={nationality} />
+                  ) : (
+                    nationalityText
+                  )}
+                </dd>
               </div>
               <div className="athlete-identity-item">
                 <dt>Current league</dt>
-                <dd>{currentLeagueText}</dd>
+                <dd>
+                  {currentLeagueKey && currentLeagueName ? (
+                    <LeagueLink
+                      saveId={saveId}
+                      leagueKey={currentLeagueKey}
+                      title={`Open the ${currentLeagueName} league profile`}
+                    >
+                      {currentLeagueName}
+                    </LeagueLink>
+                  ) : (
+                    currentLeagueText
+                  )}
+                </dd>
               </div>
               <div className="athlete-identity-item">
                 <dt>Status</dt>
@@ -345,24 +425,52 @@ export function AthleteProfilePage({
                 </tr>
               </thead>
               <tbody>
-                {seasons.map((season) => (
-                  <tr key={season.seasonNumber}>
-                    <td className="numeric">{season.seasonNumber}</td>
-                    <td>
-                      {season.wasActive ? (
-                        <>
-                          {season.leagueName ?? 'Active'}
-                          {season.leagueLevel != null || season.feederDivision != null ? (
-                            <span className="card-sub">
-                              {' '}
-                              · {leagueLevelLabel(season.leagueLevel ?? null, season.feederDivision ?? null, null)}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        'Pool'
-                      )}
-                    </td>
+                {seasons.map((season) => {
+                  const seasonLeagueKey = season.wasActive ? nonEmpty(season.leagueKey) : null;
+                  const seasonLeagueName = season.wasActive ? nonEmpty(season.leagueName) : null;
+                  const hasStandingsLink =
+                    season.wasActive && typeof season.leagueId === 'number';
+                  return (
+                    <tr key={season.seasonNumber}>
+                      <td className="numeric">{season.seasonNumber}</td>
+                      <td>
+                        {season.wasActive ? (
+                          <>
+                            {seasonLeagueKey && seasonLeagueName ? (
+                              <LeagueLink
+                                saveId={saveId}
+                                leagueKey={seasonLeagueKey}
+                                title={`Open the ${seasonLeagueName} league profile`}
+                              >
+                                {seasonLeagueName}
+                              </LeagueLink>
+                            ) : (
+                              (season.leagueName ?? 'Active')
+                            )}
+                            {season.leagueLevel != null || season.feederDivision != null ? (
+                              <span className="card-sub">
+                                {' '}
+                                · {leagueLevelLabel(season.leagueLevel ?? null, season.feederDivision ?? null, null)}
+                              </span>
+                            ) : null}
+                            {hasStandingsLink ? (
+                              <span className="card-sub">
+                                {' · '}
+                                <Link
+                                  to={standingsLeaguePath(saveId, season.leagueId as number, {
+                                    season: season.seasonNumber,
+                                  })}
+                                  title={`Open Season ${season.seasonNumber} standings`}
+                                >
+                                  Table
+                                </Link>
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          'Pool'
+                        )}
+                      </td>
                     <td className="numeric">
                       {season.seasonRank !== null ? `P${season.seasonRank}` : '—'}
                       {season.isChampion ? ' · Champion' : ''}
@@ -377,7 +485,8 @@ export function AthleteProfilePage({
                       {formatPoints(season.totalChampionshipPointsThousandths)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -458,7 +567,18 @@ export function AthleteProfilePage({
           <dl className="stats">
             <div>
               <dt>Sporting color</dt>
-              <dd>{card.sportingColorName}</dd>
+              <dd>
+                {colorTeamKey ? (
+                  <TeamBadge
+                    saveId={saveId}
+                    cup="color"
+                    teamKey={colorTeamKey}
+                    teamName={card.sportingColorName}
+                  />
+                ) : (
+                  card.sportingColorName
+                )}
+              </dd>
             </div>
             <div>
               <dt>Athlete id</dt>
@@ -470,7 +590,13 @@ export function AthleteProfilePage({
             </div>
             <div>
               <dt>Type Cup nationality</dt>
-              <dd>{card.typeCupNationality ?? 'Uncapped'}</dd>
+              <dd>
+                {nationality ? (
+                  <TeamBadge saveId={saveId} cup="type" teamKey={nationality} teamName={nationality} />
+                ) : (
+                  (card.typeCupNationality ?? 'Uncapped')
+                )}
+              </dd>
             </div>
             <div>
               <dt>Creature types</dt>
@@ -496,13 +622,36 @@ export function AthleteProfilePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {honours.map((honour, index) => (
-                    <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.honourKind}-${index}`}>
-                      <td className="numeric">{honour.seasonNumber}</td>
-                      <td>{honour.leagueName}</td>
-                      <td>{honourKindLabel(honour.honourKind)}</td>
-                    </tr>
-                  ))}
+                  {honours.map((honour, index) => {
+                    const honourLeagueKey = nonEmpty(honour.leagueKey);
+                    const honourCup = honourCupKind(honour.cup);
+                    return (
+                      <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.honourKind}-${index}`}>
+                        <td className="numeric">{honour.seasonNumber}</td>
+                        <td>
+                          {honourLeagueKey ? (
+                            <LeagueLink
+                              saveId={saveId}
+                              leagueKey={honourLeagueKey}
+                              title={`Open the ${honour.leagueName} league profile`}
+                            >
+                              {honour.leagueName}
+                            </LeagueLink>
+                          ) : honourCup ? (
+                            <Link
+                              to={cupEditionPath(saveId, honourCup, honour.seasonNumber)}
+                              title={`Open the ${honour.leagueName} edition for Season ${honour.seasonNumber}`}
+                            >
+                              {honour.leagueName}
+                            </Link>
+                          ) : (
+                            honour.leagueName
+                          )}
+                        </td>
+                        <td>{honourKindLabel(honour.honourKind)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -526,23 +675,49 @@ export function AthleteProfilePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {movements.map((movement, index) => (
-                    <tr key={`${movement.toSeasonNumber}-${movement.kind}-${index}`}>
-                      <td className="numeric">
-                        {movement.fromSeasonNumber} → {movement.toSeasonNumber}
-                      </td>
-                      <td>
-                        <span className="badge badge-wait">{movementKindLabel(movement.kind)}</span>
-                        {movement.fromSeasonRank > 0 ? (
-                          <span className="card-sub"> · P{movement.fromSeasonRank}</span>
-                        ) : null}
-                      </td>
-                      <td>
-                        {movementTierPrefix(movement.fromLeagueLevel)} {movement.fromLeagueName} →{' '}
-                        {movementTierPrefix(movement.toLeagueLevel)} {movement.toLeagueName}
-                      </td>
-                    </tr>
-                  ))}
+                  {movements.map((movement, index) => {
+                    const fromKey = nonEmpty(movement.fromLeagueKey);
+                    const toKey = nonEmpty(movement.toLeagueKey);
+                    return (
+                      <tr key={`${movement.toSeasonNumber}-${movement.kind}-${index}`}>
+                        <td className="numeric">
+                          {movement.fromSeasonNumber} → {movement.toSeasonNumber}
+                        </td>
+                        <td>
+                          <span className="badge badge-wait">{movementKindLabel(movement.kind)}</span>
+                          {movement.fromSeasonRank > 0 ? (
+                            <span className="card-sub"> · P{movement.fromSeasonRank}</span>
+                          ) : null}
+                        </td>
+                        <td>
+                          {movementTierPrefix(movement.fromLeagueLevel)}
+                          {fromKey ? (
+                            <LeagueLink
+                              saveId={saveId}
+                              leagueKey={fromKey}
+                              title={`Open the ${movement.fromLeagueName} league profile`}
+                            >
+                              {movement.fromLeagueName}
+                            </LeagueLink>
+                          ) : (
+                            movement.fromLeagueName
+                          )}{' '}
+                          → {movementTierPrefix(movement.toLeagueLevel)}
+                          {toKey ? (
+                            <LeagueLink
+                              saveId={saveId}
+                              leagueKey={toKey}
+                              title={`Open the ${movement.toLeagueName} league profile`}
+                            >
+                              {movement.toLeagueName}
+                            </LeagueLink>
+                          ) : (
+                            movement.toLeagueName
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -571,14 +746,40 @@ export function AthleteProfilePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {cupSelections.map((selection, index) => (
-                    <tr key={`${selection.cupKind}-${selection.sourceSeasonNumber}-${selection.team}-${index}`}>
-                      <td className="numeric">{selection.sourceSeasonNumber}</td>
-                      <td>{cupLabel(selection.cupKind)}</td>
-                      <td>{selection.team}</td>
-                      <td className="numeric">#{selection.selectionRank}</td>
-                    </tr>
-                  ))}
+                  {cupSelections.map((selection, index) => {
+                    const teamCup = selectionCupKind(selection.cup);
+                    const teamKey = teamCup ? nonEmpty(selection.teamKey) : null;
+                    return (
+                      <tr key={`${selection.cupKind}-${selection.sourceSeasonNumber}-${selection.team}-${index}`}>
+                        <td className="numeric">
+                          {teamCup ? (
+                            <Link
+                              to={cupEditionPath(saveId, teamCup, selection.sourceSeasonNumber)}
+                              title={`Open the Season ${selection.sourceSeasonNumber} ${cupLabel(selection.cupKind)} edition`}
+                            >
+                              {selection.sourceSeasonNumber}
+                            </Link>
+                          ) : (
+                            selection.sourceSeasonNumber
+                          )}
+                        </td>
+                        <td>{cupLabel(selection.cupKind)}</td>
+                        <td>
+                          {teamCup && teamKey ? (
+                            <TeamBadge
+                              saveId={saveId}
+                              cup={teamCup}
+                              teamKey={teamKey}
+                              teamName={selection.team}
+                            />
+                          ) : (
+                            selection.team
+                          )}
+                        </td>
+                        <td className="numeric">#{selection.selectionRank}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -654,22 +855,47 @@ export function AthleteProfilePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {cupHistory.map((entry, index) => (
-                    <tr
-                      key={`${entry.sourceSeasonNumber}-${entry.cup}-${entry.event}-${entry.teamKey}-${index}`}
-                    >
-                      <td className="numeric">{entry.sourceSeasonNumber}</td>
-                      <td>
-                        {entry.eventName}{' '}
-                        <span className="badge badge-wait">{cupHistoryEventLabel(entry.event)}</span>
-                        {entry.tournamentStage ? (
-                          <span className="badge badge-wait" title="Persisted tournament stage">
-                            {' '}
-                            {entry.tournamentStage}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td>{entry.teamName}</td>
+                  {cupHistory.map((entry, index) => {
+                    const historyCup = cupHistoryRouteKind(entry.cup);
+                    const historyTeamKey = historyCup ? nonEmpty(entry.teamKey) : null;
+                    return (
+                      <tr
+                        key={`${entry.sourceSeasonNumber}-${entry.cup}-${entry.event}-${entry.teamKey}-${index}`}
+                      >
+                        <td className="numeric">
+                          {historyCup ? (
+                            <Link
+                              to={cupEditionPath(saveId, historyCup, entry.sourceSeasonNumber)}
+                              title={`Open the Season ${entry.sourceSeasonNumber} ${entry.eventName} edition`}
+                            >
+                              {entry.sourceSeasonNumber}
+                            </Link>
+                          ) : (
+                            entry.sourceSeasonNumber
+                          )}
+                        </td>
+                        <td>
+                          {entry.eventName}{' '}
+                          <span className="badge badge-wait">{cupHistoryEventLabel(entry.event)}</span>
+                          {entry.tournamentStage ? (
+                            <span className="badge badge-wait" title="Persisted tournament stage">
+                              {' '}
+                              {entry.tournamentStage}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td>
+                          {historyCup && historyTeamKey ? (
+                            <TeamBadge
+                              saveId={saveId}
+                              cup={historyCup}
+                              teamKey={historyTeamKey}
+                              teamName={entry.teamName}
+                            />
+                          ) : (
+                            entry.teamName
+                          )}
+                        </td>
                       <td className="numeric">
                         P{entry.place}
                         {entry.event === 'Team' ? (
@@ -691,7 +917,8 @@ export function AthleteProfilePage({
                       </td>
                       <td>{medalBadge(entry.medal)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
