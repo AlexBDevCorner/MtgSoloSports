@@ -120,6 +120,77 @@ public static class ScoreRecordKey
         ColourCupTeamTotalBest or ColourCupTeamRoundBest or
         TypeCupTeamTotalBest or TypeCupTeamRoundBest;
 
+    /// <summary>
+    /// Stable metric identity for grid placement (MSS-140, additive).
+    /// League: "round" (single round), "stage" (single stage), "season"
+    /// (season league points). Cups reuse "round"/"stage" for athlete-level
+    /// bests; team event aggregates use "total" (event total) and
+    /// "team_round" (team single-round total) so the two round-level team
+    /// records never collide. Derived from the stable record key only,
+    /// never from display labels.
+    /// </summary>
+    public const string MetricRound = "round";
+
+    public const string MetricStage = "stage";
+
+    public const string MetricSeason = "season";
+
+    public const string MetricTotal = "total";
+
+    public const string MetricTeamRound = "team_round";
+
+    public static string MetricOf(string recordKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(recordKey);
+        foreach (string scope in LeagueScopes)
+        {
+            if (string.Equals(recordKey, LeagueSingleRound(scope), StringComparison.Ordinal))
+            {
+                return MetricRound;
+            }
+
+            if (string.Equals(recordKey, LeagueStageBest(scope), StringComparison.Ordinal))
+            {
+                return MetricStage;
+            }
+
+            if (string.Equals(recordKey, LeaguePointsBest(scope), StringComparison.Ordinal))
+            {
+                return MetricSeason;
+            }
+        }
+
+        if (string.Equals(recordKey, ColourCupIndividualRoundBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, QualifierSingleRoundBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, ColourCupTeamLegRoundBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, TypeCupTeamLegRoundBest, StringComparison.Ordinal))
+        {
+            return MetricRound;
+        }
+
+        if (string.Equals(recordKey, ColourCupIndividualStageBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, QualifierStageBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, ColourCupTeamLegStageBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, TypeCupTeamLegStageBest, StringComparison.Ordinal))
+        {
+            return MetricStage;
+        }
+
+        if (string.Equals(recordKey, ColourCupTeamTotalBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, TypeCupTeamTotalBest, StringComparison.Ordinal))
+        {
+            return MetricTotal;
+        }
+
+        if (string.Equals(recordKey, ColourCupTeamRoundBest, StringComparison.Ordinal) ||
+            string.Equals(recordKey, TypeCupTeamRoundBest, StringComparison.Ordinal))
+        {
+            return MetricTeamRound;
+        }
+
+        throw new InvalidOperationException($"Scoring record has corrupt unknown key {recordKey}.");
+    }
+
     public static string CategoryOf(string recordKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(recordKey);

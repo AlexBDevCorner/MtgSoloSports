@@ -164,7 +164,9 @@ public sealed class GetRecordsHandler
             result.Value,
             ScoreRecordKey.FormatPoints(result.Value),
             isVacant,
-            holders);
+            holders,
+            ScoreRecordKey.ScopeOf(result.RecordKey),
+            ScoreRecordKey.MetricOf(result.RecordKey));
     }
 
     internal static async Task<List<RecordHistoryEntry>> LoadHistoryAsync(
