@@ -25,6 +25,7 @@ export interface CombinedMatrixRow {
   totalChampionshipPointsThousandths: number | null;
   stageWins: number | null;
   roundWins: number | null;
+  sportingColor: number;
   sportingColorName: string;
   imageUrl: string | null;
   currentEffectiveBonusThousandths: number;

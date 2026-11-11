@@ -42,6 +42,7 @@ function row(
     totalChampionshipPointsThousandths: points,
     stageWins,
     roundWins: 0,
+    sportingColor: 0,
     sportingColorName: 'White',
     imageUrl: null,
     currentEffectiveBonusThousandths: 0,

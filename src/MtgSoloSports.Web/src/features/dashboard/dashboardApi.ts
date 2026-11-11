@@ -10,6 +10,8 @@ export interface SeasonProgressLeague {
   feederDivision?: number | null;
   /** Tier identity ("Superleague", "Feeder1"..) without name parsing. */
   leagueLevel?: string | null;
+  /** Persisted sporting color (MSS-139 additive) for the stable league key. */
+  sportingColor?: number | null;
   currentStage: number | null;
   completedStages: number;
   isLeagueComplete: boolean;

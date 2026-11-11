@@ -72,18 +72,31 @@ public sealed class ListHonoursHandler
 
         if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
         {
-            return MapPersisted(persisted, names);
+            Dictionary<int, LeagueEntity> leaguesById = await LoadFallbackLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
+            return MapPersisted(persisted, names, leaguesById);
         }
 
         return await LoadFallbackAsync(context, names, athleteId, cancellationToken).ConfigureAwait(false);
     }
 
-    internal static List<HonourEntry> MapPersisted(List<HonourEntity> persisted, Dictionary<int, string> names)
+    internal static List<HonourEntry> MapPersisted(
+        List<HonourEntity> persisted,
+        Dictionary<int, string> names,
+        IReadOnlyDictionary<int, LeagueEntity>? leaguesById = null)
     {
         List<HonourEntry> entries = new(persisted.Count);
         foreach (HonourEntity honour in persisted)
         {
             names.TryGetValue(honour.SaveAthleteId, out string? name);
+            string? leagueKey = null;
+            if (HonourKindMapper.IsLeagueHonourKind(honour.Kind)
+                && honour.LeagueId > 0
+                && leaguesById is not null
+                && leaguesById.TryGetValue(honour.LeagueId, out LeagueEntity? league))
+            {
+                leagueKey = BuildLeagueKey(league);
+            }
+
             entries.Add(new HonourEntry(
                 honour.SeasonNumber,
                 honour.SeasonId,
@@ -92,7 +105,8 @@ public sealed class ListHonoursHandler
                 honour.LeagueKind,
                 ((HonourKind)honour.Kind).ToString(),
                 honour.SaveAthleteId,
-                name ?? $"Athlete {honour.SaveAthleteId}"));
+                name ?? $"Athlete {honour.SaveAthleteId}",
+                leagueKey));
         }
 
         return entries;
@@ -218,7 +232,18 @@ public sealed class ListHonoursHandler
             league.Kind,
             kind.ToString(),
             podium.SaveAthleteId,
-            name ?? $"Athlete {podium.SaveAthleteId}");
+            name ?? $"Athlete {podium.SaveAthleteId}",
+            BuildLeagueKey(league));
+    }
+
+    /// <summary>
+    /// Stable cross-season league identity for honour links (MSS-139). Keys
+    /// derive from league rows via <c>LeagueKey</c>, never from names.
+    /// </summary>
+    internal static string BuildLeagueKey(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
     }
 
     /// <summary>

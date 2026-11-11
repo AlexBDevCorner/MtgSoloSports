@@ -12,4 +12,5 @@ public sealed record QualifierEventMember(
     int QualifierScoreThousandths,
     int BaseScoreThousandths,
     int RoundWins,
-    bool IsQualified);
+    bool IsQualified,
+    string? FromLeagueKey = null);

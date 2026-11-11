@@ -9,6 +9,8 @@ export interface Honour {
   honourKind: string;
   athleteId: number;
   athleteName: string;
+  /** MSS-139 additive: stable league key for league honours; null for Cups/legacy. */
+  leagueKey?: string | null;
 }
 
 export interface Honours {

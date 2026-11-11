@@ -6,6 +6,8 @@ import { runEventRemaining } from '../events/eventsApi';
 import { fetchHistorySeasons, type HistorySeasons } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
 import { dashboardPath, livePath, qualifierLivePath, qualifierPath, qualifiersPath } from '../routing/routes';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
 import {
   fetchSaveDetail,
   fetchSeasonProgress,
@@ -326,6 +328,15 @@ export function QualifiersPage({
       </Card>
     </div>
   );
+}
+
+/** Non-empty trimmed text, or null when there is no reliable identity to link. */
+function nonEmpty(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function QualifierGroups({
@@ -659,14 +670,33 @@ export function QualifierDetailPage({
                       <td className="numeric">{row.qualifierRank}</td>
                       <td>
                         <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                        <span className="card-sub"> · {row.sportingColor}</span>
+                        <span className="card-sub">
+                          {' '}
+                          · <ColorTeamLink saveId={saveId} sportingColorName={row.sportingColor} />
+                        </span>
                       </td>
                       <td>
                         {qualifierRoleLabel(row.role)}
                         {qualifierRoleTier(row.role, event.boundary) ? (
                           <span className="card-sub"> · {qualifierRoleTier(row.role, event.boundary)}</span>
                         ) : null}
-                        <span className="card-sub"> · {row.fromLeagueName}</span>
+                        <span className="card-sub">
+                          {' · '}
+                          {(() => {
+                            const fromKey = nonEmpty(row.fromLeagueKey);
+                            return fromKey ? (
+                              <LeagueLink
+                                saveId={saveId}
+                                leagueKey={fromKey}
+                                title={`Open the ${row.fromLeagueName} league profile`}
+                              >
+                                {row.fromLeagueName}
+                              </LeagueLink>
+                            ) : (
+                              row.fromLeagueName
+                            );
+                          })()}
+                        </span>
                       </td>
                       <td className="numeric">P{row.fromSeasonRank}</td>
                       <td className="numeric">{formatPoints(row.qualifierScoreThousandths)}</td>

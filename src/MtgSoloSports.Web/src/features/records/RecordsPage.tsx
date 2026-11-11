@@ -3,6 +3,12 @@ import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { AthleteLink } from '../routing/router';
+import { Link } from '../routing/router';
+import { cupEditionPath, type CupKind } from '../routing/routes';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { TeamBadge } from '../cups/TeamBadge';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
+import { cupTeamKey } from '../cups/cupTeamKeys';
 import {
   fetchHallOfFame,
   fetchHonours,
@@ -90,6 +96,67 @@ function periodQuery(period: PeriodSelection): { fromSeason: number | null; toSe
   return { fromSeason: null, toSeason: null };
 }
 
+/** Non-empty trimmed text, or null when there is no reliable identity to link. */
+function nonEmpty(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Route-ready Cup for Cup honours ("color" | "type" | "chaos"); null renders plain text. */
+function honourCupKind(honourKind: string | null | undefined): CupKind | null {
+  if (typeof honourKind !== 'string') {
+    return null;
+  }
+  if (honourKind.startsWith('ColorCup')) {
+    return 'color';
+  }
+  if (honourKind.startsWith('TypeCup')) {
+    return 'type';
+  }
+  if (honourKind.startsWith('ChaosCup')) {
+    return 'chaos';
+  }
+  return null;
+}
+
+/** Route-ready Cup for a team scoring record, derived from the record key; null for non-team records. */
+function scoringTeamCup(recordKey: string | null | undefined): 'color' | 'type' | null {
+  if (typeof recordKey !== 'string') {
+    return null;
+  }
+  if (recordKey.startsWith('colour_cup_team')) {
+    return 'color';
+  }
+  if (recordKey.startsWith('type_cup_team')) {
+    return 'type';
+  }
+  return null;
+}
+
+/** Team page link for a scoring record holder, or plain text when identity is missing. */
+function ScoringTeamLink({
+  saveId,
+  recordKey,
+  teamName,
+  teamKey,
+}: {
+  saveId: string;
+  recordKey: string;
+  teamName: string | null;
+  teamKey: string | null;
+}) {
+  const cup = scoringTeamCup(recordKey);
+  const key = cup ? cupTeamKey(cup, teamName || teamKey) : null;
+  const display = teamName || teamKey || '—';
+  if (!cup || !key) {
+    return <span>{display}</span>;
+  }
+  return <TeamBadge saveId={saveId} cup={cup} teamKey={key} teamName={display} />;
+}
+
 /** Compact auditable breakdown of one leader's points for the selected range. */
 function LeaderBreakdown({ row }: { row: HallOfFameLeader }) {
   return (
@@ -130,9 +197,11 @@ function LeaderBreakdown({ row }: { row: HallOfFameLeader }) {
 
 function ScoringHolders({
   saveId,
+  recordKey,
   holders,
 }: {
   saveId: string;
+  recordKey: string;
   holders: ScoringRecordHolder[];
 }) {
   return (
@@ -142,10 +211,25 @@ function ScoringHolders({
           {holder.athleteId !== null && holder.athleteName ? (
             <AthleteLink saveId={saveId} athleteId={holder.athleteId} name={holder.athleteName} />
           ) : (
-            <span>{holder.teamName || holder.teamKey}</span>
+            <ScoringTeamLink
+              saveId={saveId}
+              recordKey={recordKey}
+              teamName={holder.teamName}
+              teamKey={holder.teamKey}
+            />
           )}
           {holder.athleteId !== null && holder.teamKey ? (
-            <span className="card-sub"> ({holder.teamName || holder.teamKey})</span>
+            <span className="card-sub">
+              {' '}
+              (
+              <ScoringTeamLink
+                saveId={saveId}
+                recordKey={recordKey}
+                teamName={holder.teamName}
+                teamKey={holder.teamKey}
+              />
+              )
+            </span>
           ) : undefined}
           <span className="card-sub"> · {formatScoringContext(holder)}</span>
           {index < holders.length - 1 ? <span>, </span> : undefined}
@@ -181,7 +265,7 @@ function ScoringTable({ saveId, records }: { saveId: string; records: ScoringRec
                 {record.isVacant ? (
                   <span className="muted">Vacant</span>
                 ) : (
-                  <ScoringHolders saveId={saveId} holders={record.holders} />
+                  <ScoringHolders saveId={saveId} recordKey={record.recordKey} holders={record.holders} />
                 )}
               </td>
             </tr>
@@ -482,7 +566,7 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                       <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                       <span className="card-sub">
                         {' '}
-                        · {row.sportingColorName}
+                        · <ColorTeamLink saveId={saveId} sportingColor={row.sportingColor} sportingColorName={row.sportingColorName} />
                         {row.superleagueTitles > 0
                           ? ` · ${row.superleagueTitles} SL`
                           : ''}
@@ -636,7 +720,26 @@ export function RecordsPage({ saveId }: { saveId: string }) {
                 {honours.map((row) => (
                   <tr key={`${row.seasonNumber}-${row.leagueId}-${row.athleteId}-${row.honourKind}`}>
                     <td className="numeric">{row.seasonNumber}</td>
-                    <td>{row.leagueName}</td>
+                    <td>
+                      {nonEmpty(row.leagueKey) ? (
+                        <LeagueLink
+                          saveId={saveId}
+                          leagueKey={row.leagueKey as string}
+                          title={`Open the ${row.leagueName} league profile`}
+                        >
+                          {row.leagueName}
+                        </LeagueLink>
+                      ) : honourCupKind(row.honourKind) ? (
+                        <Link
+                          to={cupEditionPath(saveId, honourCupKind(row.honourKind) as CupKind, row.seasonNumber)}
+                          title={`Open the ${row.leagueName} edition for Season ${row.seasonNumber}`}
+                        >
+                          {row.leagueName}
+                        </Link>
+                      ) : (
+                        row.leagueName
+                      )}
+                    </td>
                     <td>
                       <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.athleteName} />
                     </td>

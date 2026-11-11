@@ -12,4 +12,5 @@ public sealed record InauguralRosterMember(
     int FromLeagueId,
     string FromLeagueName,
     int FromSeasonRank,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    string? FromLeagueKey = null);

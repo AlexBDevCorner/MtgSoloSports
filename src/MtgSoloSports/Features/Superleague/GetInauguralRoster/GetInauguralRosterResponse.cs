@@ -12,4 +12,5 @@ public sealed record GetInauguralRosterResponse(
     int SuperleagueLeagueId,
     string SuperleagueLeagueName,
     IReadOnlyList<InauguralRosterMember> Members,
-    int MovementCount);
+    int MovementCount,
+    string? SuperleagueLeagueKey = null);

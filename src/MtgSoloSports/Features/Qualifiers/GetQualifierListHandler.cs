@@ -129,6 +129,7 @@ public sealed class GetQualifierListHandler
         List<GetQualifierEventResponse> events = new(groups.Count);
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> leagueKeys = await LoadLeagueKeysAsync(context, cancellationToken).ConfigureAwait(false);
         var rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         foreach (var group in groups)
         {
@@ -148,7 +149,7 @@ public sealed class GetQualifierListHandler
                     $"Qualifier {boundary} for Season {source.SeasonNumber} is incomplete but has standings; sporting state is corrupt.");
             }
 
-            events.Add(MapEvent(saveId, source, next, boundary, color, eventStandings, eventRounds, names, leagueNames));
+            events.Add(MapEvent(saveId, source, next, boundary, color, eventStandings, eventRounds, names, leagueNames, leagueKeys));
         }
 
         return new GetQualifierListResponse(saveId, source.SeasonNumber, next.SeasonNumber, events);
@@ -188,7 +189,8 @@ public sealed class GetQualifierListHandler
 
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> leagueNames = await LoadLeagueNamesAsync(context, cancellationToken).ConfigureAwait(false);
-        return MapEvent(saveId, source, next, boundary, sportingColor, standings, rounds, names, leagueNames);
+        Dictionary<int, string> leagueKeys = await LoadLeagueKeysAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapEvent(saveId, source, next, boundary, sportingColor, standings, rounds, names, leagueNames, leagueKeys);
     }
 
     internal static async Task<Dictionary<int, string>> LoadNamesAsync(
@@ -209,6 +211,27 @@ public sealed class GetQualifierListHandler
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stable cross-season league key per league id for qualifier links
+    /// (MSS-139). Keys derive from league rows, never from names; missing
+    /// rows render as plain text.
+    /// </summary>
+    internal static async Task<Dictionary<int, string>> LoadLeagueKeysAsync(
+        SaveDbContext context, CancellationToken cancellationToken)
+    {
+        Dictionary<int, LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> keys = new(leagues.Count);
+        foreach ((int id, LeagueEntity league) in leagues)
+        {
+            keys[id] = Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
+        }
+
+        return keys;
+    }
+
     internal static GetQualifierEventResponse MapEvent(
         Guid saveId,
         SeasonEntity source,
@@ -218,7 +241,8 @@ public sealed class GetQualifierListHandler
         List<QualifierStandingEntity> standings,
         List<QualifierRoundEntity> rounds,
         IReadOnlyDictionary<int, string>? names = null,
-        IReadOnlyDictionary<int, string>? leagueNames = null)
+        IReadOnlyDictionary<int, string>? leagueNames = null,
+        IReadOnlyDictionary<int, string>? leagueKeys = null)
     {
         string colorName = sportingColor.HasValue
             ? ((SportingColor)sportingColor.Value).ToString()
@@ -237,7 +261,7 @@ public sealed class GetQualifierListHandler
             rngAfterStream = unchecked((ulong)rounds[^1].RngAfterStream);
         }
 
-        List<QualifierEventMember> members = MapMembers(standings, names, leagueNames);
+        List<QualifierEventMember> members = MapMembers(standings, names, leagueNames, leagueKeys);
         return new GetQualifierEventResponse(
             saveId,
             source.SeasonNumber,
@@ -260,7 +284,8 @@ public sealed class GetQualifierListHandler
     internal static List<QualifierEventMember> MapMembers(
         List<QualifierStandingEntity> standings,
         IReadOnlyDictionary<int, string>? names = null,
-        IReadOnlyDictionary<int, string>? leagueNames = null)
+        IReadOnlyDictionary<int, string>? leagueNames = null,
+        IReadOnlyDictionary<int, string>? leagueKeys = null)
     {
         List<QualifierEventMember> members = new(standings.Count);
         foreach (QualifierStandingEntity standing in standings.OrderBy(s => s.QualifierRank))
@@ -271,6 +296,9 @@ public sealed class GetQualifierListHandler
             string leagueName = leagueNames is not null && leagueNames.TryGetValue(standing.FromLeagueId, out string? resolvedLeague)
                 ? resolvedLeague
                 : $"League {standing.FromLeagueId}";
+            string? leagueKey = leagueKeys is not null && leagueKeys.TryGetValue(standing.FromLeagueId, out string? resolvedKey)
+                ? resolvedKey
+                : null;
             members.Add(new QualifierEventMember(
                 standing.SaveAthleteId,
                 name,
@@ -283,7 +311,8 @@ public sealed class GetQualifierListHandler
                 standing.QualifierScoreThousandths,
                 standing.BaseScoreThousandths,
                 standing.RoundWins,
-                standing.IsQualified));
+                standing.IsQualified,
+                leagueKey));
         }
 
         return members;

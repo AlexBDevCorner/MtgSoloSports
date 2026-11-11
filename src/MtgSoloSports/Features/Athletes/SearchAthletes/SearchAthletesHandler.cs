@@ -37,7 +37,8 @@ public sealed class SearchAthletesHandler
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates = await LoadCandidatesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<string, (string Level, int Division)> levels = await LoadLeagueLevelsByNameAsync(context, cancellationToken).ConfigureAwait(false);
-        return MapPaged(saveId, candidates, query, levels);
+        Dictionary<int, string> leagueKeys = await LoadLeagueKeysByIdAsync(context, candidates, cancellationToken).ConfigureAwait(false);
+        return MapPaged(saveId, candidates, query, levels, leagueKeys);
     }
 
     public async Task<SearchAthletesOptionsResponse> HandleOptionsAsync(Guid saveId, CancellationToken cancellationToken = default)
@@ -81,11 +82,48 @@ public sealed class SearchAthletesHandler
         return levels;
     }
 
+    /// <summary>
+    /// Stable cross-season league key per current league row for search links
+    /// (MSS-139). Keys derive from the athlete's own <c>CurrentLeagueId</c>
+    /// league row via <c>LeagueKey</c>, never from display names, so an
+    /// upgraded v1 save with a legacy same-named feeder row still links to the
+    /// athlete's actual current tiered league. Pool athletes and missing rows
+    /// carry no key and render as plain text.
+    /// </summary>
+    internal static async Task<Dictionary<int, string>> LoadLeagueKeysByIdAsync(
+        SaveDbContext context,
+        IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
+        CancellationToken cancellationToken)
+    {
+        HashSet<int> leagueIds = candidates
+            .Where(e => e.IsActive && e.CurrentLeagueId.HasValue)
+            .Select(e => e.CurrentLeagueId!.Value)
+            .ToHashSet();
+        if (leagueIds.Count == 0)
+        {
+            return new Dictionary<int, string>();
+        }
+
+        List<LeagueEntity> leagues = await context.Leagues
+            .AsNoTracking()
+            .Where(e => leagueIds.Contains(e.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        Dictionary<int, string> keys = new(leagues.Count);
+        foreach (LeagueEntity league in leagues)
+        {
+            keys[league.Id] = Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
+        }
+
+        return keys;
+    }
+
     internal static SearchAthletesResponse MapPaged(
         Guid saveId,
         IReadOnlyList<SearchAthletesFilter.Candidate> candidates,
         SearchAthletesQuery query,
-        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null,
+        IReadOnlyDictionary<int, string>? leagueKeysById = null)
     {
         IReadOnlyList<SearchAthletesFilter.Candidate> filtered = SearchAthletesFilter.ApplyFilters(candidates, query);
         (string sort, string dir) = query.EffectiveSort();
@@ -95,14 +133,15 @@ public sealed class SearchAthletesHandler
         List<AthleteSearchResultDto> page = sorted
             .Skip(skip)
             .Take(take)
-            .Select(c => MapResult(c, levelsByName))
+            .Select(c => MapResult(c, levelsByName, leagueKeysById))
             .ToList();
         return new SearchAthletesResponse(saveId, filtered.Count, skip, take, page);
     }
 
     internal static AthleteSearchResultDto MapResult(
         SearchAthletesFilter.Candidate candidate,
-        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null)
+        IReadOnlyDictionary<string, (string Level, int Division)>? levelsByName = null,
+        IReadOnlyDictionary<int, string>? leagueKeysById = null)
     {
         string? level = null;
         int? division = null;
@@ -111,6 +150,13 @@ public sealed class SearchAthletesHandler
         {
             level = resolved.Level;
             division = resolved.Division;
+        }
+
+        string? leagueKey = null;
+        if (candidate.IsActive && candidate.CurrentLeagueId.HasValue && leagueKeysById is not null
+            && leagueKeysById.TryGetValue(candidate.CurrentLeagueId.Value, out string? resolvedKey))
+        {
+            leagueKey = resolvedKey;
         }
 
         return new AthleteSearchResultDto(
@@ -135,7 +181,8 @@ public sealed class SearchAthletesHandler
             candidate.CupPodiums,
             candidate.CupTitles,
             level,
-            division);
+            division,
+            leagueKey);
     }
 
     internal static SearchAthletesOptionsResponse MapOptions(
@@ -262,7 +309,7 @@ public sealed class SearchAthletesHandler
             .AsNoTracking()
             .Select(e => new CareerProbe(
                 e.SaveAthleteId, e.SeasonsActive, e.IsActive, e.CurrentLeagueName, e.CurrentLeagueKind,
-                e.BestSeasonFinish, e.BestSeasonNumber))
+                e.BestSeasonFinish, e.BestSeasonNumber, e.CurrentLeagueId))
             .ToDictionaryAsync(e => e.SaveAthleteId, cancellationToken);
     }
 
@@ -318,7 +365,8 @@ public sealed class SearchAthletesHandler
             tenure.SuperSeasons,
             totals.CupAppearances,
             totals.CupPodiums,
-            totals.CupTitles);
+            totals.CupTitles,
+            career?.CurrentLeagueId);
     }
 
     private static async Task<Dictionary<int, int>> LoadFallbackNonPoolAsync(
@@ -560,7 +608,7 @@ public sealed class SearchAthletesHandler
 
     private sealed record CareerProbe(
         int SaveAthleteId, int SeasonsActive, bool IsActive, string? CurrentLeagueName, int? CurrentLeagueKind,
-        int? BestSeasonFinish, int? BestSeasonNumber);
+        int? BestSeasonFinish, int? BestSeasonNumber, int? CurrentLeagueId);
 
     private sealed record MembershipProbe(int SaveAthleteId, int SeasonId);
 

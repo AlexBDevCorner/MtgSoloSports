@@ -9,7 +9,10 @@ import {
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { AthleteLink, Link } from '../routing/router';
-import { savesPath, dashboardPath, standingsLeaguePath, standingsPath } from '../routing/routes';
+import { savesPath, dashboardPath, leaguePath, standingsLeaguePath, standingsPath } from '../routing/routes';
+import { leagueKeyFor } from '../leagues/leagueKeys';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
 import { advanceRound, completeStage, type StageRound } from './liveApi';
 import { useStageRounds } from './useLiveRound';
 import { colorComposition, zoneLabelForRank, zoneSummaryLine } from '../standings/zones';
@@ -83,6 +86,15 @@ export function LivePage({
   const league = leagues.find((entry) => entry.leagueId === leagueId) ?? null;
   const leagueTier = league
     ? leagueLevelLabel(league.leagueLevel ?? null, league.feederDivision ?? null, league.leagueKind)
+    : null;
+  // MSS-139 league profile link from backend tier identity (never parsed names).
+  // Null for legacy payloads so no fabricated URL ever renders.
+  const leagueProfileKey = league
+    ? leagueKeyFor({
+        kind: league.leagueKind,
+        feederDivision: league.feederDivision ?? null,
+        sportingColor: league.sportingColor ?? null,
+      })
     : null;
   const leagueTierBonus = league ? tierBonusLabel(league.leagueLevel ?? null) : null;
   const tierSections = useMemo(() => {
@@ -521,13 +533,25 @@ export function LivePage({
         }
         action={
           leagueId !== null ? (
-            <Link
-              to={standingsLeaguePath(saveId, leagueId)}
-              className="ghost-button"
-              title="Open the dedicated league tables and stage placements"
-            >
-              Full standings
-            </Link>
+            <>
+              {leagueProfileKey ? (
+                <LeagueLink
+                  saveId={saveId}
+                  leagueKey={leagueProfileKey}
+                  title="Open the league profile"
+                  className="ghost-button"
+                >
+                  League profile
+                </LeagueLink>
+              ) : null}{' '}
+              <Link
+                to={standingsLeaguePath(saveId, leagueId)}
+                className="ghost-button"
+                title="Open the dedicated league tables and stage placements"
+              >
+                Full standings
+              </Link>
+            </>
           ) : (
             <Link
               to={standingsPath(saveId)}
@@ -605,7 +629,13 @@ export function LivePage({
                             </span>
                           </div>
                         </td>
-                        <td>{row.sportingColorName}</td>
+                        <td>
+                          <ColorTeamLink
+                            saveId={saveId}
+                            sportingColor={row.sportingColor}
+                            sportingColorName={row.sportingColorName}
+                          />
+                        </td>
                         <td>
                           <span className="badge badge-wait" title="Visual zone only; no quotas applied.">
                             {zoneLabelForRank(row.seasonRank, kind, level)}

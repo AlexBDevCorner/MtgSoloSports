@@ -11,7 +11,9 @@ import {
   storyEventLabel,
 } from '../../shared/displayLabels';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, livePath, recordsPath, savesPath, standingsLeaguePath, standingsPath } from '../routing/routes';
+import { cupEditionPath, cupsPath, livePath, recordsPath, savesPath, standingsLeaguePath, standingsPath, type CupKind } from '../routing/routes';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { ColorTeamLink } from '../cups/ColorTeamLink';
 import type { DashboardData } from './useDashboard';
 import { FastForwardSeason } from './FastForwardSeason';
 import { FeederLeaders } from './FeederLeaders';
@@ -24,6 +26,32 @@ function shortChecksum(value: string): string {
 
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
+}
+
+/** Non-empty trimmed text, or null when there is no reliable identity to link. */
+function nonEmpty(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Route-ready Cup for Cup honours ("color" | "type" | "chaos"); null renders plain text. */
+function honourCupKind(honourKind: string | null | undefined): CupKind | null {
+  if (typeof honourKind !== 'string') {
+    return null;
+  }
+  if (honourKind.startsWith('ColorCup')) {
+    return 'color';
+  }
+  if (honourKind.startsWith('TypeCup')) {
+    return 'type';
+  }
+  if (honourKind.startsWith('ChaosCup')) {
+    return 'chaos';
+  }
+  return null;
 }
 
 export function DashboardPage({
@@ -370,7 +398,13 @@ export function DashboardPage({
                           </span>
                         </div>
                       </td>
-                      <td>{row.sportingColorName}</td>
+                      <td>
+                        <ColorTeamLink
+                          saveId={saveId}
+                          sportingColor={row.sportingColor}
+                          sportingColorName={row.sportingColorName}
+                        />
+                      </td>
                       <td className="numeric">{formatPoints(row.totalChampionshipPointsThousandths)}</td>
                     </tr>
                   ))}
@@ -499,7 +533,19 @@ export function DashboardPage({
                   {leagueHonours.map((honour, index) => (
                     <tr key={`${honour.seasonNumber}-${honour.leagueName}-${honour.athleteId}-${honour.honourKind}-${index}`}>
                       <td className="numeric">{honour.seasonNumber}</td>
-                      <td>{honour.leagueName}</td>
+                      <td>
+                        {nonEmpty(honour.leagueKey) ? (
+                          <LeagueLink
+                            saveId={saveId}
+                            leagueKey={honour.leagueKey as string}
+                            title={`Open the ${honour.leagueName} league profile`}
+                          >
+                            {honour.leagueName}
+                          </LeagueLink>
+                        ) : (
+                          honour.leagueName
+                        )}
+                      </td>
                       <td>
                         <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />
                       </td>
@@ -557,7 +603,20 @@ export function DashboardPage({
                   <span className="badge badge-ready">{honourKindLabel(honour.honourKind)}</span>{' '}
                   <AthleteLink saveId={saveId} athleteId={honour.athleteId} name={honour.athleteName} />{' '}
                   <span className="muted small">
-                    · Season {honour.seasonNumber} · {honour.leagueName}
+                    · Season {honour.seasonNumber} ·{' '}
+                    {(() => {
+                      const cup = honourCupKind(honour.honourKind);
+                      return cup ? (
+                        <Link
+                          to={cupEditionPath(saveId, cup, honour.seasonNumber)}
+                          title={`Open the ${honour.leagueName} edition for Season ${honour.seasonNumber}`}
+                        >
+                          {honour.leagueName}
+                        </Link>
+                      ) : (
+                        honour.leagueName
+                      );
+                    })()}
                   </span>
                 </li>
               ))}

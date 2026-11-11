@@ -24,7 +24,33 @@ import { RoundReveal } from '../reveal/RoundReveal';
 import type { RevealPlacement } from '../reveal/types';
 import { AthleteLink, Link } from '../routing/router';
 import { dashboardPath, qualifierLivePath, qualifiersPath } from '../routing/routes';
+import { LeagueLink } from '../leagues/LeagueLink';
 import './LivePage.css';
+
+/**
+ * Source-league link for a qualifier entrant row (MSS-139). Renders the
+ * league profile link when the backend supplied a stable league key; legacy
+ * rows without identity stay plain text.
+ */
+function FromLeagueCell({
+  saveId,
+  fromLeagueName,
+  fromLeagueKey,
+}: {
+  saveId: string;
+  fromLeagueName: string;
+  fromLeagueKey?: string | null;
+}) {
+  const key = typeof fromLeagueKey === 'string' && fromLeagueKey.trim().length > 0 ? fromLeagueKey : null;
+  if (!key) {
+    return <>{fromLeagueName}</>;
+  }
+  return (
+    <LeagueLink saveId={saveId} leagueKey={key} title={`Open the ${fromLeagueName} league profile`}>
+      {fromLeagueName}
+    </LeagueLink>
+  );
+}
 
 /**
  * Live view of one individual feeder qualifier (MSS-069): a real 16-round
@@ -364,7 +390,13 @@ export function LiveQualifierView({
                           <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
                           <span className="card-sub">
                             {' '}
-                            · {qualifierRoleLabel(row.role)} · {row.fromLeagueName} P{row.fromSeasonRank}
+                            · {qualifierRoleLabel(row.role)} ·{' '}
+                            <FromLeagueCell
+                              saveId={saveId}
+                              fromLeagueName={row.fromLeagueName}
+                              fromLeagueKey={row.fromLeagueKey}
+                            />{' '}
+                            P{row.fromSeasonRank}
                           </span>
                         </td>
                         <td>
@@ -393,14 +425,20 @@ export function LiveQualifierView({
               </thead>
               <tbody>
                 {detail.field.map((row) => (
-                  <tr key={row.athleteId}>
-                    <td>
-                      <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
-                      <span className="card-sub">
-                        {' '}
-                        · {row.fromLeagueName} P{row.fromSeasonRank}
-                      </span>
-                    </td>
+                      <tr key={row.athleteId}>
+                        <td>
+                          <AthleteLink saveId={saveId} athleteId={row.athleteId} name={row.name} />
+                          <span className="card-sub">
+                            {' '}
+                            ·{' '}
+                            <FromLeagueCell
+                              saveId={saveId}
+                              fromLeagueName={row.fromLeagueName}
+                              fromLeagueKey={row.fromLeagueKey}
+                            />{' '}
+                            P{row.fromSeasonRank}
+                          </span>
+                        </td>
                     <td>
                       <span className="badge badge-wait">{qualifierRoleLabel(row.role)}</span>
                     </td>

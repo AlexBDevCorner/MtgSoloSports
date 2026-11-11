@@ -23,4 +23,6 @@ public sealed record FeederMovementMember(
     string ToLeagueName,
     string? ToLeagueLevel,
     string MovementKind,
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    string? FromLeagueKey = null,
+    string? ToLeagueKey = null);

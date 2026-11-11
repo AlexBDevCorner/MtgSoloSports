@@ -14,6 +14,8 @@ export interface AthleteSearchResult {
   /** Tier identity of the current league; null for the pool. */
   currentLeagueLevel?: string | null;
   currentLeagueDivision?: number | null;
+  /** MSS-139 additive: stable league key of the current league; null for pool/legacy. */
+  currentLeagueKey?: string | null;
   nonPoolSeasons: number;
   honoursCount: number;
   titlesCount: number;

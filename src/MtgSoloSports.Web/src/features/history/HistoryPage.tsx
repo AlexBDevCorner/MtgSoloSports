@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -33,7 +34,11 @@ import { groupLeaguesByTier } from '../../shared/leagueTiers';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { HistoryEventView } from './HistoryEventView';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, qualifiersPath, savesPath, standingsLeaguePath } from '../routing/routes';
+import { cupsPath, leaguePath, qualifiersPath, savesPath, standingsLeaguePath } from '../routing/routes';
+import { leagueKeyFor } from '../leagues/leagueKeys';
+import { LeagueLink } from '../leagues/LeagueLink';
+import { TeamBadge } from '../cups/TeamBadge';
+import { cupTeamKey } from '../cups/cupTeamKeys';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
@@ -382,6 +387,31 @@ export function HistoryPage({
   const replay = replayState.data;
   const stageStandings = standingsState.data;
   const seasonTable = tableState.data;
+  // MSS-139 league profile links from backend tier identity (never parsed names).
+  // Null until competitions load or for legacy payloads, so no fabricated URL renders.
+  const selectedCompetition = competitions.find((row) => row.leagueId === leagueId) ?? null;
+  const selectedLeagueKey = selectedCompetition
+    ? leagueKeyFor({
+        kind: selectedCompetition.kind,
+        feederDivision: selectedCompetition.feederDivision ?? null,
+        sportingColor: selectedCompetition.sportingColor ?? null,
+      })
+    : null;
+  // MSS-139 Cup team link for the post-season champion line. Odd seasons run
+  // the Color Cup (lower-case color key), even seasons the Type Cup (creature
+  // type as stored). Unknown names render as plain text.
+  const seasonCupKind: 'color' | 'type' | null =
+    seasonNumber === null ? null : seasonNumber % 2 === 1 ? 'color' : 'type';
+  function cupChampionCell(teamName: string | null | undefined): ReactNode {
+    if (!teamName || !seasonCupKind) {
+      return teamName ?? '—';
+    }
+    const key = cupTeamKey(seasonCupKind, teamName);
+    if (!key) {
+      return teamName;
+    }
+    return <TeamBadge saveId={saveId} cup={seasonCupKind} teamKey={key} teamName={teamName} />;
+  }
 
   function pushSelection(next: HistorySelection): void {
     onHistoryChange(next);
@@ -577,6 +607,18 @@ export function HistoryPage({
               ? `${stageStandings.leagueName} — Stage ${stageStandings.stageNumber} standings`
               : 'Stage standings'
           }
+          action={
+            selectedLeagueKey ? (
+              <LeagueLink
+                saveId={saveId}
+                leagueKey={selectedLeagueKey}
+                title="Open the league profile"
+                className="ghost-button"
+              >
+                League profile
+              </LeagueLink>
+            ) : undefined
+          }
         >
           {standingsState.loading && !stageStandings ? (
             <Loading label="Loading stage standings…" />
@@ -629,13 +671,25 @@ export function HistoryPage({
           }
           action={
             seasonNumber !== null && leagueId !== null ? (
-              <Link
-                to={standingsLeaguePath(saveId, leagueId, { season: seasonNumber, view: 'matrix' })}
-                className="ghost-button"
-                title="Open this league in the dedicated standings matrix"
-              >
-                Open matrix
-              </Link>
+              <>
+                {selectedLeagueKey ? (
+                  <LeagueLink
+                    saveId={saveId}
+                    leagueKey={selectedLeagueKey}
+                    title="Open the league profile"
+                    className="ghost-button"
+                  >
+                    League profile
+                  </LeagueLink>
+                ) : null}{' '}
+                <Link
+                  to={standingsLeaguePath(saveId, leagueId, { season: seasonNumber, view: 'matrix' })}
+                  className="ghost-button"
+                  title="Open this league in the dedicated standings matrix"
+                >
+                  Open matrix
+                </Link>
+              </>
             ) : undefined
           }
         >
@@ -744,7 +798,7 @@ export function HistoryPage({
                 <Loading label="Loading Color Cup team…" />
               ) : colorTeamState.data ? (
                 <p>
-                  Team champion {colorTeamState.data!.championTeamName} ·{' '}
+                  Team champion {cupChampionCell(colorTeamState.data!.championTeamName)} ·{' '}
                   {colorTeamState.data!.teamCount} teams · {colorTeamState.data!.groupCount}{' '}
                   groups × {colorTeamState.data!.groupRounds} rounds.
                 </p>
@@ -759,7 +813,7 @@ export function HistoryPage({
               ) : typeTeamState.data ? (
                 <>
                   <p>
-                    Team champion {typeTeamState.data!.championTeamName} ·{' '}
+                    Team champion {cupChampionCell(typeTeamState.data!.championTeamName)} ·{' '}
                     {typeTeamState.data!.teamCount} teams · {typeTeamState.data!.groupCount}{' '}
                     groups × {typeTeamState.data!.groupRounds} rounds.
                   </p>

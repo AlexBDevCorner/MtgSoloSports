@@ -227,7 +227,9 @@ public sealed class GetFeederMovementsHandler
                 to?.Name ?? $"League {toLeague}",
                 to is null ? null : LeagueEntityLevels.GetLevel(to).ToString(),
                 ((MovementKind)movement.Kind).ToString(),
-                imageUrl));
+                imageUrl,
+                GetAutomaticMovementHandler.BuildLeagueKey(from),
+                to is null ? null : GetAutomaticMovementHandler.BuildLeagueKey(to)));
         }
 
         return members;

@@ -12,6 +12,8 @@ export interface QualifierEventMember {
   role: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null for legacy. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   qualifierRank: number;
   qualifierScoreThousandths: number;
@@ -143,6 +145,8 @@ export interface QualifierFieldMember {
   role: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source league; null for legacy. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   imageUrl: string | null;
   setCode: string | null;

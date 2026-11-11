@@ -17,4 +17,5 @@ public sealed record QualifierFieldMember(
     int FromSeasonRank,
     string? ImageUrl,
     string? SetCode,
-    string TypeLine);
+    string TypeLine,
+    string? FromLeagueKey = null);

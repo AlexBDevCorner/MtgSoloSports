@@ -12,13 +12,17 @@ export interface MovementMember {
   sportingColor: string;
   fromLeagueId: number;
   fromLeagueName: string;
-  /** Tier identity of the source league ("Superleague", "Feeder1", ...). */
+  /** Tier identity of the source league ("Superleague", "Feeder1", ...); null for pool sentinels. */
   fromLeagueLevel?: string | null;
+  /** MSS-139 additive: stable league key of the source league; null for pool/legacy. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   toLeagueId: number;
   toLeagueName: string;
   /** Tier identity of the destination league; null for pool sentinels. */
   toLeagueLevel?: string | null;
+  /** MSS-139 additive: stable league key of the destination league; null for pool/legacy. */
+  toLeagueKey?: string | null;
   movementKind: string;
   imageUrl: string | null;
 }
@@ -51,6 +55,8 @@ export interface InauguralRosterMember {
   sportingColor: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source feeder; null for legacy renders plain text. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   imageUrl: string | null;
 }
@@ -61,6 +67,8 @@ export interface InauguralRoster {
   seasonNumber: number;
   superleagueLeagueId: number;
   superleagueLeagueName: string;
+  /** MSS-139 additive: stable key of the inaugural Superleague; null renders plain text. */
+  superleagueLeagueKey?: string | null;
   members: InauguralRosterMember[];
   movementCount: number;
 }
@@ -100,10 +108,14 @@ export interface FeederMovementMember {
   fromLeagueId: number;
   fromLeagueName: string;
   fromLeagueLevel: string;
+  /** MSS-139 additive: stable league key of the source league; null for legacy. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   toLeagueId: number;
   toLeagueName: string;
   toLeagueLevel: string | null;
+  /** MSS-139 additive: stable league key of the destination league; null for legacy. */
+  toLeagueKey?: string | null;
   movementKind: string;
   imageUrl: string | null;
 }

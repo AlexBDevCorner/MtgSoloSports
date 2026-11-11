@@ -18,10 +18,34 @@ import { EVENT_TITLES, isTeamEvent, roundLabel, type EventKey } from '../events/
 import { RoundReveal } from '../reveal/RoundReveal';
 import { Link } from '../routing/router';
 import { cupEditionPath, qualifiersPath } from '../routing/routes';
+import { TeamBadge } from '../cups/TeamBadge';
+import { cupTeamKey } from '../cups/cupTeamKeys';
 
 /** Display-only projection of a fixed-point thousandths value (no sporting math). */
 function formatPoints(thousandths: number): string {
   return (thousandths / 1000).toFixed(3);
+}
+
+/**
+ * MSS-139 Cup team link for team standings rows. The event identity tells the
+ * Cup (color vs type); the persisted team name is the team identity. Unknown
+ * or empty names render as plain text, never a guessed URL.
+ */
+function CupTeamCell({
+  saveId,
+  event,
+  teamName,
+}: {
+  saveId: string;
+  event: EventKey;
+  teamName: string;
+}) {
+  const cup = event === 'color-cup-team' ? 'color' : event === 'type-cup-team' ? 'type' : null;
+  const key = cup ? cupTeamKey(cup, teamName) : null;
+  if (!cup || !key) {
+    return <>{teamName}</>;
+  }
+  return <TeamBadge saveId={saveId} cup={cup} teamKey={key} teamName={teamName} />;
 }
 
 /**
@@ -415,7 +439,9 @@ export function HistoryEventView({
                 {teams.teams.map((row) => (
                   <tr key={row.teamName}>
                     <td className="numeric">{row.rank ?? '—'}</td>
-                    <td>{row.teamName}</td>
+                    <td>
+                      <CupTeamCell saveId={saveId} event={event} teamName={row.teamName} />
+                    </td>
                     <td className="numeric">{formatPoints(row.scoreThousandths)}</td>
                   </tr>
                 ))}
