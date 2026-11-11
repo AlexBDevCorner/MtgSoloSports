@@ -85,7 +85,8 @@ public sealed class GetInauguralRosterHandler
             superleague.Id,
             superleague.Name,
             members,
-            movements.Count);
+            movements.Count,
+            BuildLeagueKey(superleague));
     }
 
     internal static async Task<List<SeasonMembershipEntity>> LoadRosterMembershipsAsync(
@@ -149,17 +150,17 @@ public sealed class GetInauguralRosterHandler
             .AsNoTracking()
             .ToDictionaryAsync(e => e.Id, e => e.ImageUrl, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<int, string> leagueNames = await context.Leagues
+        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
             .AsNoTracking()
             .Where(e => e.SeasonId != seasonTwo.Id)
-            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
 
         Dictionary<int, MovementEntity> movementByAthlete = movements.ToDictionary(m => m.SaveAthleteId);
         List<InauguralRosterMember> members = new(memberships.Count);
         foreach (SeasonMembershipEntity membership in memberships)
         {
-            members.Add(MapSingleMember(membership, movementByAthlete, names, images, leagueNames));
+            members.Add(MapSingleMember(membership, movementByAthlete, names, images, leaguesById));
         }
 
         return members;
@@ -170,7 +171,7 @@ public sealed class GetInauguralRosterHandler
         Dictionary<int, MovementEntity> movementByAthlete,
         Dictionary<int, string> names,
         Dictionary<int, string?> images,
-        Dictionary<int, string> leagueNames)
+        Dictionary<int, LeagueEntity> leaguesById)
     {
         if (!movementByAthlete.TryGetValue(membership.SaveAthleteId, out MovementEntity? movement))
         {
@@ -180,15 +181,16 @@ public sealed class GetInauguralRosterHandler
 
         names.TryGetValue(membership.SaveAthleteId, out string? name);
         images.TryGetValue(membership.SaveAthleteId, out string? imageUrl);
-        leagueNames.TryGetValue(movement.FromLeagueId, out string? fromName);
+        leaguesById.TryGetValue(movement.FromLeagueId, out LeagueEntity? fromLeague);
         return new InauguralRosterMember(
             membership.SaveAthleteId,
             name ?? $"Athlete {membership.SaveAthleteId}",
             ((SportingColor)membership.SportingColor).ToString(),
             movement.FromLeagueId,
-            fromName ?? $"League {movement.FromLeagueId}",
+            fromLeague?.Name ?? $"League {movement.FromLeagueId}",
             movement.FromSeasonRank,
-            imageUrl);
+            imageUrl,
+            fromLeague is null ? null : BuildLeagueKey(fromLeague));
     }
 
     internal static void SortRosterMembers(List<InauguralRosterMember> members)
@@ -199,5 +201,15 @@ public sealed class GetInauguralRosterHandler
             int league = left.FromLeagueId.CompareTo(right.FromLeagueId);
             return league != 0 ? league : left.FromSeasonRank.CompareTo(right.FromSeasonRank);
         });
+    }
+
+    /// <summary>
+    /// Stable cross-season league identity for inaugural links (MSS-139). Keys
+    /// derive from league rows via <c>LeagueKey</c>, never from names.
+    /// </summary>
+    internal static string BuildLeagueKey(LeagueEntity league)
+    {
+        ArgumentNullException.ThrowIfNull(league);
+        return Leagues.Profiles.LeagueKey.Build(league.Kind, league.FeederDivision, league.SportingColor);
     }
 }

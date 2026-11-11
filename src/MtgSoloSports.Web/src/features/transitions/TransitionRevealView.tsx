@@ -206,7 +206,7 @@ function MovementTransition({ saveId, season }: { saveId: string; season: number
   }
 
   if (inaugural) {
-    const boundaries = boundariesForInaugural(inaugural.members, inaugural.superleagueLeagueName);
+    const boundaries = boundariesForInaugural(inaugural.members, inaugural.superleagueLeagueName, inaugural.superleagueLeagueKey ?? null);
     return (
       <div className="live-layout">
         <TransitionSidebar

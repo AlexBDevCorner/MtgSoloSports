@@ -145,6 +145,7 @@ export function boundariesForMovement(movement: AutomaticMovement): MovementBoun
 export function boundariesForInaugural(
   members: readonly InauguralRosterMember[],
   superleagueName: string,
+  superleagueLeagueKey?: string | null,
 ): MovementBoundary[] {
   const byFeeder = new Map<string, MovementStep[]>();
   for (const member of members) {
@@ -154,8 +155,10 @@ export function boundariesForInaugural(
       name: member.name,
       sportingColor: member.sportingColor,
       fromLeagueName: member.fromLeagueName,
+      fromLeagueKey: member.fromLeagueKey ?? null,
       fromSeasonRank: member.fromSeasonRank,
       toLeagueName: superleagueName,
+      toLeagueKey: superleagueLeagueKey ?? null,
       direction: 'promoted',
       imageUrl: member.imageUrl,
     };

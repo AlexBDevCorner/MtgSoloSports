@@ -33,7 +33,8 @@ public static class SearchAthletesFilter
         int SuperSeasons,
         int CupAppearances,
         int CupPodiums,
-        int CupTitles);
+        int CupTitles,
+        int? CurrentLeagueId = null);
 
     public sealed record LeaguePodiumInput(int SaveAthleteId, int SeasonRank);
 

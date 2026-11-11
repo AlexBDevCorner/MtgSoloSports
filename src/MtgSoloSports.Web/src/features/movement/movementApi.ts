@@ -55,6 +55,8 @@ export interface InauguralRosterMember {
   sportingColor: string;
   fromLeagueId: number;
   fromLeagueName: string;
+  /** MSS-139 additive: stable league key of the source feeder; null for legacy renders plain text. */
+  fromLeagueKey?: string | null;
   fromSeasonRank: number;
   imageUrl: string | null;
 }
@@ -65,6 +67,8 @@ export interface InauguralRoster {
   seasonNumber: number;
   superleagueLeagueId: number;
   superleagueLeagueName: string;
+  /** MSS-139 additive: stable key of the inaugural Superleague; null renders plain text. */
+  superleagueLeagueKey?: string | null;
   members: InauguralRosterMember[];
   movementCount: number;
 }

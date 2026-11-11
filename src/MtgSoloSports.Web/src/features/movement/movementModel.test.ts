@@ -125,6 +125,7 @@ describe('movement boundaries', () => {
         sportingColor: 'White',
         fromLeagueId: 1,
         fromLeagueName: 'White League',
+        fromLeagueKey: 'feeder-1-white',
         fromSeasonRank: 1,
         imageUrl: 'https://img.test/white.jpg',
       },
@@ -138,16 +139,20 @@ describe('movement boundaries', () => {
         imageUrl: null,
       },
     ];
-    const boundaries = boundariesForInaugural(members, 'Superleague');
+    const boundaries = boundariesForInaugural(members, 'Superleague', 'superleague');
     assert.equal(boundaries.length, 2);
     for (const boundary of boundaries) {
       assert.equal(boundary.relegated.length, 0);
       assert.equal(boundary.promoted.length, 1);
       assert.equal(boundary.steps[0]!.direction, 'promoted');
       assert.equal(boundary.steps[0]!.toLeagueName, 'Superleague');
+      assert.equal(boundary.steps[0]!.toLeagueKey, 'superleague');
     }
     const white = boundaries.find((boundary) => boundary.key === 'White League')!;
     assert.equal(white.steps[0]!.imageUrl, 'https://img.test/white.jpg');
+    assert.equal(white.steps[0]!.fromLeagueKey, 'feeder-1-white');
+    const blue = boundaries.find((boundary) => boundary.key === 'Blue League')!;
+    assert.equal(blue.steps[0]!.fromLeagueKey, null);
   });
 
   it('labels direction with text and glyphs, never colour alone', () => {    assert.equal(directionLabel('promoted'), 'PROMOTED');
