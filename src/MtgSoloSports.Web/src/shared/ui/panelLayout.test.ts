@@ -144,7 +144,11 @@ describe('MSS-073 bounded panel layout', () => {
   });
 
   it('leaves unrelated grids on the legacy auto-fit layout', () => {
-    assert.ok(records.includes('className="page-grid"'), 'records keeps its grid');
+    // MSS-140: Records deliberately left the auto-fit card grid for
+    // full-width per-shape views; the bounded treatment still stays
+    // scoped to Dashboard/Athlete.
+    assert.ok(records.includes('className="records-page"'), 'records use full-width views');
+    assert.ok(!records.includes('page-grid'), 'records no longer use the auto-fit card grid');
     assert.ok(!records.includes('page-grid--panels'), 'bounded treatment stays scoped to Dashboard/Athlete');
   });
 });

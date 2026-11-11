@@ -14,8 +14,9 @@ const page = read('features/records/RecordsPage.tsx');
 describe('MSS-072 records display labels', () => {
   it('routes every record, honour and history label through shared helpers', () => {
     assert.ok(page.includes('careerRecordLabel(record.recordKey, record.label)'), 'career records use the shared helper');
-    assert.ok(page.includes('scoringRecordLabel(record.recordKey, record.label)'), 'scoring labels use the shared helper');
-    assert.ok(page.includes('scoringScopeLabel(record.scope)'), 'scoring scopes use the shared helper');
+    assert.ok(page.includes('scoringRecordLabel(record.recordKey, record.label)'), 'cup scoring labels use the shared helper');
+    assert.ok(page.includes('leagueScopeDisplayName('), 'league grid scopes use stable scope keys');
+    assert.ok(page.includes('cupEventDisplayName('), 'cup groups use stable event keys');
     assert.ok(page.includes('careerRecordLabel(item.recordKey)'), 'record-break history uses the shared helper');
     assert.ok(page.includes('honourKindLabel(row.honourKind)'), 'honours use the shared helper');
   });

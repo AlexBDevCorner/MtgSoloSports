@@ -106,6 +106,32 @@ public sealed class ScoreRecordCalculatorTests
     }
 
     [Fact]
+    public void MetricOf_MapsEveryKeyToAStructuredMetric()
+    {
+        // MSS-140: the League grid places cells from stable metric identity,
+        // never display labels. Every known key maps to exactly one metric.
+        foreach (string scope in ScoreRecordKey.LeagueScopes)
+        {
+            ScoreRecordKey.MetricOf(ScoreRecordKey.LeagueSingleRound(scope)).ShouldBe("round");
+            ScoreRecordKey.MetricOf(ScoreRecordKey.LeagueStageBest(scope)).ShouldBe("stage");
+            ScoreRecordKey.MetricOf(ScoreRecordKey.LeaguePointsBest(scope)).ShouldBe("season");
+        }
+
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupIndividualRoundBest).ShouldBe("round");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupIndividualStageBest).ShouldBe("stage");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.QualifierSingleRoundBest).ShouldBe("round");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.QualifierStageBest).ShouldBe("stage");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupTeamLegRoundBest).ShouldBe("round");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupTeamLegStageBest).ShouldBe("stage");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupTeamTotalBest).ShouldBe("total");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.ColourCupTeamRoundBest).ShouldBe("team_round");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.TypeCupTeamLegRoundBest).ShouldBe("round");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.TypeCupTeamLegStageBest).ShouldBe("stage");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.TypeCupTeamTotalBest).ShouldBe("total");
+        ScoreRecordKey.MetricOf(ScoreRecordKey.TypeCupTeamRoundBest).ShouldBe("team_round");
+    }
+
+    [Fact]
     public void LeagueRound_PerScopeMaxWithEarliestOccurrence()
     {
         Dictionary<int, string> names = Names((1, "Alpha"), (2, "Beta"));

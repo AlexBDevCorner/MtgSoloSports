@@ -55,6 +55,7 @@ describe('MSS-040 route shapes', () => {
     assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, ''), {
       name: 'records',
       saveId: SAVE,
+      view: null,
     });
     assert.deepEqual(parseRoute(`/saves/${SAVE}/reports`, ''), {
       name: 'reports',
@@ -398,6 +399,54 @@ describe('MSS-060 qualifier routes', () => {
     ]) {
       assert.equal(parseRoute(`/saves/${SAVE}/${tail}`, '').name, 'notFound', tail);
     }
+  });
+});
+
+describe('MSS-140 Records view routes', () => {
+  it('builds the canonical Hall of Fame URL without a query', () => {
+    assert.equal(recordsPath(SAVE), `/saves/${SAVE}/records`);
+    assert.equal(recordsPath(SAVE, { view: 'fame' }), `/saves/${SAVE}/records`);
+    assert.equal(recordsPath(SAVE, { view: null }), `/saves/${SAVE}/records`);
+  });
+
+  it('builds one URL per records view', () => {
+    assert.equal(recordsPath(SAVE, { view: 'career' }), `/saves/${SAVE}/records?view=career`);
+    assert.equal(recordsPath(SAVE, { view: 'scoring' }), `/saves/${SAVE}/records?view=scoring`);
+    assert.equal(recordsPath(SAVE, { view: 'honours' }), `/saves/${SAVE}/records?view=honours`);
+  });
+
+  it('parses every view key back to its view', () => {
+    for (const view of ['fame', 'career', 'scoring', 'honours'] as const) {
+      const expected = view === 'fame' ? `/saves/${SAVE}/records?view=fame` : recordsPath(SAVE, { view });
+      assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, `?view=${view}`), {
+        name: 'records',
+        saveId: SAVE,
+        view,
+      }, expected);
+    }
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, ''), {
+      name: 'records',
+      saveId: SAVE,
+      view: null,
+    });
+  });
+
+  it('falls back to Hall of Fame for unknown or empty view keys', () => {
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, '?view=bogus'), {
+      name: 'records',
+      saveId: SAVE,
+      view: null,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, '?view='), {
+      name: 'records',
+      saveId: SAVE,
+      view: null,
+    });
+    assert.deepEqual(parseRoute(`/saves/${SAVE}/records`, '?view=SCORING'), {
+      name: 'records',
+      saveId: SAVE,
+      view: 'scoring',
+    });
   });
 });
 

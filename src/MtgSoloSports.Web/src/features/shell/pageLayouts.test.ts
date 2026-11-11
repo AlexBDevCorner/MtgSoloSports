@@ -19,8 +19,12 @@ const cupTeam = read('features/cups/CupTeamPage.tsx');
 const athlete = read('features/athletes/AthleteProfilePage.tsx');
 
 describe('records, cups and athlete layouts', () => {
-  it('records panels flow in the auto-fit grid with notes behind info', () => {
-    assert.ok(records.includes('className="page-grid"'));
+  it('records views use full-width layouts with notes behind info', () => {
+    // MSS-140: one full-width view per record shape replaces the cramped
+    // auto-fit card grid so no table scrolls horizontally at desktop width.
+    assert.ok(!records.includes('page-grid'), 'records no longer use the auto-fit card grid');
+    assert.ok(records.includes('className="records-page"'), 'views share one full-width container');
+    assert.ok(records.includes('recordsPath(saveId'), 'views stay URL-backed and shareable');
     assert.ok((records.match(/info=\{/g) ?? []).length >= 2);
   });
 

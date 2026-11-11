@@ -46,7 +46,9 @@ jobs:
       - name: Upload test timing artifacts
         # MSS-122: bounded TRX plus compact summary, including on failure.
         # Only timing files are uploaded: no save databases or catalog dumps.
+        # Diagnostic upload must never fail the job or skip the frontend gates.
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-results

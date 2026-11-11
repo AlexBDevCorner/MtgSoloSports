@@ -107,6 +107,54 @@ public sealed class RecordsApiTests
     }
 
     [Fact]
+    public async Task ScoringRecords_CarryStructuredScopeAndMetric()
+    {
+        // MSS-140: the League grid places cells from stable ScopeKey/Metric
+        // fields, never display labels. Every scoring record carries both.
+        var (factory, root) = CreateFactory();
+        try
+        {
+            Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(Path.Combine(root, "saves"));
+            using HttpClient client = factory.CreateClient();
+
+            RecordsPayload records = await FetchRecordsAsync(client, saveId);
+            records.ScoringRecords.ShouldNotBeNull();
+            records.ScoringRecords.Count.ShouldBe(39);
+
+            string[] allowedMetrics = ["round", "stage", "season", "total", "team_round"];
+            foreach (ScoringRecordPayload scoring in records.ScoringRecords)
+            {
+                scoring.ScopeKey.ShouldNotBeNullOrWhiteSpace();
+                allowedMetrics.Contains(scoring.Metric, StringComparer.Ordinal).ShouldBeTrue(scoring.RecordKey);
+            }
+
+            // League grid coverage: 9 scopes x 3 metrics from structured fields.
+            IReadOnlyList<ScoringRecordPayload> league = records.ScoringRecords
+                .Where(r => string.Equals(r.Category, "League", StringComparison.Ordinal)).ToList();
+            league.Count.ShouldBe(27);
+            league.Select(r => r.ScopeKey).Distinct(StringComparer.Ordinal).Count().ShouldBe(9);
+            league
+                .GroupBy(r => r.ScopeKey, StringComparer.Ordinal)
+                .All(g => g.Select(r => r.Metric).OrderBy(m => m, StringComparer.Ordinal)
+                    .SequenceEqual(["round", "season", "stage"], StringComparer.Ordinal)).ShouldBeTrue();
+
+            ScoringRecordPayload whiteRound = league.Single(r =>
+                string.Equals(r.RecordKey, "league_single_round__white", StringComparison.Ordinal));
+            whiteRound.ScopeKey.ShouldBe("white");
+            whiteRound.Metric.ShouldBe("round");
+            ScoringRecordPayload superPoints = league.Single(r =>
+                string.Equals(r.RecordKey, "league_points_best__superleague", StringComparison.Ordinal));
+            superPoints.ScopeKey.ShouldBe("superleague");
+            superPoints.Metric.ShouldBe("season");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task RecordsApi_Errors_UnknownSaveNotFound()
     {
         var (factory, root) = CreateFactory();
@@ -230,7 +278,8 @@ public sealed class RecordsApiTests
     private sealed record RecordsPayload(
         Guid SaveId,
         IReadOnlyList<RecordPayload> Records,
-        IReadOnlyList<RecordHistoryPayload> RecentHistory);
+        IReadOnlyList<RecordHistoryPayload> RecentHistory,
+        IReadOnlyList<ScoringRecordPayload>? ScoringRecords = null);
 
     private sealed record RecordPayload(
         string RecordKey,
@@ -251,6 +300,32 @@ public sealed class RecordsApiTests
         int PriorValue,
         int SeasonNumber,
         string Text);
+
+    private sealed record ScoringRecordPayload(
+        string RecordKey,
+        string Label,
+        string Category,
+        string Scope,
+        int Value,
+        string ValueDisplay,
+        bool IsVacant,
+        IReadOnlyList<ScoringHolderPayload> Holders,
+        string ScopeKey,
+        string Metric);
+
+    private sealed record ScoringHolderPayload(
+        int? AthleteId,
+        string? AthleteName,
+        string TeamKey,
+        string TeamName,
+        int Value,
+        string ValueDisplay,
+        int SeasonNumber,
+        string Competition,
+        string? LeagueName,
+        int? StageNumber,
+        int? RoundNumber,
+        int? GroupNumber);
 
     private sealed record HallOfFamePayload(
         Guid SaveId,
