@@ -13,7 +13,13 @@ buttons remain for actions (simulate, reveal, import) and selectors.
 - `/saves/:saveId/live?league=<id>&round=<n>`
 - `/saves/:saveId/live?event=chaos-cup&season=<n>&stage=<0..5>&group=<n>&round=<n>` — Chaos Cup group navigation with scoped Live controls (MSS-109/110).
 - `/saves/:saveId/history?season=<n>&competition=<id>&stage=<n>&round=<n>`
-- `/saves/:saveId/records`
+- `/saves/:saveId/records?view=fame|career|scoring|honours` — Records views
+  (MSS-140): `fame` (Hall of Fame career leaders, the default and the
+  canonical URL without a query), `career` (career records), `scoring`
+  (League scoring grid plus Individual/Team Cups), `honours` (official
+  honours plus recent record breaks). Absent or unknown `view` falls back
+  to `fame`. Switching views pushes a history entry; refresh,
+  Back/Forward and copied URLs restore the same view.
 - `/saves/:saveId/reports` — ChatGPT source packs (MSS-088): season dossier + universe almanac downloads.
 - `/saves/:saveId/cups`
 - `/saves/:saveId/cups/:cup/:season` — one Cup edition (`cup` = `color` | `type` | `chaos`; MSS-111 lists Chaos alongside Color/Type with official-only champion/podium).

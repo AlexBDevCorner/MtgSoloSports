@@ -58,8 +58,12 @@ function headerColumns(thead: string): Column[] {
 
 function bodyColumns(firstRow: string, headerCount: number): Column[] {
   const columns: Column[] = [];
-  for (const match of firstRow.matchAll(/<td([\s\S]*?)>/g)) {
-    columns.push({ numeric: /numeric/.test(match[1]), label: '' });
+  // MSS-140: the League scoring grid names its row in a <th scope="row">,
+  // which is a real column for alignment purposes. Count body <th> cells
+  // positionally alongside <td> cells; no other audited page puts <th> in
+  // a body row, so their audits are unaffected.
+  for (const match of firstRow.matchAll(/<(td|th)([\s\S]*?)>/g)) {
+    columns.push({ numeric: /numeric/.test(match[2]), label: '' });
   }
   // One textual <td> inside a .map() can render several columns (the Cup
   // selection ranking renders one numeric cell per rating component).
@@ -73,8 +77,8 @@ function bodyColumns(firstRow: string, headerCount: number): Column[] {
 }
 
 function tdTag(firstRow: string, index: number): string {
-  const tags = [...firstRow.matchAll(/<td([\s\S]*?)>/g)];
-  return tags[index]?.[1] ?? '';
+  const tags = [...firstRow.matchAll(/<(td|th)([\s\S]*?)>/g)];
+  return tags[index]?.[2] ?? '';
 }
 
 function dataTables(source: string): Array<{ attrs: string; body: string }> {

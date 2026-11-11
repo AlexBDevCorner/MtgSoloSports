@@ -67,6 +67,10 @@ export interface ScoringRecord {
   valueDisplay: string;
   isVacant: boolean;
   holders: ScoringRecordHolder[];
+  /** MSS-140 additive: stable scope identity (league scope or event scope). */
+  scopeKey?: string | null;
+  /** MSS-140 additive: stable metric identity (round | stage | season | total | team_round). */
+  metric?: string | null;
 }
 
 export interface Records {

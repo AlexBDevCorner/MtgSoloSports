@@ -453,7 +453,7 @@ export default function App() {
           />
         );
       case 'records':
-        return <RecordsPage saveId={saveId} />;
+        return <RecordsPage key={`${saveId}/records`} saveId={saveId} urlView={route.view} />;
       case 'reports':
         return <ReportsPage key={saveId} saveId={saveId} />;
       case 'leagues':

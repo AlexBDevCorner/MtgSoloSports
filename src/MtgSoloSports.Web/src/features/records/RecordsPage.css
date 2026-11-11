@@ -1,0 +1,108 @@
+/* MSS-140 Records views: every view uses the full content width with one
+   deliberate layout per record shape. Tables wrap secondary metadata
+   instead of cutting it off; .table-wrap keeps horizontal scrolling only
+   as a narrow-screen fallback. Presentation only. */
+
+.records-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.records-page > .card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.records-toolbar {
+  position: static;
+}
+
+.records-switcher {
+  flex-wrap: wrap;
+}
+
+.records-switcher a.nav-item {
+  text-decoration: none;
+}
+
+.records-switcher a.nav-item:hover {
+  color: var(--text);
+}
+
+.records-switcher a.nav-item:visited {
+  color: var(--text-dim);
+}
+
+.records-switcher span.nav-item.current {
+  cursor: default;
+}
+
+/* Compact values (titles breakdown, record values) stay on one line. */
+.records-nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Cup record labels read in at most two lines at desktop width. */
+.records-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+/* Records tables wrap holder context instead of cutting it off. The
+   shared .card-sub stays single-line elsewhere; inside Records it wraps
+   so season/league/stage/round context is never clipped at 1280px+. */
+.records-page .data-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+.records-page .data-table th,
+.records-page .data-table td {
+  min-width: 0;
+  vertical-align: top;
+}
+
+.records-page .data-table td {
+  overflow-wrap: break-word;
+}
+
+.records-page .data-table td.numeric,
+.records-page .data-table th.numeric {
+  white-space: nowrap;
+}
+
+.records-page .card-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.records-league-grid th[scope='row'] {
+  white-space: nowrap;
+}
+
+/* "+N more" holder toggle sits inline without stretching the row. */
+.records-more {
+  min-height: 0;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .records-page,
+  .records-switcher,
+  .records-more,
+  .records-label {
+    animation: none;
+    transition: none;
+  }
+}

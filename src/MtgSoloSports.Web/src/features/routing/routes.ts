@@ -21,7 +21,7 @@
  * - `/saves/:saveId/qualifiers/superleague?season=<n>` -> one Superleague qualifier
  * - `/saves/:saveId/qualifiers/f1f2/:color?season=<n>` -> one F1↔F2 qualifier
  * - `/saves/:saveId/qualifiers/f2f3/:color?season=<n>` -> one F2↔F3 qualifier
- * - `/saves/:saveId/records`
+ * - `/saves/:saveId/records?view=fame|career|scoring|honours` (MSS-140)
  * - `/saves/:saveId/cups`
  * - `/saves/:saveId/cups/:cup/:season` (`cup` = `color` | `type` | `chaos`) -> one Cup edition
  * - `/saves/:saveId/cups/:cup/teams/:teamKey` (`cup` = `color` | `type`) -> one Cup team's history
@@ -67,6 +67,25 @@ import { qualifierBoundaryFromSegment, type QualifierBoundary } from '../../shar
 export type StandingsView = 'season' | 'matrix';
 
 export type CupKind = 'color' | 'type' | 'chaos';
+
+/**
+ * MSS-140 Records views. `fame` (Hall of Fame career leaders) is the
+ * default; `career` shows career records, `scoring` shows League scoring
+ * plus Individual/Team Cups, `honours` shows official honours plus recent
+ * record breaks. Absent or unknown `?view=` falls back to `fame`.
+ */
+export type RecordsView = 'fame' | 'career' | 'scoring' | 'honours';
+
+export const RECORDS_VIEWS: readonly RecordsView[] = Object.freeze([
+  'fame',
+  'career',
+  'scoring',
+  'honours',
+]);
+
+export function isRecordsView(value: string | null | undefined): value is RecordsView {
+  return value === 'fame' || value === 'career' || value === 'scoring' || value === 'honours';
+}
 
 /** Which Cups page a `/cups` URL names: the hub, one edition or one team. Chaos has editions but no team histories. */
 export type CupsView =
@@ -158,7 +177,7 @@ export type Route =
       /** Source season of the transition; null follows the latest resolved qualifiers. */
       season: number | null;
     }
-  | { name: 'records'; saveId: string }
+  | { name: 'records'; saveId: string; view: RecordsView | null }
   | { name: 'reports'; saveId: string }
   | { name: 'cups'; saveId: string; view: CupsView }
   | { name: 'athletes'; saveId: string; search: string }
@@ -338,8 +357,20 @@ export function qualifierPath(
   return `/saves/${encodeURIComponent(saveId)}/qualifiers/${segment}${colorPart}${suffix}`;
 }
 
-export function recordsPath(saveId: string): string {
-  return `/saves/${encodeURIComponent(saveId)}/records`;
+/**
+ * MSS-140 Records entry point, e.g. `/saves/:saveId/records?view=scoring`.
+ * The Hall of Fame (`fame`) is canonical without a query; absent, `fame`
+ * and unknown values all render it. Other views are reflected in the URL
+ * and survive refresh, Back/Forward and new tabs.
+ */
+export function recordsPath(saveId: string, query?: { view?: RecordsView | null }): string {
+  const view = query?.view ?? null;
+  if (view === null || view === 'fame') {
+    return `/saves/${encodeURIComponent(saveId)}/records`;
+  }
+  const params = new URLSearchParams();
+  params.set('view', view);
+  return `/saves/${encodeURIComponent(saveId)}/records?${params.toString()}`;
 }
 
 export function reportsPath(saveId: string): string {
@@ -675,7 +706,7 @@ export function parseRoute(pathname: string, search: string): Route {
       if (segments.length !== 3) {
         return { name: 'notFound', path: pathname + search };
       }
-      return { name: 'records', saveId };
+      return { name: 'records', saveId, view: parseRecordsView(params.get('view')) };
     case 'reports':
       if (segments.length !== 3) {
         return { name: 'notFound', path: pathname + search };
@@ -850,6 +881,22 @@ function parseStandingsView(raw: string | null): StandingsView | null {
   }
   const normalized = raw.trim().toLowerCase();
   if (normalized === 'season' || normalized === 'matrix') {
+    return normalized;
+  }
+  return null;
+}
+
+/**
+ * MSS-140 Records view query (`view=fame|career|scoring|honours`). Absent
+ * or unknown values stay null so the page falls back to Hall of Fame
+ * instead of crashing on a shared or hand-edited URL.
+ */
+function parseRecordsView(raw: string | null): RecordsView | null {
+  if (raw === null || raw === '') {
+    return null;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (isRecordsView(normalized)) {
     return normalized;
   }
   return null;
