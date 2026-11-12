@@ -27,6 +27,13 @@ import { ColorTeamLink } from '../cups/ColorTeamLink';
 import { fetchSeasonPlacements, type SeasonPlacements } from './standingsApi';
 import { downloadReport, standingsReportUrl } from '../reports/reportApi';
 import {
+  resolvePostseasonZone,
+  zoneLegendFor,
+  zoneProvisionalNote,
+  zoneStatusPrefix,
+  type ZoneContext,
+} from './zones';
+import {
   allStageColumns,
   buildCellMap,
   cellTitle,
@@ -417,6 +424,35 @@ export function StandingsPage({
     activeCompetition?.feederDivision ??
     null;
   const tierLabel = leagueLevelLabel(leagueLevel, leagueDivision, leagueKind);
+  // MSS-141: postseason zones derive from authoritative tier identity
+  // (kind + persisted feederDivision) plus the season's actual shape (F2/F3
+  // presence proves tiering; persisted v1 single-feeder rows carry division 1
+  // after migration, so division alone cannot prove F1), the persisted season
+  // number and completion phase. Never parsed names or athlete colors. Zones
+  // follow the official season rank, not the visual row index or sort order.
+  const zoneSeasonNumber = placements?.seasonNumber ?? seasonNumber ?? 0;
+  const zoneIsComplete = placements?.isSeasonComplete ?? false;
+  // Season shape from the authoritative competition list for this season:
+  // tiered saves expose F2/F3 leagues, v1 single-feeder seasons do not.
+  // Empty while loading means unknown (stays legacy-safe, never asserts a
+  // false tiered demotion); division 2/3 alone still proves tiering.
+  const zoneHasTieredPyramid =
+    competitions.length > 0
+      ? competitions.some(
+          (row) =>
+            row.feederDivision === 2 ||
+            row.feederDivision === 3 ||
+            row.leagueLevel === 'Feeder2' ||
+            row.leagueLevel === 'Feeder3',
+        )
+      : null;
+  const zoneContext: ZoneContext = {
+    leagueKind,
+    leagueLevel,
+    feederDivision: leagueDivision,
+    seasonNumber: zoneSeasonNumber,
+    hasTieredPyramid: zoneHasTieredPyramid,
+  };
   // MSS-085: deep link to the league's dedicated historical profile, derived
   // from backend tier identity (never parsed names). Null until competitions
   // load, so no fabricated URL ever renders.
@@ -528,6 +564,9 @@ export function StandingsPage({
   const inProgressStage = stages.find((row) => !row.isComplete && row.completedRounds > 0) ?? null;
   const totalsLoading = useCurrentTotals ? currentTotalsState.loading : historyTableState.loading;
   const totalsError = useCurrentTotals ? currentTotalsState.error : historyTableState.error;
+  // MSS-141 legend: distinct postseason bands in rank order for this
+  // season/league (single source in zones.ts, reusable by MSS-142).
+  const zoneLegend = useMemo(() => zoneLegendFor(zoneContext), [zoneContext]);
 
   // MSS-068: all hooks must run unconditionally on every render, including
   // loading/error/empty/invalid states. These derivations use safe defaults
@@ -876,11 +915,12 @@ export function StandingsPage({
           ) : (
             <>
               <div className="table-wrap">
-                <table className="data-table">
+                <table className="data-table standings-season-table">
                   <thead>
                     <tr>
                       <th scope="col" className="numeric">Rank</th>
                       <th scope="col">Card</th>
+                      <th scope="col">Zone</th>
                       <th scope="col" className="numeric">Champ pts</th>
                       <th scope="col" className="numeric">Stage W</th>
                       <th scope="col" className="numeric">Round W</th>
@@ -893,8 +933,14 @@ export function StandingsPage({
                       if (!totals) {
                         return null;
                       }
+                      // MSS-141: zones follow the official season rank, never
+                      // the visual row index or the active sort order.
+                      const zone = resolvePostseasonZone(totals.seasonRank, zoneContext);
+                      const zoneTitle = zoneIsComplete
+                        ? `Final: ${zone.label}`
+                        : `${zoneStatusPrefix(false)} ${zone.label} — if the season ended now; nothing is guaranteed`;
                       return (
-                        <tr key={row.athleteId}>
+                        <tr key={row.athleteId} className={`zone-row ${zone.cssClass}`}>
                           <td className="numeric">{totals.seasonRank}</td>
                           <td>
                             <div className="card-cell">
@@ -911,6 +957,13 @@ export function StandingsPage({
                               </span>
                             </div>
                           </td>
+                          <td>
+                            <span className={`zone-badge ${zone.cssClass}`} title={zoneTitle}>
+                              <span className="zone-symbol" aria-hidden="true">{zone.symbol}</span>{' '}
+                              <span className="zone-text">{zone.shortLabel}</span>
+                            </span>
+                            <span className="visually-hidden">{zoneTitle}</span>
+                          </td>
                           <td className="numeric">{formatPoints(totals.totalChampionshipPointsThousandths)}</td>
                           <td className="numeric">{totals.stageWins}</td>
                           <td className="numeric">{totals.roundWins}</td>
@@ -920,6 +973,23 @@ export function StandingsPage({
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="zone-legend" aria-label="Postseason zone key">
+                <p className="zone-legend-title">
+                  Zones · {zoneIsComplete ? 'final positions' : 'currently in zone — if the season ended now'}
+                </p>
+                <ul className="zone-legend-list">
+                  {zoneLegend.map((zone) => (
+                    <li key={zone.id} className={`zone-legend-item ${zone.cssClass}`}>
+                      <span className={`zone-badge ${zone.cssClass}`}>
+                        <span className="zone-symbol" aria-hidden="true">{zone.symbol}</span>{' '}
+                        <span className="zone-text">{zone.band}</span>
+                      </span>{' '}
+                      <span className="zone-legend-label">{zone.label}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="muted small">{zoneProvisionalNote(zoneIsComplete)}</p>
               </div>
               <p className="muted small">
                 {useCurrentTotals

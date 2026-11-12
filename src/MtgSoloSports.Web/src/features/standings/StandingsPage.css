@@ -183,3 +183,161 @@
     transition: none;
   }
 }
+
+/* MSS-141 season-table postseason zones: restrained row accent plus a text
+   badge. Color is never the only signal: every zone pairs a symbol (★/▲/◐/●/▼)
+   with a text label and a rank band. Palette reuses dark-theme tokens. */
+
+.standings-season-table .zone-row {
+  border-left: 3px solid transparent;
+}
+
+.standings-season-table .zone-row.zone-promoted {
+  border-left-color: var(--ok);
+}
+
+.standings-season-table .zone-row.zone-qualifier-up {
+  border-left-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.standings-season-table .zone-row.zone-safe {
+  border-left-color: var(--line-strong);
+}
+
+.standings-season-table .zone-row.zone-qualifier-hold {
+  border-left-color: var(--accent);
+  border-left-style: dashed;
+}
+
+.standings-season-table .zone-row.zone-relegated {
+  border-left-color: var(--bad);
+}
+
+.standings-season-table .zone-row.zone-inaugural {
+  border-left-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+.standings-season-table .zone-row.zone-neutral {
+  border-left-color: transparent;
+}
+
+.zone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.zone-badge .zone-symbol {
+  font-weight: 700;
+}
+
+.zone-badge.zone-promoted {
+  border-color: var(--ok);
+}
+
+.zone-badge.zone-promoted .zone-symbol {
+  color: var(--ok);
+}
+
+.zone-badge.zone-qualifier-up,
+.zone-badge.zone-qualifier-hold,
+.zone-badge.zone-inaugural {
+  border-color: var(--accent);
+}
+
+.zone-badge.zone-qualifier-up .zone-symbol,
+.zone-badge.zone-qualifier-hold .zone-symbol,
+.zone-badge.zone-inaugural .zone-symbol {
+  color: var(--accent);
+}
+
+.zone-badge.zone-qualifier-hold {
+  border-style: dashed;
+}
+
+.zone-badge.zone-safe,
+.zone-badge.zone-neutral {
+  border-color: var(--line-strong);
+}
+
+.zone-badge.zone-safe .zone-symbol,
+.zone-badge.zone-neutral .zone-symbol {
+  color: var(--text-dim);
+}
+
+.zone-badge.zone-relegated {
+  border-color: var(--bad);
+}
+
+.zone-badge.zone-relegated .zone-symbol {
+  color: var(--bad);
+}
+
+.zone-legend {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}
+
+.zone-legend-title {
+  margin: 0 0 var(--space-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.zone-legend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.zone-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.zone-legend-label {
+  overflow-wrap: anywhere;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 700px) {
+  .zone-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+
+  .zone-legend-list {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+}

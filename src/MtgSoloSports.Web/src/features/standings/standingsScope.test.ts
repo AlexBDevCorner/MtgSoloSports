@@ -481,13 +481,10 @@ function assertStandingsOnly(output: string, context: string): void {
   assert.ok(!output.includes('Feeder rebalance'), `${context} has no rebalance title`);
   assert.ok(!output.includes('league movements'), `${context} has no movement body`);
   assert.ok(!output.includes('feeder rebalance'), `${context} has no rebalance body`);
-  assert.ok(!output.includes('Relegation'), `${context} has no relegation badge`);
-  assert.ok(!output.includes('Qualifier'), `${context} has no qualifier badge`);
-  assert.ok(!output.includes('auto-promoted'), `${context} has no promotion badge`);
 }
 
 describe('MSS-077 standings contain standings only', () => {
-  it('keeps league tables and controls while removing movement, rebalance and zone copy', () => {
+  it('keeps league tables and controls while removing movement and rebalance copy', () => {
     const page = read('features/standings/StandingsPage.tsx');
     // Standings-specific content stays.
     assert.ok(page.includes('Season table'), 'season table remains');
@@ -502,10 +499,10 @@ describe('MSS-077 standings contain standings only', () => {
     assert.ok(!page.includes('RebalanceSection'), 'no rebalance section import or usage');
     assert.ok(!page.includes('Promotion & relegation'), 'no promotion/relegation copy');
     assert.ok(!page.includes('Feeder rebalance'), 'no feeder-rebalance copy');
-    assert.ok(!page.includes('zoneLabelForRank'), 'no promotion/relegation zone badges');
-    assert.ok(!page.includes('zoneSummaryLine'), 'no zone footnote');
-    assert.ok(!page.includes('Zones are visual only'), 'no zone explanatory copy');
-    assert.ok(!page.includes('<th scope="col">Zone</th>'), 'no Zone table column');
+    // MSS-141: season-table postseason zones are display-only and allowed.
+    assert.ok(page.includes('resolvePostseasonZone'), 'season table resolves zones by official rank');
+    assert.ok(page.includes('zoneLegendFor'), 'season table renders a zone legend');
+    assert.ok(page.includes('<th scope="col">Zone</th>'), 'Zone table column exists');
   });
 
   it('leaves dedicated movement and rebalance workflows intact on Live/Dashboard', () => {
