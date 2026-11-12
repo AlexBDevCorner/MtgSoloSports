@@ -142,7 +142,7 @@ public sealed class SeasonPlacementsScoringBoundsTests
     }
 
     [Fact]
-    public async Task Placements_MapResponse_DerivesBoundsFromRules_NotLiterals()
+    public void Placements_MapResponse_DerivesBoundsFromRules_NotLiterals()
     {
         RulesV1 rules = RulesV1.CreateDefault();
         int wantMax = rules.ScoringTable.Max() * RulesV1.FixedScale;
