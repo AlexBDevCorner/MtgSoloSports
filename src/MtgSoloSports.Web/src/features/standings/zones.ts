@@ -228,6 +228,14 @@ export interface ZoneContext {
   /** Persisted feeder division (0/unknown legacy, 1..3 tiered). Authoritative for feeders. */
   feederDivision?: number | null;
   seasonNumber: number;
+  /**
+   * Whether the season's competition list contains tiered F2/F3 leagues.
+   * Disambiguates persisted division 1: true proves tiered F1, false/unknown
+   * means legacy single-feeder (v1 rows persist division 1 after migration, so
+   * division alone cannot prove tiering). Derived from the season's actual
+   * shape, never from names or colors.
+   */
+  hasTieredPyramid?: boolean | null;
 }
 
 export interface PostseasonZone {
@@ -251,17 +259,20 @@ function isSuperleagueTier(ctx: ZoneContext): boolean {
 }
 
 function feederTier(ctx: ZoneContext): 'f1' | 'f2' | 'f3' | 'legacy' {
-  // Division is authoritative (matches groupLeaguesByTier): 1..3 are tiered,
-  // anything else is the legacy single-feeder tier even when the level string
-  // reads Feeder1 for compatibility.
-  if (ctx.feederDivision === 1) {
-    return 'f1';
-  }
+  // Divisions 2/3 only exist in tiered saves, so they prove tiering alone.
+  // Division 1 is ambiguous: persisted v1 single-feeder rows carry First (1)
+  // after migration (20261005120000_AddFeederDivision) and via SaveStore for
+  // non-tiered rules, so only an explicit tiered season shape (F2/F3 present
+  // in that season) promotes division 1 to tiered F1. Anything else stays
+  // legacy to avoid asserting nonexistent qualifiers/relegations.
   if (ctx.feederDivision === 2) {
     return 'f2';
   }
   if (ctx.feederDivision === 3) {
     return 'f3';
+  }
+  if (ctx.feederDivision === 1 && ctx.hasTieredPyramid === true) {
+    return 'f1';
   }
   return 'legacy';
 }

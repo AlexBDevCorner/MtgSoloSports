@@ -425,16 +425,33 @@ export function StandingsPage({
     null;
   const tierLabel = leagueLevelLabel(leagueLevel, leagueDivision, leagueKind);
   // MSS-141: postseason zones derive from authoritative tier identity
-  // (kind + persisted feederDivision first) plus the persisted season number
-  // and completion phase. Never parsed names or athlete colors. Zones follow
-  // the official season rank, not the visual row index or sort order.
+  // (kind + persisted feederDivision) plus the season's actual shape (F2/F3
+  // presence proves tiering; persisted v1 single-feeder rows carry division 1
+  // after migration, so division alone cannot prove F1), the persisted season
+  // number and completion phase. Never parsed names or athlete colors. Zones
+  // follow the official season rank, not the visual row index or sort order.
   const zoneSeasonNumber = placements?.seasonNumber ?? seasonNumber ?? 0;
   const zoneIsComplete = placements?.isSeasonComplete ?? false;
+  // Season shape from the authoritative competition list for this season:
+  // tiered saves expose F2/F3 leagues, v1 single-feeder seasons do not.
+  // Empty while loading means unknown (stays legacy-safe, never asserts a
+  // false tiered demotion); division 2/3 alone still proves tiering.
+  const zoneHasTieredPyramid =
+    competitions.length > 0
+      ? competitions.some(
+          (row) =>
+            row.feederDivision === 2 ||
+            row.feederDivision === 3 ||
+            row.leagueLevel === 'Feeder2' ||
+            row.leagueLevel === 'Feeder3',
+        )
+      : null;
   const zoneContext: ZoneContext = {
     leagueKind,
     leagueLevel,
     feederDivision: leagueDivision,
     seasonNumber: zoneSeasonNumber,
+    hasTieredPyramid: zoneHasTieredPyramid,
   };
   // MSS-085: deep link to the league's dedicated historical profile, derived
   // from backend tier identity (never parsed names). Null until competitions

@@ -131,7 +131,7 @@ describe('resolvePostseasonZone post-inaugural', () => {
   });
 
   it('maps Feeder 1 boundaries 1/2/4/5/16/17/24/25/32 for each color division', () => {
-    const ctx = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 5 };
+    const ctx = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 5, hasTieredPyramid: true };
     assert.equal(resolvePostseasonZone(1, ctx).id, 'f1-champion');
     assert.equal(resolvePostseasonZone(2, ctx).id, 'f1-qualifier-up');
     assert.equal(resolvePostseasonZone(4, ctx).id, 'f1-qualifier-up');
@@ -176,18 +176,37 @@ describe('resolvePostseasonZone post-inaugural', () => {
     assert.equal(resolvePostseasonZone(32, legacy).id, 'legacy-safe');
     const bare = { leagueKind: 'Feeder', leagueLevel: null, feederDivision: null, seasonNumber: 6 };
     assert.equal(resolvePostseasonZone(25, bare).id, 'legacy-safe');
+    // Persisted v1 single-feeder rows carry division 1 after migration, so
+    // division alone must not promote them to tiered F1: without F2/F3 in the
+    // season shape they stay legacy with no qualifier-hold or relegation.
+    const persistedV1 = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 6, hasTieredPyramid: false };
+    assert.equal(resolvePostseasonZone(1, persistedV1).id, 'legacy-champion');
+    assert.equal(resolvePostseasonZone(4, persistedV1).id, 'legacy-qualifier');
+    assert.equal(resolvePostseasonZone(5, persistedV1).id, 'legacy-safe');
+    assert.equal(resolvePostseasonZone(17, persistedV1).id, 'legacy-safe');
+    assert.equal(resolvePostseasonZone(25, persistedV1).id, 'legacy-safe');
+    assert.equal(resolvePostseasonZone(32, persistedV1).id, 'legacy-safe');
+    const unknownShape = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 6 };
+    assert.equal(resolvePostseasonZone(25, unknownShape).id, 'legacy-safe');
+    const loadingShape = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 6, hasTieredPyramid: null };
+    assert.equal(resolvePostseasonZone(25, loadingShape).id, 'legacy-safe');
   });
 });
 
 describe('resolvePostseasonZone Season 1 inaugural', () => {
   it('maps F1 1–4 to inaugural Superleague slots and retains the rest', () => {
-    const ctx = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 1 };
+    const ctx = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 1, hasTieredPyramid: true };
     assert.equal(resolvePostseasonZone(1, ctx).id, 'inaugural-sl');
     assert.equal(resolvePostseasonZone(4, ctx).id, 'inaugural-sl');
     assert.match(resolvePostseasonZone(1, ctx).label, /Inaugural Superleague/);
     assert.equal(resolvePostseasonZone(5, ctx).id, 'inaugural-retained');
     assert.equal(resolvePostseasonZone(17, ctx).id, 'inaugural-retained');
     assert.equal(resolvePostseasonZone(25, ctx).id, 'inaugural-retained');
+    // Persisted v1 Season 1 rows also carry division 1: same inaugural slots.
+    const v1 = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 1, hasTieredPyramid: false };
+    assert.equal(resolvePostseasonZone(1, v1).id, 'inaugural-sl');
+    assert.equal(resolvePostseasonZone(4, v1).id, 'inaugural-sl');
+    assert.equal(resolvePostseasonZone(5, v1).id, 'inaugural-retained');
   });
 
   it('never shows ordinary qualifiers or demotions for F2/F3 in Season 1', () => {
@@ -209,7 +228,7 @@ describe('resolvePostseasonZone Season 1 inaugural', () => {
   });
 
   it('builds a compact legend in rank order and distinguishes provisional wording', () => {
-    const f1 = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 2 };
+    const f1 = { leagueKind: 'Feeder', leagueLevel: 'Feeder1', feederDivision: 1, seasonNumber: 2, hasTieredPyramid: true };
     assert.deepEqual(zoneLegendFor(f1).map((z) => z.id), [
       'f1-champion',
       'f1-qualifier-up',
