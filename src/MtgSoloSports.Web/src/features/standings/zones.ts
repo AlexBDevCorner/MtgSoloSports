@@ -199,3 +199,366 @@ export function colorComposition(
     .map(([color, count]) => ({ color, count }))
     .sort((a, b) => b.count - a.count || a.color.localeCompare(b.color));
 }
+
+/**
+ * MSS-141 season-aware postseason zones.
+ * Single source of rank-band definitions for the standings season table,
+ * reusable by MSS-142 (which adds clinch math, not new bands).
+ * Selection uses authoritative tier identity (kind + feederDivision first,
+ * level as fallback) plus the persisted season number/phase. League names and
+ * athlete colors are never parsed. Bands match the versioned sporting rules
+ * (game-rules §§9–12): post-inaugural Superleague/F1/F2/F3, inaugural Season 1
+ * (top 4 of each F1 enter the inaugural Superleague, no ordinary qualifiers
+ * or automatic demotions), and legacy single-tier feeders (1 champion, 2–4
+ * qualifier, rest retained; no new-format relegation bands).
+ */
+
+export type ZoneMovement =
+  | 'promoted'
+  | 'qualifier-up'
+  | 'safe'
+  | 'qualifier-hold'
+  | 'relegated'
+  | 'inaugural'
+  | 'neutral';
+
+export interface ZoneContext {
+  leagueKind: string;
+  leagueLevel?: string | null;
+  /** Persisted feeder division (0/unknown legacy, 1..3 tiered). Authoritative for feeders. */
+  feederDivision?: number | null;
+  seasonNumber: number;
+}
+
+export interface PostseasonZone {
+  /** Stable id for styling, legend keys and MSS-142 reuse. */
+  id: string;
+  movement: ZoneMovement;
+  /** Non-color glyph so meaning survives without color (paired with text). */
+  symbol: string;
+  /** Compact cell label. */
+  shortLabel: string;
+  /** Full accessible label with direction/target. */
+  label: string;
+  /** Rank band text, e.g. "1–16". */
+  band: string;
+  /** CSS class suffix, e.g. "zone-promoted". */
+  cssClass: string;
+}
+
+function isSuperleagueTier(ctx: ZoneContext): boolean {
+  return ctx.leagueKind === 'Superleague' || ctx.leagueLevel === 'Superleague';
+}
+
+function feederTier(ctx: ZoneContext): 'f1' | 'f2' | 'f3' | 'legacy' {
+  // Division is authoritative (matches groupLeaguesByTier): 1..3 are tiered,
+  // anything else is the legacy single-feeder tier even when the level string
+  // reads Feeder1 for compatibility.
+  if (ctx.feederDivision === 1) {
+    return 'f1';
+  }
+  if (ctx.feederDivision === 2) {
+    return 'f2';
+  }
+  if (ctx.feederDivision === 3) {
+    return 'f3';
+  }
+  return 'legacy';
+}
+
+function makeZone(
+  id: string,
+  movement: ZoneMovement,
+  symbol: string,
+  shortLabel: string,
+  label: string,
+  band: string,
+  cssClass: string,
+): PostseasonZone {
+  return { id, movement, symbol, shortLabel, label, band, cssClass };
+}
+
+export const NEUTRAL_ZONE: PostseasonZone = makeZone(
+  'neutral',
+  'neutral',
+  '—',
+  'No zone',
+  'No postseason zone in this format',
+  '—',
+  'zone-neutral',
+);
+
+/**
+ * Resolves the postseason zone for an official season rank in a season/league.
+ * Rank drives the zone (callers must pass the official season rank, never the
+ * visual row index). Returns a neutral zone instead of a false movement when
+ * the persisted source cannot reliably express a zone (unknown tier, or a
+ * Superleague row in Season 1 which has no Superleague).
+ */
+export function resolvePostseasonZone(rank: number, ctx: ZoneContext): PostseasonZone {
+  if (!Number.isInteger(rank) || rank < 1 || rank > 32) {
+    return NEUTRAL_ZONE;
+  }
+  const season = Number.isInteger(ctx.seasonNumber) && ctx.seasonNumber >= 1 ? ctx.seasonNumber : 0;
+  if (season === 0) {
+    return NEUTRAL_ZONE;
+  }
+  const inaugural = season === 1;
+  if (isSuperleagueTier(ctx)) {
+    if (inaugural) {
+      return NEUTRAL_ZONE;
+    }
+    if (rank <= 16) {
+      return makeZone('sl-safe', 'safe', '●', 'Safe', 'Safe · retained in Superleague', '1–16', 'zone-safe');
+    }
+    if (rank <= 24) {
+      return makeZone(
+        'sl-qualifier',
+        'qualifier-hold',
+        '◐',
+        'Qualifier · defending',
+        'Superleague qualifier · defending (places 17–24)',
+        '17–24',
+        'zone-qualifier-hold',
+      );
+    }
+    return makeZone(
+      'sl-relegated',
+      'relegated',
+      '▼',
+      'Relegated to F1',
+      'Relegated to Feeder 1 (places 25–32)',
+      '25–32',
+      'zone-relegated',
+    );
+  }
+
+  // Unknown league kinds cannot reliably express a zone; stay neutral instead
+  // of asserting a false feeder movement.
+  if (ctx.leagueKind !== 'Feeder') {
+    return NEUTRAL_ZONE;
+  }
+
+  const tier = feederTier(ctx);
+  if (inaugural) {
+    // No ordinary qualifiers or automatic demotions exist in Season 1. Only
+    // F1 ranks 1–4 enter the inaugural Superleague; every other inaugural
+    // athlete is retained with no postseason qualifier/relegation band.
+    if (tier === 'f1' || tier === 'legacy') {
+      if (rank <= 4) {
+        return makeZone(
+          'inaugural-sl',
+          'inaugural',
+          '★',
+          'Inaugural Superleague',
+          'Inaugural Superleague entrant (places 1–4 of Feeder 1)',
+          '1–4',
+          'zone-inaugural',
+        );
+      }
+      return makeZone(
+        'inaugural-retained',
+        'safe',
+        '●',
+        'Retained',
+        'Retained in feeder · no qualifier or relegation in Season 1',
+        tier === 'f1' ? '5–32' : '5–32',
+        'zone-safe',
+      );
+    }
+    return makeZone(
+      'inaugural-retained',
+      'safe',
+      '●',
+      'Retained',
+      'Retained in feeder · no qualifier or relegation in Season 1',
+      '1–32',
+      'zone-safe',
+    );
+  }
+
+  switch (tier) {
+    case 'f1':
+      if (rank === 1) {
+        return makeZone(
+          'f1-champion',
+          'promoted',
+          '★',
+          'Champion · promoted',
+          'Champion · automatically promoted to Superleague',
+          '1',
+          'zone-promoted',
+        );
+      }
+      if (rank <= 4) {
+        return makeZone(
+          'f1-qualifier-up',
+          'qualifier-up',
+          '▲',
+          'Qualifier · challenging',
+          'Superleague qualifier · challenging (places 2–4)',
+          '2–4',
+          'zone-qualifier-up',
+        );
+      }
+      if (rank <= 16) {
+        return makeZone('f1-safe', 'safe', '●', 'Retained in F1', 'Retained in Feeder 1 (places 5–16)', '5–16', 'zone-safe');
+      }
+      if (rank <= 24) {
+        return makeZone(
+          'f1-qualifier-hold',
+          'qualifier-hold',
+          '◐',
+          'F1↔F2 qualifier · defending',
+          'Feeder 1 ↔ Feeder 2 qualifier · defending (places 17–24)',
+          '17–24',
+          'zone-qualifier-hold',
+        );
+      }
+      return makeZone(
+        'f1-relegated',
+        'relegated',
+        '▼',
+        'Relegated to F2',
+        'Relegated to Feeder 2 (places 25–32)',
+        '25–32',
+        'zone-relegated',
+      );
+    case 'f2':
+      if (rank <= 8) {
+        return makeZone(
+          'f2-promoted',
+          'promoted',
+          '▲',
+          'Promoted to F1',
+          'Automatically promoted to Feeder 1 (places 1–8)',
+          '1–8',
+          'zone-promoted',
+        );
+      }
+      if (rank <= 16) {
+        return makeZone(
+          'f2-qualifier-up',
+          'qualifier-up',
+          '▲',
+          'F1↔F2 qualifier · challenging',
+          'Feeder 1 ↔ Feeder 2 qualifier · challenging (places 9–16)',
+          '9–16',
+          'zone-qualifier-up',
+        );
+      }
+      if (rank <= 24) {
+        return makeZone(
+          'f2-qualifier-hold',
+          'qualifier-hold',
+          '◐',
+          'F2↔F3 qualifier · defending',
+          'Feeder 2 ↔ Feeder 3 qualifier · defending (places 17–24)',
+          '17–24',
+          'zone-qualifier-hold',
+        );
+      }
+      return makeZone(
+        'f2-relegated',
+        'relegated',
+        '▼',
+        'Relegated to F3',
+        'Relegated to Feeder 3 (places 25–32)',
+        '25–32',
+        'zone-relegated',
+      );
+    case 'f3':
+      if (rank <= 8) {
+        return makeZone(
+          'f3-promoted',
+          'promoted',
+          '▲',
+          'Promoted to F2',
+          'Automatically promoted to Feeder 2 (places 1–8)',
+          '1–8',
+          'zone-promoted',
+        );
+      }
+      if (rank <= 16) {
+        return makeZone(
+          'f3-qualifier-up',
+          'qualifier-up',
+          '▲',
+          'F2↔F3 qualifier · challenging',
+          'Feeder 2 ↔ Feeder 3 qualifier · challenging (places 9–16)',
+          '9–16',
+          'zone-qualifier-up',
+        );
+      }
+      return makeZone(
+        'f3-safe',
+        'safe',
+        '●',
+        'Retained in F3',
+        'Retained in Feeder 3 (places 17–32) · no ordinary relegation to Pool',
+        '17–32',
+        'zone-safe',
+      );
+    case 'legacy':
+    default:
+      // Historical single-tier/v1 path: champion + 2–4 qualifier only. Never
+      // assert tiered relegation/qualifier-hold bands that did not exist.
+      if (rank === 1) {
+        return makeZone(
+          'legacy-champion',
+          'promoted',
+          '★',
+          'Champion · promoted',
+          'Champion · automatically promoted to Superleague',
+          '1',
+          'zone-promoted',
+        );
+      }
+      if (rank <= 4) {
+        return makeZone(
+          'legacy-qualifier',
+          'qualifier-up',
+          '▲',
+          'Qualifier · challenging',
+          'Superleague qualifier · challenging (places 2–4)',
+          '2–4',
+          'zone-qualifier-up',
+        );
+      }
+      return makeZone(
+        'legacy-safe',
+        'safe',
+        '●',
+        'Retained',
+        'Retained in feeder (places 5–32)',
+        '5–32',
+        'zone-safe',
+      );
+  }
+}
+
+/** Distinct zones in rank order for the legend/key of one season/league. */
+export function zoneLegendFor(ctx: ZoneContext): PostseasonZone[] {
+  const seen = new Map<string, PostseasonZone>();
+  for (let rank = 1; rank <= 32; rank += 1) {
+    const zone = resolvePostseasonZone(rank, ctx);
+    if (!seen.has(zone.id)) {
+      seen.set(zone.id, zone);
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Provisional vs final wording. Before the season is officially complete no
+ * row claims its placement is guaranteed.
+ */
+export function zoneStatusPrefix(isSeasonComplete: boolean): string {
+  return isSeasonComplete ? 'Final:' : 'Currently in';
+}
+
+export function zoneProvisionalNote(isSeasonComplete: boolean): string {
+  return isSeasonComplete
+    ? 'Final positions after the completed season. Qualifier results and later rebalancing are separate events.'
+    : 'Provisional zones — if the season ended now. Nothing is guaranteed until all 32 stages complete; qualifier results and later rebalancing are separate events.';
+}
