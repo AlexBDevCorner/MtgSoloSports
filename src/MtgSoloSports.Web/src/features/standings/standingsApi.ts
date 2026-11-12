@@ -29,6 +29,14 @@ export interface SeasonPlacements {
   leagueLevel?: string | null;
   isSeasonComplete: boolean;
   completedStages: number;
+  /** Authoritative season length from the save-owned rules snapshot (32 in current rules). */
+  stagesPerSeason?: number | null;
+  /** Authoritative league field size from the save-owned rules snapshot (32 in current rules). */
+  leagueSize?: number | null;
+  /** Best single-stage championship award in thousandths (77_000 in current rules). */
+  maxStagePointsThousandths?: number | null;
+  /** Worst single-stage championship award in thousandths (1_000 in current rules). */
+  minStagePointsThousandths?: number | null;
   athletes: SeasonPlacementAthlete[];
   placements: SeasonPlacementCell[];
 }

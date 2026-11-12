@@ -329,6 +329,32 @@
   border: 0;
 }
 
+/* MSS-142 clinched guarantees: compact text badge distinct from the
+   provisional zone color. The ✓ glyph plus the word Clinched/Safe carries
+   meaning without color; borders stay high-contrast in both widths. */
+.clinch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--text);
+  border-style: double;
+  border-width: 3px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.clinch-badge .clinch-tick {
+  font-weight: 700;
+}
+
+.clinch-badge .clinch-text {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 700px) {
   .zone-badge {
     font-size: 10px;

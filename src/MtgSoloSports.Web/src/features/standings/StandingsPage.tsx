@@ -34,6 +34,11 @@ import {
   type ZoneContext,
 } from './zones';
 import {
+  clinchBadgeText,
+  clinchExplanation,
+  computeClinchMap,
+} from './clinch';
+import {
   allStageColumns,
   buildCellMap,
   cellTitle,
@@ -567,6 +572,38 @@ export function StandingsPage({
   // MSS-141 legend: distinct postseason bands in rank order for this
   // season/league (single source in zones.ts, reusable by MSS-142).
   const zoneLegend = useMemo(() => zoneLegendFor(zoneContext), [zoneContext]);
+  // MSS-142: mathematically proven guarantees, recomputed from the current
+  // save/season/league payloads only. Totals and scoring bounds come from
+  // the guarded placements/current-table responses above, so stale cross
+  // league/season/sort state can never leak into a badge. Zero remaining
+  // stages and completed seasons yield no early marker by construction.
+  const clinchMap = useMemo(() => {
+    if (!placements || totalsRows.length === 0) {
+      return new Map();
+    }
+    return computeClinchMap(
+      totalsRows.map((row) => ({
+        athleteId: row.athleteId,
+        totalChampionshipPointsThousandths: row.totalChampionshipPointsThousandths,
+      })),
+      {
+        completedStages: placements.completedStages,
+        stagesPerSeason: placements.stagesPerSeason,
+        leagueSize: placements.leagueSize,
+        maxStagePointsThousandths: placements.maxStagePointsThousandths,
+        minStagePointsThousandths: placements.minStagePointsThousandths,
+        isSeasonComplete: placements.isSeasonComplete,
+      },
+      zoneContext,
+    );
+  }, [placements, totalsRows, zoneContext]);
+  const clinchRemaining =
+    placements?.stagesPerSeason != null && Number.isInteger(placements.stagesPerSeason)
+      ? (placements.stagesPerSeason as number) - (placements?.completedStages ?? 0)
+      : 0;
+  const clinchCount = [...clinchMap.values()].filter(
+    (entry) => entry.isChampionLocked || entry.guaranteedZone !== null,
+  ).length;
 
   // MSS-068: all hooks must run unconditionally on every render, including
   // loading/error/empty/invalid states. These derivations use safe defaults
@@ -921,6 +958,7 @@ export function StandingsPage({
                       <th scope="col" className="numeric">Rank</th>
                       <th scope="col">Card</th>
                       <th scope="col">Zone</th>
+                      <th scope="col">Locked</th>
                       <th scope="col" className="numeric">Champ pts</th>
                       <th scope="col" className="numeric">Stage W</th>
                       <th scope="col" className="numeric">Round W</th>
@@ -939,6 +977,12 @@ export function StandingsPage({
                       const zoneTitle = zoneIsComplete
                         ? `Final: ${zone.label}`
                         : `${zoneStatusPrefix(false)} ${zone.label} — if the season ended now; nothing is guaranteed`;
+                      // MSS-142: proven guarantees keyed by athlete id, never by
+                      // sort order. Completed seasons and zero remaining stages
+                      // show no early marker by construction in clinch.ts.
+                      const clinch = zoneIsComplete ? undefined : clinchMap.get(row.athleteId);
+                      const clinchText = clinchBadgeText(clinch);
+                      const clinchTitle = clinch ? clinchExplanation(clinch, clinchRemaining) : null;
                       return (
                         <tr key={row.athleteId} className={`zone-row ${zone.cssClass}`}>
                           <td className="numeric">{totals.seasonRank}</td>
@@ -963,6 +1007,19 @@ export function StandingsPage({
                               <span className="zone-text">{zone.shortLabel}</span>
                             </span>
                             <span className="visually-hidden">{zoneTitle}</span>
+                          </td>
+                          <td>
+                            {clinchText && clinchTitle ? (
+                              <>
+                                <span className="clinch-badge" title={clinchTitle}>
+                                  <span className="clinch-tick" aria-hidden="true">✓</span>{' '}
+                                  <span className="clinch-text">{clinchText.replace(/^✓\s*/, '')}</span>
+                                </span>
+                                <span className="visually-hidden">{clinchTitle}</span>
+                              </>
+                            ) : (
+                              <span className="muted" aria-hidden="true">—</span>
+                            )}
                           </td>
                           <td className="numeric">{formatPoints(totals.totalChampionshipPointsThousandths)}</td>
                           <td className="numeric">{totals.stageWins}</td>
@@ -990,6 +1047,13 @@ export function StandingsPage({
                   ))}
                 </ul>
                 <p className="muted small">{zoneProvisionalNote(zoneIsComplete)}</p>
+                {zoneIsComplete ? null : (
+                  <p className="muted small">
+                    {clinchCount > 0
+                      ? `✓ Locked badges are mathematically proven with ${clinchRemaining} official stage(s) left: every possible final total stays inside that exact zone, even if every tie breaks against the card. They are distinct from the provisional zone color.`
+                      : `No ✓ Locked badge yet: every card can still leave its current zone with ${clinchRemaining} official stage(s) left. Provisional zones show “if the season ended now”, never a guarantee.`}
+                  </p>
+                )}
               </div>
               <p className="muted small">
                 {useCurrentTotals

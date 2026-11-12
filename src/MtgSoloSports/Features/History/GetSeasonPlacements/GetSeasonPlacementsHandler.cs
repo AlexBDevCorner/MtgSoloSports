@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
+using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.History.GetSeasonPlacements;
 
@@ -29,7 +31,8 @@ public sealed class GetSeasonPlacementsHandler
         SeasonEntity season = await ListHistoryCompetitionsHandler.LoadSeasonAsync(context, seasonNumber, cancellationToken).ConfigureAwait(false);
         LeagueEntity league = await ListHistoryStagesHandler.LoadLeagueAsync(context, season, leagueId, cancellationToken).ConfigureAwait(false);
         PlacementQuery query = await LoadQueryAsync(context, season, league, cancellationToken).ConfigureAwait(false);
-        return MapResponse(saveId, season, league, query);
+        RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        return MapResponse(saveId, season, league, rules, query);
     }
 
     internal static void ValidateIds(Guid saveId, int seasonNumber, int leagueId)
@@ -97,10 +100,11 @@ public sealed class GetSeasonPlacementsHandler
         return new PlacementQuery(memberships, standings, cards, effective);
     }
 
-    internal static GetSeasonPlacementsResponse MapResponse(Guid saveId, SeasonEntity season, LeagueEntity league, PlacementQuery query)
+    internal static GetSeasonPlacementsResponse MapResponse(Guid saveId, SeasonEntity season, LeagueEntity league, RulesV1 rules, PlacementQuery query)
     {
         ArgumentNullException.ThrowIfNull(season);
         ArgumentNullException.ThrowIfNull(league);
+        ArgumentNullException.ThrowIfNull(rules);
         ArgumentNullException.ThrowIfNull(query);
 
         ValidateMemberships(query.Memberships, league);
@@ -122,8 +126,30 @@ public sealed class GetSeasonPlacementsHandler
             level.ToString(),
             season.IsComplete,
             stageNumbers.Count,
+            rules.StagesPerSeason,
+            rules.LeagueSize,
+            MaxStagePoints(rules),
+            MinStagePoints(rules),
             athletes,
             placements);
+    }
+
+    internal static int MaxStagePoints(RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        checked
+        {
+            return rules.ScoringTable.Max() * RulesV1.FixedScale;
+        }
+    }
+
+    internal static int MinStagePoints(RulesV1 rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        checked
+        {
+            return rules.ScoringTable.Min() * RulesV1.FixedScale;
+        }
     }
 
     internal static void ValidateMemberships(List<SeasonMembershipEntity> memberships, LeagueEntity league)
