@@ -96,6 +96,7 @@ export function AppShell({
   children,
   locked,
   lockLabel,
+  liveHref,
 }: {
   view: View;
   /** Save-scoped navigation target; null on Saves/landing with no save context. */
@@ -105,6 +106,13 @@ export function AppShell({
   stageLabel: string | null;
   catalog: CatalogStatus;
   children: ReactNode;
+  /**
+   * MSS-143: resolved Live destination for the active competition (Chaos Cup,
+   * Cup/qualifier event, selection, or bare Live for league/Dashboard CTA).
+   * Null keeps the legacy bare Live URL; never points at the Dashboard so the
+   * view stays `live` while the content explains the Dashboard next step.
+   */
+  liveHref?: string | null;
   /**
    * MSS-124: true while a Dashboard stage completion (mutation + refresh)
    * is pending. Rail + content become inert so pointer and keyboard input
@@ -170,7 +178,7 @@ export function AppShell({
           <RailLink href={scoped(dashboardPath)} current={view === 'dashboard'} title="Open dashboard" locked={interactionLocked} lockLabel={lockLabel}>
             Dashboard
           </RailLink>
-          <RailLink href={scoped(livePath)} current={view === 'live'} title="Open the current live event" locked={interactionLocked} lockLabel={lockLabel}>
+          <RailLink href={liveHref ?? scoped(livePath)} current={view === 'live'} title="Open the current live event" locked={interactionLocked} lockLabel={lockLabel}>
             Live
           </RailLink>
           <RailLink
