@@ -40,6 +40,17 @@ describe('MSS-143 Live follows the active season event', () => {
     assert.ok(app.includes("target.kind === 'selection'"), 'Cup selections reuse the selection view on Live');
   });
 
+  it('routes tiered feeder qualifiers to the per-qualifier Live view, not stale Superleague', () => {
+    assert.ok(resolver.includes('resolveActiveQualifierParam'), 'resolver derives the active tiered qualifier from phase-wide progress');
+    assert.ok(resolver.includes('canonicalQualifierLiveParams'), 'active qualifier follows canonical Superleague-first order');
+    assert.ok(resolver.includes("kind: 'qualifier'"), 'feeder actives resolve to a qualifier target');
+    assert.ok(app.includes("target.kind === 'qualifier'"), 'bare Live branches to the feeder qualifier when active');
+    assert.ok(app.includes('<LiveQualifierView'), 'reuses the existing per-qualifier Live view');
+    assert.ok(app.includes('qualifier:active'), 'active feeder remounts per qualifier/season so completion never shows stale data');
+    assert.ok(app.includes('qualifierLivePath'), 'sidebar and bare Live link the active qualifier URL');
+    assert.ok(resolver.includes('qualifierLivePath'), 'sidebar href names the active feeder qualifier');
+  });
+
   it('points the sidebar Live entry at the resolved active competition', () => {
     assert.ok(app.includes('liveHref'), 'App resolves the sidebar destination from lifecycle state');
     assert.ok(app.includes('activeLivePath'), 'sidebar href reuses the shared resolver path');

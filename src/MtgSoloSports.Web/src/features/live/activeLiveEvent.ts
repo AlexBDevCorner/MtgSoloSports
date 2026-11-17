@@ -1,7 +1,8 @@
-import { chaosLivePath, livePath } from '../routing/routes';
+import { chaosLivePath, livePath, qualifierLivePath } from '../routing/routes';
 import type { EventKey, SelectionKey } from '../events/eventModel';
 import type { SeasonProgress, SeasonStatus } from '../dashboard/dashboardApi';
-import { seasonFlow } from '../dashboard/seasonFlowSteps';
+import { isTieredProgress, seasonFlow } from '../dashboard/seasonFlowSteps';
+import { canonicalQualifierLiveParams } from '../qualifiers/qualifierModel';
 
 /**
  * MSS-143 shared read-only active-event resolver for Live.
@@ -35,8 +36,43 @@ export type ActiveLiveTarget =
   | { kind: 'league' }
   | { kind: 'chaos'; season: number }
   | { kind: 'event'; event: EventKey; season: number }
+  | { kind: 'qualifier'; qualifier: string; season: number }
   | { kind: 'selection'; selection: SelectionKey; season: number }
   | { kind: 'dashboard'; season: number | null; action: string | null };
+
+/**
+ * MSS-143 correction: on tiered (three-feeder) saves the qualifier phase is
+ * 17 sequential independent competitions in canonical order (Superleague,
+ * then F1↔F2 by color, then F2↔F3 by color), but the status exposes only
+ * `event='qualifier'` with phase-wide progress. The legacy
+ * `?event=qualifier&season=N` Live URL renders only the Superleague history
+ * slice, so after the Superleague qualifier completes the active competition
+ * is a feeder qualifier and bare Live must not keep showing the completed
+ * Superleague event. Returns the active Live `?qualifier=` param
+ * (`superleague` or `f1f2-<color>` / `f2f3-<color>`), or null when the save
+ * is not tiered / the active event is not a tiered qualifier.
+ */
+export function resolveActiveQualifierParam(
+  progress: SeasonProgress,
+  status: SeasonStatus | null,
+): string | null {
+  if (!status || !isTieredProgress(progress)) {
+    return null;
+  }
+  const order = canonicalQualifierLiveParams();
+  const completed =
+    status.qualifierProgress?.completedEvents ?? status.eventProgress?.completedEvents ?? null;
+  if (completed !== null && completed !== undefined) {
+    if (completed < 0 || completed >= order.length) {
+      return null;
+    }
+    return order[completed] ?? null;
+  }
+  const played =
+    status.qualifierProgress?.roundsPlayed ?? status.eventProgress?.roundsPlayed ?? 0;
+  const derived = Math.min(order.length - 1, Math.max(0, Math.floor(played / 16)));
+  return order[derived] ?? null;
+}
 
 export function resolveActiveLiveTarget(
   progress: SeasonProgress,
@@ -63,6 +99,18 @@ export function resolveActiveLiveTarget(
   if (next.liveEvent === 'chaos-cup') {
     return { kind: 'chaos', season };
   }
+  if (next.liveEvent === 'qualifier') {
+    // Tiered qualifier phase: route to the active individual qualifier so
+    // bare Live never shows a completed Superleague qualifier as the current
+    // event. The Superleague active keeps the legacy event view (with its
+    // canonical next-qualifier CTA); feeder actives use the per-qualifier
+    // Live view. v1 saves (single qualifier) keep the legacy event route.
+    const activeQualifier = resolveActiveQualifierParam(progress, status);
+    if (activeQualifier !== null && activeQualifier !== 'superleague') {
+      return { kind: 'qualifier', qualifier: activeQualifier, season };
+    }
+    return { kind: 'event', event: next.liveEvent, season };
+  }
   if (next.liveEvent !== null) {
     return { kind: 'event', event: next.liveEvent, season };
   }
@@ -85,6 +133,8 @@ export function activeLivePath(saveId: string, target: ActiveLiveTarget): string
   switch (target.kind) {
     case 'chaos':
       return chaosLivePath(saveId, target.season, null, null);
+    case 'qualifier':
+      return qualifierLivePath(saveId, target.qualifier, target.season, null);
     case 'event':
       return livePath(saveId, { event: target.event, season: target.season });
     case 'selection':

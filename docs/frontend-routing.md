@@ -51,8 +51,15 @@ share them instead of hand-rolling URLs.
   (team events) select a postseason event played round by round; `round`
   selects a played round (latest when absent). `event=chaos-cup` adds `stage`
   (0..5 for the six 32-athlete group stages; 5 is the single-group Final):
-  absent follows the canonical active, else latest drawn, stage. Without `event`, Live shows the
-  event when it is the next lifecycle step, otherwise leagues. The URL keeps
+  absent follows the canonical active, else latest drawn, stage. Bare Live
+  (`/saves/:saveId/live` with no event/selection/transition or league query)
+  resolves through the shared active-event resolver (MSS-143): Chaos Cup while
+  `RunChaosCup` is legal, the active tiered feeder qualifier
+  (`?event=qualifier&qualifier=f1f2-<color>|f2f3-<color>&season=N`, canonical
+  Superleague-first order; Superleague active keeps the legacy
+  `?event=qualifier` URL), other Cup/qualifier events and squad selections
+  while they are the next lifecycle step, league play during league stages,
+  and an explicit Dashboard CTA when no playable live event exists. The URL keeps
   the event after it completes, so the completed event stays on screen.
   Next Round and Run remaining appear only while the URL's event and season
   are the save's next step; any other event shows its rounds read-only.

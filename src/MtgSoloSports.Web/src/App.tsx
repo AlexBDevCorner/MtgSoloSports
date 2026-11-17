@@ -40,6 +40,7 @@ import {
   dashboardPath,
   historyPath,
   livePath,
+  qualifierLivePath,
   qualifiersPath,
   routeSaveId as getRouteSaveId,
   savesPath,
@@ -277,7 +278,22 @@ export default function App() {
         );
       case 'live': {
         const status = dashboard.data?.status ?? null;
-        const liveEvent = route.event ?? dashboard.data?.status?.eventProgress?.event ?? null;
+        // MSS-143 correction: bare Live owns its routing through the shared
+        // active-event resolver. The status `eventProgress.event` must not
+        // pre-empt bare Live: on tiered saves the qualifier phase exposes only
+        // `event='qualifier'` with phase-wide progress, and the legacy
+        // `?event=qualifier` URL renders only the Superleague slice. After the
+        // Superleague qualifier completes the active competition is a feeder
+        // qualifier, so bare Live must resolve the active `?qualifier=` param
+        // instead of showing the completed Superleague event.
+        const isBareLiveEarly =
+          route.event === null &&
+          route.selection === null &&
+          route.transition === null &&
+          route.leagueId === null &&
+          route.round === null &&
+          route.qualifier === null;
+        const liveEvent = route.event ?? (isBareLiveEarly ? null : (dashboard.data?.status?.eventProgress?.event ?? null));
         const eventSeason =
           route.eventSeason ?? status?.eventProgress?.sourceSeasonNumber ?? status?.sourceSeasonNumber ?? null;
         // MSS-053 postseason transition reveals are read-only presentations
@@ -341,18 +357,14 @@ export default function App() {
         // stale Superleague league play. Explicit deep links above keep their
         // replay semantics; only the bare entry resolves here so refresh,
         // direct navigation, save/season switches and back/forward stay on
-        // the current competition. `eventProgress` has no Chaos shape, so the
-        // shared resolver (legal next action via seasonFlow) owns Chaos and
-        // Dashboard-CTA detection; round-based Cup/qualifier events already
-        // resolve through `liveEvent` above and reuse the same views.
-        const isBareLive =
-          route.event === null &&
-          route.selection === null &&
-          route.transition === null &&
-          route.leagueId === null &&
-          route.round === null &&
-          route.qualifier === null;
-        if (isBareLive && liveEvent === null && dashboard.data?.progress) {
+        // the current competition. The shared resolver (legal next action via
+        // seasonFlow) owns Chaos, tiered feeder qualifiers and Dashboard-CTA
+        // detection; bare Live never falls back to the status
+        // `eventProgress.event` (which would pin tiered qualifiers to the
+        // completed Superleague slice). Round-based Cup/Superleague-qualifier
+        // events reuse the same LiveEventView below.
+        const isBareLive = isBareLiveEarly;
+        if (isBareLive && dashboard.data?.progress) {
           const progress = dashboard.data.progress;
           try {
             const target = resolveActiveLiveTarget(progress, status);
@@ -396,6 +408,29 @@ export default function App() {
                       }),
                       { replace: true },
                     );
+                  }}
+                  onMutated={dashboard.refresh}
+                />
+              );
+            }
+            if (target.kind === 'qualifier') {
+              // MSS-143 correction: tiered feeder qualifier is the active
+              // competition once the Superleague qualifier completes.
+              // Reuses the existing per-qualifier Live view with its own
+              // 16-round reveal; never the stale Superleague LiveEventView.
+              const canPlayQualifier =
+                (status?.legalNextActions ?? []).includes('RunQualifier') &&
+                (status?.eventProgress?.sourceSeasonNumber ?? status?.sourceSeasonNumber) === target.season;
+              return (
+                <LiveQualifierView
+                  key={`qualifier:active:${target.qualifier}:${target.season}`}
+                  saveId={saveId}
+                  qualifier={target.qualifier}
+                  season={target.season}
+                  urlRound={route.round}
+                  canPlay={canPlayQualifier}
+                  onSelectRound={(round) => {
+                    navigate(qualifierLivePath(saveId, target.qualifier, target.season, round), { replace: true });
                   }}
                   onMutated={dashboard.refresh}
                 />
