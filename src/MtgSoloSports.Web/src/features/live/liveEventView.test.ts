@@ -69,7 +69,12 @@ describe('live event mode', () => {
 
   it('stays on the event after it completes because the URL keeps the event', () => {
     assert.ok(app.includes('<LiveEventView'));
-    assert.ok(app.includes('route.event ?? dashboard.data?.status?.eventProgress?.event'));
+    // MSS-143 correction: explicit deep links keep `route.event` so the
+    // completed event stays on screen; bare Live resolves via the shared
+    // active-event resolver instead of the status `eventProgress.event`
+    // (which would pin tiered qualifiers to the completed Superleague slice).
+    assert.ok(app.includes('route.event ??'), 'explicit event preserved');
+    assert.ok(app.includes('isBareLiveEarly'), 'bare Live owns routing via the resolver');
   });
 });
 
