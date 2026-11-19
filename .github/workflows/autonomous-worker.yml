@@ -22,11 +22,11 @@ on:
         type: string
       model:
         description: OpenCode Go model
-        default: opencode-go/muse-spark-1.3-contributor
+        default: opencode-go/glm-5.3
         type: string
       variant:
         description: OpenCode model reasoning variant
-        default: xhigh
+        default: max
         type: string
       attempt_id:
         description: Persisted attempt UUID; empty for manual dispatch
