@@ -1,5 +1,5 @@
-using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.Shared;
+using MtgSoloSports.SimulationKernel.Leagues;
 
 namespace MtgSoloSports.Persistence.Saves;
 
