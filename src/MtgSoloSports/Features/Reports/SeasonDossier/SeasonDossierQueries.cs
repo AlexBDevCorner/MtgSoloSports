@@ -5,6 +5,7 @@ using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Reports.StandingsReport;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Reports.SeasonDossier;
 
@@ -67,7 +68,7 @@ internal static class SeasonDossierQueries
             .ConfigureAwait(false);
         if (leagues.Count == 0)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} has no leagues; corrupted sporting state.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} has no leagues; corrupted sporting state.");
         }
 
         return leagues;

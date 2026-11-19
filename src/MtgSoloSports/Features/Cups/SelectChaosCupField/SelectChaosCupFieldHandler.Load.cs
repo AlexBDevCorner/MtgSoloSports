@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 
@@ -84,7 +85,7 @@ public sealed partial class SelectChaosCupFieldHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -93,12 +94,12 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             if (membership.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Season {source.SeasonNumber} has corrupt athlete id {membership.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Season {source.SeasonNumber} has corrupt athlete id {membership.SaveAthleteId}.");
             }
 
             if (!seen.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Season {source.SeasonNumber} has duplicate membership for athlete {membership.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Season {source.SeasonNumber} has duplicate membership for athlete {membership.SaveAthleteId}.");
             }
         }
 
@@ -135,7 +136,7 @@ public sealed partial class SelectChaosCupFieldHandler
             .ConfigureAwait(false);
         if (athletes.Count != ids.Count)
         {
-            throw new InvalidOperationException("Source season references unknown athletes.");
+            throw new SaveCorruptionException("Source season references unknown athletes.");
         }
 
         Dictionary<int, string> names = new(athletes.Count);
@@ -144,12 +145,12 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             if (string.IsNullOrWhiteSpace(athlete.Name))
             {
-                throw new InvalidOperationException($"Save athlete {id} has an empty name.");
+                throw new SaveCorruptionException($"Save athlete {id} has an empty name.");
             }
 
             if (!Enum.IsDefined((SportingColor)athlete.SportingColor))
             {
-                throw new InvalidOperationException($"Save athlete {id} has unknown sporting color {athlete.SportingColor}.");
+                throw new SaveCorruptionException($"Save athlete {id} has unknown sporting color {athlete.SportingColor}.");
             }
 
             names[id] = athlete.Name;
@@ -169,18 +170,18 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             if (!maps.Colors.TryGetValue(membership.SaveAthleteId, out SportingColor permanent))
             {
-                throw new InvalidOperationException($"Season {source.SeasonNumber} references unknown athlete {membership.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Season {source.SeasonNumber} references unknown athlete {membership.SaveAthleteId}.");
             }
 
             if (membership.SportingColor != (int)permanent)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season {source.SeasonNumber} membership for athlete {membership.SaveAthleteId} has color {(SportingColor)membership.SportingColor} mismatching permanent color {permanent}.");
             }
 
             if (membership.LeagueId.HasValue && !leagueMeta.ContainsKey(membership.LeagueId.Value))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season {source.SeasonNumber} membership for athlete {membership.SaveAthleteId} references unknown league {membership.LeagueId.Value}.");
             }
         }

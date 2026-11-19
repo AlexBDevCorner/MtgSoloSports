@@ -3,6 +3,7 @@ using System.Text;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -112,7 +113,7 @@ public sealed partial class RunColorCupTeamHandler
                 ColorCupTeamRoundPayloadDocument nextStart = payloads.Single(p => p.GroupNumber == group + 1 && p.RoundNumber == 1);
                 if (after != new Pcg32State(nextStart.RngBeforeState, nextStart.RngBeforeStream))
                 {
-                    throw new InvalidOperationException($"Color Cup team RNG chain is broken at the start of group {group + 1}.");
+                    throw new SaveCorruptionException($"Color Cup team RNG chain is broken at the start of group {group + 1}.");
                 }
             }
 
@@ -141,7 +142,7 @@ public sealed partial class RunColorCupTeamHandler
             Points before = cumulative.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
             if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Missing stage-start bonus for athlete '{row.Name}'.");
             }
 
             inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
@@ -201,7 +202,7 @@ public sealed partial class RunColorCupTeamHandler
         {
             if (!byAthlete.TryGetValue(placement.AthleteId, out ColorCupSelectionEntity? selection))
             {
-                throw new InvalidOperationException($"Color Cup team group {payload.GroupNumber} round contains athlete {placement.AthleteId} from the wrong rank group.");
+                throw new SaveCorruptionException($"Color Cup team group {payload.GroupNumber} round contains athlete {placement.AthleteId} from the wrong rank group.");
             }
 
             string teamName = ((SimulationKernel.Catalog.SportingColor)selection.SportingColor).ToString();

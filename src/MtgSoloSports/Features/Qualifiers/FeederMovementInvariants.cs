@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -30,7 +31,7 @@ public static class FeederMovementInvariants
 
         if (plan.PerColor.Count != rules.SportingColorCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder movement must cover exactly {rules.SportingColorCount} colors, was {plan.PerColor.Count}.");
         }
 
@@ -38,7 +39,7 @@ public static class FeederMovementInvariants
         int expectedTotal = rules.SportingColorCount * 8 * 8;
         if (plan.All.Count != expectedTotal)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder movement must persist exactly {expectedTotal} records (64 per color), was {plan.All.Count}.");
         }
 
@@ -47,12 +48,12 @@ public static class FeederMovementInvariants
         {
             if (pick.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Feeder movement contains invalid athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Feeder movement contains invalid athlete id {pick.SaveAthleteId}.");
             }
 
             if (!athleteIds.Add(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder movement contains duplicate athlete id {pick.SaveAthleteId}; no athlete may appear in two qualifier boundaries.");
             }
         }
@@ -79,7 +80,7 @@ public static class FeederMovementInvariants
             || !f2ByColor.TryGetValue(colorPlan.SportingColor, out LeagueEntity? f2)
             || !f3ByColor.TryGetValue(colorPlan.SportingColor, out LeagueEntity? f3))
         {
-            throw new InvalidOperationException($"Color {colorPlan.SportingColor} is missing a tiered league.");
+            throw new SaveCorruptionException($"Color {colorPlan.SportingColor} is missing a tiered league.");
         }
 
         CheckF1Bands(colorPlan, f1);
@@ -98,7 +99,7 @@ public static class FeederMovementInvariants
             || colorPlan.F3PromotedToF2.Count != expected
             || colorPlan.F3Challengers.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color {colorPlan.SportingColor} feeder movement must hold 8 per band, was " +
                 $"{colorPlan.F1Incumbents.Count}/{colorPlan.F1Relegated.Count}/" +
                 $"{colorPlan.F2PromotedToF1.Count}/{colorPlan.F2Challengers.Count}/" +
@@ -165,19 +166,19 @@ public static class FeederMovementInvariants
     {
         if (pick.FromLeagueId != expectedLeague)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder pick {pick.SaveAthleteId} must come from league {expectedLeague}, was {pick.FromLeagueId}.");
         }
 
         if (pick.FromSeasonRank < firstRank || pick.FromSeasonRank > lastRank)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder pick rank {pick.FromSeasonRank} is outside places {firstRank}-{lastRank}.");
         }
 
         if (pick.Kind != expectedKind)
         {
-            throw new InvalidOperationException($"Feeder pick {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
+            throw new SaveCorruptionException($"Feeder pick {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
         }
     }
 
@@ -198,12 +199,12 @@ public static class FeederMovementInvariants
         {
             if (!rankByAthlete.TryGetValue(pick.SaveAthleteId, out int actual))
             {
-                throw new InvalidOperationException($"Feeder movement athlete {pick.SaveAthleteId} has no final standing.");
+                throw new SaveCorruptionException($"Feeder movement athlete {pick.SaveAthleteId} has no final standing.");
             }
 
             if (actual != pick.FromSeasonRank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {pick.SaveAthleteId} rank {pick.FromSeasonRank} does not match final standing rank {actual}.");
             }
         }
@@ -235,12 +236,12 @@ public static class FeederMovementInvariants
         {
             if (!colorByLeague.TryGetValue(pick.FromLeagueId, out int leagueColor))
             {
-                throw new InvalidOperationException($"Feeder pick {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
+                throw new SaveCorruptionException($"Feeder pick {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
             }
 
             if (leagueColor != pick.SportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder pick {pick.SaveAthleteId} color {pick.SportingColor} does not match league color {leagueColor}; no cross-color movement.");
             }
         }
@@ -271,7 +272,7 @@ public static class FeederMovementInvariants
                 || !leaguesById.TryGetValue(movement.ToLeagueId, out LeagueEntity? to))
             {
                 // Pool sentinel is never used for normal feeder movement.
-                throw new InvalidOperationException($"Feeder movement {movement.Id} has corrupt league linkage.");
+                throw new SaveCorruptionException($"Feeder movement {movement.Id} has corrupt league linkage.");
             }
 
             LeagueLevel fromLevel = LeagueEntityLevels.GetLevel(from);
@@ -285,7 +286,7 @@ public static class FeederMovementInvariants
                 // tier; the qualifier decides the final adjacent move.
                 if (distance != 0)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Feeder qualifier marker {movement.Id} must provisionally remain in its tier.");
                 }
 
@@ -294,7 +295,7 @@ public static class FeederMovementInvariants
 
             if (distance != 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder movement {movement.Id} must be between adjacent tiers, was {fromLevel} → {toLevel}.");
             }
         }

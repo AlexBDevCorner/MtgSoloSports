@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.History.ListRounds;
 
@@ -127,13 +128,13 @@ public sealed class ListHistoryRoundsHandler
             ListHistoryStagesHandler.ValidateStage(stage, league, roundsPerStage);
             if (stage.CompletedRounds != rounds.Count)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} cursor says {stage.CompletedRounds} rounds but {rounds.Count} round rows exist.");
             }
         }
         else if (rounds.Count != 0)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stageNumber} has rounds without a stage cursor.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stageNumber} has rounds without a stage cursor.");
         }
     }
 
@@ -143,7 +144,7 @@ public sealed class ListHistoryRoundsHandler
         ArgumentNullException.ThrowIfNull(league);
         if (rounds.Count > roundsPerStage)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stageNumber} has {rounds.Count} persisted rounds, more than {roundsPerStage}.");
         }
 
@@ -151,13 +152,13 @@ public sealed class ListHistoryRoundsHandler
         {
             if (rounds[i].RoundNumber != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} has non-sequential round rows; rounds must advance in order.");
             }
 
             if (string.IsNullOrWhiteSpace(rounds[i].PayloadChecksum))
             {
-                throw new InvalidOperationException($"Persisted round {rounds[i].RoundNumber} has corrupt checksum.");
+                throw new SaveCorruptionException($"Persisted round {rounds[i].RoundNumber} has corrupt checksum.");
             }
         }
     }

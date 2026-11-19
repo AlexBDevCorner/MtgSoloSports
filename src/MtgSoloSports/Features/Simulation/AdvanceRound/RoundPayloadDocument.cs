@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Simulation.AdvanceRound;
 
@@ -38,6 +39,6 @@ public sealed record RoundPayloadDocument(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         RoundPayloadDocument? document = JsonSerializer.Deserialize<RoundPayloadDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Round payload is empty.");
+        return document ?? throw new SaveCorruptionException("Round payload is empty.");
     }
 }

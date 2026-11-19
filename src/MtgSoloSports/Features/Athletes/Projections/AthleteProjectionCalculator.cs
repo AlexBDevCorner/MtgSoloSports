@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
 
@@ -52,7 +53,7 @@ public static class AthleteProjectionCalculator
             {
                 if (row.RoundWins < 0 || row.EarnedBonusThousandths < 0)
                 {
-                    throw new InvalidOperationException($"Stage standing {row.Id} has corrupt non-negative sporting values.");
+                    throw new SaveCorruptionException($"Stage standing {row.Id} has corrupt non-negative sporting values.");
                 }
 
                 roundWins += row.RoundWins;
@@ -70,7 +71,7 @@ public static class AthleteProjectionCalculator
 
                 if (row.StageRank < 1 || row.StageRank > 32)
                 {
-                    throw new InvalidOperationException($"Stage standing {row.Id} has corrupt rank {row.StageRank}.");
+                    throw new SaveCorruptionException($"Stage standing {row.Id} has corrupt rank {row.StageRank}.");
                 }
             }
         }
@@ -109,7 +110,7 @@ public static class AthleteProjectionCalculator
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int earnedSeason))
             {
-                throw new InvalidOperationException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
             }
 
             contributions.Add(new BonusContribution(
@@ -174,7 +175,7 @@ public static class AthleteProjectionCalculator
 
         if (completedStagesInLatestLeague < 0 || completedStagesInLatestLeague > rules.StagesPerSeason)
         {
-            throw new InvalidOperationException($"Corrupt completed-stage count {completedStagesInLatestLeague}.");
+            throw new SaveCorruptionException($"Corrupt completed-stage count {completedStagesInLatestLeague}.");
         }
 
         if (completedStagesInLatestLeague >= rules.StagesPerSeason)

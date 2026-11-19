@@ -1,3 +1,5 @@
+using MtgSoloSports.Shared;
+
 namespace MtgSoloSports.Features.Saves;
 
 /// <summary>
@@ -14,14 +16,14 @@ public static class SavePhaseParser
             return parsed;
         }
 
-        throw new InvalidOperationException($"Unsupported save phase '{phase}'.");
+        throw new SaveCorruptionException($"Unsupported save phase '{phase}'.");
     }
 
     public static string ToText(SavePhase phase)
     {
         if (!Enum.IsDefined(phase))
         {
-            throw new InvalidOperationException($"Unsupported save phase '{phase}'.");
+            throw new SaveCorruptionException($"Unsupported save phase '{phase}'.");
         }
 
         return phase.ToString("G");

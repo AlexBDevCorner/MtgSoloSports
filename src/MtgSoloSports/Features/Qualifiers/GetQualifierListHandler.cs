@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
 
@@ -104,7 +105,7 @@ public sealed class GetQualifierListHandler
             .SingleOrDefaultAsync(e => e.Id == sample.FromSeasonId, cancellationToken).ConfigureAwait(false);
         if (latestNext is null || latestSource is null)
         {
-            throw new InvalidOperationException("Qualifier references unknown seasons.");
+            throw new SaveCorruptionException("Qualifier references unknown seasons.");
         }
 
         return (latestSource, latestNext);
@@ -145,7 +146,7 @@ public sealed class GetQualifierListHandler
             if (!QualifierProgressEvaluator.IsEventComplete(eventStandings, eventRounds, boundary, rules, source.SeasonNumber))
             {
                 QualifierProgressEvaluator.ValidateEventNotCorrupt(eventStandings, eventRounds, boundary, rules, source.SeasonNumber);
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Qualifier {boundary} for Season {source.SeasonNumber} is incomplete but has standings; sporting state is corrupt.");
             }
 
@@ -183,7 +184,7 @@ public sealed class GetQualifierListHandler
         if (!QualifierProgressEvaluator.IsEventComplete(standings, rounds, boundary, rules, source.SeasonNumber))
         {
             QualifierProgressEvaluator.ValidateEventNotCorrupt(standings, rounds, boundary, rules, source.SeasonNumber);
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {source.SeasonNumber} is incomplete but has standings; sporting state is corrupt.");
         }
 

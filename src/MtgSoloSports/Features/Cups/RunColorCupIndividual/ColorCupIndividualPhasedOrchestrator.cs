@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
@@ -55,7 +56,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         ArgumentNullException.ThrowIfNull(totals);
         if (totals.Count != ColorCupIndividualFormat.FieldSize)
         {
-            throw new InvalidOperationException($"Color Cup qualifying cutoff requires exactly {ColorCupIndividualFormat.FieldSize} totals, was {totals.Count}.");
+            throw new SaveCorruptionException($"Color Cup qualifying cutoff requires exactly {ColorCupIndividualFormat.FieldSize} totals, was {totals.Count}.");
         }
 
         List<StageAthleteTotals> ordered = OrderQualifying(totals);
@@ -85,7 +86,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         {
             if (!seen.Add(placement.AthleteId))
             {
-                throw new InvalidOperationException($"Color Cup final payload contains duplicate athlete id {placement.AthleteId}.");
+                throw new SaveCorruptionException($"Color Cup final payload contains duplicate athlete id {placement.AthleteId}.");
             }
 
             qualifiers.Add(placement.AthleteId);
@@ -158,7 +159,7 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (qualifyingPayloads.Count != ColorCupIndividualFormat.QualifyingRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup qualifying cutoff requires exactly {ColorCupIndividualFormat.QualifyingRounds} rounds, was {qualifyingPayloads.Count}.");
         }
 
@@ -172,12 +173,12 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (ColorCupIndividualFormat.ResolveStored(payload.FormatVersion) != ColorCupIndividualFormat.PhasedFormatVersion)
         {
-            throw new InvalidOperationException("Color Cup qualifying cutoff requires phased payloads.");
+            throw new SaveCorruptionException("Color Cup qualifying cutoff requires phased payloads.");
         }
 
         if (payload.Placements.Count != ColorCupIndividualFormat.QualifyingFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup qualifying round must contain exactly {ColorCupIndividualFormat.QualifyingFieldSize} placements, was {payload.Placements.Count}.");
         }
     }
@@ -318,18 +319,18 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (ColorCupIndividualFormat.ResolveStored(firstFinalPayload.FormatVersion) != ColorCupIndividualFormat.PhasedFormatVersion)
         {
-            throw new InvalidOperationException("Color Cup final roster recovery requires a phased payload.");
+            throw new SaveCorruptionException("Color Cup final roster recovery requires a phased payload.");
         }
 
         if (firstFinalPayload.RoundNumber != ColorCupIndividualFormat.QualifyingRounds + 1)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup final roster recovery requires round {ColorCupIndividualFormat.QualifyingRounds + 1}, was {firstFinalPayload.RoundNumber}.");
         }
 
         if (firstFinalPayload.Placements.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup final roster recovery requires exactly {ColorCupIndividualFormat.FinalFieldSize} placements, was {firstFinalPayload.Placements.Count}.");
         }
     }
@@ -338,7 +339,7 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (payloads.Count != ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup phased accumulation requires exactly {ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds} rounds, was {payloads.Count}.");
         }
     }
@@ -365,7 +366,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         Dictionary<int, StageAthleteTotals> finalById = finalTotals.ToDictionary(t => t.AthleteId);
         if (finalById.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException($"Color Cup final accumulation requires exactly {ColorCupIndividualFormat.FinalFieldSize} finalists, was {finalById.Count}.");
+            throw new SaveCorruptionException($"Color Cup final accumulation requires exactly {ColorCupIndividualFormat.FinalFieldSize} finalists, was {finalById.Count}.");
         }
 
         List<StageAthleteTotals> merged = new(qualTotals.Count);
@@ -396,7 +397,7 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (final.RoundPlaceCounts.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException("Color Cup final place counts must cover 16 positions.");
+            throw new SaveCorruptionException("Color Cup final place counts must cover 16 positions.");
         }
 
         List<int> counts = new(new int[ColorCupIndividualFormat.FieldSize]);
@@ -433,7 +434,7 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (qualifyingOrderAthleteIds.Count != ColorCupIndividualFormat.FieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup qualifying order requires exactly {ColorCupIndividualFormat.FieldSize} athletes, was {qualifyingOrderAthleteIds.Count}.");
         }
 
@@ -443,12 +444,12 @@ public static class ColorCupIndividualPhasedOrchestrator
         {
             if (!totalsIds.Contains(id))
             {
-                throw new InvalidOperationException($"Color Cup qualifying order references unknown athlete {id}.");
+                throw new SaveCorruptionException($"Color Cup qualifying order references unknown athlete {id}.");
             }
 
             if (!orderIds.Add(id))
             {
-                throw new InvalidOperationException($"Color Cup qualifying order contains duplicate athlete id {id}.");
+                throw new SaveCorruptionException($"Color Cup qualifying order contains duplicate athlete id {id}.");
             }
         }
     }
@@ -464,7 +465,7 @@ public static class ColorCupIndividualPhasedOrchestrator
             StageAthleteTotals entry = byId[id];
             if (SumCounts(entry) != ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds)
             {
-                throw new InvalidOperationException($"Color Cup finalist '{entry.Name}' must appear in all 32 rounds.");
+                throw new SaveCorruptionException($"Color Cup finalist '{entry.Name}' must appear in all 32 rounds.");
             }
 
             finalists.Add(entry);
@@ -483,7 +484,7 @@ public static class ColorCupIndividualPhasedOrchestrator
             StageAthleteTotals entry = byId[id];
             if (SumCounts(entry) != ColorCupIndividualFormat.QualifyingRounds)
             {
-                throw new InvalidOperationException($"Color Cup eliminated athlete '{entry.Name}' must stop at the 16-round cutoff.");
+                throw new SaveCorruptionException($"Color Cup eliminated athlete '{entry.Name}' must stop at the 16-round cutoff.");
             }
 
             eliminated.Add(entry);
@@ -500,7 +501,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         int maxEliminated = eliminated.Max(t => t.StageScoreThousandths);
         if (minFinalist <= maxEliminated)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Color Cup finalists must outrank eliminated athletes on combined totals with full carryover.");
         }
     }
@@ -556,7 +557,7 @@ public static class ColorCupIndividualPhasedOrchestrator
     {
         if (totals.Count != ColorCupIndividualFormat.FieldSize)
         {
-            throw new InvalidOperationException($"Color Cup phased totals require exactly {ColorCupIndividualFormat.FieldSize} athletes, was {totals.Count}.");
+            throw new SaveCorruptionException($"Color Cup phased totals require exactly {ColorCupIndividualFormat.FieldSize} athletes, was {totals.Count}.");
         }
 
         CheckMergedIdentities(totals);
@@ -571,32 +572,32 @@ public static class ColorCupIndividualPhasedOrchestrator
         {
             if (entry.AthleteId <= 0)
             {
-                throw new InvalidOperationException($"Color Cup phased totals contain invalid athlete id {entry.AthleteId}.");
+                throw new SaveCorruptionException($"Color Cup phased totals contain invalid athlete id {entry.AthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(entry.Name))
             {
-                throw new InvalidOperationException("Color Cup phased totals contain an athlete with an empty name.");
+                throw new SaveCorruptionException("Color Cup phased totals contain an athlete with an empty name.");
             }
 
             if (!ids.Add(entry.AthleteId))
             {
-                throw new InvalidOperationException($"Color Cup phased totals contain duplicate athlete id {entry.AthleteId}.");
+                throw new SaveCorruptionException($"Color Cup phased totals contain duplicate athlete id {entry.AthleteId}.");
             }
 
             if (!names.Add(entry.Name))
             {
-                throw new InvalidOperationException($"Color Cup phased totals contain duplicate athlete '{entry.Name}'.");
+                throw new SaveCorruptionException($"Color Cup phased totals contain duplicate athlete '{entry.Name}'.");
             }
 
             if (entry.StageScoreThousandths < 0 || entry.BaseScoreThousandths < 0)
             {
-                throw new InvalidOperationException($"Color Cup phased totals for '{entry.Name}' cannot be negative.");
+                throw new SaveCorruptionException($"Color Cup phased totals for '{entry.Name}' cannot be negative.");
             }
 
             if (entry.RoundPlaceCounts.Count != ColorCupIndividualFormat.FieldSize)
             {
-                throw new InvalidOperationException($"Color Cup phased totals for '{entry.Name}' must have {ColorCupIndividualFormat.FieldSize} round-place counts, was {entry.RoundPlaceCounts.Count}.");
+                throw new SaveCorruptionException($"Color Cup phased totals for '{entry.Name}' must have {ColorCupIndividualFormat.FieldSize} round-place counts, was {entry.RoundPlaceCounts.Count}.");
             }
         }
     }
@@ -618,14 +619,14 @@ public static class ColorCupIndividualPhasedOrchestrator
             }
             else
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup phased totals for '{entry.Name}' sum to {sum} round appearances, expected {ColorCupIndividualFormat.QualifyingRounds} or {ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds}.");
             }
         }
 
         if (finalists != ColorCupIndividualFormat.CutoffRank || eliminated != ColorCupIndividualFormat.FieldSize - ColorCupIndividualFormat.CutoffRank)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup phased totals require exactly {ColorCupIndividualFormat.CutoffRank} finalists and {ColorCupIndividualFormat.FieldSize - ColorCupIndividualFormat.CutoffRank} eliminated, was {finalists}/{eliminated}.");
         }
     }
@@ -637,7 +638,7 @@ public static class ColorCupIndividualPhasedOrchestrator
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup phased totals for '{entry.Name}' contain a negative placement count.");
+                throw new SaveCorruptionException($"Color Cup phased totals for '{entry.Name}' contain a negative placement count.");
             }
 
             checked

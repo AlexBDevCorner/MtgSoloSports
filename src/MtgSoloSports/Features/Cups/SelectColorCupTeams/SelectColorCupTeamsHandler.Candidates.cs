@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.Shared.Careers;
 using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Catalog;
@@ -62,7 +63,7 @@ public sealed partial class SelectColorCupTeamsHandler
             {
                 if (peak.GroupRank < 1 || peak.GroupRank > ChaosCupFormat.FinalFieldSize)
                 {
-                    throw new InvalidOperationException($"Chaos Cup Final rank {peak.GroupRank} for season {source.SeasonNumber} is corrupt.");
+                    throw new SaveCorruptionException($"Chaos Cup Final rank {peak.GroupRank} for season {source.SeasonNumber} is corrupt.");
                 }
 
                 raws[athleteId] = ChaosSelectionForm.ForFinal(peak.GroupRank);
@@ -71,7 +72,7 @@ public sealed partial class SelectColorCupTeamsHandler
             {
                 if (peak.IsAdvanced)
                 {
-                    throw new InvalidOperationException($"Chaos Cup season {source.SeasonNumber} athlete {athleteId} is marked advanced at its last stage {peak.StageIndex}.");
+                    throw new SaveCorruptionException($"Chaos Cup season {source.SeasonNumber} athlete {athleteId} is marked advanced at its last stage {peak.StageIndex}.");
                 }
 
                 raws[athleteId] = ChaosSelectionForm.ForElimination(peak.StageIndex);
@@ -133,7 +134,7 @@ public sealed partial class SelectColorCupTeamsHandler
         {
             if (!inputs.SeasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
             }
 
             if (!map.TryGetValue(row.SaveAthleteId, out List<BonusContribution>? list))
@@ -176,7 +177,7 @@ public sealed partial class SelectColorCupTeamsHandler
         {
             if (!inputs.SeasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing {row.Id} references unknown season {row.SeasonId}.");
             }
 
             if (!map.TryGetValue(row.SaveAthleteId, out List<ColorCupSelection.StageFormEntry>? list))
@@ -216,7 +217,7 @@ public sealed partial class SelectColorCupTeamsHandler
         {
             if (byColor[(int)color].Count == 0)
             {
-                throw new InvalidOperationException($"Sporting color {color} has no candidates.");
+                throw new SaveCorruptionException($"Sporting color {color} has no candidates.");
             }
         }
 
@@ -235,7 +236,7 @@ public sealed partial class SelectColorCupTeamsHandler
         int bonusRaw = bonusByAthlete.TryGetValue(athlete.Id, out int bonus) ? bonus : 0;
         if (!metricsByAthlete.TryGetValue(athlete.Id, out CupSelectionMetrics.CupMetrics? metrics))
         {
-            throw new InvalidOperationException($"Color Cup selection is missing metrics for athlete {athlete.Id}.");
+            throw new SaveCorruptionException($"Color Cup selection is missing metrics for athlete {athlete.Id}.");
         }
 
         int performanceRaw = metrics.AdjustedPerformanceThousandths;

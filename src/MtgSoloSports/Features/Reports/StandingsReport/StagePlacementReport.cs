@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.GetSeasonPlacements;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Reports.StandingsReport;
 
@@ -107,19 +108,19 @@ internal static class StagePlacementReport
         {
             if (row.SeasonId != league.SeasonId)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {row.StageNumber} references season id {row.SeasonId}; cross-season leakage is forbidden.");
             }
 
             if (row.LeagueId != league.Id)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {row.StageNumber} references league id {row.LeagueId}; cross-league leakage is forbidden.");
             }
 
             if (row.StageNumber < 1 || row.StageNumber > rules.StagesPerSeason)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' has corrupt stage {row.StageNumber}; expected 1..{rules.StagesPerSeason}.");
             }
         }
@@ -137,7 +138,7 @@ internal static class StagePlacementReport
         {
             if (stageNumbers[i] != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' has non-contiguous stage history; expected stages 1..{stageNumbers.Count} without gaps.");
             }
         }
@@ -145,7 +146,7 @@ internal static class StagePlacementReport
         int distinctPairs = standings.Select(r => (r.SaveAthleteId, r.StageNumber)).Distinct().Count();
         if (distinctPairs != standings.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' has duplicate (athleteId, stageNumber) stage standings.");
         }
     }
@@ -165,13 +166,13 @@ internal static class StagePlacementReport
             HashSet<int> athletes = group.Select(r => r.SaveAthleteId).ToHashSet();
             if (athletes.Count != roster.Count)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {group.Key} must cover exactly {roster.Count} roster athletes, was {athletes.Count}.");
             }
 
             if (!athletes.SetEquals(roster))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {group.Key} does not match the season roster.");
             }
         }
@@ -205,13 +206,13 @@ internal static class StagePlacementReport
         {
             if (stage.SeasonId != league.SeasonId || stage.LeagueId != league.Id)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} cursor references another season or league; cross-season leakage is forbidden.");
             }
 
             if (!cursors.TryAdd(stage.StageNumber, stage))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' has duplicate stage {stage.StageNumber} cursors.");
             }
         }
@@ -235,19 +236,19 @@ internal static class StagePlacementReport
         {
             if (!cursors.TryGetValue(stageNumber, out StageEntity? cursor))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} has standings without a matching stage cursor; corrupted sporting state.");
             }
 
             if (!cursor.IsComplete)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} is not marked complete; an in-progress stage must never be exported as completed.");
             }
 
             if (cursor.CompletedRounds != rules.RoundsPerStage)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} is marked complete with {cursor.CompletedRounds} rounds; expected {rules.RoundsPerStage}.");
             }
 
@@ -255,7 +256,7 @@ internal static class StagePlacementReport
             {
                 if (row.StageId != cursor.Id)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"League '{league.Name}' stage {stageNumber} standing references stage id {row.StageId}; expected cursor id {cursor.Id}.");
                 }
             }
@@ -276,7 +277,7 @@ internal static class StagePlacementReport
         {
             if (stage.IsComplete && !standingNumbers.Contains(stage.StageNumber))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} is marked complete but has no stage standings; corrupted sporting state.");
             }
         }
@@ -292,7 +293,7 @@ internal static class StagePlacementReport
         HashSet<int> athletes = rows.Select(r => r.SaveAthleteId).ToHashSet();
         if (athletes.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' final table must cover 32 distinct athletes, was {athletes.Count} distinct of {rows.Count} rows; corrupted sporting state.");
         }
 
@@ -300,13 +301,13 @@ internal static class StagePlacementReport
         {
             if (row.SeasonId != league.SeasonId)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' final rank {row.SeasonRank} references season id {row.SeasonId}; cross-season leakage is forbidden.");
             }
 
             if (row.LeagueId != league.Id)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' final rank {row.SeasonRank} references league id {row.LeagueId}; cross-league leakage is forbidden.");
             }
         }
@@ -325,7 +326,7 @@ internal static class StagePlacementReport
         HashSet<int> placementAthletes = placements.Select(c => c.AthleteId).ToHashSet();
         if (!finalAthletes.SetEquals(placementAthletes))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' final table roster does not match the persisted stage-placement roster; corrupted sporting state.");
         }
     }
@@ -410,7 +411,7 @@ internal static class StagePlacementReport
             {
                 if (!ranks.TryGetValue((row.AthleteId, stage), out int rank))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"League table athlete {row.AthleteId} has no persisted placement for completed stage {stage}; corrupted sporting state.");
                 }
 

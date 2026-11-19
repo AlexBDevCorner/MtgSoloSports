@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Cups.GetColorCupSelection;
@@ -80,7 +81,7 @@ public sealed class GetColorCupSelectionHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Color Cup selection references an unknown season.");
+            throw new SaveCorruptionException("Color Cup selection references an unknown season.");
         }
 
         return latest;

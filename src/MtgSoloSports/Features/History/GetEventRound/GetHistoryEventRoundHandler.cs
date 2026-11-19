@@ -2,6 +2,7 @@ using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.History.GetEventRound;
@@ -189,7 +190,7 @@ public sealed class GetHistoryEventRoundHandler
 
             if (matches.Count > 1)
             {
-                throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} has corrupt duplicate rounds.");
+                throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} has corrupt duplicate rounds.");
             }
 
             return matches[0];
@@ -209,7 +210,7 @@ public sealed class GetHistoryEventRoundHandler
 
             if (staged.Count > 1)
             {
-                throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} has corrupt duplicate rounds.");
+                throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} has corrupt duplicate rounds.");
             }
 
             return staged[0];

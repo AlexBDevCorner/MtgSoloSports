@@ -22,7 +22,7 @@ public static class SelectionCareerPrestige
         ArgumentNullException.ThrowIfNull(scores);
         if (athleteId <= 0)
         {
-            throw new InvalidOperationException($"Selection prestige has corrupt athlete {athleteId}.");
+            throw new SaveCorruptionException($"Selection prestige has corrupt athlete {athleteId}.");
         }
 
         return scores.TryGetValue(athleteId, out CareerPerformanceScorer.AthleteCareerScore? score)
@@ -45,7 +45,7 @@ public static class SelectionCareerPrestige
         ArgumentNullException.ThrowIfNull(scores);
         if (athleteId <= 0)
         {
-            throw new InvalidOperationException($"Selection prestige has corrupt athlete {athleteId}.");
+            throw new SaveCorruptionException($"Selection prestige has corrupt athlete {athleteId}.");
         }
 
         if (!scores.TryGetValue(athleteId, out CareerPerformanceScorer.AthleteCareerScore? score))
@@ -82,7 +82,7 @@ public static class SelectionCareerPrestige
                 + score.ChaosCupIndividualPoints;
             if (sum != score.TotalPoints)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Career prestige breakdown for athlete {athleteId} sums to {sum} but total raw is {score.TotalPoints}.");
             }
         }
@@ -93,7 +93,7 @@ public static class SelectionCareerPrestige
             || score.ColorCupTeamPoints < 0 || score.TypeCupTeamPoints < 0
             || score.ChaosCupIndividualPoints < 0)
         {
-            throw new InvalidOperationException($"Career prestige for athlete {athleteId} has corrupt negative points.");
+            throw new SaveCorruptionException($"Career prestige for athlete {athleteId} has corrupt negative points.");
         }
     }
 }

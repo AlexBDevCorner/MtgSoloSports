@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ListCupEditions;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 
@@ -212,7 +213,7 @@ internal static class UniverseAlmanacChaosQueries
         if (!finalsBySeason.TryGetValue(edition.SourceSeasonId, out List<ChaosCupGroupStandingEntity>? finals)
             || finals.Count != ChaosCupFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos Cup for Season {edition.SourceSeasonNumber} is marked complete but misses its 32-athlete Final.");
         }
 
@@ -221,7 +222,7 @@ internal static class UniverseAlmanacChaosQueries
         {
             if (ordered[rank - 1].GroupRank != rank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Chaos Cup Final for Season {edition.SourceSeasonNumber} must cover ranks 1..{ChaosCupFormat.FinalFieldSize} exactly once.");
             }
         }
@@ -314,7 +315,7 @@ internal static class UniverseAlmanacChaosQueries
         ArgumentNullException.ThrowIfNull(podium);
         if (!int.TryParse(podium.TeamKey, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int athleteId))
         {
-            throw new InvalidOperationException($"Chaos Cup Final podium for Season {seasonNumber} has corrupt athlete key '{podium.TeamKey}'.");
+            throw new SaveCorruptionException($"Chaos Cup Final podium for Season {seasonNumber} has corrupt athlete key '{podium.TeamKey}'.");
         }
 
         return athleteId;
@@ -368,7 +369,7 @@ internal static class UniverseAlmanacChaosQueries
             int athleteId = ParseAthlete(podium, edition.SourceSeasonNumber);
             if (!entrantsByAthlete.TryGetValue(athleteId, out ChaosCupEntrantEntity? entrant))
             {
-                throw new InvalidOperationException($"Chaos Cup Final medalist {athleteId} for Season {edition.SourceSeasonNumber} is outside the frozen field.");
+                throw new SaveCorruptionException($"Chaos Cup Final medalist {athleteId} for Season {edition.SourceSeasonNumber} is outside the frozen field.");
             }
 
             SportingColor color = (SportingColor)entrant.SportingColor;

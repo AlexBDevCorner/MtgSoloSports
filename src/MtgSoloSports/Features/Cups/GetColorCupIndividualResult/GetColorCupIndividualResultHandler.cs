@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
@@ -84,7 +85,7 @@ public sealed class GetColorCupIndividualResultHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Color Cup individual event references an unknown season.");
+            throw new SaveCorruptionException("Color Cup individual event references an unknown season.");
         }
 
         return latest;

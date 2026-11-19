@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Cups.CupHistory;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 
 namespace MtgSoloSports.Features.Cups.GetChaosCupEdition;
@@ -80,7 +81,7 @@ public sealed class GetChaosCupEditionHandler
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == latest.SourceSeasonId, cancellationToken)
             .ConfigureAwait(false);
-        return source ?? throw new InvalidOperationException("Chaos Cup edition references an unknown season.");
+        return source ?? throw new SaveCorruptionException("Chaos Cup edition references an unknown season.");
     }
 
     internal static async Task EnsureEditionAsync(
@@ -169,12 +170,12 @@ public sealed class GetChaosCupEditionHandler
             .ConfigureAwait(false);
         if (draws != 0 && draws != entrantCount)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} holds {draws} draws, expected {entrantCount}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} holds {draws} draws, expected {entrantCount}.");
         }
 
         if (standings % ChaosCupFormat.GroupSize != 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} holds {standings} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} holds {standings} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
         }
 
         string checksum = string.Empty;

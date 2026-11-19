@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.GetColorCupIndividualResult;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
@@ -101,7 +102,7 @@ public sealed class GetColorCupIndividualProgressHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Color Cup individual event references an unknown season.");
+            throw new SaveCorruptionException("Color Cup individual event references an unknown season.");
         }
 
         return latest;
@@ -141,13 +142,13 @@ public sealed class GetColorCupIndividualProgressHandler
             .ConfigureAwait(false);
         if (roundsComplete && !hasStandings)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup individual event for Season {source.SeasonNumber} has all rounds but no standings; sporting state is corrupt.");
         }
 
         if (!roundsComplete && hasStandings)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup individual event for Season {source.SeasonNumber} has standings before all rounds; sporting state is corrupt.");
         }
 
@@ -168,21 +169,21 @@ public sealed class GetColorCupIndividualProgressHandler
         ArgumentNullException.ThrowIfNull(payloads);
         if (rows.Count != payloads.Count)
         {
-            throw new InvalidOperationException("Color Cup round rows and payloads are out of sync.");
+            throw new SaveCorruptionException("Color Cup round rows and payloads are out of sync.");
         }
 
         for (int index = 0; index < rows.Count; index++)
         {
             if (rows[index].RoundNumber != index + 1 || payloads[index].RoundNumber != index + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup — individual round sequence is corrupt: expected round {index + 1}.");
             }
 
             int expectedField = ColorCupIndividualFormat.ExpectedFieldSize(index + 1, formatVersion);
             if (payloads[index].Placements.Count != expectedField)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup round {index + 1} must contain exactly {expectedField} placements, was {payloads[index].Placements.Count}.");
             }
         }
@@ -192,7 +193,7 @@ public sealed class GetColorCupIndividualProgressHandler
             HashSet<int> firstFinal = payloads[ColorCupIndividualFormat.QualifyingRounds].Placements.Select(p => p.AthleteId).ToHashSet();
             if (firstFinal.Count != ColorCupIndividualFormat.FinalFieldSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup final must hold exactly {ColorCupIndividualFormat.FinalFieldSize} qualifiers, was {firstFinal.Count}.");
             }
 
@@ -201,7 +202,7 @@ public sealed class GetColorCupIndividualProgressHandler
                 HashSet<int> roundIds = payloads[i].Placements.Select(p => p.AthleteId).ToHashSet();
                 if (!roundIds.SetEquals(firstFinal))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Color Cup — individual final round {payloads[i].RoundNumber} roster does not match the round-17 qualifiers.");
                 }
             }
@@ -590,7 +591,7 @@ public sealed class GetColorCupIndividualProgressHandler
         {
             if (!carried.TryGetValue(entry.AthleteId, out int qualifyingScore))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup finalist '{entry.Name}' has no qualifying total to carry over.");
             }
 

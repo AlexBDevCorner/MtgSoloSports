@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 
 namespace MtgSoloSports.Features.Cups.GetChaosCupRecords;
@@ -128,12 +129,12 @@ public static class ChaosCupRecordCalculator
 
             if (entrant.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Chaos record entrant references corrupt athlete {entrant.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos record entrant references corrupt athlete {entrant.SaveAthleteId}.");
             }
 
             if (!DivisionOrder.Contains(entrant.DivisionKey, StringComparer.Ordinal))
             {
-                throw new InvalidOperationException($"Chaos record entrant {entrant.SaveAthleteId} has unknown division '{entrant.DivisionKey}'.");
+                throw new SaveCorruptionException($"Chaos record entrant {entrant.SaveAthleteId} has unknown division '{entrant.DivisionKey}'.");
             }
         }
 
@@ -146,17 +147,17 @@ public static class ChaosCupRecordCalculator
 
             if (standing.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Chaos record standing references corrupt athlete {standing.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos record standing references corrupt athlete {standing.SaveAthleteId}.");
             }
 
             if (standing.StageIndex < 0 || standing.StageIndex >= ChaosCupFormat.StageCount)
             {
-                throw new InvalidOperationException($"Chaos record standing for athlete {standing.SaveAthleteId} has corrupt stage {standing.StageIndex}.");
+                throw new SaveCorruptionException($"Chaos record standing for athlete {standing.SaveAthleteId} has corrupt stage {standing.StageIndex}.");
             }
 
             if (standing.GroupRank < 1 || standing.GroupRank > ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos record standing for athlete {standing.SaveAthleteId} has corrupt rank {standing.GroupRank}.");
+                throw new SaveCorruptionException($"Chaos record standing for athlete {standing.SaveAthleteId} has corrupt rank {standing.GroupRank}.");
             }
         }
     }

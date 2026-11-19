@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.History.ListStages;
 
@@ -122,7 +123,7 @@ public sealed class ListHistoryStagesHandler
         roundsByStage.TryGetValue(stage.StageNumber, out int roundCount);
         if (roundCount != stage.CompletedRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stage.StageNumber} cursor says {stage.CompletedRounds} rounds but {roundCount} round rows exist.");
         }
 
@@ -163,17 +164,17 @@ public sealed class ListHistoryStagesHandler
         ArgumentNullException.ThrowIfNull(league);
         if (stage.StageNumber < 1)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
         }
 
         if (stage.CompletedRounds < 0 || stage.CompletedRounds > roundsPerStage)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
         }
 
         if (stage.IsComplete && stage.CompletedRounds != roundsPerStage)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} is marked complete with {stage.CompletedRounds} rounds.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} is marked complete with {stage.CompletedRounds} rounds.");
         }
     }
 }

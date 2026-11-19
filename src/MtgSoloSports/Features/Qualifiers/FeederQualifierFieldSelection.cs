@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -51,12 +52,12 @@ public static class FeederQualifierFieldSelection
 
         if (boundary != QualifierBoundary.Feeder1Feeder2 && boundary != QualifierBoundary.Feeder2Feeder3)
         {
-            throw new InvalidOperationException($"Feeder qualifier boundary must be F1↔F2 or F2↔F3, was {boundary}.");
+            throw new SaveCorruptionException($"Feeder qualifier boundary must be F1↔F2 or F2↔F3, was {boundary}.");
         }
 
         if (upperRows.Count != rules.LeagueSize || lowerRows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier source leagues must each hold exactly {rules.LeagueSize} final standings.");
         }
 
@@ -96,10 +97,10 @@ public static class FeederQualifierFieldSelection
         for (int rank = firstRank; rank <= lastRank; rank++)
         {
             SeasonStandingEntity row = rows.SingleOrDefault(r => r.SeasonRank == rank)
-                ?? throw new InvalidOperationException($"League '{league.Name}' is missing final season rank {rank}.");
+                ?? throw new SaveCorruptionException($"League '{league.Name}' is missing final season rank {rank}.");
             if (row.LeagueId != league.Id)
             {
-                throw new InvalidOperationException($"Standing for rank {rank} references league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Standing for rank {rank} references league {row.LeagueId}.");
             }
 
             picks.Add(ToPick(row, league.Id, role, membershipByAthlete, namesByAthlete));
@@ -117,12 +118,12 @@ public static class FeederQualifierFieldSelection
     {
         if (!membershipByAthlete.TryGetValue(row.SaveAthleteId, out SeasonMembershipEntity? membership))
         {
-            throw new InvalidOperationException($"Qualifier athlete {row.SaveAthleteId} has no source membership.");
+            throw new SaveCorruptionException($"Qualifier athlete {row.SaveAthleteId} has no source membership.");
         }
 
         if (!namesByAthlete.TryGetValue(row.SaveAthleteId, out string? name) || string.IsNullOrWhiteSpace(name))
         {
-            throw new InvalidOperationException($"Qualifier athlete {row.SaveAthleteId} has no name.");
+            throw new SaveCorruptionException($"Qualifier athlete {row.SaveAthleteId} has no name.");
         }
 
         return new FeederPick(

@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Cups.ListCupEditions;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Reports.UniverseAlmanac;
@@ -192,7 +193,7 @@ internal static class UniverseAlmanacCupQueries
                         && Medal != (int)ColorCupMedal.Silver
                         && Medal != (int)ColorCupMedal.Bronze)
                     {
-                        throw new InvalidOperationException(
+                        throw new SaveCorruptionException(
                             $"Color Cup individual medal for Season {Season} has unknown medal {Medal}.");
                     }
                 }

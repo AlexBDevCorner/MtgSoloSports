@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Stages;
 
 namespace MtgSoloSports.Features.History.GetStageStandings;
@@ -138,14 +139,14 @@ public sealed class GetHistoryStageStandingsHandler
         ArgumentNullException.ThrowIfNull(league);
         if (rows.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stageNumber} must hold exactly 32 standings, was {rows.Count}.");
         }
 
         HashSet<int> ranks = rows.Select(r => r.StageRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, 32)))
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stageNumber} must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stageNumber} must cover ranks 1..32 exactly once.");
         }
     }
 
@@ -176,7 +177,7 @@ public sealed class GetHistoryStageStandingsHandler
     {
         if (!names.TryGetValue(row.SaveAthleteId, out string? name))
         {
-            throw new InvalidOperationException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
         }
 
         return new HistoryStageStandingEntry(

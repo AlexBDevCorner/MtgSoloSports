@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Simulation.GetStageRounds;
@@ -104,7 +105,7 @@ public sealed class GetStageRoundsHandler
         bool isComplete = query.Stage?.IsComplete ?? false;
         if (query.Stage is not null && query.Stage.CompletedRounds != completedRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{query.League.Name}' stage {stageNumber} cursor says {query.Stage.CompletedRounds} rounds but {completedRounds} round rows exist.");
         }
 
@@ -128,7 +129,7 @@ public sealed class GetStageRoundsHandler
 
         if (rounds.Count > rules.RoundsPerStage)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stageNumber} has {rounds.Count} persisted rounds, more than {rules.RoundsPerStage}.");
         }
 
@@ -137,29 +138,29 @@ public sealed class GetStageRoundsHandler
             RoundEntity round = rounds[i];
             if (round.RoundNumber != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} has non-sequential round rows; rounds must advance in order.");
             }
 
             if (round.StageNumber != stageNumber)
             {
-                throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Persisted round {round.Id} has corrupt stage identity.");
             }
 
             RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             if (document.StageNumber != stageNumber || document.RoundNumber != round.RoundNumber)
             {
-                throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage/round identity.");
+                throw new SaveCorruptionException($"Persisted round {round.Id} has corrupt stage/round identity.");
             }
 
             if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Persisted round {round.RoundNumber} payload checksum mismatch.");
+                throw new SaveCorruptionException($"Persisted round {round.RoundNumber} payload checksum mismatch.");
             }
 
             if (document.Placements.Count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stageNumber} round {round.RoundNumber} must contain exactly {rules.LeagueSize} placements, was {document.Placements.Count}.");
             }
         }
@@ -201,7 +202,7 @@ public sealed class GetStageRoundsHandler
             {
                 if (!cards.TryGetValue(placement.AthleteId, out SaveAthleteEntity? card))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"League '{league.Name}' round {round.RoundNumber} references unknown athlete {placement.AthleteId}.");
                 }
 

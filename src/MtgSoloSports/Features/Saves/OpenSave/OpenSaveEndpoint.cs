@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Saves.OpenSave;
 
@@ -21,6 +22,12 @@ public static class OpenSaveEndpoint
             catch (SaveNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure with a clear
+                // message, never a body-less generic 500 (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
         });
     }

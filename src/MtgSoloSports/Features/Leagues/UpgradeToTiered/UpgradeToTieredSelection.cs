@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -46,7 +47,7 @@ public static class UpgradeToTieredSelection
 
         if (inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade requires exactly {rules.RegularLeagueCount} color inputs, was {inputs.Count}.");
         }
 
@@ -77,7 +78,7 @@ public static class UpgradeToTieredSelection
 
         if (ordered.Count < 2 * perDivision)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {input.Color} needs 64 pool athletes to seed F2/F3 but its pool holds only {ordered.Count}.");
         }
 
@@ -96,17 +97,17 @@ public static class UpgradeToTieredSelection
         {
             if (candidate.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(candidate.Name))
             {
-                throw new InvalidOperationException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
             }
 
             if (candidate.SportingColor != input.Color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Pool athlete {candidate.SaveAthleteId} color {candidate.SportingColor} does not match pool {input.Color}.");
             }
         }
@@ -119,7 +120,7 @@ public static class UpgradeToTieredSelection
         {
             if (!seen.Add(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Tier upgrade seeds duplicate athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Tier upgrade seeds duplicate athlete id {candidate.SaveAthleteId}.");
             }
         }
     }

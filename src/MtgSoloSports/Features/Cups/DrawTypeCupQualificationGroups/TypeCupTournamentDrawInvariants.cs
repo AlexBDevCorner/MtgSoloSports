@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -35,7 +36,7 @@ public static class TypeCupTournamentDrawInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (draws.Count == 0)
         {
-            throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} has no rows.");
+            throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} has no rows.");
         }
 
         List<string> selectedTypes = selection
@@ -61,18 +62,18 @@ public static class TypeCupTournamentDrawInvariants
         {
             if (!string.Equals(row.DrawChecksum, expectedChecksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} has a corrupt checksum.");
+                throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} has a corrupt checksum.");
             }
 
             if (!string.Equals(row.DrawChecksum, first.DrawChecksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} has inconsistent checksums.");
+                throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} has inconsistent checksums.");
             }
         }
 
         if (!string.Equals(first.DrawChecksum, expectedChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} checksum does not match its assignments.");
+            throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} checksum does not match its assignments.");
         }
     }
 
@@ -85,7 +86,7 @@ public static class TypeCupTournamentDrawInvariants
         {
             if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup draw row {row.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Type Cup draw row {row.Id} has corrupt source linkage.");
             }
 
             if (row.FieldTeamCount != first.FieldTeamCount
@@ -97,22 +98,22 @@ public static class TypeCupTournamentDrawInvariants
                 || row.RngAfterState != first.RngAfterState
                 || row.RngAfterStream != first.RngAfterStream)
             {
-                throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} has inconsistent field metadata.");
+                throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} has inconsistent field metadata.");
             }
 
             if (string.IsNullOrWhiteSpace(row.CreatureType))
             {
-                throw new InvalidOperationException($"Type Cup draw row {row.Id} has an empty creature type.");
+                throw new SaveCorruptionException($"Type Cup draw row {row.Id} has an empty creature type.");
             }
 
             if (row.QualificationGroup < 1 || row.QualificationGroup > row.QualificationGroupCount)
             {
-                throw new InvalidOperationException($"Type Cup draw row {row.Id} group {row.QualificationGroup} is out of range.");
+                throw new SaveCorruptionException($"Type Cup draw row {row.Id} group {row.QualificationGroup} is out of range.");
             }
 
             if (row.RngAfterState == row.RngBeforeState && row.RngAfterStream == row.RngBeforeStream)
             {
-                throw new InvalidOperationException($"Type Cup draw for Season {source.SeasonNumber} must advance the save RNG.");
+                throw new SaveCorruptionException($"Type Cup draw for Season {source.SeasonNumber} must advance the save RNG.");
             }
         }
     }
@@ -124,19 +125,19 @@ public static class TypeCupTournamentDrawInvariants
     {
         if (first.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Type Cup draw rules version must be {rules.Version}, was {first.RulesVersion}.");
+            throw new SaveCorruptionException($"Type Cup draw rules version must be {rules.Version}, was {first.RulesVersion}.");
         }
 
         if (first.TournamentFormatVersion != RulesV1.FixedQuotaTypeCupTournamentFormatVersion
             && first.TournamentFormatVersion != RulesV1.WildcardTypeCupTournamentFormatVersion)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup draw format version must be v{RulesV1.FixedQuotaTypeCupTournamentFormatVersion} (fixed quotas) or v{RulesV1.WildcardTypeCupTournamentFormatVersion} (wildcards), was {first.TournamentFormatVersion}.");
         }
 
         if (first.FieldTeamCount != draws.Select(d => d.CreatureType).Distinct(StringComparer.Ordinal).Count())
         {
-            throw new InvalidOperationException("Type Cup draw field count does not match its distinct teams.");
+            throw new SaveCorruptionException("Type Cup draw field count does not match its distinct teams.");
         }
     }
 
@@ -150,13 +151,13 @@ public static class TypeCupTournamentDrawInvariants
             List<TypeCupTournamentDrawEntity> members = draws.Where(d => d.QualificationGroup == group).ToList();
             if (members.Count == 0)
             {
-                throw new InvalidOperationException($"Type Cup draw group {group} has no teams.");
+                throw new SaveCorruptionException($"Type Cup draw group {group} has no teams.");
             }
 
             int size = members[0].GroupSize;
             if (members.Any(m => m.GroupSize != size) || size != members.Count)
             {
-                throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent size metadata.");
+                throw new SaveCorruptionException($"Type Cup draw group {group} has inconsistent size metadata.");
             }
 
             sizes.Add(size);
@@ -176,7 +177,7 @@ public static class TypeCupTournamentDrawInvariants
             int quota = members[0].FinalPlacesForGroup;
             if (members.Any(m => m.FinalPlacesForGroup != quota))
             {
-                throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent quota metadata.");
+                throw new SaveCorruptionException($"Type Cup draw group {group} has inconsistent quota metadata.");
             }
 
             quotas.Add(quota);

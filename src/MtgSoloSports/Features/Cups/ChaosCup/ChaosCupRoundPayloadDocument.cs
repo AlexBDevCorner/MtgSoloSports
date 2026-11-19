@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.ChaosCup;
 
@@ -51,7 +52,7 @@ public sealed record ChaosCupRoundPayloadDocument(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         ChaosCupRoundPayloadDocument? document = JsonSerializer.Deserialize<ChaosCupRoundPayloadDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Chaos Cup round payload is empty.");
+        return document ?? throw new SaveCorruptionException("Chaos Cup round payload is empty.");
     }
 
     /// <summary>
@@ -68,7 +69,7 @@ public sealed record ChaosCupRoundPayloadDocument(
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Chaos Cup round payload is corrupt and cannot be replayed.", ex);
+            throw new SaveCorruptionException("Chaos Cup round payload is corrupt and cannot be replayed.", ex);
         }
     }
 }

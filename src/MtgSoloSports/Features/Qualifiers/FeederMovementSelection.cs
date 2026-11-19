@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Qualifiers;
@@ -57,7 +58,7 @@ public static class FeederMovementSelection
         {
             if (!f2ByColor.TryGetValue(color, out LeagueEntity? f2) || !f3ByColor.TryGetValue(color, out LeagueEntity? f3))
             {
-                throw new InvalidOperationException($"Tiered transition is missing F2/F3 for color {color}.");
+                throw new SaveCorruptionException($"Tiered transition is missing F2/F3 for color {color}.");
             }
 
             LeagueEntity f1 = f1ByColor[color];
@@ -116,12 +117,12 @@ public static class FeederMovementSelection
     {
         if (!standingsByLeague.TryGetValue(league.Id, out IReadOnlyList<SeasonStandingEntity>? rows))
         {
-            throw new InvalidOperationException($"League '{league.Name}' has no final standings.");
+            throw new SaveCorruptionException($"League '{league.Name}' has no final standings.");
         }
 
         if (rows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
         }
 
@@ -140,10 +141,10 @@ public static class FeederMovementSelection
         for (int rank = firstRank; rank <= lastRank; rank++)
         {
             SeasonStandingEntity row = rows.SingleOrDefault(r => r.SeasonRank == rank)
-                ?? throw new InvalidOperationException($"League {leagueId} is missing final season rank {rank}.");
+                ?? throw new SaveCorruptionException($"League {leagueId} is missing final season rank {rank}.");
             if (row.LeagueId != leagueId)
             {
-                throw new InvalidOperationException($"Standing for rank {rank} references league {row.LeagueId}, expected {leagueId}.");
+                throw new SaveCorruptionException($"Standing for rank {rank} references league {row.LeagueId}, expected {leagueId}.");
             }
 
             picks.Add(new FeederPick(row.SaveAthleteId, leagueId, row.SeasonRank, color, kind));

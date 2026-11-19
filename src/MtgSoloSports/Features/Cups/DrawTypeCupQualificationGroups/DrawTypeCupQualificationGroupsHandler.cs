@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -269,7 +270,7 @@ public sealed class DrawTypeCupQualificationGroupsHandler
     {
         if (draws.Count != 0)
         {
-            throw new InvalidOperationException($"Direct-Final Season {source.SeasonNumber} must not persist a qualification draw.");
+            throw new SaveCorruptionException($"Direct-Final Season {source.SeasonNumber} must not persist a qualification draw.");
         }
 
         return new DrawTypeCupQualificationGroupsResponse(
@@ -402,7 +403,7 @@ public sealed class DrawTypeCupQualificationGroupsHandler
             .ToHashSet();
         if (!beforeKeys.SetEquals(afterKeys))
         {
-            throw new InvalidOperationException("Type Cup draw must not change squad membership.");
+            throw new SaveCorruptionException("Type Cup draw must not change squad membership.");
         }
     }
 
@@ -441,7 +442,7 @@ public sealed class DrawTypeCupQualificationGroupsHandler
             .ConfigureAwait(false);
         if (latest is null || !latest.IsComplete)
         {
-            throw new InvalidOperationException("Type Cup selection references an unknown or incomplete season.");
+            throw new SaveCorruptionException("Type Cup selection references an unknown or incomplete season.");
         }
 
         return latest;

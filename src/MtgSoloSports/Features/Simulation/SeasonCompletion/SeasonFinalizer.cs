@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Seasons;
@@ -151,7 +152,7 @@ public static class SeasonFinalizer
     {
         if (season.IsComplete)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} is already finalized.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} is already finalized.");
         }
 
         bool hasStandings = await context.SeasonStandings
@@ -159,7 +160,7 @@ public static class SeasonFinalizer
             .ConfigureAwait(false);
         if (hasStandings)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} already has season standings.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} already has season standings.");
         }
     }
 
@@ -175,7 +176,7 @@ public static class SeasonFinalizer
             .ConfigureAwait(false);
         if (leagues.Count == 0)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} has no active leagues.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} has no active leagues.");
         }
 
         return leagues;
@@ -251,7 +252,7 @@ public static class SeasonFinalizer
     {
         if (rows.Count != rules.StagesPerSeason * rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must have {rules.StagesPerSeason * rules.LeagueSize} stage standings for finalization, was {rows.Count}.");
         }
 
@@ -274,7 +275,7 @@ public static class SeasonFinalizer
     {
         if (stageRows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stageNumber} must have {rules.LeagueSize} standings, was {stageRows.Count}.");
         }
 
@@ -295,18 +296,18 @@ public static class SeasonFinalizer
     {
         if (row.StageNumber != stageNumber)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt stage identity.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage identity.");
         }
 
         if (!names.TryGetValue(row.SaveAthleteId, out string? name))
         {
-            throw new InvalidOperationException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
         }
 
         List<int>? roundCounts = JsonSerializer.Deserialize<List<int>>(row.RoundPlaceCountsJson);
         if (roundCounts is null)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stageNumber} has corrupt round counts.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stageNumber} has corrupt round counts.");
         }
 
         return new SeasonStageEntry(
@@ -369,7 +370,7 @@ public static class SeasonFinalizer
                 cancellationToken).ConfigureAwait(false);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must persist exactly {rules.LeagueSize} season standings, was {count}.");
             }
 
@@ -378,13 +379,13 @@ public static class SeasonFinalizer
                 cancellationToken).ConfigureAwait(false);
             if (champions != 1)
             {
-                throw new InvalidOperationException($"League '{league.Name}' must have exactly one champion, was {champions}.");
+                throw new SaveCorruptionException($"League '{league.Name}' must have exactly one champion, was {champions}.");
             }
         }
 
         if (!season.IsComplete)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} must be marked complete after finalization.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} must be marked complete after finalization.");
         }
     }
 }

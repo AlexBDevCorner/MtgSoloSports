@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 
@@ -32,13 +33,13 @@ public static class AdvanceChaosCupStageSelection
         ArgumentNullException.ThrowIfNull(rng);
         if (stageIndex < 1 || stageIndex >= ChaosCupFormat.StageCount)
         {
-            throw new InvalidOperationException($"Chaos Cup random draw covers stages 1..{ChaosCupFormat.StageCount - 1}, was {stageIndex}.");
+            throw new SaveCorruptionException($"Chaos Cup random draw covers stages 1..{ChaosCupFormat.StageCount - 1}, was {stageIndex}.");
         }
 
         int expected = ChaosCupFormat.EntrantCountForStage(stageIndex);
         if (advancers.Count != expected)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must draw exactly {expected} advancers, was {advancers.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} must draw exactly {expected} advancers, was {advancers.Count}.");
         }
 
         List<StageAdvancer> ordered = advancers
@@ -68,17 +69,17 @@ public static class AdvanceChaosCupStageSelection
         {
             if (advancer.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} advancer has corrupt athlete id {advancer.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} advancer has corrupt athlete id {advancer.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(advancer.Name))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} advancer {advancer.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} advancer {advancer.SaveAthleteId} has an empty name.");
             }
 
             if (!seen.Add(advancer.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} assigns athlete {advancer.SaveAthleteId} more than once.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} assigns athlete {advancer.SaveAthleteId} more than once.");
             }
         }
     }

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 
@@ -36,36 +37,36 @@ public static class ChaosCupGroupSimulation
         ArgumentNullException.ThrowIfNull(stageDraws);
         if (stageDraws.Count == 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has no persisted draw to seed group {groupNumber}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} has no persisted draw to seed group {groupNumber}.");
         }
 
         int groupCount = ChaosCupFormat.GroupCountForStage(stageIndex);
         if (groupNumber < 1 || groupNumber > groupCount)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} is out of range (1..{groupCount}).");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} is out of range (1..{groupCount}).");
         }
 
         if (string.IsNullOrWhiteSpace(edition.EditionChecksum))
         {
-            throw new InvalidOperationException("Chaos Cup edition has an empty checksum and cannot seed group RNG.");
+            throw new SaveCorruptionException("Chaos Cup edition has an empty checksum and cannot seed group RNG.");
         }
 
         string drawChecksum = stageDraws[0].DrawChecksum;
         if (string.IsNullOrWhiteSpace(drawChecksum))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has an empty checksum and cannot seed group RNG.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has an empty checksum and cannot seed group RNG.");
         }
 
         foreach (ChaosCupDrawEntity row in stageDraws)
         {
             if (row.StageIndex != stageIndex)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw contains a foreign stage {row.StageIndex} row.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw contains a foreign stage {row.StageIndex} row.");
             }
 
             if (!string.Equals(row.DrawChecksum, drawChecksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has inconsistent checksum metadata.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has inconsistent checksum metadata.");
             }
         }
 

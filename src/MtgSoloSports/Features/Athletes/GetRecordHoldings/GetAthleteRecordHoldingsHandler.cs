@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Athletes.GetRecordHoldings;
 
@@ -224,7 +225,7 @@ public sealed class GetAthleteRecordHoldingsHandler
 
         if (row.StageWins < 0 || row.RoundWins < 0)
         {
-            throw new InvalidOperationException($"Athlete {athleteId} has corrupt negative sporting value.");
+            throw new SaveCorruptionException($"Athlete {athleteId} has corrupt negative sporting value.");
         }
 
         return new CareerProbe(row.StageWins, row.RoundWins, row.CurrentEffectiveBonusThousandths);
@@ -593,7 +594,7 @@ public sealed class GetAthleteRecordHoldingsHandler
         {
             if (row.StageNumber < 1 || row.StageNumber > 32)
             {
-                throw new InvalidOperationException($"Stage standing for athlete {row.SaveAthleteId} has corrupt stage {row.StageNumber}.");
+                throw new SaveCorruptionException($"Stage standing for athlete {row.SaveAthleteId} has corrupt stage {row.StageNumber}.");
             }
         }
 
@@ -624,7 +625,7 @@ public sealed class GetAthleteRecordHoldingsHandler
         {
             if (win.StageNumber < 1 || win.StageNumber > 32)
             {
-                throw new InvalidOperationException($"Stage standing for athlete {athleteId} has corrupt stage {win.StageNumber}.");
+                throw new SaveCorruptionException($"Stage standing for athlete {athleteId} has corrupt stage {win.StageNumber}.");
             }
         }
 

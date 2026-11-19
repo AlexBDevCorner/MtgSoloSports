@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -159,12 +160,12 @@ public sealed record RulesV2SnapshotDocument(
 
         if (rules.Version != Version)
         {
-            throw new InvalidOperationException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
+            throw new SaveCorruptionException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
         }
 
         if (!string.Equals(rules.Algorithm, Algorithm, StringComparison.Ordinal) || rules.AlgorithmVersion != AlgorithmVersion)
         {
-            throw new InvalidOperationException("Rules RNG algorithm mismatch.");
+            throw new SaveCorruptionException("Rules RNG algorithm mismatch.");
         }
 
         return rules;
@@ -232,6 +233,6 @@ public sealed record RulesV2SnapshotDocument(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         RulesV2SnapshotDocument? document = JsonSerializer.Deserialize<RulesV2SnapshotDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Rules snapshot payload is empty.");
+        return document ?? throw new SaveCorruptionException("Rules snapshot payload is empty.");
     }
 }

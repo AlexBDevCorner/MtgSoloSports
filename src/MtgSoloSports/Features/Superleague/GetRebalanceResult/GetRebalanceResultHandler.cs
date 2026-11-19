@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Superleague.RebalanceFeeders;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -96,7 +97,7 @@ public sealed class GetRebalanceResultHandler
             .ConfigureAwait(false);
         if (latestNext is null || latestSource is null)
         {
-            throw new InvalidOperationException("Rebalancing references unknown seasons.");
+            throw new SaveCorruptionException("Rebalancing references unknown seasons.");
         }
 
         return (latestSource, latestNext);
@@ -174,7 +175,7 @@ public sealed class GetRebalanceResultHandler
             .ConfigureAwait(false);
         if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
@@ -185,7 +186,7 @@ public sealed class GetRebalanceResultHandler
                 .ConfigureAwait(false);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{feeder.Name}' must contain exactly {rules.LeagueSize} athletes after rebalancing, was {count}.");
             }
         }
@@ -295,7 +296,7 @@ public sealed class GetRebalanceResultHandler
             .ConfigureAwait(false);
         if (nextSuperleague is null)
         {
-            throw new InvalidOperationException($"Season {next.SeasonNumber} has no Superleague.");
+            throw new SaveCorruptionException($"Season {next.SeasonNumber} has no Superleague.");
         }
 
         List<SeasonMembershipEntity> sourceMemberships = await context.SeasonMemberships
@@ -441,7 +442,7 @@ public sealed class GetRebalanceResultHandler
         int viaTransfers = rules.LeagueSize - transfers.Departed + transfers.Returned;
         if (viaTransfers != provisional)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{feeder.Name}' provisional count {provisional} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {viaTransfers}).");
         }
 

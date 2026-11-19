@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
@@ -144,7 +145,7 @@ public static class RebalanceFeedersSelection
 
         if (inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Rebalancing requires exactly {rules.RegularLeagueCount} color inputs, was {inputs.Count}.");
         }
 
@@ -185,7 +186,7 @@ public static class RebalanceFeedersSelection
 
         if (inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Rebalancing requires exactly {rules.RegularLeagueCount} color inputs, was {inputs.Count}.");
         }
 
@@ -263,7 +264,7 @@ public static class RebalanceFeedersSelection
 
         if (f1.Count != rules.LeagueSize || f2.Count != rules.LeagueSize || f3.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {input.Color} cascade failed to restore 32/32/32, was {f1.Count}/{f2.Count}/{f3.Count}.");
         }
 
@@ -418,7 +419,7 @@ public static class RebalanceFeedersSelection
         ArgumentNullException.ThrowIfNull(exclude);
         if (need <= 0)
         {
-            throw new InvalidOperationException($"Structural up-move need must be positive, was {need}.");
+            throw new SaveCorruptionException($"Structural up-move need must be positive, was {need}.");
         }
 
         List<TierMember> eligible = source.Where(m => !exclude.Contains(m.SaveAthleteId)).ToList();
@@ -436,7 +437,7 @@ public static class RebalanceFeedersSelection
             .ToList();
         if (ordered.Count < need)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {color} needs {need} upward structural athletes but its source division holds only {ordered.Count}.");
         }
 
@@ -456,7 +457,7 @@ public static class RebalanceFeedersSelection
         ArgumentNullException.ThrowIfNull(exclude);
         if (need <= 0)
         {
-            throw new InvalidOperationException($"Structural down-move need must be positive, was {need}.");
+            throw new SaveCorruptionException($"Structural down-move need must be positive, was {need}.");
         }
 
         List<TierMember> eligible = excludeMoved
@@ -478,7 +479,7 @@ public static class RebalanceFeedersSelection
             .ToList();
         if (ordered.Count < need)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {color} must move {need} athletes downward but holds only {ordered.Count} eligible retained athletes; returning/protected athletes are never displaced before retained alternatives and corrupt rosters fail loudly.");
         }
 
@@ -492,7 +493,7 @@ public static class RebalanceFeedersSelection
         {
             if (!seen.Add(member.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Rebalancing for {input.Color} contains duplicate athlete id {member.SaveAthleteId} across feeder divisions.");
             }
 
@@ -504,28 +505,28 @@ public static class RebalanceFeedersSelection
         {
             if (candidate.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(candidate.Name))
             {
-                throw new InvalidOperationException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
             }
 
             if (candidate.SportingColor != input.Color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Pool athlete {candidate.SaveAthleteId} color {candidate.SportingColor} does not match league {input.Color}.");
             }
 
             if (!poolIds.Add(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Pool for {input.Color} contains duplicate athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Pool for {input.Color} contains duplicate athlete id {candidate.SaveAthleteId}.");
             }
 
             if (seen.Contains(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {candidate.SaveAthleteId} appears in both the {input.Color} feeder pyramid and its common pool.");
             }
         }
@@ -536,17 +537,17 @@ public static class RebalanceFeedersSelection
         ArgumentNullException.ThrowIfNull(member);
         if (member.SaveAthleteId == 0)
         {
-            throw new InvalidOperationException($"League {color} contains invalid athlete id 0.");
+            throw new SaveCorruptionException($"League {color} contains invalid athlete id 0.");
         }
 
         if (string.IsNullOrWhiteSpace(member.Name))
         {
-            throw new InvalidOperationException($"Athlete {member.SaveAthleteId} has an empty name.");
+            throw new SaveCorruptionException($"Athlete {member.SaveAthleteId} has an empty name.");
         }
 
         if (member.SourceRank < 1 || member.SourceRank > rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {member.SaveAthleteId} has corrupt source rank {member.SourceRank}.");
         }
     }
@@ -556,7 +557,7 @@ public static class RebalanceFeedersSelection
     {
         if (need <= 0)
         {
-            throw new InvalidOperationException($"Draw shortfall must be positive, was {need}.");
+            throw new SaveCorruptionException($"Draw shortfall must be positive, was {need}.");
         }
 
         List<PoolCandidate> ordered = input.Pool
@@ -565,7 +566,7 @@ public static class RebalanceFeedersSelection
             .ToList();
         if (ordered.Count < need)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {input.Color} F3 needs {need} pool draws but its common pool holds only {ordered.Count}.");
         }
 
@@ -619,7 +620,7 @@ public static class RebalanceFeedersSelection
 
         if (retained.Count < excess)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {input.Color} overflows by {excess} but holds only {retained.Count} displaceable retained athletes; returning athletes are protected.");
         }
 
@@ -627,13 +628,13 @@ public static class RebalanceFeedersSelection
         {
             if (candidate.SourceRank < 1 || candidate.SourceRank > rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Retained athlete {candidate.SaveAthleteId} has corrupt source rank {candidate.SourceRank}.");
             }
 
             if (string.IsNullOrWhiteSpace(candidate.Name))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Retained athlete {candidate.SaveAthleteId} has an empty name.");
             }
         }
@@ -647,7 +648,7 @@ public static class RebalanceFeedersSelection
         int need = rules.LeagueSize - input.Provisional.Count;
         if (need <= 0)
         {
-            throw new InvalidOperationException($"Draw shortfall must be positive, was {need}.");
+            throw new SaveCorruptionException($"Draw shortfall must be positive, was {need}.");
         }
 
         List<PoolCandidate> ordered = input.Pool
@@ -657,7 +658,7 @@ public static class RebalanceFeedersSelection
 
         if (ordered.Count < need)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {input.Color} needs {need} pool draws but its common pool holds only {ordered.Count}.");
         }
 
@@ -665,17 +666,17 @@ public static class RebalanceFeedersSelection
         {
             if (candidate.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Pool contains invalid athlete id {candidate.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(candidate.Name))
             {
-                throw new InvalidOperationException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Pool athlete {candidate.SaveAthleteId} has an empty name.");
             }
 
             if (candidate.SportingColor != input.Color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Pool athlete {candidate.SaveAthleteId} color {candidate.SportingColor} does not match league {input.Color}.");
             }
         }
@@ -696,7 +697,7 @@ public static class RebalanceFeedersSelection
         {
             if (!seen.Add(draw.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Rebalancing draws duplicate athlete id {draw.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Rebalancing draws duplicate athlete id {draw.SaveAthleteId}.");
             }
         }
 
@@ -704,7 +705,7 @@ public static class RebalanceFeedersSelection
         {
             if (!seen.Add(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Rebalancing displaces duplicate athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Rebalancing displaces duplicate athlete id {candidate.SaveAthleteId}.");
             }
         }
 
@@ -712,7 +713,7 @@ public static class RebalanceFeedersSelection
         {
             if (plan.Draws.Count > 0 && plan.Displaced.Count > 0)
             {
-                throw new InvalidOperationException($"League {plan.Color} cannot both draw and displace.");
+                throw new SaveCorruptionException($"League {plan.Color} cannot both draw and displace.");
             }
         }
     }
@@ -731,7 +732,7 @@ public static class RebalanceFeedersSelection
         {
             if (plan.Draws.Count > 0 && plan.Displaced.Count > 0)
             {
-                throw new InvalidOperationException($"League {plan.Color} F3 cannot both draw and displace.");
+                throw new SaveCorruptionException($"League {plan.Color} F3 cannot both draw and displace.");
             }
         }
     }
@@ -743,7 +744,7 @@ public static class RebalanceFeedersSelection
         {
             if (!structural.Add(move.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Structural cascade moves duplicate athlete id {move.SaveAthleteId}; each athlete moves at most once.");
             }
 
@@ -759,19 +760,19 @@ public static class RebalanceFeedersSelection
         bool isDown = move.ToDivision > move.FromDivision;
         if (!isUp && !isDown)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {move.SaveAthleteId} must be between adjacent feeder divisions.");
         }
 
         if (Math.Abs((int)move.ToDivision - (int)move.FromDivision) != 1)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {move.SaveAthleteId} must be between adjacent tiers, was {move.FromDivision} → {move.ToDivision}.");
         }
 
         if (move.FromDivision == FeederDivision.None || move.ToDivision == FeederDivision.None)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {move.SaveAthleteId} must never involve the Superleague or pool directly.");
         }
     }
@@ -786,12 +787,12 @@ public static class RebalanceFeedersSelection
         {
             if (!poolBoundary.Add(draw.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Rebalancing draws duplicate athlete id {draw.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Rebalancing draws duplicate athlete id {draw.SaveAthleteId}.");
             }
 
             if (structural.Contains(draw.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {draw.SaveAthleteId} appears in both structural moves and pool draws.");
             }
         }
@@ -800,12 +801,12 @@ public static class RebalanceFeedersSelection
         {
             if (!poolBoundary.Add(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Rebalancing displaces duplicate athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Rebalancing displaces duplicate athlete id {candidate.SaveAthleteId}.");
             }
 
             if (structural.Contains(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {candidate.SaveAthleteId} appears in both structural moves and pool displacement.");
             }
         }

@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.CupHistory;
 
@@ -89,7 +90,7 @@ public static class CupTeamHistoryBuilder
         StandingRow? orphan = input.Standings.FirstOrDefault(s => !seasonNumbers.Contains(s.SeasonNumber));
         if (orphan is not null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has a Season {orphan.SeasonNumber} standing without a selection.");
         }
 
@@ -113,7 +114,7 @@ public static class CupTeamHistoryBuilder
     {
         if (!input.Athletes.TryGetValue(athleteId, out SaveAthleteEntity? athlete))
         {
-            throw new InvalidOperationException($"{input.Cup} Cup team '{input.TeamKey}' references unknown athlete {athleteId}.");
+            throw new SaveCorruptionException($"{input.Cup} Cup team '{input.TeamKey}' references unknown athlete {athleteId}.");
         }
 
         return athlete;
@@ -178,7 +179,7 @@ public static class CupTeamHistoryBuilder
             .ToList();
         if (squad.Count != input.TeamSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has {squad.Count} selected athletes in Season {seasonNumber}; expected {input.TeamSize}.");
         }
 
@@ -189,7 +190,7 @@ public static class CupTeamHistoryBuilder
     {
         if (!input.Seasons.TryGetValue(seasonNumber, out SeasonFacts? facts))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has no edition facts for Season {seasonNumber}.");
         }
 
@@ -202,7 +203,7 @@ public static class CupTeamHistoryBuilder
         LegRow? stray = legs.FirstOrDefault(l => !squadIds.Contains(l.AthleteId));
         if (stray is not null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has a Season {seasonNumber} leg for athlete {stray.AthleteId}, who is not in the squad.");
         }
     }
@@ -214,7 +215,7 @@ public static class CupTeamHistoryBuilder
         // identity. Duplicates mean corrupt standings, never a merge.
         if (standings.GroupBy(s => (s.TournamentPhase, s.QualificationGroup)).Any(g => g.Count() > 1))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has duplicate Season {seasonNumber} standings for one tournament stage.");
         }
     }
@@ -237,7 +238,7 @@ public static class CupTeamHistoryBuilder
         LegRow? orphanLeg = legs.FirstOrDefault(l => !stages.Contains((l.TournamentPhase, l.QualificationGroup)));
         if (orphanLeg is not null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"{input.Cup} Cup team '{input.TeamKey}' has a Season {seasonNumber} leg without a matching tournament stage standing.");
         }
     }

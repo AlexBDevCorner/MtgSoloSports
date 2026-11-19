@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -270,7 +271,7 @@ public sealed class RunChaosCupGroupHandler
             .ToList();
         if (groupDraws.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} must draw exactly {ChaosCupFormat.GroupSize} athletes, was {groupDraws.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} must draw exactly {ChaosCupFormat.GroupSize} athletes, was {groupDraws.Count}.");
         }
 
         Dictionary<int, string> names = await LoadNamesAsync(context, groupDraws, cancellationToken).ConfigureAwait(false);
@@ -317,7 +318,7 @@ public sealed class RunChaosCupGroupHandler
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == latest.SourceSeasonId, cancellationToken)
             .ConfigureAwait(false);
-        return source ?? throw new InvalidOperationException("Chaos Cup edition references an unknown season.");
+        return source ?? throw new SaveCorruptionException("Chaos Cup edition references an unknown season.");
     }
 
     private static async Task<ChaosCupEditionEntity> LoadEditionAsync(
@@ -376,14 +377,14 @@ public sealed class RunChaosCupGroupHandler
             .ConfigureAwait(false);
         if (names.Count != ids.Count)
         {
-            throw new InvalidOperationException("Chaos Cup group references unknown athletes.");
+            throw new SaveCorruptionException("Chaos Cup group references unknown athletes.");
         }
 
         foreach ((int id, string name) in names)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
-                throw new InvalidOperationException($"Save athlete {id} has an empty name.");
+                throw new SaveCorruptionException($"Save athlete {id} has an empty name.");
             }
         }
 
@@ -405,7 +406,7 @@ public sealed class RunChaosCupGroupHandler
         {
             if (!seen.Add(row.Name))
             {
-                throw new InvalidOperationException($"Chaos Cup group contains duplicate athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Chaos Cup group contains duplicate athlete '{row.Name}'.");
             }
         }
 
@@ -423,12 +424,12 @@ public sealed class RunChaosCupGroupHandler
         {
             if (!frozen.TryGetValue(draw.SaveAthleteId, out int thousandths))
             {
-                throw new InvalidOperationException($"Chaos Cup group holds athlete {draw.SaveAthleteId} outside the frozen field.");
+                throw new SaveCorruptionException($"Chaos Cup group holds athlete {draw.SaveAthleteId} outside the frozen field.");
             }
 
             if (thousandths < 0)
             {
-                throw new InvalidOperationException($"Chaos Cup entrant {draw.SaveAthleteId} has corrupt frozen bonus {thousandths}.");
+                throw new SaveCorruptionException($"Chaos Cup entrant {draw.SaveAthleteId} has corrupt frozen bonus {thousandths}.");
             }
 
             bonuses[draw.SaveAthleteId] = Bonus.FromThousandths(thousandths);
@@ -474,7 +475,7 @@ public sealed class RunChaosCupGroupHandler
             ChaosCupRoundPayloadDocument first = played[0];
             if (first.RngBeforeState != groupStart.State || first.RngBeforeStream != groupStart.Stream)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} first round does not start from its isolated group RNG.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} first round does not start from its isolated group RNG.");
             }
         }
 
@@ -496,7 +497,7 @@ public sealed class RunChaosCupGroupHandler
             .ConfigureAwait(false);
         if (played.Count < ChaosCupFormat.RoundsPerGroup && existing.Count != 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} is partly played but already has standings.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} is partly played but already has standings.");
         }
     }
 
@@ -640,7 +641,7 @@ public sealed class RunChaosCupGroupHandler
             .ToList();
         if (podium.Count != 3)
         {
-            throw new InvalidOperationException($"Chaos Cup Final must hold exactly three podium finishers, was {podium.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup Final must hold exactly three podium finishers, was {podium.Count}.");
         }
 
         foreach (ChaosCupGroupStandingEntity standing in podium)
@@ -677,7 +678,7 @@ public sealed class RunChaosCupGroupHandler
     {
         if (all.Count != ChaosCupFormat.RoundsPerGroup)
         {
-            throw new InvalidOperationException($"Chaos Cup group needs exactly {ChaosCupFormat.RoundsPerGroup} rounds to rank standings, was {all.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup group needs exactly {ChaosCupFormat.RoundsPerGroup} rounds to rank standings, was {all.Count}.");
         }
 
         int stageIndex = all[0].StageIndex;
@@ -723,20 +724,20 @@ public sealed class RunChaosCupGroupHandler
     {
         if (payload.StageIndex != stageIndex || payload.GroupNumber != groupNumber)
         {
-            throw new InvalidOperationException("Chaos Cup group payloads mix foreign stage/group rounds.");
+            throw new SaveCorruptionException("Chaos Cup group payloads mix foreign stage/group rounds.");
         }
 
         HashSet<int> roundAthletes = payload.Placements.Select(p => p.AthleteId).ToHashSet();
         if (!roundAthletes.SetEquals(drawn))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} round {payload.RoundNumber} must cover exactly its drawn athletes.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} round {payload.RoundNumber} must cover exactly its drawn athletes.");
         }
 
         foreach (RoundPayloadEntry placement in payload.Placements)
         {
             if (runningById[placement.AthleteId] != placement.CumulativeBeforeThousandths)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupNumber} cumulative total breaks the immutable chain.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupNumber} cumulative total breaks the immutable chain.");
             }
 
             checked
@@ -840,41 +841,41 @@ public sealed class RunChaosCupGroupHandler
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != before.StageStandings)
         {
-            throw new InvalidOperationException("Chaos Cup group must not create league stage standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Chaos Cup group must not create league stage standings; championship totals are preserved.");
         }
 
         if (seasons != before.SeasonStandings)
         {
-            throw new InvalidOperationException("Chaos Cup group must not create league season standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Chaos Cup group must not create league season standings; championship totals are preserved.");
         }
 
         if (rounds != before.LeagueRounds)
         {
-            throw new InvalidOperationException("Chaos Cup group must not create league rounds; Cup history lives in Cup tables only.");
+            throw new SaveCorruptionException("Chaos Cup group must not create league rounds; Cup history lives in Cup tables only.");
         }
 
         long lifetime = await context.AthleteCareers.SumAsync(e => (long)e.LifetimeEarnedBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (lifetime != before.LifetimeBonus)
         {
-            throw new InvalidOperationException("Chaos Cup group participation must not change career bonus.");
+            throw new SaveCorruptionException("Chaos Cup group participation must not change career bonus.");
         }
 
         long effective = await context.AthleteCareers.SumAsync(e => (long)e.CurrentEffectiveBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (effective != before.EffectiveBonus)
         {
-            throw new InvalidOperationException("Chaos Cup group participation must not change effective bonus projections.");
+            throw new SaveCorruptionException("Chaos Cup group participation must not change effective bonus projections.");
         }
 
         long championship = await context.SeasonStandings.SumAsync(e => (long)e.TotalChampionshipPointsThousandths, cancellationToken).ConfigureAwait(false);
         if (championship != before.Championship)
         {
-            throw new InvalidOperationException("Chaos Cup group must not award league championship points.");
+            throw new SaveCorruptionException("Chaos Cup group must not award league championship points.");
         }
 
         RngStateEntity rng = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         if (rng.State != before.RngState || rng.Stream != before.RngStream)
         {
-            throw new InvalidOperationException("Chaos Cup group simulation must not advance the global save RNG; groups own isolated RNG.");
+            throw new SaveCorruptionException("Chaos Cup group simulation must not advance the global save RNG; groups own isolated RNG.");
         }
     }
 
@@ -888,7 +889,7 @@ public sealed class RunChaosCupGroupHandler
         List<ChaosCupRoundPayloadDocument> played = DecodeAndValidateRounds(rows, state.Source, state.Edition, state.Rules, state.GroupRngStart, all[0].StageIndex, all[0].GroupNumber);
         if (played.Count != all.Count)
         {
-            throw new InvalidOperationException("Chaos Cup persisted result does not match the simulation.");
+            throw new SaveCorruptionException("Chaos Cup persisted result does not match the simulation.");
         }
 
         return state with { Played = played };
@@ -943,7 +944,7 @@ public sealed class RunChaosCupGroupHandler
             {
                 if (runningById[placement.AthleteId] != placement.CumulativeBeforeThousandths)
                 {
-                    throw new InvalidOperationException("Chaos Cup group cumulative total breaks the immutable chain.");
+                    throw new SaveCorruptionException("Chaos Cup group cumulative total breaks the immutable chain.");
                 }
 
                 checked

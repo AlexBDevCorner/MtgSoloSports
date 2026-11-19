@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -75,7 +76,7 @@ public sealed partial class RunColorCupTeamHandler
     {
         if (!selectionByAthlete.TryGetValue(leg.AthleteId, out ColorCupSelectionEntity? selection))
         {
-            throw new InvalidOperationException($"Color Cup team leg for '{leg.Name}' has no selection provenance.");
+            throw new SaveCorruptionException($"Color Cup team leg for '{leg.Name}' has no selection provenance.");
         }
 
         int groupNumber = GroupNumberForLeg(selection);
@@ -100,7 +101,7 @@ public sealed partial class RunColorCupTeamHandler
         ArgumentNullException.ThrowIfNull(selection);
         if (selection.SelectionRank < 1 || selection.SelectionRank > 4)
         {
-            throw new InvalidOperationException($"Color Cup team selection rank {selection.SelectionRank} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team selection rank {selection.SelectionRank} is out of range.");
         }
 
         return selection.SelectionRank;
@@ -158,7 +159,7 @@ public sealed partial class RunColorCupTeamHandler
                 .ToList();
             if (legs.Count != 4)
             {
-                throw new InvalidOperationException($"Color Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Color Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
             }
 
             foreach (TeamEvent.TeamLegRanked leg in legs)
@@ -204,35 +205,35 @@ public sealed partial class RunColorCupTeamHandler
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stageCountBefore)
         {
-            throw new InvalidOperationException("Color Cup team must not create league stage standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Color Cup team must not create league stage standings; championship totals are preserved.");
         }
 
         if (seasons != seasonCountBefore)
         {
-            throw new InvalidOperationException("Color Cup team must not create league season standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Color Cup team must not create league season standings; championship totals are preserved.");
         }
 
         if (rounds != roundCountBefore)
         {
-            throw new InvalidOperationException("Color Cup team must not create league rounds; Cup history lives in Cup tables only.");
+            throw new SaveCorruptionException("Color Cup team must not create league rounds; Cup history lives in Cup tables only.");
         }
 
         long lifetime = await context.AthleteCareers.SumAsync(e => (long)e.LifetimeEarnedBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (lifetime != lifetimeBefore)
         {
-            throw new InvalidOperationException("Color Cup team participation must not change career bonus.");
+            throw new SaveCorruptionException("Color Cup team participation must not change career bonus.");
         }
 
         long effective = await context.AthleteCareers.SumAsync(e => (long)e.CurrentEffectiveBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (effective != effectiveBefore)
         {
-            throw new InvalidOperationException("Color Cup team participation must not change effective bonus projections.");
+            throw new SaveCorruptionException("Color Cup team participation must not change effective bonus projections.");
         }
 
         long championship = await context.SeasonStandings.SumAsync(e => (long)e.TotalChampionshipPointsThousandths, cancellationToken).ConfigureAwait(false);
         if (championship != championshipBefore)
         {
-            throw new InvalidOperationException("Color Cup team must not award league championship points.");
+            throw new SaveCorruptionException("Color Cup team must not award league championship points.");
         }
     }
 
@@ -268,7 +269,7 @@ public sealed partial class RunColorCupTeamHandler
         ColorCupTeamInvariants.ValidatePersisted(source, rounds, legs, teams, honours, rules);
         if (!string.Equals(ComputeChecksum(simulation.Teams), simulation.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Color Cup team checksum does not match simulated standings.");
+            throw new SaveCorruptionException("Color Cup team checksum does not match simulated standings.");
         }
 
         await VerifyPreservationAsync(
@@ -401,7 +402,7 @@ public sealed partial class RunColorCupTeamHandler
             .ConfigureAwait(false);
         if (teams.Count != simulation.Teams.Count || legs.Count != simulation.Legs.Count || rounds.Count != simulation.Payloads.Count)
         {
-            throw new InvalidOperationException("Color Cup team persisted result does not match the simulation.");
+            throw new SaveCorruptionException("Color Cup team persisted result does not match the simulation.");
         }
 
         Dictionary<int, string> names = await context.SaveAthletes

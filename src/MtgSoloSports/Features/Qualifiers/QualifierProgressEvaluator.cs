@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -138,7 +139,7 @@ public static class QualifierProgressEvaluator
         int qualified = eventStandings.Count(s => s.IsQualified);
         if (qualified != expectedWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {sourceSeasonNumber} has {qualified}/{expectedWinners} winners; sporting state is corrupt.");
         }
 
@@ -162,13 +163,13 @@ public static class QualifierProgressEvaluator
 
         if (eventRounds.Count != expectedRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {sourceSeasonNumber} has {eventStandings.Count} standings but {eventRounds.Count}/{expectedRounds} rounds; sporting state is corrupt. Completed results are preserved; rerunning would overwrite them.");
         }
 
         if (eventStandings.Count != expectedSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {sourceSeasonNumber} has {eventStandings.Count}/{expectedSize} standings; sporting state is corrupt.");
         }
     }
@@ -181,13 +182,13 @@ public static class QualifierProgressEvaluator
     {
         if (eventRounds.Count is < 0 or > 16)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {sourceSeasonNumber} has corrupt round count {eventRounds.Count}; sporting state is corrupt.");
         }
 
         if (eventRounds.Count == expectedRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier {boundary} for Season {sourceSeasonNumber} has all {expectedRounds} rounds persisted but no standings; sporting state is corrupt.");
         }
     }

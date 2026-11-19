@@ -5,6 +5,7 @@ using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -158,7 +159,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (hasRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament for Season {source.SeasonNumber} has rounds without a qualification draw; sporting state is corrupt.");
         }
 
@@ -317,7 +318,7 @@ public sealed partial class RunTypeCupTeamHandler
         ArgumentNullException.ThrowIfNull(selection);
         if (expectedFinalCount <= 0)
         {
-            throw new InvalidOperationException($"Type Cup Final must hold a positive team count, was {expectedFinalCount}.");
+            throw new SaveCorruptionException($"Type Cup Final must hold a positive team count, was {expectedFinalCount}.");
         }
 
         // Every Final rank-group round involves exactly one athlete per finalist
@@ -331,7 +332,7 @@ public sealed partial class RunTypeCupTeamHandler
             if (!typeByAthlete.TryGetValue(placement.AthleteId, out string? creatureType)
                 || string.IsNullOrWhiteSpace(creatureType))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup Final persisted round references unknown athlete {placement.AthleteId}; sporting state is corrupt.");
             }
 
@@ -340,7 +341,7 @@ public sealed partial class RunTypeCupTeamHandler
 
         if (finalists.Count != expectedFinalCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup Final persisted rounds must identify exactly {expectedFinalCount} teams, was {finalists.Count}; sporting state is corrupt.");
         }
 
@@ -857,7 +858,7 @@ public sealed partial class RunTypeCupTeamHandler
             }
         }
 
-        throw new InvalidOperationException($"Type Cup Final references unknown athlete {athleteId}.");
+        throw new SaveCorruptionException($"Type Cup Final references unknown athlete {athleteId}.");
     }
 
     private static async Task<List<(TypeCupTournamentPlan.StageKey Key, TypeCupTeamRoundPayloadDocument Payload)>> LoadOrderedRoundsAsync(
@@ -880,7 +881,7 @@ public sealed partial class RunTypeCupTeamHandler
             if (!fields.TryGetValue(key, out TypeCupStageField? field))
             {
                 string have = string.Join(",", fields.Keys.Select(k => $"{k.Phase}/{k.QualificationGroup}"));
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup tournament stage phase {key.Phase} qual {key.QualificationGroup} has no field (have {have}); ordered has {ordered.Count} rounds, plan total {plan.TotalRounds}.");
             }
             TypeCupTeamInvariants.ValidateRound(payload, rules, field.FieldSize, payload.RngBeforeState, payload.RngBeforeStream);
@@ -946,7 +947,7 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (draws.Count != 0)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Direct-Final Season {source.SeasonNumber} must not persist a qualification draw.");
             }
 
@@ -997,7 +998,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ToList();
         if (stageSelection.Count != stage.GroupSize * rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification group {stage.QualificationGroup} must hold exactly {stage.GroupSize} teams.");
         }
 
@@ -1034,14 +1035,14 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup team round {row.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Type Cup team round {row.Id} has corrupt source linkage.");
             }
 
             TypeCupTeamInvariants.ValidateTournamentIdentity(row.TournamentPhase, row.QualificationGroup, "round");
             var key = (row.TournamentPhase, row.QualificationGroup, row.GroupNumber, row.RoundNumber);
             if (!byIdentity.TryAdd(key, row))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup team contains duplicate phase {row.TournamentPhase} qual {row.QualificationGroup} group {row.GroupNumber} round {row.RoundNumber}.");
             }
         }
@@ -1067,7 +1068,7 @@ public sealed partial class RunTypeCupTeamHandler
             // Any new-format rows under a legacy plan are corruption.
             if (ordered.Count != rows.Count)
             {
-                throw new InvalidOperationException("Type Cup legacy tournament has out-of-sequence rounds.");
+                throw new SaveCorruptionException("Type Cup legacy tournament has out-of-sequence rounds.");
             }
 
             return ordered;
@@ -1076,7 +1077,7 @@ public sealed partial class RunTypeCupTeamHandler
         CollectStageRounds(ordered, byIdentity, sequence, rules);
         if (ordered.Count != rows.Count)
         {
-            throw new InvalidOperationException("Type Cup tournament has out-of-sequence rounds.");
+            throw new SaveCorruptionException("Type Cup tournament has out-of-sequence rounds.");
         }
 
         ValidateStagePrefix(ordered, sequence, rules);
@@ -1119,7 +1120,7 @@ public sealed partial class RunTypeCupTeamHandler
             {
                 if (seenPartial || seenEmpty)
                 {
-                    throw new InvalidOperationException("Type Cup tournament stage order is corrupt: complete stage after partial/empty stage.");
+                    throw new SaveCorruptionException("Type Cup tournament stage order is corrupt: complete stage after partial/empty stage.");
                 }
 
                 continue;
@@ -1133,7 +1134,7 @@ public sealed partial class RunTypeCupTeamHandler
 
             if (seenPartial || seenEmpty)
             {
-                throw new InvalidOperationException("Type Cup tournament stage order is corrupt: partial stage after partial/empty stage.");
+                throw new SaveCorruptionException("Type Cup tournament stage order is corrupt: partial stage after partial/empty stage.");
             }
 
             seenPartial = true;
@@ -1153,7 +1154,7 @@ public sealed partial class RunTypeCupTeamHandler
             (int expGroup, int expRound) = PostseasonEvents.Cursor(i, new PostseasonEvents.EventShape(rules.TypeCupMinTeamSize, rules.TypeCupGroupRounds));
             if (inStage[i].Payload.GroupNumber != expGroup || inStage[i].Payload.RoundNumber != expRound)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup tournament round sequence is corrupt: expected group {expGroup} round {expRound}.");
             }
         }
@@ -1180,7 +1181,7 @@ public sealed partial class RunTypeCupTeamHandler
 
         if (state.PlayedOrdered.Count >= state.Plan.TotalRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament has all {state.Plan.TotalRounds} rounds persisted but no results; sporting state is corrupt.");
         }
 
@@ -1194,7 +1195,7 @@ public sealed partial class RunTypeCupTeamHandler
                 || payload.GroupNumber != expGroup
                 || payload.RoundNumber != expRound)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup tournament round sequence is corrupt: expected phase {expStage.Phase} qual {expStage.QualificationGroup} group {expGroup} round {expRound}.");
             }
 
@@ -1207,7 +1208,7 @@ public sealed partial class RunTypeCupTeamHandler
             Pcg32State actualBefore = new(payload.RngBeforeState, payload.RngBeforeStream);
             if (actualBefore != expectedBefore)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup tournament RNG chain is broken before phase {actualStage.Phase} qual {actualStage.QualificationGroup} group {payload.GroupNumber} round {payload.RoundNumber}.");
             }
         }
@@ -1215,7 +1216,7 @@ public sealed partial class RunTypeCupTeamHandler
         Pcg32State expectedRow = ExpectedRngAfterLast(state);
         if (state.Rng != expectedRow)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Type Cup tournament is in progress but the save RNG moved since its last round; sporting state is corrupt.");
         }
     }
@@ -1442,7 +1443,7 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (stageTeams.Count != 0 || stageLegs.Count != 0)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup Final for Season {state.Source.SeasonNumber} has partial standings without completion.");
             }
 
@@ -1458,7 +1459,7 @@ public sealed partial class RunTypeCupTeamHandler
 
         if (stageTeams.Count != 0 || stageLegs.Count != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification group {stage.QualificationGroup} has standings without complete rounds; sporting state is corrupt.");
         }
     }
@@ -1472,7 +1473,7 @@ public sealed partial class RunTypeCupTeamHandler
     {
         if (stageTeams.Count != field.FieldSize || stageLegs.Count != field.FieldSize * state.Rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification group {stage.QualificationGroup} is complete but its standings are missing; sporting state is corrupt.");
         }
 
@@ -1481,7 +1482,7 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (ordered[i].TeamRank != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} ranks are corrupt.");
             }
         }
@@ -1502,7 +1503,7 @@ public sealed partial class RunTypeCupTeamHandler
             int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
             if (inStage != perStage)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     "Type Cup Final started before every qualification group is complete; sporting state is corrupt.");
             }
         }
@@ -1565,7 +1566,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (latest is null || !latest.IsComplete)
         {
-            throw new InvalidOperationException("Type Cup selection references an unknown or incomplete season.");
+            throw new SaveCorruptionException("Type Cup selection references an unknown or incomplete season.");
         }
 
         return latest;
@@ -1616,7 +1617,7 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (!groups.TryGetValue(row.SelectionRank, out List<TypeCupSelectionEntity>? members))
             {
-                throw new InvalidOperationException($"Type Cup selection rank {row.SelectionRank} is out of range for team groups.");
+                throw new SaveCorruptionException($"Type Cup selection rank {row.SelectionRank} is out of range for team groups.");
             }
 
             members.Add(row);
@@ -1671,7 +1672,7 @@ public sealed partial class RunTypeCupTeamHandler
             cancellationToken).ConfigureAwait(false);
         if (hasFinalLegs)
         {
-            throw new InvalidOperationException($"Type Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
+            throw new SaveCorruptionException($"Type Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
@@ -1681,7 +1682,7 @@ public sealed partial class RunTypeCupTeamHandler
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {
-            throw new InvalidOperationException($"Type Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
+            throw new SaveCorruptionException($"Type Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
         }
 
         string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.TypeCupTeam, source.Id, cancellationToken).ConfigureAwait(false);
@@ -1705,7 +1706,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ToDictionary(e => e.Id, e => (e.Name, e.SportingColor));
         if (athletes.Count != allIds.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+            throw new SaveCorruptionException("Type Cup team selection references unknown athletes.");
         }
 
         Dictionary<int, List<AdvanceRoundHandler.MemberRow>> rosters = new(groups.Count);
@@ -1723,7 +1724,7 @@ public sealed partial class RunTypeCupTeamHandler
             {
                 if (!seen.Add(row.Name))
                 {
-                    throw new InvalidOperationException($"Type Cup team group {groupNumber} contains duplicate athlete '{row.Name}'.");
+                    throw new SaveCorruptionException($"Type Cup team group {groupNumber} contains duplicate athlete '{row.Name}'.");
                 }
             }
 
@@ -1745,7 +1746,7 @@ public sealed partial class RunTypeCupTeamHandler
         Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, source, cancellationToken).ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(source.Id, out int sourceSeasonNumber))
         {
-            throw new InvalidOperationException($"Save has no season row for season {source.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {source.SeasonNumber}.");
         }
 
         int cupSeason = checked(sourceSeasonNumber + 1);

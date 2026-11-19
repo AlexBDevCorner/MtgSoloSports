@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -32,7 +33,7 @@ public static class Season1Invariants
     {
         if (entries.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 draw must contain exactly {rules.TotalAthletesInSave} athletes, was {entries.Count}.");
         }
     }
@@ -73,30 +74,30 @@ public static class Season1Invariants
     {
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Season 1 draw contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Season 1 draw contains an athlete with an empty name.");
         }
 
         if (!names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Season 1 draw contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Season 1 draw contains duplicate athlete '{entry.Name}'.");
         }
 
         if (entry.DrawIndex < 0 || entry.DrawIndex >= rules.AthletesPerSportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 draw index for '{entry.Name}' must be in [0, {rules.AthletesPerSportingColor}), was {entry.DrawIndex}.");
         }
 
         if (!indices[entry.SportingColor].Add(entry.DrawIndex))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 draw contains duplicate draw index {entry.DrawIndex} for {entry.SportingColor}.");
         }
 
         bool expectedMember = entry.DrawIndex < rules.Season1ActivePerColor;
         if (entry.IsLeagueMember != expectedMember)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 draw membership for '{entry.Name}' contradicts draw index {entry.DrawIndex}.");
         }
     }
@@ -109,19 +110,19 @@ public static class Season1Invariants
         {
             if (counts.LeaguePerColor[color] != expectedLeague)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 league {color} must contain exactly {expectedLeague} athletes, was {counts.LeaguePerColor[color]}.");
             }
 
             if (counts.PoolPerColor[color] != expectedPool)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 pool {color} must contain exactly {expectedPool} athletes, was {counts.PoolPerColor[color]}.");
             }
 
             if (counts.IndicesPerColor[color].Count != rules.AthletesPerSportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 draw for {color} must contain {rules.AthletesPerSportingColor} distinct draw indices, was {counts.IndicesPerColor[color].Count}.");
             }
         }
@@ -133,7 +134,7 @@ public static class Season1Invariants
         int expected = rules.Season1ActiveTotal;
         if (active != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {expected} active athletes, was {active}.");
         }
     }

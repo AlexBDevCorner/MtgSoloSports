@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -994,7 +995,7 @@ public sealed class SaveDbContext : DbContext
     public void ApplyRngState(Pcg32State next)
     {
         RngStateEntity entity = RngStates.Local.SingleOrDefault(e => e.Id == 1)
-            ?? throw new InvalidOperationException("RNG state row is not tracked. Load it before applying a new state.");
+            ?? throw new SaveCorruptionException("RNG state row is not tracked. Load it before applying a new state.");
         entity.Algorithm = Pcg32V1.AlgorithmName;
         entity.AlgorithmVersion = Pcg32V1.AlgorithmVersion;
         entity.State = unchecked((long)next.State);

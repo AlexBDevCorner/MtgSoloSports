@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.GetTypeCupTeamResult;
 
@@ -87,7 +88,7 @@ public sealed class GetTypeCupTeamResultHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Type Cup team event references an unknown season.");
+            throw new SaveCorruptionException("Type Cup team event references an unknown season.");
         }
 
         return latest;

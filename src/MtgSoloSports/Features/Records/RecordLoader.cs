@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Records;
 
@@ -69,12 +70,12 @@ public static class RecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Season standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing references unknown season {row.SeasonId}.");
             }
 
             if (!leagueKinds.TryGetValue(row.LeagueId, out int kind))
             {
-                throw new InvalidOperationException($"Season standing references unknown league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Season standing references unknown league {row.LeagueId}.");
             }
 
             inputs.Add(new RecordCalculator.SeasonStandingInput(
@@ -99,7 +100,7 @@ public static class RecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Stage standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing references unknown season {row.SeasonId}.");
             }
 
             inputs.Add(new RecordCalculator.StageStandingInput(
@@ -125,7 +126,7 @@ public static class RecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Membership references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Membership references unknown season {row.SeasonId}.");
             }
 
             int? kind = null;
@@ -134,7 +135,7 @@ public static class RecordLoader
             {
                 if (!leagueKinds.TryGetValue(row.LeagueId.Value, out int leagueKind))
                 {
-                    throw new InvalidOperationException($"Membership references unknown league {row.LeagueId.Value}.");
+                    throw new SaveCorruptionException($"Membership references unknown league {row.LeagueId.Value}.");
                 }
 
                 kind = leagueKind;
@@ -199,7 +200,7 @@ public static class RecordLoader
         {
             if (!promoCounts.ContainsKey(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Movement references unknown athlete {movement.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Movement references unknown athlete {movement.SaveAthleteId}.");
             }
 
             if (movement.Kind is (int)MovementKind.InauguralPromotion or (int)MovementKind.AutomaticPromotion)
@@ -216,7 +217,7 @@ public static class RecordLoader
         {
             if (!promoCounts.ContainsKey(qualifier.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Qualifier standing references unknown athlete {qualifier.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Qualifier standing references unknown athlete {qualifier.SaveAthleteId}.");
             }
 
             if (qualifier.Role == (int)QualifierRole.Challenger && qualifier.IsQualified)

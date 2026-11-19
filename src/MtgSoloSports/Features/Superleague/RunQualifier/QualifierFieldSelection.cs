@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.RunQualifier;
@@ -85,7 +86,7 @@ public static class QualifierFieldSelection
         {
             if (feederLeagues.Count != rules.RegularLeagueCount)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
             }
 
@@ -94,7 +95,7 @@ public static class QualifierFieldSelection
 
         if (feederLeagues.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feederLeagues.Count}.");
         }
 
@@ -103,7 +104,7 @@ public static class QualifierFieldSelection
             .ToList();
         if (first.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered season must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
         }
 
@@ -119,7 +120,7 @@ public static class QualifierFieldSelection
     {
         if (superleagueStandings.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must have exactly {rules.SuperleagueSize} final standings, was {superleagueStandings.Count}.");
         }
 
@@ -129,10 +130,10 @@ public static class QualifierFieldSelection
         for (int rank = first; rank <= last; rank++)
         {
             SeasonStandingEntity row = superleagueStandings.SingleOrDefault(r => r.SeasonRank == rank)
-                ?? throw new InvalidOperationException($"Superleague is missing final season rank {rank}.");
+                ?? throw new SaveCorruptionException($"Superleague is missing final season rank {rank}.");
             if (row.LeagueId != superleague.Id)
             {
-                throw new InvalidOperationException($"Superleague standing for rank {rank} references league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Superleague standing for rank {rank} references league {row.LeagueId}.");
             }
 
             picks.Add(ToPick(row, superleague.Id, QualifierRole.Incumbent, membershipByAthlete, namesByAthlete));
@@ -153,19 +154,19 @@ public static class QualifierFieldSelection
         {
             if (!feederStandingsByLeague.TryGetValue(league.Id, out IReadOnlyList<SeasonStandingEntity>? rows))
             {
-                throw new InvalidOperationException($"League '{league.Name}' has no final standings.");
+                throw new SaveCorruptionException($"League '{league.Name}' has no final standings.");
             }
 
             if (rows.Count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
             }
 
             for (int rank = 2; rank <= 4; rank++)
             {
                 SeasonStandingEntity row = rows.SingleOrDefault(r => r.SeasonRank == rank)
-                    ?? throw new InvalidOperationException($"League '{league.Name}' is missing final season rank {rank}.");
+                    ?? throw new SaveCorruptionException($"League '{league.Name}' is missing final season rank {rank}.");
                 picks.Add(ToPick(row, league.Id, QualifierRole.Challenger, membershipByAthlete, namesByAthlete));
             }
         }
@@ -182,12 +183,12 @@ public static class QualifierFieldSelection
     {
         if (!membershipByAthlete.TryGetValue(row.SaveAthleteId, out SeasonMembershipEntity? membership))
         {
-            throw new InvalidOperationException($"Qualifier athlete {row.SaveAthleteId} has no source membership.");
+            throw new SaveCorruptionException($"Qualifier athlete {row.SaveAthleteId} has no source membership.");
         }
 
         if (!namesByAthlete.TryGetValue(row.SaveAthleteId, out string? name) || string.IsNullOrWhiteSpace(name))
         {
-            throw new InvalidOperationException($"Qualifier athlete {row.SaveAthleteId} has no name.");
+            throw new SaveCorruptionException($"Qualifier athlete {row.SaveAthleteId} has no name.");
         }
 
         return new QualifierPick(

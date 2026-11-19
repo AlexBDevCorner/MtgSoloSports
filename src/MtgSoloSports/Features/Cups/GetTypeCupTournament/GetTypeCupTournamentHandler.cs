@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 
 namespace MtgSoloSports.Features.Cups.GetTypeCupTournament;
@@ -83,7 +84,7 @@ public sealed class GetTypeCupTournamentHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Type Cup tournament references an unknown season.");
+            throw new SaveCorruptionException("Type Cup tournament references an unknown season.");
         }
 
         return latest;

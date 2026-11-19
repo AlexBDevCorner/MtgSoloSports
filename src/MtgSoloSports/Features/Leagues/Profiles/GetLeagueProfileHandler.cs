@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Leagues.Profiles;
 
@@ -119,7 +120,7 @@ public sealed class GetLeagueProfileHandler
         {
             if (!seasonsById.TryGetValue(league.SeasonId, out SeasonEntity? season))
             {
-                throw new InvalidOperationException($"League '{league.Name}' references unknown season {league.SeasonId}.");
+                throw new SaveCorruptionException($"League '{league.Name}' references unknown season {league.SeasonId}.");
             }
 
             rowsBySeasonLeague.TryGetValue((league.SeasonId, league.Id), out List<SeasonStandingProbe>? rows);

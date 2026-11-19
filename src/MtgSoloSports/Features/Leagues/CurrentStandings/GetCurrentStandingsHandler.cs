@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Seasons;
@@ -192,13 +193,13 @@ public sealed class GetCurrentStandingsHandler
     {
         if (!names.TryGetValue(row.SaveAthleteId, out string? name))
         {
-            throw new InvalidOperationException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
         }
 
         List<int>? roundCounts = JsonSerializer.Deserialize<List<int>>(row.RoundPlaceCountsJson);
         if (roundCounts is null)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {row.StageNumber} has corrupt round counts.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {row.StageNumber} has corrupt round counts.");
         }
 
         return new SeasonStageEntry(

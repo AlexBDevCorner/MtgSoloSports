@@ -2,6 +2,7 @@ using System.Text.Json;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -32,7 +33,7 @@ public static class ColorCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (selection.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup team field must hold exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} selected athletes, was {selection.Count}.");
         }
 
@@ -52,7 +53,7 @@ public static class ColorCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (groups.Count != rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team event must hold exactly {rules.ColorCupTeamSize} groups, was {groups.Count}.");
+            throw new SaveCorruptionException($"Color Cup team event must hold exactly {rules.ColorCupTeamSize} groups, was {groups.Count}.");
         }
 
         foreach (int groupNumber in Enumerable.Range(1, rules.ColorCupTeamSize))
@@ -96,7 +97,7 @@ public static class ColorCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (groupNumber < 1 || groupNumber > rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team group {groupNumber} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team group {groupNumber} is out of range.");
         }
 
         CheckLegCounts(ranked, totals, rules);
@@ -162,14 +163,14 @@ public static class ColorCupTeamInvariants
 
         if (ranksByColor.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team field must cover exactly {rules.ColorCupColorCount} colors, was {ranksByColor.Count}.");
+            throw new SaveCorruptionException($"Color Cup team field must cover exactly {rules.ColorCupColorCount} colors, was {ranksByColor.Count}.");
         }
 
         foreach ((int color, HashSet<int> ranks) in ranksByColor)
         {
             if (!ranks.SetEquals(Enumerable.Range(1, rules.ColorCupTeamSize)))
             {
-                throw new InvalidOperationException($"Color Cup team color {color} must cover selection ranks 1..{rules.ColorCupTeamSize} exactly once.");
+                throw new SaveCorruptionException($"Color Cup team color {color} must cover selection ranks 1..{rules.ColorCupTeamSize} exactly once.");
             }
         }
     }
@@ -178,17 +179,17 @@ public static class ColorCupTeamInvariants
     {
         if (row.SaveAthleteId <= 0)
         {
-            throw new InvalidOperationException($"Color Cup team field contains invalid athlete id {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Color Cup team field contains invalid athlete id {row.SaveAthleteId}.");
         }
 
         if (row.SelectionRank < 1 || row.SelectionRank > rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team selection rank {row.SelectionRank} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team selection rank {row.SelectionRank} is out of range.");
         }
 
         if (!athleteIds.Add(row.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Color Cup team field contains duplicate athlete id {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Color Cup team field contains duplicate athlete id {row.SaveAthleteId}.");
         }
     }
 
@@ -202,7 +203,7 @@ public static class ColorCupTeamInvariants
 
         if (!ranks.Add(row.SelectionRank))
         {
-            throw new InvalidOperationException($"Color Cup team color {row.SportingColor} contains duplicate selection rank {row.SelectionRank}.");
+            throw new SaveCorruptionException($"Color Cup team color {row.SportingColor} contains duplicate selection rank {row.SelectionRank}.");
         }
     }
 
@@ -213,12 +214,12 @@ public static class ColorCupTeamInvariants
     {
         if (!groups.TryGetValue(groupNumber, out List<ColorCupSelectionEntity>? members))
         {
-            throw new InvalidOperationException($"Color Cup team event is missing group {groupNumber}.");
+            throw new SaveCorruptionException($"Color Cup team event is missing group {groupNumber}.");
         }
 
         if (members.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team group {groupNumber} must hold exactly {rules.ColorCupColorCount} athletes, was {members.Count}.");
+            throw new SaveCorruptionException($"Color Cup team group {groupNumber} must hold exactly {rules.ColorCupColorCount} athletes, was {members.Count}.");
         }
 
         HashSet<int> colors = new();
@@ -227,18 +228,18 @@ public static class ColorCupTeamInvariants
         {
             if (row.SelectionRank != groupNumber)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {row.SaveAthleteId} with selection rank #{row.SelectionRank} competes in wrong rank group {groupNumber}.");
             }
 
             if (!colors.Add(row.SportingColor))
             {
-                throw new InvalidOperationException($"Color Cup team group {groupNumber} contains duplicate sporting color {row.SportingColor}.");
+                throw new SaveCorruptionException($"Color Cup team group {groupNumber} contains duplicate sporting color {row.SportingColor}.");
             }
 
             if (!athletes.Add(row.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Color Cup team group {groupNumber} contains duplicate athlete id {row.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Color Cup team group {groupNumber} contains duplicate athlete id {row.SaveAthleteId}.");
             }
         }
     }
@@ -247,32 +248,32 @@ public static class ColorCupTeamInvariants
     {
         if (payload.Version != ColorCupTeamRoundPayloadDocument.PayloadVersion)
         {
-            throw new InvalidOperationException($"Color Cup team payload version must be {ColorCupTeamRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
+            throw new SaveCorruptionException($"Color Cup team payload version must be {ColorCupTeamRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
         }
 
         if (payload.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Color Cup team payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
+            throw new SaveCorruptionException($"Color Cup team payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
         }
 
         if (payload.SourceSeasonNumber < 1 || payload.SourceSeasonNumber % 2 != 1)
         {
-            throw new InvalidOperationException($"Color Cup team source season must be a positive odd season, was {payload.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Color Cup team source season must be a positive odd season, was {payload.SourceSeasonNumber}.");
         }
 
         if (payload.GroupNumber < 1 || payload.GroupNumber > rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team group must be 1..{rules.ColorCupTeamSize}, was {payload.GroupNumber}.");
+            throw new SaveCorruptionException($"Color Cup team group must be 1..{rules.ColorCupTeamSize}, was {payload.GroupNumber}.");
         }
 
         if (payload.RoundNumber < 1 || payload.RoundNumber > rules.ColorCupTeamGroupRounds)
         {
-            throw new InvalidOperationException($"Color Cup team round must be 1..{rules.ColorCupTeamGroupRounds}, was {payload.RoundNumber}.");
+            throw new SaveCorruptionException($"Color Cup team round must be 1..{rules.ColorCupTeamGroupRounds}, was {payload.RoundNumber}.");
         }
 
         if (payload.Placements.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team round must contain exactly {rules.ColorCupColorCount} placements, was {payload.Placements.Count}.");
+            throw new SaveCorruptionException($"Color Cup team round must contain exactly {rules.ColorCupColorCount} placements, was {payload.Placements.Count}.");
         }
     }
 
@@ -280,12 +281,12 @@ public static class ColorCupTeamInvariants
     {
         if (payload.RngBeforeState != rngBeforeState || payload.RngBeforeStream != rngBeforeStream)
         {
-            throw new InvalidOperationException("Color Cup team payload RNG-before does not match the persisted save RNG chain.");
+            throw new SaveCorruptionException("Color Cup team payload RNG-before does not match the persisted save RNG chain.");
         }
 
         if (payload.RngAfterState == rngBeforeState && payload.RngAfterStream == rngBeforeStream)
         {
-            throw new InvalidOperationException("Color Cup team round simulation must advance the save RNG.");
+            throw new SaveCorruptionException("Color Cup team round simulation must advance the save RNG.");
         }
     }
 
@@ -301,7 +302,7 @@ public static class ColorCupTeamInvariants
 
         if (!accumulator.Positions.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount)))
         {
-            throw new InvalidOperationException($"Color Cup team payload must cover positions 1..{rules.ColorCupColorCount} exactly once.");
+            throw new SaveCorruptionException($"Color Cup team payload must cover positions 1..{rules.ColorCupColorCount} exactly once.");
         }
 
         EnsureRankConsistency(payload);
@@ -320,27 +321,27 @@ public static class ColorCupTeamInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Color Cup team payload contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Color Cup team payload contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Color Cup team payload contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Color Cup team payload contains an athlete with an empty name.");
         }
 
         if (!accumulator.Positions.Add(entry.Position))
         {
-            throw new InvalidOperationException($"Color Cup team payload contains duplicate position {entry.Position}.");
+            throw new SaveCorruptionException($"Color Cup team payload contains duplicate position {entry.Position}.");
         }
 
         if (!accumulator.AthleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Color Cup team payload contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Color Cup team payload contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!accumulator.Names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Color Cup team payload contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Color Cup team payload contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -348,30 +349,30 @@ public static class ColorCupTeamInvariants
     {
         if (entry.Position < 1 || entry.Position > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team payload position {entry.Position} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team payload position {entry.Position} is out of range.");
         }
 
         int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
         if (entry.BaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Color Cup team payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
+            throw new SaveCorruptionException($"Color Cup team payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
         }
 
         if (entry.ActiveBonusThousandths < 0)
         {
-            throw new InvalidOperationException($"Color Cup team payload active bonus for '{entry.Name}' cannot be negative.");
+            throw new SaveCorruptionException($"Color Cup team payload active bonus for '{entry.Name}' cannot be negative.");
         }
 
         long expectedFinal = (long)entry.BaseThousandths * (RulesV1.BonusPercentScale + entry.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
         if (entry.FinalThousandths != expectedFinal)
         {
-            throw new InvalidOperationException($"Color Cup team payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
+            throw new SaveCorruptionException($"Color Cup team payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
         }
 
         long expectedAfter = (long)entry.CumulativeBeforeThousandths + entry.FinalThousandths;
         if (entry.CumulativeAfterThousandths != expectedAfter)
         {
-            throw new InvalidOperationException($"Color Cup team payload cumulative total for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Color Cup team payload cumulative total for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -379,17 +380,17 @@ public static class ColorCupTeamInvariants
     {
         if (entry.RankBefore < 1 || entry.RankBefore > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team payload rank-before for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Color Cup team payload rank-before for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankAfter < 1 || entry.RankAfter > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team payload rank-after for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Color Cup team payload rank-after for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankMovement != entry.RankBefore - entry.RankAfter)
         {
-            throw new InvalidOperationException($"Color Cup team payload rank movement for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Color Cup team payload rank movement for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -401,7 +402,7 @@ public static class ColorCupTeamInvariants
         {
             if (byBefore[i].RankBefore != i + 1)
             {
-                throw new InvalidOperationException("Color Cup team payload rank-before sequence is corrupt.");
+                throw new SaveCorruptionException("Color Cup team payload rank-before sequence is corrupt.");
             }
         }
 
@@ -409,7 +410,7 @@ public static class ColorCupTeamInvariants
         {
             if (byAfter[i].RankAfter != i + 1)
             {
-                throw new InvalidOperationException("Color Cup team payload rank-after sequence is corrupt.");
+                throw new SaveCorruptionException("Color Cup team payload rank-after sequence is corrupt.");
             }
         }
     }
@@ -421,12 +422,12 @@ public static class ColorCupTeamInvariants
     {
         if (ranked.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Completed Color Cup team group must rank exactly {rules.ColorCupColorCount} athletes, was {ranked.Count}.");
+            throw new SaveCorruptionException($"Completed Color Cup team group must rank exactly {rules.ColorCupColorCount} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Completed Color Cup team group must total exactly {rules.ColorCupColorCount} athletes, was {totals.Count}.");
+            throw new SaveCorruptionException($"Completed Color Cup team group must total exactly {rules.ColorCupColorCount} athletes, was {totals.Count}.");
         }
     }
 
@@ -446,7 +447,7 @@ public static class ColorCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount)))
         {
-            throw new InvalidOperationException("Completed Color Cup team group must cover ranks 1..8 exactly once.");
+            throw new SaveCorruptionException("Completed Color Cup team group must cover ranks 1..8 exactly once.");
         }
     }
 
@@ -454,22 +455,22 @@ public static class ColorCupTeamInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Completed Color Cup team group contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed Color Cup team group contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (entry.LegRank < 1 || entry.LegRank > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Completed Color Cup team group rank {entry.LegRank} is out of range.");
+            throw new SaveCorruptionException($"Completed Color Cup team group rank {entry.LegRank} is out of range.");
         }
 
         if (!ranks.Add(entry.LegRank))
         {
-            throw new InvalidOperationException($"Completed Color Cup team group contains duplicate rank {entry.LegRank}.");
+            throw new SaveCorruptionException($"Completed Color Cup team group contains duplicate rank {entry.LegRank}.");
         }
 
         if (!athleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Completed Color Cup team group contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed Color Cup team group contains duplicate athlete id {entry.AthleteId}.");
         }
     }
 
@@ -480,22 +481,22 @@ public static class ColorCupTeamInvariants
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out TeamEvent.TeamLegTotals? accumulated))
         {
-            throw new InvalidOperationException($"Completed Color Cup team standing for '{entry.Name}' has no accumulated totals.");
+            throw new SaveCorruptionException($"Completed Color Cup team standing for '{entry.Name}' has no accumulated totals.");
         }
 
         if (entry.LegScoreThousandths != accumulated.LegScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed Color Cup team score for '{entry.Name}' does not match accumulated round finals.");
+            throw new SaveCorruptionException($"Completed Color Cup team score for '{entry.Name}' does not match accumulated round finals.");
         }
 
         if (entry.LegBaseThousandths != accumulated.LegBaseThousandths)
         {
-            throw new InvalidOperationException($"Completed Color Cup team base score for '{entry.Name}' does not match accumulated round base points.");
+            throw new SaveCorruptionException($"Completed Color Cup team base score for '{entry.Name}' does not match accumulated round base points.");
         }
 
         if (entry.RoundPlaceCounts.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Completed Color Cup team counts for '{entry.Name}' must cover 8 positions.");
+            throw new SaveCorruptionException($"Completed Color Cup team counts for '{entry.Name}' must cover 8 positions.");
         }
 
         int sum = 0;
@@ -503,7 +504,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Completed Color Cup team counts for '{entry.Name}' cannot be negative.");
+                throw new SaveCorruptionException($"Completed Color Cup team counts for '{entry.Name}' cannot be negative.");
             }
 
             checked
@@ -514,7 +515,7 @@ public static class ColorCupTeamInvariants
 
         if (sum != rules.ColorCupTeamGroupRounds)
         {
-            throw new InvalidOperationException($"Completed Color Cup team totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.ColorCupTeamGroupRounds}.");
+            throw new SaveCorruptionException($"Completed Color Cup team totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.ColorCupTeamGroupRounds}.");
         }
     }
 
@@ -525,12 +526,12 @@ public static class ColorCupTeamInvariants
     {
         if (ranked.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Completed Color Cup team championship must rank exactly {rules.ColorCupColorCount} teams, was {ranked.Count}.");
+            throw new SaveCorruptionException($"Completed Color Cup team championship must rank exactly {rules.ColorCupColorCount} teams, was {ranked.Count}.");
         }
 
         if (legs.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Completed Color Cup team championship must hold exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} legs, was {legs.Count}.");
+            throw new SaveCorruptionException($"Completed Color Cup team championship must hold exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} legs, was {legs.Count}.");
         }
     }
 
@@ -564,12 +565,12 @@ public static class ColorCupTeamInvariants
     {
         if (!legsByTeam.TryGetValue(team.TeamId, out List<TeamEvent.TeamLegRanked>? members))
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' has no legs.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' has no legs.");
         }
 
         if (members.Count != rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' must field exactly {rules.ColorCupTeamSize} legs, was {members.Count}.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' must field exactly {rules.ColorCupTeamSize} legs, was {members.Count}.");
         }
 
         int expectedScore = 0;
@@ -585,12 +586,12 @@ public static class ColorCupTeamInvariants
 
         if (team.TeamScoreThousandths != expectedScore)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' score does not equal the sum of its four legs.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' score does not equal the sum of its four legs.");
         }
 
         if (team.TeamBaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' base score does not equal the sum of its four legs.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' base score does not equal the sum of its four legs.");
         }
     }
 
@@ -602,17 +603,17 @@ public static class ColorCupTeamInvariants
         {
             if (team.TeamRank < 1 || team.TeamRank > rules.ColorCupColorCount)
             {
-                throw new InvalidOperationException($"Color Cup team rank {team.TeamRank} is out of range.");
+                throw new SaveCorruptionException($"Color Cup team rank {team.TeamRank} is out of range.");
             }
 
             if (!ranks.Add(team.TeamRank))
             {
-                throw new InvalidOperationException($"Color Cup team championship contains duplicate rank {team.TeamRank}.");
+                throw new SaveCorruptionException($"Color Cup team championship contains duplicate rank {team.TeamRank}.");
             }
 
             if (!teamIds.Add(team.TeamId))
             {
-                throw new InvalidOperationException($"Color Cup team championship contains duplicate team id {team.TeamId}.");
+                throw new SaveCorruptionException($"Color Cup team championship contains duplicate team id {team.TeamId}.");
             }
 
             CheckTeamVectors(team, rules);
@@ -620,7 +621,7 @@ public static class ColorCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount)))
         {
-            throw new InvalidOperationException("Color Cup team championship must cover ranks 1..8 exactly once.");
+            throw new SaveCorruptionException("Color Cup team championship must cover ranks 1..8 exactly once.");
         }
     }
 
@@ -628,7 +629,7 @@ public static class ColorCupTeamInvariants
     {
         if (team.GroupPlaceCounts.Count != rules.ColorCupColorCount || team.RoundPlaceCounts.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' has corrupt tie-break vectors.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' has corrupt tie-break vectors.");
         }
 
         int groupSum = 0;
@@ -636,7 +637,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup team '{team.TeamName}' has negative group counts.");
+                throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' has negative group counts.");
             }
 
             checked
@@ -647,7 +648,7 @@ public static class ColorCupTeamInvariants
 
         if (groupSum != rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' group counts sum to {groupSum}, expected {rules.ColorCupTeamSize}.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' group counts sum to {groupSum}, expected {rules.ColorCupTeamSize}.");
         }
 
         int roundSum = 0;
@@ -655,7 +656,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup team '{team.TeamName}' has negative round counts.");
+                throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' has negative round counts.");
             }
 
             checked
@@ -667,7 +668,7 @@ public static class ColorCupTeamInvariants
         int expectedRounds = rules.ColorCupTeamSize * rules.ColorCupTeamGroupRounds;
         if (roundSum != expectedRounds)
         {
-            throw new InvalidOperationException($"Color Cup team '{team.TeamName}' round counts sum to {roundSum}, expected {expectedRounds}.");
+            throw new SaveCorruptionException($"Color Cup team '{team.TeamName}' round counts sum to {roundSum}, expected {expectedRounds}.");
         }
     }
 
@@ -675,12 +676,12 @@ public static class ColorCupTeamInvariants
     {
         if (!source.IsComplete)
         {
-            throw new InvalidOperationException($"Color Cup team source Season {source.SeasonNumber} must be complete.");
+            throw new SaveCorruptionException($"Color Cup team source Season {source.SeasonNumber} must be complete.");
         }
 
         if (source.SeasonNumber % 2 != 1)
         {
-            throw new InvalidOperationException($"Color Cup team source Season {source.SeasonNumber} must be odd.");
+            throw new SaveCorruptionException($"Color Cup team source Season {source.SeasonNumber} must be odd.");
         }
     }
 
@@ -693,17 +694,17 @@ public static class ColorCupTeamInvariants
         int expectedRounds = rules.ColorCupTeamSize * rules.ColorCupTeamGroupRounds;
         if (rounds.Count != expectedRounds)
         {
-            throw new InvalidOperationException($"Color Cup team must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
+            throw new SaveCorruptionException($"Color Cup team must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
         }
 
         if (legs.Count != rules.ColorCupColorCount * rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team must persist exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} legs, was {legs.Count}.");
+            throw new SaveCorruptionException($"Color Cup team must persist exactly {rules.ColorCupColorCount * rules.ColorCupTeamSize} legs, was {legs.Count}.");
         }
 
         if (teams.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team must persist exactly {rules.ColorCupColorCount} teams, was {teams.Count}.");
+            throw new SaveCorruptionException($"Color Cup team must persist exactly {rules.ColorCupColorCount} teams, was {teams.Count}.");
         }
     }
 
@@ -724,7 +725,7 @@ public static class ColorCupTeamInvariants
             {
                 if (!seen.Contains((group, number)))
                 {
-                    throw new InvalidOperationException($"Color Cup team is missing group {group} round {number}.");
+                    throw new SaveCorruptionException($"Color Cup team is missing group {group} round {number}.");
                 }
             }
         }
@@ -738,43 +739,43 @@ public static class ColorCupTeamInvariants
     {
         if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Color Cup team round {round.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Color Cup team round {round.Id} has corrupt source linkage.");
         }
 
         if (round.GroupNumber < 1 || round.GroupNumber > rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team round group {round.GroupNumber} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team round group {round.GroupNumber} is out of range.");
         }
 
         if (round.RoundNumber < 1 || round.RoundNumber > rules.ColorCupTeamGroupRounds)
         {
-            throw new InvalidOperationException($"Color Cup team round number {round.RoundNumber} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team round number {round.RoundNumber} is out of range.");
         }
 
         if (!seen.Add((round.GroupNumber, round.RoundNumber)))
         {
-            throw new InvalidOperationException($"Color Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber}.");
+            throw new SaveCorruptionException($"Color Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber}.");
         }
 
         if (round.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
+            throw new SaveCorruptionException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
         }
 
         if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
         {
-            throw new InvalidOperationException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
+            throw new SaveCorruptionException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
         }
 
         ColorCupTeamRoundPayloadDocument document = ColorCupTeamRoundPayloadDocument.FromStored(round.PayloadJson);
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
+            throw new SaveCorruptionException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
         }
 
         if (document.RoundNumber != round.RoundNumber || document.GroupNumber != round.GroupNumber || document.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
+            throw new SaveCorruptionException($"Color Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
         }
     }
 
@@ -795,7 +796,7 @@ public static class ColorCupTeamInvariants
             if (!ranksByGroup.TryGetValue(group, out HashSet<int>? ranks) ||
                 !ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount)))
             {
-                throw new InvalidOperationException($"Color Cup team group {group} must cover ranks 1..{rules.ColorCupColorCount} exactly once.");
+                throw new SaveCorruptionException($"Color Cup team group {group} must cover ranks 1..{rules.ColorCupColorCount} exactly once.");
             }
         }
     }
@@ -809,27 +810,27 @@ public static class ColorCupTeamInvariants
     {
         if (leg.SourceSeasonId != source.Id || leg.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} has corrupt source linkage.");
         }
 
         if (leg.GroupNumber < 1 || leg.GroupNumber > rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team leg group {leg.GroupNumber} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team leg group {leg.GroupNumber} is out of range.");
         }
 
         if (leg.SelectionRank != leg.GroupNumber)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} selection rank #{leg.SelectionRank} does not match group {leg.GroupNumber}.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} selection rank #{leg.SelectionRank} does not match group {leg.GroupNumber}.");
         }
 
         if (leg.GroupRank < 1 || leg.GroupRank > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team leg group rank {leg.GroupRank} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team leg group rank {leg.GroupRank} is out of range.");
         }
 
         if (!athletes.Add(leg.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Color Cup team contains duplicate athlete id {leg.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Color Cup team contains duplicate athlete id {leg.SaveAthleteId}.");
         }
 
         if (!ranksByGroup.TryGetValue(leg.GroupNumber, out HashSet<int>? ranks))
@@ -840,7 +841,7 @@ public static class ColorCupTeamInvariants
 
         if (!ranks.Add(leg.GroupRank))
         {
-            throw new InvalidOperationException($"Color Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank}.");
+            throw new SaveCorruptionException($"Color Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank}.");
         }
 
         CheckLegPlaceCounts(leg, rules);
@@ -851,7 +852,7 @@ public static class ColorCupTeamInvariants
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(leg.RoundPlaceCountsJson);
         if (counts is null || counts.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} has corrupt round-place counts.");
         }
 
         int sum = 0;
@@ -859,7 +860,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup team leg {leg.Id} has negative placement counts.");
+                throw new SaveCorruptionException($"Color Cup team leg {leg.Id} has negative placement counts.");
             }
 
             checked
@@ -870,7 +871,7 @@ public static class ColorCupTeamInvariants
 
         if (sum != rules.ColorCupTeamGroupRounds)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} sums to {sum} rounds, expected {rules.ColorCupTeamGroupRounds}.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} sums to {sum} rounds, expected {rules.ColorCupTeamGroupRounds}.");
         }
     }
 
@@ -888,7 +889,7 @@ public static class ColorCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.ColorCupColorCount)))
         {
-            throw new InvalidOperationException("Color Cup team championship must cover ranks 1..8 exactly once.");
+            throw new SaveCorruptionException("Color Cup team championship must cover ranks 1..8 exactly once.");
         }
     }
 
@@ -901,22 +902,22 @@ public static class ColorCupTeamInvariants
     {
         if (team.SourceSeasonId != source.Id || team.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Color Cup team {team.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Color Cup team {team.Id} has corrupt source linkage.");
         }
 
         if (team.TeamRank < 1 || team.TeamRank > rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team rank {team.TeamRank} is out of range.");
+            throw new SaveCorruptionException($"Color Cup team rank {team.TeamRank} is out of range.");
         }
 
         if (!ranks.Add(team.TeamRank))
         {
-            throw new InvalidOperationException($"Color Cup team championship contains duplicate rank {team.TeamRank}.");
+            throw new SaveCorruptionException($"Color Cup team championship contains duplicate rank {team.TeamRank}.");
         }
 
         if (!colors.Add(team.SportingColor))
         {
-            throw new InvalidOperationException($"Color Cup team championship contains duplicate color {team.SportingColor}.");
+            throw new SaveCorruptionException($"Color Cup team championship contains duplicate color {team.SportingColor}.");
         }
 
         int expectedMedal = team.TeamRank switch
@@ -928,7 +929,7 @@ public static class ColorCupTeamInvariants
         };
         if (team.Medal != expectedMedal)
         {
-            throw new InvalidOperationException($"Color Cup team rank {team.TeamRank} has corrupt medal {team.Medal}.");
+            throw new SaveCorruptionException($"Color Cup team rank {team.TeamRank} has corrupt medal {team.Medal}.");
         }
 
         CheckTeamCountJson(team, rules);
@@ -941,7 +942,7 @@ public static class ColorCupTeamInvariants
         if (groupCounts is null || groupCounts.Count != rules.ColorCupColorCount ||
             roundCounts is null || roundCounts.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup team {team.Id} has corrupt tie-break counts.");
+            throw new SaveCorruptionException($"Color Cup team {team.Id} has corrupt tie-break counts.");
         }
 
         int groupSum = 0;
@@ -949,7 +950,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup team {team.Id} has negative group counts.");
+                throw new SaveCorruptionException($"Color Cup team {team.Id} has negative group counts.");
             }
 
             checked
@@ -960,7 +961,7 @@ public static class ColorCupTeamInvariants
 
         if (groupSum != rules.ColorCupTeamSize)
         {
-            throw new InvalidOperationException($"Color Cup team {team.Id} group counts sum to {groupSum}, expected {rules.ColorCupTeamSize}.");
+            throw new SaveCorruptionException($"Color Cup team {team.Id} group counts sum to {groupSum}, expected {rules.ColorCupTeamSize}.");
         }
 
         int roundSum = 0;
@@ -968,7 +969,7 @@ public static class ColorCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Color Cup team {team.Id} has negative round counts.");
+                throw new SaveCorruptionException($"Color Cup team {team.Id} has negative round counts.");
             }
 
             checked
@@ -980,7 +981,7 @@ public static class ColorCupTeamInvariants
         int expectedRounds = rules.ColorCupTeamSize * rules.ColorCupTeamGroupRounds;
         if (roundSum != expectedRounds)
         {
-            throw new InvalidOperationException($"Color Cup team {team.Id} round counts sum to {roundSum}, expected {expectedRounds}.");
+            throw new SaveCorruptionException($"Color Cup team {team.Id} round counts sum to {roundSum}, expected {expectedRounds}.");
         }
     }
 
@@ -997,7 +998,7 @@ public static class ColorCupTeamInvariants
             .ToList();
         if (teamHonours.Count != 12)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup team for Season {source.SeasonNumber} must persist exactly twelve team podium honours, was {teamHonours.Count}.");
         }
 
@@ -1011,13 +1012,13 @@ public static class ColorCupTeamInvariants
                 .ToHashSet();
             if (teamAthletes.Count != 4)
             {
-                throw new InvalidOperationException($"Color Cup team rank {rank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Color Cup team rank {rank} must field exactly four legs.");
             }
 
             List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
             if (rankHonours.Count != 4)
             {
-                throw new InvalidOperationException($"Color Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
+                throw new SaveCorruptionException($"Color Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
             }
 
             HashSet<int> honourAthletes = new();
@@ -1025,17 +1026,17 @@ public static class ColorCupTeamInvariants
             {
                 if (honour.SeasonNumber != source.SeasonNumber)
                 {
-                    throw new InvalidOperationException("Color Cup team podium honour has corrupt season linkage.");
+                    throw new SaveCorruptionException("Color Cup team podium honour has corrupt season linkage.");
                 }
 
                 if (!teamAthletes.Contains(honour.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Color Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
+                    throw new SaveCorruptionException($"Color Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
                 }
 
                 if (!honourAthletes.Add(honour.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Color Cup team rank-{rank} podium honours must cover four distinct athletes.");
+                    throw new SaveCorruptionException($"Color Cup team rank-{rank} podium honours must cover four distinct athletes.");
                 }
             }
         }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
 
@@ -136,7 +137,7 @@ public sealed class GetChaosCupRecordsHandler
             LeagueLevel.Feeder1 => "Feeder1",
             LeagueLevel.Feeder2 => "Feeder2",
             LeagueLevel.Feeder3 => "Feeder3",
-            _ => throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
+            _ => throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
         };
     }
 

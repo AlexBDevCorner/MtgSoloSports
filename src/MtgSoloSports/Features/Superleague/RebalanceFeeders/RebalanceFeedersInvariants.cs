@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -35,7 +36,7 @@ public static class RebalanceFeedersInvariants
 
         if (plan.TierPerColor.Count != rules.RegularLeagueCount || inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Rebalancing requires exactly {rules.RegularLeagueCount} colors, was {plan.TierPerColor.Count}.");
         }
 
@@ -62,7 +63,7 @@ public static class RebalanceFeedersInvariants
 
         if (plan.PerColor.Count != rules.RegularLeagueCount || inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Rebalancing requires exactly {rules.RegularLeagueCount} colors, was {plan.PerColor.Count}.");
         }
 
@@ -102,18 +103,18 @@ public static class RebalanceFeedersInvariants
 
         if (next.SeasonNumber != source.SeasonNumber + 1 || !next.HasSuperleague || next.IsComplete)
         {
-            throw new InvalidOperationException("Rebalanced next season must be the consecutive incomplete Superleague season.");
+            throw new SaveCorruptionException("Rebalanced next season must be the consecutive incomplete Superleague season.");
         }
 
         if (nextMemberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season must carry exactly {rules.TotalAthletesInSave} memberships, was {nextMemberships.Count}.");
         }
 
         if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
@@ -131,14 +132,14 @@ public static class RebalanceFeedersInvariants
     {
         if (!inputsByColor.TryGetValue(colorPlan.Color.ToString(), out RebalanceFeedersSelection.TierColorInput? input))
         {
-            throw new InvalidOperationException($"Rebalancing plan references unknown color {colorPlan.Color}.");
+            throw new SaveCorruptionException($"Rebalancing plan references unknown color {colorPlan.Color}.");
         }
 
         if (colorPlan.F1ProvisionalCount != input.F1.Count
             || colorPlan.F2ProvisionalCount != input.F2.Count
             || colorPlan.F3ProvisionalCount != input.F3.Count)
         {
-            throw new InvalidOperationException($"League {colorPlan.Color} provisional counts are corrupt.");
+            throw new SaveCorruptionException($"League {colorPlan.Color} provisional counts are corrupt.");
         }
 
         // Final sizes must restore 32 per division.
@@ -157,7 +158,7 @@ public static class RebalanceFeedersInvariants
             - colorPlan.Displaced.Count;
         if (f1Final != rules.LeagueSize || f2Final != rules.LeagueSize || f3Final != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} cascade must restore 32/32/32, was {f1Final}/{f2Final}/{f3Final}.");
         }
 
@@ -205,13 +206,13 @@ public static class RebalanceFeedersInvariants
         {
             if (!poolIds.Contains(draw.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Drawn athlete {draw.SaveAthleteId} is not in the {colorPlan.Color} common pool.");
             }
 
             if (draw.SportingColor != colorPlan.Color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Drawn athlete {draw.SaveAthleteId} color {draw.SportingColor} does not match league {colorPlan.Color}.");
             }
         }
@@ -228,7 +229,7 @@ public static class RebalanceFeedersInvariants
         {
             if (!f3Ids.Contains(displaced.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Displaced athlete {displaced.SaveAthleteId} is not a provisional {colorPlan.Color} F3 athlete; only F3 may displace to pool.");
             }
         }
@@ -259,7 +260,7 @@ public static class RebalanceFeedersInvariants
         HashSet<int> actual = colorPlan.Displaced.Select(d => d.SaveAthleteId).ToHashSet();
         if (!actual.SetEquals(expected))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} F3 must displace its worst eligible retained athletes first.");
         }
     }
@@ -278,13 +279,13 @@ public static class RebalanceFeedersInvariants
         {
             if (move.Color != colorPlan.Color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Structural move {move.SaveAthleteId} color {move.Color} does not match league {colorPlan.Color}; no cross-color movement.");
             }
 
             if (Math.Abs((int)move.ToDivision - (int)move.FromDivision) != 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Structural move {move.SaveAthleteId} must be between adjacent tiers.");
             }
 
@@ -293,17 +294,17 @@ public static class RebalanceFeedersInvariants
                 FeederDivision.First => f1ById,
                 FeederDivision.Second => f2ById,
                 FeederDivision.Third => f3ById,
-                _ => throw new InvalidOperationException($"Structural move {move.SaveAthleteId} has corrupt division."),
+                _ => throw new SaveCorruptionException($"Structural move {move.SaveAthleteId} has corrupt division."),
             };
             if (!sourceMap.TryGetValue(move.SaveAthleteId, out RebalanceFeedersSelection.TierMember? member))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Structural move {move.SaveAthleteId} is not a provisional {move.FromDivision} athlete.");
             }
 
             if (member.SourceRank != move.SourceRank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Structural move {move.SaveAthleteId} source rank {move.SourceRank} does not match provisional rank {member.SourceRank}.");
             }
         }
@@ -334,7 +335,7 @@ public static class RebalanceFeedersInvariants
             List<int> actual = f2ToF1.Select(m => m.SaveAthleteId).OrderBy(id => id).ToList();
             if (!actual.SequenceEqual(expected))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League {colorPlan.Color} F2→F1 must pull its best eligible retained athletes first.");
             }
         }
@@ -357,7 +358,7 @@ public static class RebalanceFeedersInvariants
             List<int> actual = f3ToF2.Select(m => m.SaveAthleteId).OrderBy(id => id).ToList();
             if (!actual.SequenceEqual(expected))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League {colorPlan.Color} F3→F2 must pull its best eligible retained athletes first.");
             }
         }
@@ -384,7 +385,7 @@ public static class RebalanceFeedersInvariants
             List<int> actual = f1ToF2.Select(m => m.SaveAthleteId).OrderBy(id => id).ToList();
             if (!actual.SequenceEqual(expected))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League {colorPlan.Color} F1→F2 must push its worst eligible retained athletes first.");
             }
         }
@@ -411,7 +412,7 @@ public static class RebalanceFeedersInvariants
             List<int> actual = f2ToF3.Select(m => m.SaveAthleteId).OrderBy(id => id).ToList();
             if (!actual.SequenceEqual(expected))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League {colorPlan.Color} F2→F3 must push its worst eligible retained athletes first (never re-moving F1 arrivals).");
             }
         }
@@ -424,12 +425,12 @@ public static class RebalanceFeedersInvariants
     {
         if (!inputsByColor.TryGetValue(colorPlan.Color.ToString(), out RebalanceFeedersSelection.ColorInput? input))
         {
-            throw new InvalidOperationException($"Rebalancing plan references unknown color {colorPlan.Color}.");
+            throw new SaveCorruptionException($"Rebalancing plan references unknown color {colorPlan.Color}.");
         }
 
         if (colorPlan.ProvisionalCount != input.Provisional.Count)
         {
-            throw new InvalidOperationException($"League {colorPlan.Color} provisional count is corrupt.");
+            throw new SaveCorruptionException($"League {colorPlan.Color} provisional count is corrupt.");
         }
 
         int expected = rules.LeagueSize - colorPlan.ProvisionalCount;
@@ -454,13 +455,13 @@ public static class RebalanceFeedersInvariants
     {
         if (colorPlan.Draws.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} needs {expected} draws, was {colorPlan.Draws.Count}.");
         }
 
         if (colorPlan.Displaced.Count != 0)
         {
-            throw new InvalidOperationException($"League {colorPlan.Color} cannot both draw and displace.");
+            throw new SaveCorruptionException($"League {colorPlan.Color} cannot both draw and displace.");
         }
 
         HashSet<int> poolIds = input.Pool.Select(c => c.SaveAthleteId).ToHashSet();
@@ -468,7 +469,7 @@ public static class RebalanceFeedersInvariants
         {
             if (!poolIds.Contains(draw.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Drawn athlete {draw.SaveAthleteId} is not in the {colorPlan.Color} common pool.");
             }
         }
@@ -481,13 +482,13 @@ public static class RebalanceFeedersInvariants
     {
         if (colorPlan.Displaced.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} must displace {expected} athletes, was {colorPlan.Displaced.Count}.");
         }
 
         if (colorPlan.Draws.Count != 0)
         {
-            throw new InvalidOperationException($"League {colorPlan.Color} cannot both draw and displace.");
+            throw new SaveCorruptionException($"League {colorPlan.Color} cannot both draw and displace.");
         }
 
         HashSet<int> retainedIds = input.Provisional.Where(m => m.IsRetained).Select(m => m.SaveAthleteId).ToHashSet();
@@ -495,7 +496,7 @@ public static class RebalanceFeedersInvariants
         {
             if (!retainedIds.Contains(displaced.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Displaced athlete {displaced.SaveAthleteId} is not a retained {colorPlan.Color} feeder athlete.");
             }
         }
@@ -507,7 +508,7 @@ public static class RebalanceFeedersInvariants
     {
         if (colorPlan.Draws.Count != 0 || colorPlan.Displaced.Count != 0)
         {
-            throw new InvalidOperationException($"League {colorPlan.Color} is already at 32 and needs no transfers.");
+            throw new SaveCorruptionException($"League {colorPlan.Color} is already at 32 and needs no transfers.");
         }
     }
 
@@ -525,7 +526,7 @@ public static class RebalanceFeedersInvariants
         HashSet<int> expectedIds = retained.Take(colorPlan.Displaced.Count).Select(m => m.SaveAthleteId).ToHashSet();
         if (!displacedIds.SetEquals(expectedIds))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} must displace its lowest-ranked retained athletes.");
         }
     }
@@ -542,7 +543,7 @@ public static class RebalanceFeedersInvariants
 
             if (!active.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues after rebalancing.");
             }
         }
@@ -559,7 +560,7 @@ public static class RebalanceFeedersInvariants
             int count = nextMemberships.Count(m => m.LeagueId == feeder.Id);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{feeder.Name}' must contain exactly {rules.LeagueSize} athletes after rebalancing, was {count}.");
             }
         }
@@ -574,7 +575,7 @@ public static class RebalanceFeedersInvariants
 
             if (!feederIds.Contains(membership.LeagueId.Value))
             {
-                throw new InvalidOperationException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
+                throw new SaveCorruptionException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
             }
         }
     }
@@ -587,7 +588,7 @@ public static class RebalanceFeedersInvariants
         int count = nextMemberships.Count(m => m.LeagueId == nextSuperleague.Id);
         if (count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next Superleague must still contain exactly {rules.SuperleagueSize} athletes after rebalancing, was {count}.");
         }
     }
@@ -607,12 +608,12 @@ public static class RebalanceFeedersInvariants
 
             if (!colorByLeague.TryGetValue(membership.LeagueId.Value, out int expectedColor))
             {
-                throw new InvalidOperationException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
+                throw new SaveCorruptionException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
             }
 
             if (membership.SportingColor != expectedColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match feeder color {expectedColor}.");
             }
         }
@@ -630,7 +631,7 @@ public static class RebalanceFeedersInvariants
             + plan.AllUpMoves.Count + plan.AllDownMoves.Count;
         if (movements.Count != expectedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Rebalancing must persist exactly {expectedCount} movement rows, was {movements.Count}.");
         }
 
@@ -646,12 +647,12 @@ public static class RebalanceFeedersInvariants
         {
             if (movement.FromSeasonId != source.Id || movement.ToSeasonId != next.Id)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has corrupt season linkage.");
             }
 
             if (!seen.Add(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Rebalancing contains duplicate athlete id {movement.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Rebalancing contains duplicate athlete id {movement.SaveAthleteId}.");
             }
 
             CheckSingleMovement(movement, feederIds, feedersById, drawIds, displacedIds, upIds, downIds, rules);
@@ -669,24 +670,24 @@ public static class RebalanceFeedersInvariants
     {
         if (!drawIds.SetEquals(movements.Where(m => m.Kind == (int)MovementKind.RebalanceDraw).Select(m => m.SaveAthleteId)))
         {
-            throw new InvalidOperationException("Persisted pool draws do not match the rebalancing plan.");
+            throw new SaveCorruptionException("Persisted pool draws do not match the rebalancing plan.");
         }
 
         if (!displacedIds.SetEquals(movements.Where(m => m.Kind == (int)MovementKind.RebalanceDisplacement).Select(m => m.SaveAthleteId)))
         {
-            throw new InvalidOperationException("Persisted displacements do not match the rebalancing plan.");
+            throw new SaveCorruptionException("Persisted displacements do not match the rebalancing plan.");
         }
 
         HashSet<int> persistedUp = movements.Where(m => m.Kind == (int)MovementKind.RebalanceUp).Select(m => m.SaveAthleteId).ToHashSet();
         if (!upIds.SetEquals(persistedUp))
         {
-            throw new InvalidOperationException("Persisted structural up-moves do not match the rebalancing plan.");
+            throw new SaveCorruptionException("Persisted structural up-moves do not match the rebalancing plan.");
         }
 
         HashSet<int> persistedDown = movements.Where(m => m.Kind == (int)MovementKind.RebalanceDown).Select(m => m.SaveAthleteId).ToHashSet();
         if (!downIds.SetEquals(persistedDown))
         {
-            throw new InvalidOperationException("Persisted structural down-moves do not match the rebalancing plan.");
+            throw new SaveCorruptionException("Persisted structural down-moves do not match the rebalancing plan.");
         }
     }
 
@@ -713,7 +714,7 @@ public static class RebalanceFeedersInvariants
                 CheckStructuralMovement(movement, feederIds, feedersById, upIds, downIds);
                 break;
             default:
-                throw new InvalidOperationException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
         }
     }
 
@@ -726,17 +727,17 @@ public static class RebalanceFeedersInvariants
     {
         if (!drawIds.Contains(movement.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Draw {movement.Id} is outside the rebalancing plan.");
+            throw new SaveCorruptionException($"Draw {movement.Id} is outside the rebalancing plan.");
         }
 
         if (movement.FromLeagueId != 0)
         {
-            throw new InvalidOperationException($"Pool draw {movement.Id} must carry pool origin 0.");
+            throw new SaveCorruptionException($"Pool draw {movement.Id} must carry pool origin 0.");
         }
 
         if (!feederIds.Contains(movement.ToLeagueId))
         {
-            throw new InvalidOperationException($"Pool draw {movement.Id} must target its color feeder.");
+            throw new SaveCorruptionException($"Pool draw {movement.Id} must target its color feeder.");
         }
 
         // Tiered saves: pool connects only to F3. Legacy v1 single-feeder
@@ -746,13 +747,13 @@ public static class RebalanceFeedersInvariants
             && feedersById.TryGetValue(movement.ToLeagueId, out LeagueEntity? drawTo)
             && drawTo.FeederDivision != (int)FeederDivision.Third)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Pool draw {movement.Id} must target F3 only; pool must not bypass feeder levels.");
         }
 
         if (movement.FromSeasonRank != 0)
         {
-            throw new InvalidOperationException($"Pool draw {movement.Id} must carry source rank 0.");
+            throw new SaveCorruptionException($"Pool draw {movement.Id} must carry source rank 0.");
         }
     }
 
@@ -765,12 +766,12 @@ public static class RebalanceFeedersInvariants
     {
         if (!displacedIds.Contains(movement.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Displacement {movement.Id} is outside the rebalancing plan.");
+            throw new SaveCorruptionException($"Displacement {movement.Id} is outside the rebalancing plan.");
         }
 
         if (!feederIds.Contains(movement.FromLeagueId))
         {
-            throw new InvalidOperationException($"Displacement {movement.Id} must originate from its feeder.");
+            throw new SaveCorruptionException($"Displacement {movement.Id} must originate from its feeder.");
         }
 
         // Tiered saves: only F3 may displace to pool. Legacy v1
@@ -780,18 +781,18 @@ public static class RebalanceFeedersInvariants
             && feedersById.TryGetValue(movement.FromLeagueId, out LeagueEntity? dispFrom)
             && dispFrom.FeederDivision != (int)FeederDivision.Third)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Displacement {movement.Id} must originate from F3 only; F1/F2 must never displace directly to pool.");
         }
 
         if (movement.ToLeagueId != 0)
         {
-            throw new InvalidOperationException($"Displacement {movement.Id} must target pool sentinel 0.");
+            throw new SaveCorruptionException($"Displacement {movement.Id} must target pool sentinel 0.");
         }
 
         if (movement.FromSeasonRank < 1 || movement.FromSeasonRank > 32)
         {
-            throw new InvalidOperationException($"Displacement {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
+            throw new SaveCorruptionException($"Displacement {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
         }
     }
 
@@ -805,25 +806,25 @@ public static class RebalanceFeedersInvariants
         HashSet<int> planIds = (MovementKind)movement.Kind == MovementKind.RebalanceUp ? upIds : downIds;
         if (!planIds.Contains(movement.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Structural move {movement.Id} is outside the rebalancing plan.");
+            throw new SaveCorruptionException($"Structural move {movement.Id} is outside the rebalancing plan.");
         }
 
         if (!feederIds.Contains(movement.FromLeagueId) || !feederIds.Contains(movement.ToLeagueId))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {movement.Id} must be between two feeder leagues; pool sentinel is forbidden.");
         }
 
         if (movement.FromLeagueId == 0 || movement.ToLeagueId == 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {movement.Id} must never touch the common pool directly.");
         }
 
         if (!feedersById.TryGetValue(movement.FromLeagueId, out LeagueEntity? from)
             || !feedersById.TryGetValue(movement.ToLeagueId, out LeagueEntity? to))
         {
-            throw new InvalidOperationException($"Structural move {movement.Id} references unknown leagues.");
+            throw new SaveCorruptionException($"Structural move {movement.Id} references unknown leagues.");
         }
 
         CheckStructuralLeagues(movement, from, to);
@@ -833,29 +834,29 @@ public static class RebalanceFeedersInvariants
     {
         if (from.SportingColor != to.SportingColor || from.SportingColor != movement.SportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {movement.Id} must preserve sporting color; no cross-color movement.");
         }
 
         if (Math.Abs(from.FeederDivision - to.FeederDivision) != 1)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move {movement.Id} must be between adjacent tiers.");
         }
 
         if ((MovementKind)movement.Kind == MovementKind.RebalanceUp && to.FeederDivision >= from.FeederDivision)
         {
-            throw new InvalidOperationException($"RebalanceUp {movement.Id} must move to a higher tier.");
+            throw new SaveCorruptionException($"RebalanceUp {movement.Id} must move to a higher tier.");
         }
 
         if ((MovementKind)movement.Kind == MovementKind.RebalanceDown && to.FeederDivision <= from.FeederDivision)
         {
-            throw new InvalidOperationException($"RebalanceDown {movement.Id} must move to a lower tier.");
+            throw new SaveCorruptionException($"RebalanceDown {movement.Id} must move to a lower tier.");
         }
 
         if (movement.FromSeasonRank < 1 || movement.FromSeasonRank > 32)
         {
-            throw new InvalidOperationException($"Structural move {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
+            throw new SaveCorruptionException($"Structural move {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
         }
     }
 }

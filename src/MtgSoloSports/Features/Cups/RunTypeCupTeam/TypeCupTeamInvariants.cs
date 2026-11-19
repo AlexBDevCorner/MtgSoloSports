@@ -2,6 +2,7 @@ using System.Text.Json;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -37,14 +38,14 @@ public static class TypeCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (selection.Count == 0 || selection.Count % rules.TypeCupMinTeamSize != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team field must hold whole teams of {rules.TypeCupMinTeamSize}, was {selection.Count} selected athletes.");
         }
 
         int teamCount = selection.Count / rules.TypeCupMinTeamSize;
         if (teamCount < 2)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team event requires at least two participating creature-type teams, was {teamCount}.");
         }
 
@@ -66,12 +67,12 @@ public static class TypeCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (teamCount < 2)
         {
-            throw new InvalidOperationException($"Type Cup team count {teamCount} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team count {teamCount} is out of range.");
         }
 
         if (groups.Count != rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team event must hold exactly {rules.TypeCupMinTeamSize} groups, was {groups.Count}.");
+            throw new SaveCorruptionException($"Type Cup team event must hold exactly {rules.TypeCupMinTeamSize} groups, was {groups.Count}.");
         }
 
         foreach (int groupNumber in Enumerable.Range(1, rules.TypeCupMinTeamSize))
@@ -117,7 +118,7 @@ public static class TypeCupTeamInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (groupNumber < 1 || groupNumber > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team group {groupNumber} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team group {groupNumber} is out of range.");
         }
 
         CheckLegCounts(ranked, totals, rules, teamCount);
@@ -187,7 +188,7 @@ public static class TypeCupTeamInvariants
         {
             if (!ranks.SetEquals(Enumerable.Range(1, rules.TypeCupMinTeamSize)))
             {
-                throw new InvalidOperationException($"Type Cup team '{type}' must cover selection ranks 1..{rules.TypeCupMinTeamSize} exactly once.");
+                throw new SaveCorruptionException($"Type Cup team '{type}' must cover selection ranks 1..{rules.TypeCupMinTeamSize} exactly once.");
             }
         }
     }
@@ -196,22 +197,22 @@ public static class TypeCupTeamInvariants
     {
         if (string.IsNullOrWhiteSpace(row.CreatureType))
         {
-            throw new InvalidOperationException("Type Cup team field contains an empty creature type.");
+            throw new SaveCorruptionException("Type Cup team field contains an empty creature type.");
         }
 
         if (row.SaveAthleteId <= 0)
         {
-            throw new InvalidOperationException($"Type Cup team field contains invalid athlete id {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Type Cup team field contains invalid athlete id {row.SaveAthleteId}.");
         }
 
         if (row.SelectionRank < 1 || row.SelectionRank > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team selection rank {row.SelectionRank} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team selection rank {row.SelectionRank} is out of range.");
         }
 
         if (!athleteIds.Add(row.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Type Cup team field contains duplicate athlete id {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Type Cup team field contains duplicate athlete id {row.SaveAthleteId}.");
         }
     }
 
@@ -225,7 +226,7 @@ public static class TypeCupTeamInvariants
 
         if (!ranks.Add(row.SelectionRank))
         {
-            throw new InvalidOperationException($"Type Cup team '{row.CreatureType}' contains duplicate selection rank {row.SelectionRank}.");
+            throw new SaveCorruptionException($"Type Cup team '{row.CreatureType}' contains duplicate selection rank {row.SelectionRank}.");
         }
     }
 
@@ -237,12 +238,12 @@ public static class TypeCupTeamInvariants
     {
         if (!groups.TryGetValue(groupNumber, out List<TypeCupSelectionEntity>? members))
         {
-            throw new InvalidOperationException($"Type Cup team event is missing group {groupNumber}.");
+            throw new SaveCorruptionException($"Type Cup team event is missing group {groupNumber}.");
         }
 
         if (members.Count != teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team group {groupNumber} must hold exactly {teamCount} athletes, was {members.Count}.");
+            throw new SaveCorruptionException($"Type Cup team group {groupNumber} must hold exactly {teamCount} athletes, was {members.Count}.");
         }
 
         HashSet<string> types = new(StringComparer.Ordinal);
@@ -251,23 +252,23 @@ public static class TypeCupTeamInvariants
         {
             if (row.SelectionRank != groupNumber)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {row.SaveAthleteId} with selection rank #{row.SelectionRank} competes in wrong rank group {groupNumber}.");
             }
 
             if (string.IsNullOrWhiteSpace(row.CreatureType))
             {
-                throw new InvalidOperationException($"Type Cup team group {groupNumber} contains an empty creature type.");
+                throw new SaveCorruptionException($"Type Cup team group {groupNumber} contains an empty creature type.");
             }
 
             if (!types.Add(row.CreatureType))
             {
-                throw new InvalidOperationException($"Type Cup team group {groupNumber} contains duplicate creature type '{row.CreatureType}'.");
+                throw new SaveCorruptionException($"Type Cup team group {groupNumber} contains duplicate creature type '{row.CreatureType}'.");
             }
 
             if (!athletes.Add(row.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Type Cup team group {groupNumber} contains duplicate athlete id {row.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Type Cup team group {groupNumber} contains duplicate athlete id {row.SaveAthleteId}.");
             }
         }
     }
@@ -276,32 +277,32 @@ public static class TypeCupTeamInvariants
     {
         if (payload.Version != TypeCupTeamRoundPayloadDocument.PayloadVersion)
         {
-            throw new InvalidOperationException($"Type Cup team payload version must be {TypeCupTeamRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
+            throw new SaveCorruptionException($"Type Cup team payload version must be {TypeCupTeamRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
         }
 
         if (payload.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Type Cup team payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
+            throw new SaveCorruptionException($"Type Cup team payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
         }
 
         if (payload.SourceSeasonNumber < 1 || payload.SourceSeasonNumber % 2 != 0)
         {
-            throw new InvalidOperationException($"Type Cup team source season must be a positive even season, was {payload.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Type Cup team source season must be a positive even season, was {payload.SourceSeasonNumber}.");
         }
 
         if (payload.GroupNumber < 1 || payload.GroupNumber > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team group must be 1..{rules.TypeCupMinTeamSize}, was {payload.GroupNumber}.");
+            throw new SaveCorruptionException($"Type Cup team group must be 1..{rules.TypeCupMinTeamSize}, was {payload.GroupNumber}.");
         }
 
         if (payload.RoundNumber < 1 || payload.RoundNumber > rules.TypeCupGroupRounds)
         {
-            throw new InvalidOperationException($"Type Cup team round must be 1..{rules.TypeCupGroupRounds}, was {payload.RoundNumber}.");
+            throw new SaveCorruptionException($"Type Cup team round must be 1..{rules.TypeCupGroupRounds}, was {payload.RoundNumber}.");
         }
 
         if (payload.Placements.Count != teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team round must contain exactly {teamCount} placements, was {payload.Placements.Count}.");
+            throw new SaveCorruptionException($"Type Cup team round must contain exactly {teamCount} placements, was {payload.Placements.Count}.");
         }
     }
 
@@ -309,12 +310,12 @@ public static class TypeCupTeamInvariants
     {
         if (payload.RngBeforeState != rngBeforeState || payload.RngBeforeStream != rngBeforeStream)
         {
-            throw new InvalidOperationException("Type Cup team payload RNG-before does not match the persisted save RNG chain.");
+            throw new SaveCorruptionException("Type Cup team payload RNG-before does not match the persisted save RNG chain.");
         }
 
         if (payload.RngAfterState == rngBeforeState && payload.RngAfterStream == rngBeforeStream)
         {
-            throw new InvalidOperationException("Type Cup team round simulation must advance the save RNG.");
+            throw new SaveCorruptionException("Type Cup team round simulation must advance the save RNG.");
         }
     }
 
@@ -330,7 +331,7 @@ public static class TypeCupTeamInvariants
 
         if (!accumulator.Positions.SetEquals(Enumerable.Range(1, teamCount)))
         {
-            throw new InvalidOperationException($"Type Cup team payload must cover positions 1..{teamCount} exactly once.");
+            throw new SaveCorruptionException($"Type Cup team payload must cover positions 1..{teamCount} exactly once.");
         }
 
         EnsureRankConsistency(payload);
@@ -349,27 +350,27 @@ public static class TypeCupTeamInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Type Cup team payload contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Type Cup team payload contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Type Cup team payload contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Type Cup team payload contains an athlete with an empty name.");
         }
 
         if (!accumulator.Positions.Add(entry.Position))
         {
-            throw new InvalidOperationException($"Type Cup team payload contains duplicate position {entry.Position}.");
+            throw new SaveCorruptionException($"Type Cup team payload contains duplicate position {entry.Position}.");
         }
 
         if (!accumulator.AthleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Type Cup team payload contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Type Cup team payload contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!accumulator.Names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Type Cup team payload contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Type Cup team payload contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -377,30 +378,30 @@ public static class TypeCupTeamInvariants
     {
         if (entry.Position < 1 || entry.Position > teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team payload position {entry.Position} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team payload position {entry.Position} is out of range.");
         }
 
         int expectedBase = SimulationKernel.Scoring.ScoringCalculator.TypeCupBasePointsForPosition(entry.Position, rules).Thousandths;
         if (entry.BaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Type Cup team payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
+            throw new SaveCorruptionException($"Type Cup team payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
         }
 
         if (entry.ActiveBonusThousandths < 0)
         {
-            throw new InvalidOperationException($"Type Cup team payload active bonus for '{entry.Name}' cannot be negative.");
+            throw new SaveCorruptionException($"Type Cup team payload active bonus for '{entry.Name}' cannot be negative.");
         }
 
         long expectedFinal = (long)entry.BaseThousandths * (RulesV1.BonusPercentScale + entry.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
         if (entry.FinalThousandths != expectedFinal)
         {
-            throw new InvalidOperationException($"Type Cup team payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
+            throw new SaveCorruptionException($"Type Cup team payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
         }
 
         long expectedAfter = (long)entry.CumulativeBeforeThousandths + entry.FinalThousandths;
         if (entry.CumulativeAfterThousandths != expectedAfter)
         {
-            throw new InvalidOperationException($"Type Cup team payload cumulative total for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Type Cup team payload cumulative total for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -408,17 +409,17 @@ public static class TypeCupTeamInvariants
     {
         if (entry.RankBefore < 1 || entry.RankBefore > teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team payload rank-before for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Type Cup team payload rank-before for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankAfter < 1 || entry.RankAfter > teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team payload rank-after for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Type Cup team payload rank-after for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankMovement != entry.RankBefore - entry.RankAfter)
         {
-            throw new InvalidOperationException($"Type Cup team payload rank movement for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Type Cup team payload rank movement for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -430,7 +431,7 @@ public static class TypeCupTeamInvariants
         {
             if (byBefore[i].RankBefore != i + 1)
             {
-                throw new InvalidOperationException("Type Cup team payload rank-before sequence is corrupt.");
+                throw new SaveCorruptionException("Type Cup team payload rank-before sequence is corrupt.");
             }
         }
 
@@ -438,7 +439,7 @@ public static class TypeCupTeamInvariants
         {
             if (byAfter[i].RankAfter != i + 1)
             {
-                throw new InvalidOperationException("Type Cup team payload rank-after sequence is corrupt.");
+                throw new SaveCorruptionException("Type Cup team payload rank-after sequence is corrupt.");
             }
         }
     }
@@ -451,12 +452,12 @@ public static class TypeCupTeamInvariants
     {
         if (ranked.Count != teamCount)
         {
-            throw new InvalidOperationException($"Completed Type Cup team group must rank exactly {teamCount} athletes, was {ranked.Count}.");
+            throw new SaveCorruptionException($"Completed Type Cup team group must rank exactly {teamCount} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != teamCount)
         {
-            throw new InvalidOperationException($"Completed Type Cup team group must total exactly {teamCount} athletes, was {totals.Count}.");
+            throw new SaveCorruptionException($"Completed Type Cup team group must total exactly {teamCount} athletes, was {totals.Count}.");
         }
     }
 
@@ -477,7 +478,7 @@ public static class TypeCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, teamCount)))
         {
-            throw new InvalidOperationException($"Completed Type Cup team group must cover ranks 1..{teamCount} exactly once.");
+            throw new SaveCorruptionException($"Completed Type Cup team group must cover ranks 1..{teamCount} exactly once.");
         }
     }
 
@@ -485,22 +486,22 @@ public static class TypeCupTeamInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Completed Type Cup team group contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed Type Cup team group contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (entry.LegRank < 1 || entry.LegRank > teamCount)
         {
-            throw new InvalidOperationException($"Completed Type Cup team group rank {entry.LegRank} is out of range.");
+            throw new SaveCorruptionException($"Completed Type Cup team group rank {entry.LegRank} is out of range.");
         }
 
         if (!ranks.Add(entry.LegRank))
         {
-            throw new InvalidOperationException($"Completed Type Cup team group contains duplicate rank {entry.LegRank}.");
+            throw new SaveCorruptionException($"Completed Type Cup team group contains duplicate rank {entry.LegRank}.");
         }
 
         if (!athleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Completed Type Cup team group contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed Type Cup team group contains duplicate athlete id {entry.AthleteId}.");
         }
     }
 
@@ -512,22 +513,22 @@ public static class TypeCupTeamInvariants
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out TeamEvent.TeamLegTotals? accumulated))
         {
-            throw new InvalidOperationException($"Completed Type Cup team standing for '{entry.Name}' has no accumulated totals.");
+            throw new SaveCorruptionException($"Completed Type Cup team standing for '{entry.Name}' has no accumulated totals.");
         }
 
         if (entry.LegScoreThousandths != accumulated.LegScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed Type Cup team score for '{entry.Name}' does not match accumulated round finals.");
+            throw new SaveCorruptionException($"Completed Type Cup team score for '{entry.Name}' does not match accumulated round finals.");
         }
 
         if (entry.LegBaseThousandths != accumulated.LegBaseThousandths)
         {
-            throw new InvalidOperationException($"Completed Type Cup team base score for '{entry.Name}' does not match accumulated round base points.");
+            throw new SaveCorruptionException($"Completed Type Cup team base score for '{entry.Name}' does not match accumulated round base points.");
         }
 
         if (entry.RoundPlaceCounts.Count != teamCount)
         {
-            throw new InvalidOperationException($"Completed Type Cup team counts for '{entry.Name}' must cover {teamCount} positions.");
+            throw new SaveCorruptionException($"Completed Type Cup team counts for '{entry.Name}' must cover {teamCount} positions.");
         }
 
         int sum = 0;
@@ -535,7 +536,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Completed Type Cup team counts for '{entry.Name}' cannot be negative.");
+                throw new SaveCorruptionException($"Completed Type Cup team counts for '{entry.Name}' cannot be negative.");
             }
 
             checked
@@ -546,7 +547,7 @@ public static class TypeCupTeamInvariants
 
         if (sum != rules.TypeCupGroupRounds)
         {
-            throw new InvalidOperationException($"Completed Type Cup team totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.TypeCupGroupRounds}.");
+            throw new SaveCorruptionException($"Completed Type Cup team totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.TypeCupGroupRounds}.");
         }
     }
 
@@ -558,12 +559,12 @@ public static class TypeCupTeamInvariants
     {
         if (ranked.Count != teamCount)
         {
-            throw new InvalidOperationException($"Completed Type Cup team championship must rank exactly {teamCount} teams, was {ranked.Count}.");
+            throw new SaveCorruptionException($"Completed Type Cup team championship must rank exactly {teamCount} teams, was {ranked.Count}.");
         }
 
         if (legs.Count != teamCount * rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Completed Type Cup team championship must hold exactly {teamCount * rules.TypeCupMinTeamSize} legs, was {legs.Count}.");
+            throw new SaveCorruptionException($"Completed Type Cup team championship must hold exactly {teamCount * rules.TypeCupMinTeamSize} legs, was {legs.Count}.");
         }
     }
 
@@ -597,12 +598,12 @@ public static class TypeCupTeamInvariants
     {
         if (!legsByTeam.TryGetValue(team.TeamId, out List<TeamEvent.TeamLegRanked>? members))
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' has no legs.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' has no legs.");
         }
 
         if (members.Count != rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' must field exactly {rules.TypeCupMinTeamSize} legs, was {members.Count}.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' must field exactly {rules.TypeCupMinTeamSize} legs, was {members.Count}.");
         }
 
         int expectedScore = 0;
@@ -618,12 +619,12 @@ public static class TypeCupTeamInvariants
 
         if (team.TeamScoreThousandths != expectedScore)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' score does not equal the sum of its four legs.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' score does not equal the sum of its four legs.");
         }
 
         if (team.TeamBaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' base score does not equal the sum of its four legs.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' base score does not equal the sum of its four legs.");
         }
     }
 
@@ -635,17 +636,17 @@ public static class TypeCupTeamInvariants
         {
             if (team.TeamRank < 1 || team.TeamRank > teamCount)
             {
-                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} is out of range.");
+                throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} is out of range.");
             }
 
             if (!ranks.Add(team.TeamRank))
             {
-                throw new InvalidOperationException($"Type Cup team championship contains duplicate rank {team.TeamRank}.");
+                throw new SaveCorruptionException($"Type Cup team championship contains duplicate rank {team.TeamRank}.");
             }
 
             if (!teamIds.Add(team.TeamId))
             {
-                throw new InvalidOperationException($"Type Cup team championship contains duplicate team id {team.TeamId}.");
+                throw new SaveCorruptionException($"Type Cup team championship contains duplicate team id {team.TeamId}.");
             }
 
             CheckTeamVectors(team, rules, teamCount);
@@ -653,7 +654,7 @@ public static class TypeCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, teamCount)))
         {
-            throw new InvalidOperationException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once.");
+            throw new SaveCorruptionException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once.");
         }
     }
 
@@ -661,7 +662,7 @@ public static class TypeCupTeamInvariants
     {
         if (team.GroupPlaceCounts.Count != teamCount || team.RoundPlaceCounts.Count != teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' has corrupt tie-break vectors.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' has corrupt tie-break vectors.");
         }
 
         int groupSum = 0;
@@ -669,7 +670,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Type Cup team '{team.TeamName}' has negative group counts.");
+                throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' has negative group counts.");
             }
 
             checked
@@ -680,7 +681,7 @@ public static class TypeCupTeamInvariants
 
         if (groupSum != rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' group counts sum to {groupSum}, expected {rules.TypeCupMinTeamSize}.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' group counts sum to {groupSum}, expected {rules.TypeCupMinTeamSize}.");
         }
 
         int roundSum = 0;
@@ -688,7 +689,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Type Cup team '{team.TeamName}' has negative round counts.");
+                throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' has negative round counts.");
             }
 
             checked
@@ -700,7 +701,7 @@ public static class TypeCupTeamInvariants
         int expectedRounds = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
         if (roundSum != expectedRounds)
         {
-            throw new InvalidOperationException($"Type Cup team '{team.TeamName}' round counts sum to {roundSum}, expected {expectedRounds}.");
+            throw new SaveCorruptionException($"Type Cup team '{team.TeamName}' round counts sum to {roundSum}, expected {expectedRounds}.");
         }
     }
 
@@ -708,12 +709,12 @@ public static class TypeCupTeamInvariants
     {
         if (!source.IsComplete)
         {
-            throw new InvalidOperationException($"Type Cup team source Season {source.SeasonNumber} must be complete.");
+            throw new SaveCorruptionException($"Type Cup team source Season {source.SeasonNumber} must be complete.");
         }
 
         if (source.SeasonNumber % 2 != 0)
         {
-            throw new InvalidOperationException($"Type Cup team source Season {source.SeasonNumber} must be even.");
+            throw new SaveCorruptionException($"Type Cup team source Season {source.SeasonNumber} must be even.");
         }
     }
 
@@ -726,17 +727,17 @@ public static class TypeCupTeamInvariants
         int expectedRounds = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
         if (rounds.Count != expectedRounds)
         {
-            throw new InvalidOperationException($"Type Cup team must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
+            throw new SaveCorruptionException($"Type Cup team must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
         }
 
         if (teams.Count < 2)
         {
-            throw new InvalidOperationException($"Type Cup team must persist at least two teams, was {teams.Count}.");
+            throw new SaveCorruptionException($"Type Cup team must persist at least two teams, was {teams.Count}.");
         }
 
         if (legs.Count != teams.Count * rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team must persist exactly {teams.Count * rules.TypeCupMinTeamSize} legs, was {legs.Count}.");
+            throw new SaveCorruptionException($"Type Cup team must persist exactly {teams.Count * rules.TypeCupMinTeamSize} legs, was {legs.Count}.");
         }
     }
 
@@ -758,7 +759,7 @@ public static class TypeCupTeamInvariants
             {
                 if (!seen.Contains((0, 0, group, number)))
                 {
-                    throw new InvalidOperationException($"Type Cup team is missing group {group} round {number}.");
+                    throw new SaveCorruptionException($"Type Cup team is missing group {group} round {number}.");
                 }
             }
         }
@@ -772,45 +773,45 @@ public static class TypeCupTeamInvariants
     {
         if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Type Cup team round {round.Id} has corrupt source linkage.");
         }
 
         ValidateTournamentIdentity(round.TournamentPhase, round.QualificationGroup, "round");
 
         if (round.GroupNumber < 1 || round.GroupNumber > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team round group {round.GroupNumber} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team round group {round.GroupNumber} is out of range.");
         }
 
         if (round.RoundNumber < 1 || round.RoundNumber > rules.TypeCupGroupRounds)
         {
-            throw new InvalidOperationException($"Type Cup team round number {round.RoundNumber} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team round number {round.RoundNumber} is out of range.");
         }
 
         if (!seen.Add((round.TournamentPhase, round.QualificationGroup, round.GroupNumber, round.RoundNumber)))
         {
-            throw new InvalidOperationException($"Type Cup team contains duplicate phase {round.TournamentPhase} qual {round.QualificationGroup} group {round.GroupNumber} round {round.RoundNumber}.");
+            throw new SaveCorruptionException($"Type Cup team contains duplicate phase {round.TournamentPhase} qual {round.QualificationGroup} group {round.GroupNumber} round {round.RoundNumber}.");
         }
 
         if (round.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
+            throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
         }
 
         if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
         {
-            throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
+            throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
         }
 
         TypeCupTeamRoundPayloadDocument document = TypeCupTeamRoundPayloadDocument.FromStored(round.PayloadJson);
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
+            throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
         }
 
         if (document.RoundNumber != round.RoundNumber || document.GroupNumber != round.GroupNumber || document.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
+            throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
         }
     }
 
@@ -832,7 +833,7 @@ public static class TypeCupTeamInvariants
             if (!ranksByGroup.TryGetValue((0, 0, group), out HashSet<int>? ranks) ||
                 !ranks.SetEquals(Enumerable.Range(1, teamCount)))
             {
-                throw new InvalidOperationException($"Type Cup team group {group} must cover ranks 1..{teamCount} exactly once.");
+                throw new SaveCorruptionException($"Type Cup team group {group} must cover ranks 1..{teamCount} exactly once.");
             }
         }
     }
@@ -847,34 +848,34 @@ public static class TypeCupTeamInvariants
     {
         if (leg.SourceSeasonId != source.Id || leg.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
         }
 
         ValidateTournamentIdentity(leg.TournamentPhase, leg.QualificationGroup, "leg");
 
         if (leg.GroupNumber < 1 || leg.GroupNumber > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team leg group {leg.GroupNumber} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team leg group {leg.GroupNumber} is out of range.");
         }
 
         if (leg.SelectionRank != leg.GroupNumber)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} selection rank #{leg.SelectionRank} does not match group {leg.GroupNumber}.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} selection rank #{leg.SelectionRank} does not match group {leg.GroupNumber}.");
         }
 
         if (string.IsNullOrWhiteSpace(leg.CreatureType))
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} has an empty creature type.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has an empty creature type.");
         }
 
         if (leg.GroupRank < 1 || leg.GroupRank > teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team leg group rank {leg.GroupRank} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team leg group rank {leg.GroupRank} is out of range.");
         }
 
         if (!athletes.Add((leg.TournamentPhase, leg.QualificationGroup, leg.SaveAthleteId)))
         {
-            throw new InvalidOperationException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId}.");
         }
 
         if (!ranksByGroup.TryGetValue((leg.TournamentPhase, leg.QualificationGroup, leg.GroupNumber), out HashSet<int>? ranks))
@@ -885,7 +886,7 @@ public static class TypeCupTeamInvariants
 
         if (!ranks.Add(leg.GroupRank))
         {
-            throw new InvalidOperationException($"Type Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank}.");
+            throw new SaveCorruptionException($"Type Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank}.");
         }
 
         CheckLegPlaceCounts(leg, rules, teamCount);
@@ -896,7 +897,7 @@ public static class TypeCupTeamInvariants
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(leg.RoundPlaceCountsJson);
         if (counts is null || counts.Count != teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has corrupt round-place counts.");
         }
 
         int sum = 0;
@@ -904,7 +905,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Type Cup team leg {leg.Id} has negative placement counts.");
+                throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has negative placement counts.");
             }
 
             checked
@@ -915,7 +916,7 @@ public static class TypeCupTeamInvariants
 
         if (sum != rules.TypeCupGroupRounds)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} sums to {sum} rounds, expected {rules.TypeCupGroupRounds}.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} sums to {sum} rounds, expected {rules.TypeCupGroupRounds}.");
         }
     }
 
@@ -943,7 +944,7 @@ public static class TypeCupTeamInvariants
 
         if (!legacyRanks.SetEquals(Enumerable.Range(1, teamCount)))
         {
-            throw new InvalidOperationException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once.");
+            throw new SaveCorruptionException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once.");
         }
     }
 
@@ -957,29 +958,29 @@ public static class TypeCupTeamInvariants
     {
         if (team.SourceSeasonId != source.Id || team.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Type Cup team {team.Id} has corrupt source linkage.");
         }
 
         ValidateTournamentIdentity(team.TournamentPhase, team.QualificationGroup, "team");
 
         if (string.IsNullOrWhiteSpace(team.CreatureType))
         {
-            throw new InvalidOperationException($"Type Cup team {team.Id} has an empty creature type.");
+            throw new SaveCorruptionException($"Type Cup team {team.Id} has an empty creature type.");
         }
 
         if (team.TeamRank < 1 || team.TeamRank > teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} is out of range.");
         }
 
         if (!ranks.Add((team.TournamentPhase, team.QualificationGroup, team.TeamRank)))
         {
-            throw new InvalidOperationException($"Type Cup team championship contains duplicate rank {team.TeamRank}.");
+            throw new SaveCorruptionException($"Type Cup team championship contains duplicate rank {team.TeamRank}.");
         }
 
         if (!types.Add((team.TournamentPhase, team.QualificationGroup, team.CreatureType)))
         {
-            throw new InvalidOperationException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}'.");
+            throw new SaveCorruptionException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}'.");
         }
 
         int expectedMedal = team.TeamRank switch
@@ -991,7 +992,7 @@ public static class TypeCupTeamInvariants
         };
         if (team.Medal != expectedMedal)
         {
-            throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} has corrupt medal {team.Medal}.");
+            throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} has corrupt medal {team.Medal}.");
         }
 
         CheckTeamCountJson(team, rules, teamCount);
@@ -1004,7 +1005,7 @@ public static class TypeCupTeamInvariants
         if (groupCounts is null || groupCounts.Count != teamCount ||
             roundCounts is null || roundCounts.Count != teamCount)
         {
-            throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt tie-break counts.");
+            throw new SaveCorruptionException($"Type Cup team {team.Id} has corrupt tie-break counts.");
         }
 
         int groupSum = 0;
@@ -1012,7 +1013,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Type Cup team {team.Id} has negative group counts.");
+                throw new SaveCorruptionException($"Type Cup team {team.Id} has negative group counts.");
             }
 
             checked
@@ -1023,7 +1024,7 @@ public static class TypeCupTeamInvariants
 
         if (groupSum != rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup team {team.Id} group counts sum to {groupSum}, expected {rules.TypeCupMinTeamSize}.");
+            throw new SaveCorruptionException($"Type Cup team {team.Id} group counts sum to {groupSum}, expected {rules.TypeCupMinTeamSize}.");
         }
 
         int roundSum = 0;
@@ -1031,7 +1032,7 @@ public static class TypeCupTeamInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Type Cup team {team.Id} has negative round counts.");
+                throw new SaveCorruptionException($"Type Cup team {team.Id} has negative round counts.");
             }
 
             checked
@@ -1043,7 +1044,7 @@ public static class TypeCupTeamInvariants
         int expectedRounds = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
         if (roundSum != expectedRounds)
         {
-            throw new InvalidOperationException($"Type Cup team {team.Id} round counts sum to {roundSum}, expected {expectedRounds}.");
+            throw new SaveCorruptionException($"Type Cup team {team.Id} round counts sum to {roundSum}, expected {expectedRounds}.");
         }
     }
 
@@ -1059,19 +1060,19 @@ public static class TypeCupTeamInvariants
             && phase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification
             && phase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
         {
-            throw new InvalidOperationException($"Type Cup team {kind} tournament phase {phase} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team {kind} tournament phase {phase} is out of range.");
         }
 
         if (phase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification)
         {
             if (qualificationGroup < 1)
             {
-                throw new InvalidOperationException($"Type Cup team {kind} qualification group {qualificationGroup} is out of range.");
+                throw new SaveCorruptionException($"Type Cup team {kind} qualification group {qualificationGroup} is out of range.");
             }
         }
         else if (qualificationGroup != 0)
         {
-            throw new InvalidOperationException($"Type Cup team {kind} qualification group must be 0 outside qualification, was {qualificationGroup}.");
+            throw new SaveCorruptionException($"Type Cup team {kind} qualification group must be 0 outside qualification, was {qualificationGroup}.");
         }
     }
 
@@ -1090,7 +1091,7 @@ public static class TypeCupTeamInvariants
         int expectedHonours = checked(podiumRanks * 4);
         if (teamHonours.Count != expectedHonours)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team for Season {source.SeasonNumber} must persist exactly {expectedHonours} team podium honours, was {teamHonours.Count}.");
         }
 
@@ -1104,13 +1105,13 @@ public static class TypeCupTeamInvariants
                 .ToHashSet();
             if (teamAthletes.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team rank {rank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Type Cup team rank {rank} must field exactly four legs.");
             }
 
             List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
             if (rankHonours.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
+                throw new SaveCorruptionException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
             }
 
             HashSet<int> honourAthletes = new();
@@ -1118,17 +1119,17 @@ public static class TypeCupTeamInvariants
             {
                 if (honour.SeasonNumber != source.SeasonNumber)
                 {
-                    throw new InvalidOperationException("Type Cup team podium honour has corrupt season linkage.");
+                    throw new SaveCorruptionException("Type Cup team podium honour has corrupt season linkage.");
                 }
 
                 if (!teamAthletes.Contains(honour.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Type Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
+                    throw new SaveCorruptionException($"Type Cup team rank-{rank} podium honour does not match a rank-{rank} team leg.");
                 }
 
                 if (!honourAthletes.Add(honour.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Type Cup team rank-{rank} podium honours must cover four distinct athletes.");
+                    throw new SaveCorruptionException($"Type Cup team rank-{rank} podium honours must cover four distinct athletes.");
                 }
             }
         }
@@ -1194,7 +1195,7 @@ public static class TypeCupTeamInvariants
         var finalTeams = teams.Where(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final).ToList();
         if (finalRounds.Count != expectedRounds || finalLegs.Count != teamCount * rules.TypeCupMinTeamSize || finalTeams.Count != teamCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup direct Final must persist exactly {expectedRounds} rounds, {teamCount * rules.TypeCupMinTeamSize} legs and {teamCount} teams.");
         }
 
@@ -1202,7 +1203,7 @@ public static class TypeCupTeamInvariants
             || legs.Any(l => l.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final)
             || teams.Any(t => t.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final))
         {
-            throw new InvalidOperationException("Type Cup direct Final must not persist qualification rows.");
+            throw new SaveCorruptionException("Type Cup direct Final must not persist qualification rows.");
         }
 
         CheckPersistedRoundsForStage(finalRounds, source, rules, teamCount, (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Final, 0);
@@ -1224,7 +1225,7 @@ public static class TypeCupTeamInvariants
         int expectedRounds = plan.TotalRounds;
         if (rounds.Count != expectedRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament must persist exactly {expectedRounds} rounds, was {rounds.Count}.");
         }
 
@@ -1240,7 +1241,7 @@ public static class TypeCupTeamInvariants
                 || stageLegs.Count != stage.GroupSize * rules.TypeCupMinTeamSize
                 || stageTeams.Count != stage.GroupSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} must persist exactly {perStage} rounds, {stage.GroupSize * rules.TypeCupMinTeamSize} legs and {stage.GroupSize} teams.");
             }
 
@@ -1252,7 +1253,7 @@ public static class TypeCupTeamInvariants
 
         if (totalQualTeams != plan.TeamCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification teams must total exactly {plan.TeamCount}, was {totalQualTeams}.");
         }
 
@@ -1263,7 +1264,7 @@ public static class TypeCupTeamInvariants
         var finalTeams = teams.Where(t => t.TournamentPhase == finalPhase).ToList();
         if (finalRounds.Count != perStage || finalLegs.Count != rules.TypeCupFinalTeamCount * rules.TypeCupMinTeamSize || finalTeams.Count != rules.TypeCupFinalTeamCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup Final must persist exactly {perStage} rounds, {rules.TypeCupFinalTeamCount * rules.TypeCupMinTeamSize} legs and {rules.TypeCupFinalTeamCount} teams.");
         }
 
@@ -1277,7 +1278,7 @@ public static class TypeCupTeamInvariants
             || legs.Any(l => l.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField)
             || teams.Any(t => t.TournamentPhase == (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.LegacySingleField))
         {
-            throw new InvalidOperationException("Type Cup tournament must not persist legacy rows.");
+            throw new SaveCorruptionException("Type Cup tournament must not persist legacy rows.");
         }
     }
 
@@ -1294,45 +1295,45 @@ public static class TypeCupTeamInvariants
         {
             if (round.SourceSeasonId != source.Id || round.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Type Cup team round {round.Id} has corrupt source linkage.");
             }
 
             if (round.TournamentPhase != phase || round.QualificationGroup != qual)
             {
-                throw new InvalidOperationException($"Type Cup team round {round.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Type Cup team round {round.Id} has corrupt stage identity.");
             }
 
             ValidateTournamentIdentity(round.TournamentPhase, round.QualificationGroup, "round");
             if (round.GroupNumber < 1 || round.GroupNumber > rules.TypeCupMinTeamSize
                 || round.RoundNumber < 1 || round.RoundNumber > rules.TypeCupGroupRounds)
             {
-                throw new InvalidOperationException($"Type Cup team round group {round.GroupNumber} round {round.RoundNumber} is out of range.");
+                throw new SaveCorruptionException($"Type Cup team round group {round.GroupNumber} round {round.RoundNumber} is out of range.");
             }
 
             if (!seen.Add((round.GroupNumber, round.RoundNumber)))
             {
-                throw new InvalidOperationException($"Type Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber} in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team contains duplicate group {round.GroupNumber} round {round.RoundNumber} in phase {phase} qual {qual}.");
             }
 
             if (round.RulesVersion != rules.Version)
             {
-                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
+                throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has corrupt rules version.");
             }
 
             if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
             {
-                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
+                throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} has an empty payload.");
             }
 
             TypeCupTeamRoundPayloadDocument document = TypeCupTeamRoundPayloadDocument.FromStored(round.PayloadJson);
             if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
+                throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} checksum does not match its payload.");
             }
 
             if (document.RoundNumber != round.RoundNumber || document.GroupNumber != round.GroupNumber || document.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
+                throw new SaveCorruptionException($"Type Cup team group {round.GroupNumber} round {round.RoundNumber} payload identity is corrupt.");
             }
         }
 
@@ -1342,7 +1343,7 @@ public static class TypeCupTeamInvariants
             {
                 if (!seen.Contains((group, number)))
                 {
-                    throw new InvalidOperationException($"Type Cup team phase {phase} qual {qual} is missing group {group} round {number}.");
+                    throw new SaveCorruptionException($"Type Cup team phase {phase} qual {qual} is missing group {group} round {number}.");
                 }
             }
         }
@@ -1362,12 +1363,12 @@ public static class TypeCupTeamInvariants
         {
             if (leg.SourceSeasonId != source.Id || leg.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has corrupt source linkage.");
             }
 
             if (leg.TournamentPhase != phase || leg.QualificationGroup != qual)
             {
-                throw new InvalidOperationException($"Type Cup team leg {leg.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has corrupt stage identity.");
             }
 
             ValidateTournamentIdentity(leg.TournamentPhase, leg.QualificationGroup, "leg");
@@ -1376,12 +1377,12 @@ public static class TypeCupTeamInvariants
                 || string.IsNullOrWhiteSpace(leg.CreatureType)
                 || leg.GroupRank < 1 || leg.GroupRank > teamCount)
             {
-                throw new InvalidOperationException($"Type Cup team leg {leg.Id} is out of range.");
+                throw new SaveCorruptionException($"Type Cup team leg {leg.Id} is out of range.");
             }
 
             if (!athletes.Add(leg.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId} in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team contains duplicate athlete id {leg.SaveAthleteId} in phase {phase} qual {qual}.");
             }
 
             if (!ranksByGroup.TryGetValue(leg.GroupNumber, out HashSet<int>? ranks))
@@ -1392,7 +1393,7 @@ public static class TypeCupTeamInvariants
 
             if (!ranks.Add(leg.GroupRank))
             {
-                throw new InvalidOperationException($"Type Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank} in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team group {leg.GroupNumber} contains duplicate rank {leg.GroupRank} in phase {phase} qual {qual}.");
             }
 
             CheckLegPlaceCounts(leg, rules, teamCount);
@@ -1402,7 +1403,7 @@ public static class TypeCupTeamInvariants
         {
             if (!ranksByGroup.TryGetValue(group, out HashSet<int>? ranks) || !ranks.SetEquals(Enumerable.Range(1, teamCount)))
             {
-                throw new InvalidOperationException($"Type Cup team phase {phase} qual {qual} group {group} must cover ranks 1..{teamCount} exactly once.");
+                throw new SaveCorruptionException($"Type Cup team phase {phase} qual {qual} group {group} must cover ranks 1..{teamCount} exactly once.");
             }
         }
     }
@@ -1422,28 +1423,28 @@ public static class TypeCupTeamInvariants
         {
             if (team.SourceSeasonId != source.Id || team.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Type Cup team {team.Id} has corrupt source linkage.");
             }
 
             if (team.TournamentPhase != phase || team.QualificationGroup != qual)
             {
-                throw new InvalidOperationException($"Type Cup team {team.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Type Cup team {team.Id} has corrupt stage identity.");
             }
 
             ValidateTournamentIdentity(team.TournamentPhase, team.QualificationGroup, "team");
             if (string.IsNullOrWhiteSpace(team.CreatureType) || team.TeamRank < 1 || team.TeamRank > teamCount)
             {
-                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} is out of range in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} is out of range in phase {phase} qual {qual}.");
             }
 
             if (!ranks.Add(team.TeamRank))
             {
-                throw new InvalidOperationException($"Type Cup team championship contains duplicate rank {team.TeamRank} in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team championship contains duplicate rank {team.TeamRank} in phase {phase} qual {qual}.");
             }
 
             if (!types.Add(team.CreatureType))
             {
-                throw new InvalidOperationException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}' in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team championship contains duplicate creature type '{team.CreatureType}' in phase {phase} qual {qual}.");
             }
 
             int expectedMedal = withMedals
@@ -1457,7 +1458,7 @@ public static class TypeCupTeamInvariants
                 : (int)TypeCupMedal.None;
             if (team.Medal != expectedMedal)
             {
-                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} has corrupt medal {team.Medal} in phase {phase} qual {qual}.");
+                throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} has corrupt medal {team.Medal} in phase {phase} qual {qual}.");
             }
 
             CheckTeamCountJson(team, rules, teamCount);
@@ -1465,7 +1466,7 @@ public static class TypeCupTeamInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, teamCount)))
         {
-            throw new InvalidOperationException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once in phase {phase} qual {qual}.");
+            throw new SaveCorruptionException($"Type Cup team championship must cover ranks 1..{teamCount} exactly once in phase {phase} qual {qual}.");
         }
     }
 
@@ -1484,7 +1485,7 @@ public static class TypeCupTeamInvariants
         int expectedHonours = checked(podiumRanks * 4);
         if (teamHonours.Count != expectedHonours)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team for Season {source.SeasonNumber} must persist exactly {expectedHonours} team podium honours, was {teamHonours.Count}.");
         }
 
@@ -1498,13 +1499,13 @@ public static class TypeCupTeamInvariants
                 .ToHashSet();
             if (teamAthletes.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team rank {rank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Type Cup team rank {rank} must field exactly four legs.");
             }
 
             List<HonourEntity> rankHonours = teamHonours.Where(h => h.Kind == (int)expectedKind).ToList();
             if (rankHonours.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
+                throw new SaveCorruptionException($"Type Cup team rank {rank} must persist exactly four podium honours, was {rankHonours.Count}.");
             }
         }
     }

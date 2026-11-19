@@ -229,7 +229,7 @@ public static class CareerPerformanceLoader
                     .Select(e => e.SeasonId)
                     .FirstAsync(cancellationToken)
                     .ConfigureAwait(false);
-                throw new InvalidOperationException($"Season standing references unknown season {unknown}.");
+                throw new SaveCorruptionException($"Season standing references unknown season {unknown}.");
             }
 
             return;
@@ -244,7 +244,7 @@ public static class CareerPerformanceLoader
             .ConfigureAwait(false);
         if (corrupt is not null)
         {
-            throw new InvalidOperationException($"Season standing references unknown season {corrupt.Value}.");
+            throw new SaveCorruptionException($"Season standing references unknown season {corrupt.Value}.");
         }
     }
 
@@ -262,7 +262,7 @@ public static class CareerPerformanceLoader
         ArgumentNullException.ThrowIfNull(fieldSizes);
         if (!seasons.TryGetValue(row.SeasonId, out (int SeasonNumber, bool IsComplete) season))
         {
-            throw new InvalidOperationException($"Season standing references unknown season {row.SeasonId}.");
+            throw new SaveCorruptionException($"Season standing references unknown season {row.SeasonId}.");
         }
 
         if (!season.IsComplete || !InRange(season.SeasonNumber, fromSeason, toSeason))
@@ -272,7 +272,7 @@ public static class CareerPerformanceLoader
 
         if (!leagues.TryGetValue(row.LeagueId, out (int Kind, int Division) league))
         {
-            throw new InvalidOperationException($"Season standing references unknown league {row.LeagueId}.");
+            throw new SaveCorruptionException($"Season standing references unknown league {row.LeagueId}.");
         }
 
         LeagueLevel level = LeagueHierarchy.LevelForDivision(
@@ -403,7 +403,7 @@ public static class CareerPerformanceLoader
             ColorTeamStandingRow? team = seasonTeams.SingleOrDefault(t => t.Color == leg.Color);
             if (team is null)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup team leg for season {leg.SeasonNumber} references unknown color {leg.Color}.");
             }
 
@@ -551,7 +551,7 @@ public static class CareerPerformanceLoader
         {
             if (!finalByTeam.TryGetValue(leg.Team, out TypeTeamStandingRow? team))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup Final leg for season {seasonNumber} references unknown team '{leg.Team}'.");
             }
 
@@ -715,7 +715,7 @@ public static class CareerPerformanceLoader
         {
             if (kv.Value.Count(s => s.StageIndex == 5) > 1)
             {
-                throw new InvalidOperationException($"Chaos Cup season {seasonNumber} holds duplicate Final rows for athlete {kv.Key}.");
+                throw new SaveCorruptionException($"Chaos Cup season {seasonNumber} holds duplicate Final rows for athlete {kv.Key}.");
             }
         }
     }
@@ -750,7 +750,7 @@ public static class CareerPerformanceLoader
     {
         if (finalRank < 1 || finalRank > 32)
         {
-            throw new InvalidOperationException($"Chaos Cup Final rank {finalRank} for season {seasonNumber} is corrupt.");
+            throw new SaveCorruptionException($"Chaos Cup Final rank {finalRank} for season {seasonNumber} is corrupt.");
         }
 
         return new CareerPerformanceScorer.PlacementEvent(
@@ -765,13 +765,13 @@ public static class CareerPerformanceLoader
         int exitStage = athleteRows.Max(r => r.StageIndex);
         if (exitStage is < 0 or > 4)
         {
-            throw new InvalidOperationException($"Chaos Cup season {seasonNumber} athlete {athleteId} has corrupt exit stage {exitStage}.");
+            throw new SaveCorruptionException($"Chaos Cup season {seasonNumber} athlete {athleteId} has corrupt exit stage {exitStage}.");
         }
 
         ChaosCupGroupStandingEntity exitRow = athleteRows.First(r => r.StageIndex == exitStage);
         if (exitRow.IsAdvanced)
         {
-            throw new InvalidOperationException($"Chaos Cup season {seasonNumber} athlete {athleteId} is marked advanced at its last stage {exitStage}.");
+            throw new SaveCorruptionException($"Chaos Cup season {seasonNumber} athlete {athleteId} is marked advanced at its last stage {exitStage}.");
         }
 
         int exitRank = CareerPerformanceScorer.ChaosExitRankForStage(exitStage);

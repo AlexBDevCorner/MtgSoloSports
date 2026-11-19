@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Cups.CupHistory;
@@ -30,7 +31,7 @@ public static class CupTeamKeys
         SportingColor.Multicolor => "multicolor",
         SportingColor.Hybrid => "hybrid",
         SportingColor.Colorless => "colorless",
-        _ => throw new InvalidOperationException($"Unknown sporting color {(int)color}."),
+        _ => throw new SaveCorruptionException($"Unknown sporting color {(int)color}."),
     };
 
     public static string ColorName(SportingColor color) => color.ToString();

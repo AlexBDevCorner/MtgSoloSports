@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -223,7 +224,7 @@ public sealed partial class SelectColorCupTeamsHandler
         HashSet<int> distinct = activeIds.ToHashSet();
         if (distinct.Count != activeIds.Count)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} has duplicate active memberships.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} has duplicate active memberships.");
         }
 
         List<SaveAthleteEntity> athletes = await context.SaveAthletes
@@ -234,7 +235,7 @@ public sealed partial class SelectColorCupTeamsHandler
             .ConfigureAwait(false);
         if (athletes.Count != distinct.Count)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} references unknown athletes.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} references unknown athletes.");
         }
 
         return athletes;
@@ -252,7 +253,7 @@ public sealed partial class SelectColorCupTeamsHandler
             .ConfigureAwait(false);
         if (!seasons.Any(e => e.Id == source.Id))
         {
-            throw new InvalidOperationException($"Save is missing source season {source.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save is missing source season {source.SeasonNumber}.");
         }
 
         return seasons.ToDictionary(e => e.Id, e => e.SeasonNumber);
@@ -286,7 +287,7 @@ public sealed partial class SelectColorCupTeamsHandler
         {
             if (row.TotalChampionshipPointsThousandths < 0)
             {
-                throw new InvalidOperationException($"Season standing {row.Id} has corrupt negative championship points.");
+                throw new SaveCorruptionException($"Season standing {row.Id} has corrupt negative championship points.");
             }
 
             map[row.SaveAthleteId] = row.TotalChampionshipPointsThousandths;
@@ -329,7 +330,7 @@ public sealed partial class SelectColorCupTeamsHandler
             {
                 if (!levels.ContainsKey(leagueId.Value))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Source season {source.SeasonNumber} membership for athlete {athlete.Id} references unknown league {leagueId.Value}.");
                 }
 
@@ -359,7 +360,7 @@ public sealed partial class SelectColorCupTeamsHandler
         ArgumentNullException.ThrowIfNull(rules);
         if (byColor.Count != rules.ColorCupColorCount)
         {
-            throw new InvalidOperationException($"Color Cup selection must cover exactly {rules.ColorCupColorCount} sporting colors, was {byColor.Count}.");
+            throw new SaveCorruptionException($"Color Cup selection must cover exactly {rules.ColorCupColorCount} sporting colors, was {byColor.Count}.");
         }
     }
 }
