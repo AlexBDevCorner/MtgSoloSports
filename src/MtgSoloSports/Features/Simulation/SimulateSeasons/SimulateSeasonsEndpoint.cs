@@ -8,6 +8,7 @@ using MtgSoloSports.Features.Superleague.RebalanceFeeders;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Simulation.SimulateSeasons;
 
@@ -43,6 +44,11 @@ public static class SimulateSeasonsEndpoint
         catch (SaveNotFoundException)
         {
             return Results.NotFound();
+        }
+        catch (SaveCorruptionException ex)
+        {
+            // Corrupted sporting state is a server failure, never a client error (MSS-144).
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (InvalidOperationException ex)
         {

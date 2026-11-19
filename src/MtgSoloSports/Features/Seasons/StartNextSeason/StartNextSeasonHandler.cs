@@ -6,6 +6,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 
@@ -87,7 +88,7 @@ public sealed class StartNextSeasonHandler
         bool isInaugural = source.SeasonNumber == 1 && !source.HasSuperleague;
         if (!isInaugural && !source.HasSuperleague)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} has no Superleague and is not Season 1.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} has no Superleague and is not Season 1.");
         }
 
         List<LeagueEntity> sourceLeagues = await LoadSeasonLeaguesAsync(context, source, cancellationToken).ConfigureAwait(false);
@@ -121,7 +122,7 @@ public sealed class StartNextSeasonHandler
             .ConfigureAwait(false);
         if (season is null)
         {
-            throw new InvalidOperationException($"Save has no season {metadata.CurrentSeason}.");
+            throw new SaveCorruptionException($"Save has no season {metadata.CurrentSeason}.");
         }
 
         if (!season.IsComplete)
@@ -147,7 +148,7 @@ public sealed class StartNextSeasonHandler
 
         if (!next.HasSuperleague)
         {
-            throw new InvalidOperationException($"Season {next.SeasonNumber} must have a Superleague.");
+            throw new SaveCorruptionException($"Season {next.SeasonNumber} must have a Superleague.");
         }
 
         if (next.IsComplete)
@@ -166,7 +167,7 @@ public sealed class StartNextSeasonHandler
             e => e.SeasonNumber == next.SeasonNumber + 1, cancellationToken).ConfigureAwait(false);
         if (hasFurther)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber + 1} already exists; start seasons strictly in order.");
         }
     }
@@ -190,7 +191,7 @@ public sealed class StartNextSeasonHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -234,8 +235,15 @@ public sealed class StartNextSeasonHandler
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new StartNextSeasonConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal: the Chaos Cup still owes its
+            // tournament before the next season may start. Corruption signals are
+            // never downgraded to this 409 and pass through uncaught.
             throw new StartNextSeasonConflictException(ex.Message);
         }
     }
@@ -392,7 +400,7 @@ public sealed class StartNextSeasonHandler
         CancellationToken cancellationToken)
     {
         LeagueEntity superleague = nextLeagues.SingleOrDefault(l => l.Kind == (int)LeagueKind.Superleague)
-            ?? throw new InvalidOperationException($"Season {next.SeasonNumber} has no Superleague.");
+            ?? throw new SaveCorruptionException($"Season {next.SeasonNumber} has no Superleague.");
         HashSet<int> superAthletes = nextMemberships
             .Where(m => m.LeagueId == superleague.Id)
             .Select(m => m.SaveAthleteId)
@@ -411,7 +419,7 @@ public sealed class StartNextSeasonHandler
 
         LeagueEntity sourceSuperleague = await context.Leagues.SingleOrDefaultAsync(
             e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Season {source.SeasonNumber} has no Superleague.");
+            ?? throw new SaveCorruptionException($"Season {source.SeasonNumber} has no Superleague.");
         List<int> safe = await context.SeasonStandings
             .Where(e => e.SeasonId == source.Id && e.LeagueId == sourceSuperleague.Id && e.SeasonRank >= 1 && e.SeasonRank <= rules.SuperleagueSafeCount)
             .Select(e => e.SaveAthleteId)
@@ -445,7 +453,7 @@ public sealed class StartNextSeasonHandler
                 e => e.SeasonId == source.Id && e.LeagueId == league.Id, cancellationToken).ConfigureAwait(false);
             if (stages != rules.StagesPerSeason * rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must hold complete stage bonus history ({rules.StagesPerSeason * rules.LeagueSize} standings) to finalize aging, was {stages}.");
             }
 
@@ -453,7 +461,7 @@ public sealed class StartNextSeasonHandler
                 e => e.SeasonId == source.Id && e.LeagueId == league.Id, cancellationToken).ConfigureAwait(false);
             if (seasons != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must hold complete season standings ({rules.LeagueSize}) to finalize aging, was {seasons}.");
             }
         }
@@ -469,12 +477,12 @@ public sealed class StartNextSeasonHandler
     {
         if (metadata.CurrentSeason != next.SeasonNumber)
         {
-            throw new InvalidOperationException($"Save must point at season {next.SeasonNumber} after start, was {metadata.CurrentSeason}.");
+            throw new SaveCorruptionException($"Save must point at season {next.SeasonNumber} after start, was {metadata.CurrentSeason}.");
         }
 
         if (!string.Equals(metadata.Phase, SavePhaseParser.ToText(SavePhase.SeasonInProgress), StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Save must return to phase SeasonInProgress after start, was '{metadata.Phase}'.");
+            throw new SaveCorruptionException($"Save must return to phase SeasonInProgress after start, was '{metadata.Phase}'.");
         }
 
         foreach (LeagueEntity league in nextLeagues)
@@ -483,7 +491,7 @@ public sealed class StartNextSeasonHandler
                 e => e.SeasonId == next.Id && e.LeagueId == league.Id, cancellationToken).ConfigureAwait(false);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contain exactly {rules.LeagueSize} athletes after start, was {count}.");
             }
         }

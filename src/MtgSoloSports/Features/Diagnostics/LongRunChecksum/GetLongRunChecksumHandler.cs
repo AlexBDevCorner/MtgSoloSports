@@ -27,8 +27,10 @@ public sealed class GetLongRunChecksumHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        using SaveDbContext context = _store.OpenDbContext(saveId);
+        // Migration first, then the context: the migration-rollback path can
+        // replace the save file, so no context handle may predate it.
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        using SaveDbContext context = _store.OpenDbContext(saveId);
 
         Dictionary<int, int> seasonNumbers = await context.Seasons
             .AsNoTracking()

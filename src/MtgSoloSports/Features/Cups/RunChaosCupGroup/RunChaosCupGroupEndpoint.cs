@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.RunChaosCupGroup;
 
@@ -47,6 +48,11 @@ public static class RunChaosCupGroupEndpoint
             {
                 return Results.Conflict(new { error = ex.Message });
             }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
@@ -82,6 +88,11 @@ public static class RunChaosCupGroupEndpoint
             catch (RunChaosCupGroupConflictException ex)
             {
                 return Results.Conflict(new { error = ex.Message });
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

@@ -1,5 +1,6 @@
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Leagues;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Qualifiers.PlayFeederQualifierRound;
 
@@ -34,6 +35,11 @@ public static class PlayFeederQualifierRoundEndpoint
             catch (RunFeederQualifierConflictException ex)
             {
                 return Results.Conflict(new { error = ex.Message });
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

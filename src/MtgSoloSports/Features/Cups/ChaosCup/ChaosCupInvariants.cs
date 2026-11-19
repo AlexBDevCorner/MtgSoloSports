@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -28,37 +29,37 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (edition.SourceSeasonId <= 0)
         {
-            throw new InvalidOperationException("Chaos Cup edition has corrupt source season linkage.");
+            throw new SaveCorruptionException("Chaos Cup edition has corrupt source season linkage.");
         }
 
         if (edition.SourceSeasonNumber < 1)
         {
-            throw new InvalidOperationException("Chaos Cup edition source season number is out of range.");
+            throw new SaveCorruptionException("Chaos Cup edition source season number is out of range.");
         }
 
         if (edition.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Chaos Cup edition rules version must be {rules.Version}, was {edition.RulesVersion}.");
+            throw new SaveCorruptionException($"Chaos Cup edition rules version must be {rules.Version}, was {edition.RulesVersion}.");
         }
 
         if (edition.ChaosFormatVersion != ChaosCupFormat.ChaosFormatVersion)
         {
-            throw new InvalidOperationException($"Chaos Cup edition format version must be {ChaosCupFormat.ChaosFormatVersion}, was {edition.ChaosFormatVersion}.");
+            throw new SaveCorruptionException($"Chaos Cup edition format version must be {ChaosCupFormat.ChaosFormatVersion}, was {edition.ChaosFormatVersion}.");
         }
 
         if (edition.FieldSize != ChaosCupFormat.FieldSize)
         {
-            throw new InvalidOperationException($"Chaos Cup edition field size must be {ChaosCupFormat.FieldSize}, was {edition.FieldSize}.");
+            throw new SaveCorruptionException($"Chaos Cup edition field size must be {ChaosCupFormat.FieldSize}, was {edition.FieldSize}.");
         }
 
         if (string.IsNullOrWhiteSpace(edition.EditionChecksum))
         {
-            throw new InvalidOperationException("Chaos Cup edition has an empty checksum.");
+            throw new SaveCorruptionException("Chaos Cup edition has an empty checksum.");
         }
 
         if (edition.RngAfterState == edition.RngBeforeState && edition.RngAfterStream == edition.RngBeforeStream)
         {
-            throw new InvalidOperationException("Chaos Cup edition seed must advance the save RNG.");
+            throw new SaveCorruptionException("Chaos Cup edition seed must advance the save RNG.");
         }
     }
 
@@ -72,12 +73,12 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(entrants);
         if (edition.SourceSeasonId != source.Id || edition.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException("Chaos Cup edition source linkage does not match the season.");
+            throw new SaveCorruptionException("Chaos Cup edition source linkage does not match the season.");
         }
 
         if (entrants.Count != ChaosCupFormat.FieldSize)
         {
-            throw new InvalidOperationException($"Chaos Cup must freeze exactly {ChaosCupFormat.FieldSize} entrants, was {entrants.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup must freeze exactly {ChaosCupFormat.FieldSize} entrants, was {entrants.Count}.");
         }
 
         HashSet<int> ids = new(entrants.Count);
@@ -86,22 +87,22 @@ public static class ChaosCupInvariants
         {
             if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber)
             {
-                throw new InvalidOperationException($"Chaos Cup entrant {row.Id} has corrupt source linkage.");
+                throw new SaveCorruptionException($"Chaos Cup entrant {row.Id} has corrupt source linkage.");
             }
 
             if (row.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException("Chaos Cup entrant has corrupt athlete id.");
+                throw new SaveCorruptionException("Chaos Cup entrant has corrupt athlete id.");
             }
 
             if (!ids.Add(row.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup field contains duplicate athlete {row.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos Cup field contains duplicate athlete {row.SaveAthleteId}.");
             }
 
             if (!Enum.IsDefined((SportingColor)row.SportingColor))
             {
-                throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has unknown sporting color {row.SportingColor}.");
+                throw new SaveCorruptionException($"Chaos Cup entrant {row.SaveAthleteId} has unknown sporting color {row.SportingColor}.");
             }
 
             CheckEntrantDivision(row);
@@ -124,7 +125,7 @@ public static class ChaosCupInvariants
     {
         if (!perColor.TryGetValue(color, out int count) || count != ChaosCupFormat.EntrantsPerColor)
         {
-            throw new InvalidOperationException($"Chaos Cup field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {count}.");
+            throw new SaveCorruptionException($"Chaos Cup field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {count}.");
         }
     }
 
@@ -133,12 +134,12 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(row);
         if (row.IsPoolInvite != (row.SourceLeagueId is null))
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has inconsistent Pool invitation linkage.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {row.SaveAthleteId} has inconsistent Pool invitation linkage.");
         }
 
         if (!row.IsPoolInvite && row.SourceLeagueId <= 0)
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt source league linkage.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt source league linkage.");
         }
     }
 
@@ -147,7 +148,7 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(row);
         if (row.EffectiveBonusThousandths < 0)
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt frozen bonus {row.EffectiveBonusThousandths}.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {row.SaveAthleteId} has corrupt frozen bonus {row.EffectiveBonusThousandths}.");
         }
     }
 
@@ -156,7 +157,7 @@ public static class ChaosCupInvariants
         string expectedChecksum = ComputeEditionChecksum(entrants);
         if (!string.Equals(edition.EditionChecksum, expectedChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Chaos Cup edition checksum does not match its frozen entrants.");
+            throw new SaveCorruptionException("Chaos Cup edition checksum does not match its frozen entrants.");
         }
     }
 
@@ -175,7 +176,7 @@ public static class ChaosCupInvariants
         int expectedEntrants = ChaosCupFormat.EntrantCountForStage(stageIndex);
         if (draws.Count != expectedEntrants)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must draw exactly {expectedEntrants} entrants, was {draws.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} must draw exactly {expectedEntrants} entrants, was {draws.Count}.");
         }
 
         HashSet<int> entrantIds = entrants.Select(e => e.SaveAthleteId).ToHashSet();
@@ -209,53 +210,53 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (payload.Version != ChaosCupRoundPayloadDocument.PayloadVersion)
         {
-            throw new InvalidOperationException($"Chaos Cup payload version must be {ChaosCupRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
+            throw new SaveCorruptionException($"Chaos Cup payload version must be {ChaosCupRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
         }
 
         if (payload.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Chaos Cup payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
+            throw new SaveCorruptionException($"Chaos Cup payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
         }
 
         if (payload.ChaosFormatVersion != ChaosCupFormat.ChaosFormatVersion)
         {
-            throw new InvalidOperationException($"Chaos Cup payload format version must be {ChaosCupFormat.ChaosFormatVersion}, was {payload.ChaosFormatVersion}.");
+            throw new SaveCorruptionException($"Chaos Cup payload format version must be {ChaosCupFormat.ChaosFormatVersion}, was {payload.ChaosFormatVersion}.");
         }
 
         if (payload.StageIndex < 0 || payload.StageIndex >= ChaosCupFormat.StageCount)
         {
-            throw new InvalidOperationException($"Chaos Cup payload stage {payload.StageIndex} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup payload stage {payload.StageIndex} is out of range.");
         }
 
         int groupCount = ChaosCupFormat.GroupCountForStage(payload.StageIndex);
         if (payload.GroupNumber < 1 || payload.GroupNumber > groupCount)
         {
-            throw new InvalidOperationException($"Chaos Cup payload group {payload.GroupNumber} is out of range for stage {payload.StageIndex}.");
+            throw new SaveCorruptionException($"Chaos Cup payload group {payload.GroupNumber} is out of range for stage {payload.StageIndex}.");
         }
 
         if (payload.RoundNumber < 1 || payload.RoundNumber > ChaosCupFormat.RoundsPerGroup)
         {
-            throw new InvalidOperationException($"Chaos Cup payload round {payload.RoundNumber} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup payload round {payload.RoundNumber} is out of range.");
         }
 
         if (payload.RngBeforeState != rngBeforeState || payload.RngBeforeStream != rngBeforeStream)
         {
-            throw new InvalidOperationException("Chaos Cup payload RNG-before does not match the persisted group RNG chain.");
+            throw new SaveCorruptionException("Chaos Cup payload RNG-before does not match the persisted group RNG chain.");
         }
 
         if (payload.RngAfterState == rngBeforeState && payload.RngAfterStream == rngBeforeStream)
         {
-            throw new InvalidOperationException("Chaos Cup round simulation must advance the group RNG.");
+            throw new SaveCorruptionException("Chaos Cup round simulation must advance the group RNG.");
         }
 
         if (string.IsNullOrWhiteSpace(payload.Checksum))
         {
-            throw new InvalidOperationException("Chaos Cup payload has an empty checksum.");
+            throw new SaveCorruptionException("Chaos Cup payload has an empty checksum.");
         }
 
         if (payload.Placements.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup round must contain exactly {ChaosCupFormat.GroupSize} placements, was {payload.Placements.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup round must contain exactly {ChaosCupFormat.GroupSize} placements, was {payload.Placements.Count}.");
         }
     }
 
@@ -271,7 +272,7 @@ public static class ChaosCupInvariants
 
         if (!positions.SetEquals(Enumerable.Range(1, ChaosCupFormat.GroupSize)))
         {
-            throw new InvalidOperationException("Chaos Cup payload must cover positions 1..32 exactly once.");
+            throw new SaveCorruptionException("Chaos Cup payload must cover positions 1..32 exactly once.");
         }
     }
 
@@ -286,7 +287,7 @@ public static class ChaosCupInvariants
         CheckPlacementPoints(entry, rules);
         if (entry.RankMovement != entry.RankBefore - entry.RankAfter)
         {
-            throw new InvalidOperationException($"Chaos Cup payload rank movement for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Chaos Cup payload rank movement for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -298,32 +299,32 @@ public static class ChaosCupInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException("Chaos Cup payload contains invalid athlete id.");
+            throw new SaveCorruptionException("Chaos Cup payload contains invalid athlete id.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Chaos Cup payload contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Chaos Cup payload contains an athlete with an empty name.");
         }
 
         if (!positions.Add(entry.Position))
         {
-            throw new InvalidOperationException($"Chaos Cup payload contains duplicate position {entry.Position}.");
+            throw new SaveCorruptionException($"Chaos Cup payload contains duplicate position {entry.Position}.");
         }
 
         if (!athleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Chaos Cup payload contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Chaos Cup payload contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Chaos Cup payload contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Chaos Cup payload contains duplicate athlete '{entry.Name}'.");
         }
 
         if (entry.Position < 1 || entry.Position > ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup payload position {entry.Position} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup payload position {entry.Position} is out of range.");
         }
     }
 
@@ -332,30 +333,30 @@ public static class ChaosCupInvariants
         int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
         if (entry.BaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Chaos Cup payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
+            throw new SaveCorruptionException($"Chaos Cup payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
         }
 
         if (entry.ActiveBonusThousandths < 0)
         {
-            throw new InvalidOperationException($"Chaos Cup payload active bonus for '{entry.Name}' cannot be negative.");
+            throw new SaveCorruptionException($"Chaos Cup payload active bonus for '{entry.Name}' cannot be negative.");
         }
 
         long expectedFinal = (long)entry.BaseThousandths * (RulesV1.BonusPercentScale + entry.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
         if (entry.FinalThousandths != expectedFinal)
         {
-            throw new InvalidOperationException($"Chaos Cup payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
+            throw new SaveCorruptionException($"Chaos Cup payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
         }
 
         long expectedAfter = (long)entry.CumulativeBeforeThousandths + entry.FinalThousandths;
         if (entry.CumulativeAfterThousandths != expectedAfter)
         {
-            throw new InvalidOperationException($"Chaos Cup payload cumulative total for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Chaos Cup payload cumulative total for '{entry.Name}' is corrupt.");
         }
 
         if (entry.RankBefore < 1 || entry.RankBefore > ChaosCupFormat.GroupSize
             || entry.RankAfter < 1 || entry.RankAfter > ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup payload ranks for '{entry.Name}' are out of range.");
+            throw new SaveCorruptionException($"Chaos Cup payload ranks for '{entry.Name}' are out of range.");
         }
     }
 
@@ -371,34 +372,34 @@ public static class ChaosCupInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.Id} has corrupt source linkage.");
         }
 
         if (row.SourceSeasonId != edition.SourceSeasonId)
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.Id} does not belong to the edition.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.Id} does not belong to the edition.");
         }
 
         if (row.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} has corrupt rules version.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} has corrupt rules version.");
         }
 
         if (row.ChaosFormatVersion != ChaosCupFormat.ChaosFormatVersion)
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} has corrupt format version.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} has corrupt format version.");
         }
 
         ChaosCupRoundPayloadDocument payload = ChaosCupRoundPayloadDocument.FromStored(row.PayloadJson);
         if (!string.Equals(payload.Checksum, row.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} checksum does not match its payload.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} checksum does not match its payload.");
         }
 
         if (payload.StageIndex != row.StageIndex || payload.GroupNumber != row.GroupNumber
             || payload.RoundNumber != row.RoundNumber || payload.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} payload identity is corrupt.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} payload identity is corrupt.");
         }
 
         if (payload.RngBeforeState != unchecked((ulong)row.RngBeforeState)
@@ -406,7 +407,7 @@ public static class ChaosCupInvariants
             || payload.RngAfterState != unchecked((ulong)row.RngAfterState)
             || payload.RngAfterStream != unchecked((ulong)row.RngAfterStream))
         {
-            throw new InvalidOperationException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} RNG does not match its payload.");
+            throw new SaveCorruptionException($"Chaos Cup round {row.StageIndex}/{row.GroupNumber}/{row.RoundNumber} RNG does not match its payload.");
         }
 
         ValidateRoundPayload(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
@@ -420,17 +421,17 @@ public static class ChaosCupInvariants
         {
             if (row.StageIndex != stageIndex || row.GroupNumber != groupNumber)
             {
-                throw new InvalidOperationException($"Chaos Cup group {stageIndex}/{groupNumber} contains a foreign round.");
+                throw new SaveCorruptionException($"Chaos Cup group {stageIndex}/{groupNumber} contains a foreign round.");
             }
 
             if (row.RoundNumber < 1 || row.RoundNumber > ChaosCupFormat.RoundsPerGroup)
             {
-                throw new InvalidOperationException($"Chaos Cup group {stageIndex}/{groupNumber} round {row.RoundNumber} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup group {stageIndex}/{groupNumber} round {row.RoundNumber} is out of range.");
             }
 
             if (!seen.Add(row.RoundNumber))
             {
-                throw new InvalidOperationException($"Chaos Cup group {stageIndex}/{groupNumber} contains duplicate round {row.RoundNumber}.");
+                throw new SaveCorruptionException($"Chaos Cup group {stageIndex}/{groupNumber} contains duplicate round {row.RoundNumber}.");
             }
         }
 
@@ -438,7 +439,7 @@ public static class ChaosCupInvariants
         {
             if (!seen.Contains(expected))
             {
-                throw new InvalidOperationException($"Chaos Cup group {stageIndex}/{groupNumber} must cover rounds 1..{rounds.Count} contiguously without gaps.");
+                throw new SaveCorruptionException($"Chaos Cup group {stageIndex}/{groupNumber} must cover rounds 1..{rounds.Count} contiguously without gaps.");
             }
         }
 
@@ -448,7 +449,7 @@ public static class ChaosCupInvariants
             if (ordered[i].RngBeforeState != ordered[i - 1].RngAfterState
                 || ordered[i].RngBeforeStream != ordered[i - 1].RngAfterStream)
             {
-                throw new InvalidOperationException($"Chaos Cup group {stageIndex}/{groupNumber} has a broken RNG chain at round {ordered[i].RoundNumber}.");
+                throw new SaveCorruptionException($"Chaos Cup group {stageIndex}/{groupNumber} has a broken RNG chain at round {ordered[i].RoundNumber}.");
             }
         }
     }
@@ -476,7 +477,7 @@ public static class ChaosCupInvariants
             .ToDictionary(g => g.Key, g => g.ToList());
         if (drawsByGroup.Count != groupCount)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must draw exactly {groupCount} groups, was {drawsByGroup.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} must draw exactly {groupCount} groups, was {drawsByGroup.Count}.");
         }
 
         Dictionary<int, List<ChaosCupGroupStandingEntity>> standingsByGroup = standings
@@ -504,7 +505,7 @@ public static class ChaosCupInvariants
             if (!drawsByGroup.TryGetValue(group, out List<ChaosCupDrawEntity>? groupDraws)
                 || groupDraws.Count != ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must draw exactly {ChaosCupFormat.GroupSize} athletes.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} must draw exactly {ChaosCupFormat.GroupSize} athletes.");
             }
 
             List<ChaosCupRoundEntity> groupRounds = rounds
@@ -518,7 +519,7 @@ public static class ChaosCupInvariants
 
             if (!groupComplete && hasStandings)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} is partly played but already has standings.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} is partly played but already has standings.");
             }
 
             if (!groupComplete)
@@ -528,7 +529,7 @@ public static class ChaosCupInvariants
 
             if (!hasStandings || groupStandings!.Count != ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} is complete but misses standings.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} is complete but misses standings.");
             }
 
             CheckGroupStandingRanks(source, edition, groupDraws, groupStandings!, groupRounds, stageIndex, group, isFinal, rules);
@@ -545,26 +546,26 @@ public static class ChaosCupInvariants
         HashSet<int> standingAthletes = standings.Select(s => s.SaveAthleteId).ToHashSet();
         if (standingAthletes.Count != standings.Count)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} contains duplicate advancing athlete.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} contains duplicate advancing athlete.");
         }
 
         HashSet<int> drawnAthletes = draws.Select(d => d.SaveAthleteId).ToHashSet();
         if (!standingAthletes.IsSubsetOf(drawnAthletes))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} standings must cover only drawn athletes.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} standings must cover only drawn athletes.");
         }
 
         HashSet<int> completed = CompletedGroups(rounds, stageIndex, groupCount);
         int expected = checked(completed.Count * ChaosCupFormat.GroupSize);
         if (standings.Count != expected)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, expected {expected} standings, was {standings.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, expected {expected} standings, was {standings.Count}.");
         }
 
         HashSet<int> standingGroups = standings.Select(s => s.GroupNumber).ToHashSet();
         if (!standingGroups.SetEquals(completed))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} standings groups must match completed groups.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} standings groups must match completed groups.");
         }
     }
 
@@ -577,12 +578,12 @@ public static class ChaosCupInvariants
         {
             if (row.StageIndex != stageIndex)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} contains a foreign stage {row.StageIndex} round.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} contains a foreign stage {row.StageIndex} round.");
             }
 
             if (row.GroupNumber < 1 || row.GroupNumber > groupCount)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} round group {row.GroupNumber} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} round group {row.GroupNumber} is out of range.");
             }
         }
 
@@ -613,7 +614,7 @@ public static class ChaosCupInvariants
         {
             if (standings.Any(s => s.IsAdvanced))
             {
-                throw new InvalidOperationException("Chaos Cup Final must not advance athletes; its ranks 1..32 are official places.");
+                throw new SaveCorruptionException("Chaos Cup Final must not advance athletes; its ranks 1..32 are official places.");
             }
 
             return;
@@ -624,7 +625,7 @@ public static class ChaosCupInvariants
         int advanced = standings.Count(s => s.IsAdvanced);
         if (advanced != expected)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, must advance exactly {expected} athletes, was {advanced}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} has {completed.Count} completed groups, must advance exactly {expected} athletes, was {advanced}.");
         }
 
         foreach (ChaosCupGroupStandingEntity standing in standings)
@@ -632,7 +633,7 @@ public static class ChaosCupInvariants
             bool shouldAdvance = standing.GroupRank <= ChaosCupFormat.AdvancingPerGroup;
             if (standing.IsAdvanced != shouldAdvance)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {standing.GroupNumber} rank {standing.GroupRank} has corrupt advancement flag.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {standing.GroupNumber} rank {standing.GroupRank} has corrupt advancement flag.");
             }
         }
     }
@@ -648,12 +649,12 @@ public static class ChaosCupInvariants
         HashSet<int> next = nextDraws.Select(d => d.SaveAthleteId).ToHashSet();
         if (advancers.Count != ChaosCupFormat.AdvancingCountForStage(prevStageIndex))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {prevStageIndex} must advance exactly {ChaosCupFormat.AdvancingCountForStage(prevStageIndex)} athletes.");
+            throw new SaveCorruptionException($"Chaos Cup stage {prevStageIndex} must advance exactly {ChaosCupFormat.AdvancingCountForStage(prevStageIndex)} athletes.");
         }
 
         if (!advancers.SetEquals(next))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {prevStageIndex + 1} draw must contain exactly the stage {prevStageIndex} advancers.");
+            throw new SaveCorruptionException($"Chaos Cup stage {prevStageIndex + 1} draw must contain exactly the stage {prevStageIndex} advancers.");
         }
     }
 
@@ -718,18 +719,18 @@ public static class ChaosCupInvariants
 
         if (first.RngAfterState == first.RngBeforeState && first.RngAfterStream == first.RngBeforeStream)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw must advance the save RNG.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw must advance the save RNG.");
         }
 
         if (string.IsNullOrWhiteSpace(first.DrawChecksum))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has an empty checksum.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has an empty checksum.");
         }
 
         string expected = ComputeStageDrawChecksum(stageIndex, draws);
         if (!string.Equals(first.DrawChecksum, expected, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw checksum does not match its assignments.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw checksum does not match its assignments.");
         }
     }
 
@@ -744,44 +745,44 @@ public static class ChaosCupInvariants
         if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber
             || row.SourceSeasonId != edition.SourceSeasonId)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw row {row.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw row {row.Id} has corrupt source linkage.");
         }
 
         if (row.StageIndex != stageIndex)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw contains a foreign stage {row.StageIndex} row.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw contains a foreign stage {row.StageIndex} row.");
         }
 
         if (row.GroupNumber < 1 || row.GroupNumber > expectedGroups)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw group {row.GroupNumber} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw group {row.GroupNumber} is out of range.");
         }
 
         if (row.DrawIndex < 0 || row.DrawIndex >= ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw index {row.DrawIndex} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw index {row.DrawIndex} is out of range.");
         }
 
         if (row.GroupSize != ChaosCupFormat.GroupSize || row.StageGroupCount != expectedGroups)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has corrupt group metadata.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has corrupt group metadata.");
         }
 
         if (row.RulesVersion != edition.RulesVersion || row.ChaosFormatVersion != edition.ChaosFormatVersion)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has corrupt version linkage.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has corrupt version linkage.");
         }
 
         if (row.RngBeforeState != first.RngBeforeState || row.RngBeforeStream != first.RngBeforeStream
             || row.RngAfterState != first.RngAfterState || row.RngAfterStream != first.RngAfterStream
             || !string.Equals(row.DrawChecksum, first.DrawChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw has inconsistent RNG or checksum metadata.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw has inconsistent RNG or checksum metadata.");
         }
 
         if (row.SaveAthleteId <= 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draw contains corrupt athlete id.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draw contains corrupt athlete id.");
         }
     }
 
@@ -798,17 +799,17 @@ public static class ChaosCupInvariants
         {
             if (!entrantIds.Contains(row.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} draws athlete {row.SaveAthleteId} outside the frozen field.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} draws athlete {row.SaveAthleteId} outside the frozen field.");
             }
 
             if (!seenAthletes.Add(row.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} assigns athlete {row.SaveAthleteId} more than once.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} assigns athlete {row.SaveAthleteId} more than once.");
             }
 
             if (!seenPositions.Add((row.GroupNumber, row.DrawIndex)))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {row.GroupNumber} contains duplicate draw index {row.DrawIndex}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {row.GroupNumber} contains duplicate draw index {row.DrawIndex}.");
             }
 
             if (!athletesByGroup.TryGetValue(row.GroupNumber, out HashSet<int>? members))
@@ -822,14 +823,14 @@ public static class ChaosCupInvariants
 
         if (athletesByGroup.Count != expectedGroups)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must cover exactly {expectedGroups} groups, was {athletesByGroup.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} must cover exactly {expectedGroups} groups, was {athletesByGroup.Count}.");
         }
 
         foreach ((int group, HashSet<int> members) in athletesByGroup)
         {
             if (members.Count != ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must hold exactly {ChaosCupFormat.GroupSize} athletes, was {members.Count}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} must hold exactly {ChaosCupFormat.GroupSize} athletes, was {members.Count}.");
             }
         }
     }
@@ -845,7 +846,7 @@ public static class ChaosCupInvariants
             {
                 if (!colorByAthlete.TryGetValue(row.SaveAthleteId, out SportingColor color))
                 {
-                    throw new InvalidOperationException($"Chaos Cup first-stage group {group.Key} holds athlete {row.SaveAthleteId} outside the frozen field.");
+                    throw new SaveCorruptionException($"Chaos Cup first-stage group {group.Key} holds athlete {row.SaveAthleteId} outside the frozen field.");
                 }
 
                 perColor.TryGetValue(color, out int current);
@@ -856,7 +857,7 @@ public static class ChaosCupInvariants
             {
                 if (!perColor.TryGetValue(color, out int count) || count != ChaosCupFormat.FirstStagePerColorPerGroup)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Chaos Cup first-stage group {group.Key} must hold exactly {ChaosCupFormat.FirstStagePerColorPerGroup} {color} athletes, was {count}.");
                 }
             }
@@ -884,7 +885,7 @@ public static class ChaosCupInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, ChaosCupFormat.GroupSize)))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must cover ranks 1..{ChaosCupFormat.GroupSize} exactly once.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} must cover ranks 1..{ChaosCupFormat.GroupSize} exactly once.");
         }
 
         CheckGroupStandingsMatchRounds(groupDraws, groupStandings, groupRounds, stageIndex, group, rules);
@@ -911,7 +912,7 @@ public static class ChaosCupInvariants
     {
         if (groupRounds.Count != ChaosCupFormat.RoundsPerGroup)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} must hold exactly {ChaosCupFormat.RoundsPerGroup} rounds to rank standings, was {groupRounds.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} must hold exactly {ChaosCupFormat.RoundsPerGroup} rounds to rank standings, was {groupRounds.Count}.");
         }
 
         DerivedGroupTotals derived = AccumulateGroupTotals(groupDraws, groupRounds, stageIndex, group, rules);
@@ -953,21 +954,21 @@ public static class ChaosCupInvariants
         ChaosCupRoundPayloadDocument payload = ChaosCupRoundPayloadDocument.FromStored(row.PayloadJson);
         if (payload.StageIndex != stageIndex || payload.GroupNumber != group || payload.RoundNumber != row.RoundNumber)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} payload identity is corrupt.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} payload identity is corrupt.");
         }
 
         ValidateRoundPayload(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
         HashSet<int> roundAthletes = payload.Placements.Select(p => p.AthleteId).ToHashSet();
         if (!roundAthletes.SetEquals(drawn))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} must cover exactly its drawn athletes.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} must cover exactly its drawn athletes.");
         }
 
         foreach (RoundPayloadEntry placement in payload.Placements)
         {
             if (runningById[placement.AthleteId] != placement.CumulativeBeforeThousandths)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} cumulative total for athlete {placement.AthleteId} breaks the immutable chain.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} round {row.RoundNumber} cumulative total for athlete {placement.AthleteId} breaks the immutable chain.");
             }
 
             checked
@@ -1001,29 +1002,29 @@ public static class ChaosCupInvariants
     {
         if (!derived.ScoreById.TryGetValue(standing.SaveAthleteId, out int expectedScore))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} ranks athlete {standing.SaveAthleteId} outside its draw.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} ranks athlete {standing.SaveAthleteId} outside its draw.");
         }
 
         if (standing.GroupScoreThousandths != expectedScore)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} score {standing.GroupScoreThousandths} does not match immutable rounds total {expectedScore}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} score {standing.GroupScoreThousandths} does not match immutable rounds total {expectedScore}.");
         }
 
         if (standing.BaseScoreThousandths != derived.BaseById[standing.SaveAthleteId])
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} base {standing.BaseScoreThousandths} does not match immutable rounds total {derived.BaseById[standing.SaveAthleteId]}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} base {standing.BaseScoreThousandths} does not match immutable rounds total {derived.BaseById[standing.SaveAthleteId]}.");
         }
 
         int expectedWins = derived.CountsById[standing.SaveAthleteId][0];
         if (standing.RoundWins != expectedWins)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} round wins {standing.RoundWins} does not match immutable rounds total {expectedWins}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} round wins {standing.RoundWins} does not match immutable rounds total {expectedWins}.");
         }
 
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
         if (counts is null || counts.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing has corrupt round-place counts.");
         }
 
         int[] expectedCounts = derived.CountsById[standing.SaveAthleteId];
@@ -1031,7 +1032,7 @@ public static class ChaosCupInvariants
         {
             if (counts[i] != expectedCounts[i])
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} place counts do not match immutable rounds.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} place counts do not match immutable rounds.");
             }
         }
     }
@@ -1047,7 +1048,7 @@ public static class ChaosCupInvariants
         List<int> actualOrder = groupStandings.OrderBy(s => s.GroupRank).Select(s => s.SaveAthleteId).ToList();
         if (!expectedOrder.SequenceEqual(actualOrder))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} ranks do not follow derived round totals.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} ranks do not follow derived round totals.");
         }
     }
 
@@ -1098,37 +1099,37 @@ public static class ChaosCupInvariants
         if (standing.SourceSeasonId != source.Id || standing.SourceSeasonNumber != source.SeasonNumber
             || standing.SourceSeasonId != edition.SourceSeasonId)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing {standing.Id} has corrupt source linkage.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing {standing.Id} has corrupt source linkage.");
         }
 
         if (standing.StageIndex != stageIndex || standing.GroupNumber != group)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} contains a foreign standing.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} contains a foreign standing.");
         }
 
         if (standing.GroupRank < 1 || standing.GroupRank > ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} is out of range.");
         }
 
         if (!ranks.Add(standing.GroupRank))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} contains duplicate rank {standing.GroupRank}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} contains duplicate rank {standing.GroupRank}.");
         }
 
         if (!athletes.Add(standing.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} contains duplicate athlete {standing.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} contains duplicate athlete {standing.SaveAthleteId}.");
         }
 
         if (!drawn.Contains(standing.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} ranks athlete {standing.SaveAthleteId} outside its draw.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} ranks athlete {standing.SaveAthleteId} outside its draw.");
         }
 
         if (standing.RoundWins < 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing has negative round wins.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing has negative round wins.");
         }
 
         CheckStandingCounts(standing, stageIndex, group);
@@ -1140,7 +1141,7 @@ public static class ChaosCupInvariants
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
         if (counts is null || counts.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing has corrupt round-place counts.");
         }
 
         int sum = 0;
@@ -1148,7 +1149,7 @@ public static class ChaosCupInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing has negative placement counts.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing has negative placement counts.");
             }
 
             checked
@@ -1159,7 +1160,7 @@ public static class ChaosCupInvariants
 
         if (sum != ChaosCupFormat.RoundsPerGroup)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} standing sums to {sum} rounds, expected {ChaosCupFormat.RoundsPerGroup}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} standing sums to {sum} rounds, expected {ChaosCupFormat.RoundsPerGroup}.");
         }
     }
 
@@ -1170,12 +1171,12 @@ public static class ChaosCupInvariants
             bool shouldAdvance = standing.GroupRank <= ChaosCupFormat.AdvancingPerGroup;
             if (standing.IsAdvanced != shouldAdvance)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} has corrupt advancement flag.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {group} rank {standing.GroupRank} has corrupt advancement flag.");
             }
         }
         else if (standing.IsAdvanced)
         {
-            throw new InvalidOperationException("Chaos Cup Final standings must not carry advancement flags.");
+            throw new SaveCorruptionException("Chaos Cup Final standings must not carry advancement flags.");
         }
     }
 }

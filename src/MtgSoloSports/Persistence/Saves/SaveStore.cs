@@ -242,7 +242,7 @@ public sealed class SaveStore
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 await OverwriteLiveFromCheckpointAsync(saveId, checkpoint.CheckpointId, cancellationToken).ConfigureAwait(false);
-                throw new InvalidOperationException(
+                throw new MtgSoloSports.Shared.SaveCorruptionException(
                     $"Database-schema migration failed and the save was rolled back to verified checkpoint '{checkpoint.CheckpointId:D}'.",
                     ex);
             }
@@ -321,10 +321,11 @@ public sealed class SaveStore
         {
             _ = await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("ChaosCupActivations", StringComparison.OrdinalIgnoreCase))
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "ChaosCupActivations"))
         {
             // Table predates the Chaos activation migration; the pending-migration path
-            // applies it before this backfill runs again.
+            // applies it before this backfill runs again. A missing-column or other
+            // schema defect is not this condition and propagates loudly.
             return;
         }
 
@@ -343,10 +344,12 @@ public sealed class SaveStore
         {
             _ = await Features.Cups.SelectionFormula.CupSelectionFormulaLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("CupSelectionFormulaActivations", StringComparison.OrdinalIgnoreCase))
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "CupSelectionFormulaActivations"))
         {
             // Table predates the selection-formula migration; the
             // pending-migration path applies it before this backfill runs again.
+            // A missing-column or other schema defect is not this condition
+            // and propagates loudly.
             return;
         }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
@@ -31,11 +32,16 @@ public sealed class CompleteStageHandler
 {
     private readonly SaveStore _store;
     private readonly DriveAutoPublishNotifier? _autoPublish;
+    private readonly ILogger<CompleteStageHandler>? _logger;
 
-    public CompleteStageHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
+    public CompleteStageHandler(
+        SaveStore store,
+        DriveAutoPublishNotifier? autoPublish = null,
+        ILogger<CompleteStageHandler>? logger = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _autoPublish = autoPublish;
+        _logger = logger;
     }
 
     public async Task<CompleteStageResponse> HandleAsync(Guid saveId, int leagueId, CancellationToken cancellationToken = default)
@@ -98,10 +104,18 @@ public sealed class CompleteStageHandler
                 .ConfigureAwait(false);
             return global.IsSeasonComplete || global.CurrentStage != response.StageNumber;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // The sporting commit already succeeded; a failed boundary read
             // must not fail the command. The next global completion notifies.
+            // Logged, never silently swallowed: an operator must see why the
+            // post-commit boundary read was skipped. Post-commit-only
+            // semantics stay intact.
+            _logger?.LogWarning(
+                ex,
+                "Post-commit global-stage boundary read failed for save {SaveId} after stage {StageNumber}; the next global completion notifies.",
+                saveId,
+                response.StageNumber);
             return false;
         }
     }

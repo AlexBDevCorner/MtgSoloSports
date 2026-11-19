@@ -97,8 +97,11 @@ public sealed class GetSeasonStatusHandler
                 weights.BonusWeightPermille, weights.PerformanceWeightPermille,
                 weights.FormWeightPermille, weights.ChaosWeightPermille, weights.PrestigeWeightPermille);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+        catch (Cups.SelectionFormula.SavePredatesSelectionFormulaActivationException)
         {
+            // Only the genuine legacy-backfill condition (the activation table
+            // predates the selection-formula migration) may report legacy
+            // defaults; corrupt activation rows and schema defects propagate.
             return (0, 0, rules.CupBonusWeightPermille, rules.CupPerformanceWeightPermille,
                 rules.CupFormWeightPermille, rules.CupChaosWeightPermille, rules.CupPrestigeWeightPermille);
         }

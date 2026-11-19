@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 
@@ -94,6 +95,11 @@ public static class DriveLibrarySyncEndpoint
             return ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
                 ? Results.Json(new { error = "Google authorization expired or was revoked. Reconnect with Connect Google Drive." }, statusCode: StatusCodes.Status401Unauthorized)
                 : Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status502BadGateway);
+        }
+        catch (SaveCorruptionException ex)
+        {
+            // Corrupted sporting state is a server failure, never a client error (MSS-144).
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (InvalidOperationException ex)
         {

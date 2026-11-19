@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.RunColorCupIndividual;
 
@@ -30,6 +31,11 @@ public static class RunColorCupIndividualEndpoint
             catch (RunColorCupIndividualConflictException ex)
             {
                 return Results.Conflict(new { error = ex.Message });
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

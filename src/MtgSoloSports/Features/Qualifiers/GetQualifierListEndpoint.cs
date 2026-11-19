@@ -1,5 +1,6 @@
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Leagues;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Qualifiers;
 
@@ -39,6 +40,11 @@ public static class GetQualifierListEndpoint
             {
                 return Results.NotFound();
             }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
@@ -76,6 +82,11 @@ public static class GetQualifierListEndpoint
             catch (QualifierListNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

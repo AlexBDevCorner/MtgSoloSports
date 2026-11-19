@@ -2,6 +2,7 @@ using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Leagues;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Qualifiers.GetQualifierRounds;
 
@@ -45,6 +46,11 @@ public static class GetQualifierRoundsEndpoint
             {
                 return Results.NotFound();
             }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });
@@ -87,6 +93,11 @@ public static class GetQualifierRoundsEndpoint
             catch (HistoryNotFoundException)
             {
                 return Results.NotFound();
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

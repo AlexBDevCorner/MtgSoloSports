@@ -27,6 +27,11 @@ public static class ImportCatalogEndpoint
                 ImportCatalogResponse response = await handler.HandleAsync(new ImportCatalogRequest(bulkJson), cancellationToken).ConfigureAwait(false);
                 return Results.Ok(response);
             }
+            catch (MtgSoloSports.Shared.SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });

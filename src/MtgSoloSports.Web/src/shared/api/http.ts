@@ -29,9 +29,17 @@ export class ApiError extends Error {
 
 export function apiErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    // Prefer the server's own detail (structured JSON message, else a short
+    // raw body) so recoverable-error screens keep showing diagnostics.
     const parsed = tryParseErrorBody(error.body);
     if (parsed) {
       return parsed;
+    }
+    if (error.status >= 500) {
+      // A server failure is never the user's request being wrong: a 500
+      // without a usable body renders an actionable message instead of a
+      // bare status line.
+      return 'The server failed while processing this request. The save data may be damaged; check the server logs before continuing.';
     }
     return `Request failed (${error.status}).`;
   }
@@ -42,6 +50,14 @@ export function apiErrorMessage(error: unknown): string {
 }
 
 function tryParseErrorBody(body: string): string | null {
+  const structured = tryParseStructuredError(body);
+  if (structured) {
+    return structured;
+  }
+  return body.length > 0 && body.length < 300 ? body : null;
+}
+
+function tryParseStructuredError(body: string): string | null {
   try {
     const parsed = JSON.parse(body) as { error?: unknown };
     if (typeof parsed.error === 'string' && parsed.error.length > 0) {
@@ -49,6 +65,6 @@ function tryParseErrorBody(body: string): string | null {
     }
     return null;
   } catch {
-    return body.length > 0 && body.length < 300 ? body : null;
+    return null;
   }
 }
