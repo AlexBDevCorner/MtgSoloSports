@@ -142,8 +142,8 @@ public sealed class TypeCupTeamStepTests
             }
 
             await MoveRngAsync(store, saveId);
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId, sourceSeasonNumber: 2));
-            await Should.ThrowAsync<InvalidOperationException>(() => new RunTypeCupTeamHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId, sourceSeasonNumber: 2));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => new RunTypeCupTeamHandler(store).HandleAsync(saveId, sourceSeasonNumber: 2));
             using SaveDbContext after = store.OpenDbContext(saveId);
             (await after.TypeCupTeamRounds.CountAsync()).ShouldBe(8);
             (await after.TypeCupTeamStandings.CountAsync()).ShouldBe(0);
@@ -170,7 +170,7 @@ public sealed class TypeCupTeamStepTests
                 await context.SaveChangesAsync();
             }
 
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId, sourceSeasonNumber: 2));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId, sourceSeasonNumber: 2));
         }
         finally
         {

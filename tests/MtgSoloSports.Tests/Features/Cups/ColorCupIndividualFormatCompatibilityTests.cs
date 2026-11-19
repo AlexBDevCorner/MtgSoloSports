@@ -89,10 +89,10 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
 
             // A partly played edition can never silently switch format.
             List<ColorCupIndividualRoundEntity> mixedRows = [rows[0], new ColorCupIndividualRoundEntity { FormatVersion = ColorCupIndividualFormat.PhasedFormatVersion }];
-            Should.Throw<InvalidOperationException>(() => ColorCupIndividualInvariants.ResolvePersistedFormat(mixedRows));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ColorCupIndividualInvariants.ResolvePersistedFormat(mixedRows));
             List<ColorCupIndividualRoundPayloadDocument> mixedPayloads = [payloads[0], payloads[0] with { FormatVersion = ColorCupIndividualFormat.PhasedFormatVersion }];
-            Should.Throw<InvalidOperationException>(() => ColorCupIndividualInvariants.ResolvePayloadFormat(mixedPayloads));
-            Should.Throw<InvalidOperationException>(() => RunColorCupIndividualHandler.ResolveEditionFormat(rows, mixedPayloads));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ColorCupIndividualInvariants.ResolvePayloadFormat(mixedPayloads));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => RunColorCupIndividualHandler.ResolveEditionFormat(rows, mixedPayloads));
 
             var rules = await AdvanceRoundHandler.LoadRulesAsync(context, CancellationToken.None);
 
@@ -102,7 +102,7 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
                 FormatVersion = ColorCupIndividualFormat.PhasedFormatVersion,
                 RoundNumber = 17,
             };
-            Should.Throw<InvalidOperationException>(() =>
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
                 ColorCupIndividualInvariants.ValidateRoundForFormat(phasedRound17, rules, phasedRound17.RngBeforeState, phasedRound17.RngBeforeStream, ColorCupIndividualFormat.LegacyFormatVersion));
         }
         finally
@@ -172,7 +172,7 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
                 FormatVersion = ColorCupIndividualFormat.PhasedFormatVersion,
                 RoundNumber = 17,
             };
-            InvalidOperationException ex = Should.Throw<InvalidOperationException>(() =>
+            MtgSoloSports.Shared.SaveCorruptionException ex = Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
                 ColorCupIndividualInvariants.ValidateRoundForFormat(wrongSize, rules, wrongSize.RngBeforeState, wrongSize.RngBeforeStream, ColorCupIndividualFormat.PhasedFormatVersion));
             ex.Message.ShouldContain("exactly 16 placements");
         }
@@ -196,7 +196,7 @@ public sealed class ColorCupIndividualFormatCompatibilityTests
 
         // Phased split passes; legacy sums fail the phased expectation for finalists.
         ColorCupIndividualInvariants.ValidateCompletedCupForFormat(ranked, totals, rules, ColorCupIndividualFormat.PhasedFormatVersion);
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             ColorCupIndividualInvariants.ValidateCompletedCupForFormat(legacyRanked, legacyTotals, rules, ColorCupIndividualFormat.PhasedFormatVersion));
     }
 

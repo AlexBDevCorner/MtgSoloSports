@@ -81,7 +81,7 @@ public sealed class TypeCupTeamTests
             allocation.TeamCount.ShouldBe(1);
 
             RunTypeCupTeamHandler handler = new(store);
-            await Should.ThrowAsync<InvalidOperationException>(
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => handler.HandleAsync(saveId, sourceSeasonNumber: 2));
         }
         finally
@@ -129,7 +129,7 @@ public sealed class TypeCupTeamTests
 
             Dictionary<int, List<TypeCupSelectionEntity>> groups = BuildCorruptGroups(selection);
             var rules = MtgSoloSports.SimulationKernel.Rules.RulesV1.CreateDefault();
-            Should.Throw<InvalidOperationException>(() => TypeCupTeamInvariants.ValidateGroups(groups, rules, 2));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => TypeCupTeamInvariants.ValidateGroups(groups, rules, 2));
         }
         finally
         {
@@ -382,7 +382,7 @@ public sealed class TypeCupTeamTests
             await select.HandleAsync(saveId, sourceSeasonNumber: 4);
             await CorruptNationalityAsync(store, saveId, activeIds[0], "Dragon");
 
-            await Should.ThrowAsync<InvalidOperationException>(
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => run.HandleAsync(saveId, sourceSeasonNumber: 4));
 
             await AssertCorruptRunRolledBackAsync(store, saveId);

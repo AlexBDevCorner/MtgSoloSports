@@ -108,7 +108,7 @@ public sealed class HistoryReplayTests
             (await seasons.HandleAsync(saveId)).Seasons.Count.ShouldBe(1);
 
             GetHistoryRoundReplayHandler replay = new(store);
-            await Should.ThrowAsync<InvalidOperationException>(() =>
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() =>
                 replay.HandleAsync(saveId, 1, leagueId, 1, 1));
         }
         finally

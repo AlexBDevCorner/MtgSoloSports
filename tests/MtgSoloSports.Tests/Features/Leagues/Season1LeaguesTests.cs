@@ -260,16 +260,16 @@ public sealed class Season1LeaguesTests
 
         List<InauguralDrawEntry> duplicated = [.. draw.Entries];
         duplicated[0] = duplicated[1];
-        Should.Throw<InvalidOperationException>(() => Season1Invariants.ValidateDrawResult(duplicated, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1Invariants.ValidateDrawResult(duplicated, rules));
 
-        Should.Throw<InvalidOperationException>(() => Season1Invariants.ValidateDrawResult(draw.Entries.Take(2047).ToList(), rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1Invariants.ValidateDrawResult(draw.Entries.Take(2047).ToList(), rules));
 
         List<InauguralDrawEntry> badIndex = [.. draw.Entries];
         InauguralDrawEntry victim = badIndex.First(e => e.IsLeagueMember);
         badIndex[badIndex.IndexOf(victim)] = victim with { DrawIndex = 200 };
-        Should.Throw<InvalidOperationException>(() => Season1Invariants.ValidateDrawResult(badIndex, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1Invariants.ValidateDrawResult(badIndex, rules));
 
-        Should.Throw<InvalidOperationException>(() => InauguralDrawSelector.Select(UniverseTestCatalog.Build(perColor: 10), new Pcg32V1(1UL, 2UL), rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => InauguralDrawSelector.Select(UniverseTestCatalog.Build(perColor: 10), new Pcg32V1(1UL, 2UL), rules));
     }
 
     [Fact]
@@ -281,16 +281,16 @@ public sealed class Season1LeaguesTests
 
         Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues, memberships, 2048, rules);
 
-        Should.Throw<InvalidOperationException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, true, leagues, memberships, 2048, rules));
-        Should.Throw<InvalidOperationException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(2, false, leagues, memberships, 2048, rules));
-        Should.Throw<InvalidOperationException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues.Take(7).ToList(), memberships, 2048, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, true, leagues, memberships, 2048, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(2, false, leagues, memberships, 2048, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues.Take(7).ToList(), memberships, 2048, rules));
 
         List<PersistedMembership> duplicated = [.. memberships, memberships[0]];
-        Should.Throw<InvalidOperationException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues, duplicated, 2049, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues, duplicated, 2049, rules));
 
         PersistedMembership victim = memberships.First(m => m.LeagueId is not null);
         List<PersistedMembership> colorMismatch = memberships.Select(m => m == victim ? m with { SportingColor = NextColor(m.SportingColor) } : m).ToList();
-        Should.Throw<InvalidOperationException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues, colorMismatch, 2048, rules));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Season1PersistedInvariants.ValidatePersistedSeason1(1, false, leagues, colorMismatch, 2048, rules));
     }
 
     private static void AssertValidSeason1(GetSeason1LeaguesResponse response)

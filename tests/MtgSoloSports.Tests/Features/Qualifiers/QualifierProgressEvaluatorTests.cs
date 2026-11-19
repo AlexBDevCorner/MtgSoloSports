@@ -56,7 +56,7 @@ public sealed class QualifierProgressEvaluatorTests
     {
         RulesV1 rules = RulesV3.CreateDefault();
         List<QualifierStandingEntity> standings = CompleteStandings(32, 8);
-        Should.Throw<InvalidOperationException>(() => QualifierProgressEvaluator.ValidateEventNotCorrupt(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => QualifierProgressEvaluator.ValidateEventNotCorrupt(
             standings, [], QualifierBoundary.Superleague, rules, 3));
     }
 

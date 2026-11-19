@@ -93,7 +93,7 @@ public sealed class ColorCupTeamTests
             // Corrupt one group: move a #1 athlete into the #2 bucket and assert the invariant aborts.
             Dictionary<int, List<ColorCupSelectionEntity>> groups = BuildCorruptGroups(selection);
             var rules = MtgSoloSports.SimulationKernel.Rules.RulesV1.CreateDefault();
-            Should.Throw<InvalidOperationException>(() => ColorCupTeamInvariants.ValidateGroups(groups, rules));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ColorCupTeamInvariants.ValidateGroups(groups, rules));
         }
         finally
         {

@@ -120,8 +120,8 @@ public sealed class QualifierStepTests
             await step.HandleAsync(saveId);
             await MoveRngAsync(store, saveId);
 
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId));
-            await Should.ThrowAsync<InvalidOperationException>(() => new RunQualifierHandler(store).HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => new RunQualifierHandler(store).HandleAsync(saveId));
             using SaveDbContext after = store.OpenDbContext(saveId);
             (await after.QualifierRounds.CountAsync()).ShouldBe(1);
             (await after.QualifierStandings.CountAsync()).ShouldBe(0);
@@ -149,7 +149,7 @@ public sealed class QualifierStepTests
                 await context.SaveChangesAsync();
             }
 
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId));
         }
         finally
         {

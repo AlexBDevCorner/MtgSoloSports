@@ -225,8 +225,8 @@ public sealed class StandingsStagePlacementsTests
             await CorruptOneStageRowAsync(store, saveId, leagueId);
 
             var handler = new GetStandingsReportHandler(store);
-            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
-            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
         }
         finally
         {
@@ -245,13 +245,13 @@ public sealed class StandingsStagePlacementsTests
             await InsertWellFormedStandingsForIncompleteStageAsync(store, saveId, leagueId);
 
             var handler = new GetStandingsReportHandler(store);
-            InvalidOperationException jsonEx = await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
+            MtgSoloSports.Shared.SaveCorruptionException jsonEx = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
             jsonEx.Message.ShouldContain("not marked complete");
-            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
 
             // Same orphan rows must also abort the dossier's Superleague trajectory (season 1 fallback is the first league).
             var dossierHandler = new GetSeasonDossierHandler(store);
-            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
         }
         finally
         {
@@ -270,14 +270,14 @@ public sealed class StandingsStagePlacementsTests
             await CorruptOneFinalRowAsync(store, saveId, leagueId);
 
             var handler = new GetStandingsReportHandler(store);
-            InvalidOperationException jsonEx = await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
+            MtgSoloSports.Shared.SaveCorruptionException jsonEx = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "json"));
             jsonEx.Message.ShouldContain("does not match");
-            await Should.ThrowAsync<InvalidOperationException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => handler.HandleAsync(saveId, leagueId, 1, "md"));
 
             // Same corrupt final roster must also abort the dossier's Superleague trajectory (season 1 fallback is the first league).
             var dossierHandler = new GetSeasonDossierHandler(store);
-            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
-            await Should.ThrowAsync<InvalidOperationException>(() => dossierHandler.HandleAsync(saveId, 1, "md"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => dossierHandler.HandleAsync(saveId, 1, "json"));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => dossierHandler.HandleAsync(saveId, 1, "md"));
         }
         finally
         {

@@ -63,7 +63,7 @@ public sealed class RoundPayloadCodecTests
     [Fact]
     public void DecodeToJson_CorruptCompressed_ThrowsInvalidOperation()
     {
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             RoundPayloadCodec.DecodeToJson(RoundPayloadCodec.BrotliPrefix + "!!!not-base64!!!"));
     }
 

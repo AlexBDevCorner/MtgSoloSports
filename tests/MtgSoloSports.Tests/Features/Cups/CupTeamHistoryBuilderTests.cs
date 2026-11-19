@@ -127,7 +127,7 @@ public sealed class CupTeamHistoryBuilderTests
     {
         Input source = TwoEditions();
         Input input = source with { Selections = source.Selections.Where(s => !(s.SeasonNumber == 3 && s.AthleteId == 5)).ToList() };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("Season 3");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("Season 3");
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class CupTeamHistoryBuilderTests
     {
         Input source = TwoEditions();
         Input input = source with { Legs = [.. source.Legs, new LegRow(3, 4, 4, 2, 90_000, 85_000, 1)] };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("athlete 4");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("athlete 4");
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public sealed class CupTeamHistoryBuilderTests
     {
         Input source = TwoEditions();
         Input input = source with { Standings = [.. source.Standings, new StandingRow(5, 1, 1, 1, 0, 0, "Gold")] };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("Season 5");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("Season 5");
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class CupTeamHistoryBuilderTests
     {
         Input source = TwoEditions();
         Input input = source with { Athletes = source.Athletes.Where(a => a.Key != 2).ToDictionary(a => a.Key, a => a.Value) };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("athlete 2");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("athlete 2");
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class CupTeamHistoryBuilderTests
         Input source = TypeTournamentFinalist();
         StandingRow duplicate = source.Standings.First(s => s.TournamentPhase == 2);
         Input input = source with { Standings = [.. source.Standings, duplicate] };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("duplicate");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("duplicate");
     }
 
     [Fact]
@@ -240,7 +240,7 @@ public sealed class CupTeamHistoryBuilderTests
         {
             Standings = source.Standings.Where(s => s.TournamentPhase == 2).ToList(),
         };
-        Should.Throw<InvalidOperationException>(() => Build(input)).Message.ShouldContain("without a matching tournament stage");
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => Build(input)).Message.ShouldContain("without a matching tournament stage");
     }
 
     /// <summary>Goblin: Season 2 squad 11..14, 5th in Qualification Group A then 2nd in the Final.</summary>

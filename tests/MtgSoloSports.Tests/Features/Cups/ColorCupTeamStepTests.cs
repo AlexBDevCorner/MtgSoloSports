@@ -155,8 +155,8 @@ public sealed class ColorCupTeamStepTests
             }
 
             await MoveRngAsync(store, saveId);
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId));
-            await Should.ThrowAsync<InvalidOperationException>(() => new RunColorCupTeamHandler(store).HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => new RunColorCupTeamHandler(store).HandleAsync(saveId));
             using SaveDbContext after = store.OpenDbContext(saveId);
             (await after.ColorCupTeamRounds.CountAsync()).ShouldBe(8);
             (await after.ColorCupTeamStandings.CountAsync()).ShouldBe(0);
@@ -184,7 +184,7 @@ public sealed class ColorCupTeamStepTests
                 await context.SaveChangesAsync();
             }
 
-            await Should.ThrowAsync<InvalidOperationException>(() => step.HandleAsync(saveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => step.HandleAsync(saveId));
         }
         finally
         {

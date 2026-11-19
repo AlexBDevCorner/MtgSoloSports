@@ -58,7 +58,7 @@ public sealed class ColorCupActiveEligibilityTests
         {
             Guid saveId = await SetupDuplicateFixtureAsync(store);
             SelectColorCupTeamsHandler handler = new(store);
-            InvalidOperationException ex = await Should.ThrowAsync<InvalidOperationException>(
+            MtgSoloSports.Shared.SaveCorruptionException ex = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => handler.HandleAsync(saveId, sourceSeasonNumber: 3));
             ex.Message.ShouldContain("duplicate active memberships");
         }
