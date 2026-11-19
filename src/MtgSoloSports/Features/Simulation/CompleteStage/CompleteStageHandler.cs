@@ -7,6 +7,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Features.Simulation.SeasonCompletion;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -300,19 +301,19 @@ public sealed class CompleteStageHandler
         {
             if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
             {
-                throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
             }
 
             if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
             {
-                throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+                throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
             }
         }
 
         int distinct = stages.Select(s => s.StageNumber).Distinct().Count();
         if (distinct != stages.Count)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has duplicate stage rows.");
+            throw new SaveCorruptionException($"League '{league.Name}' has duplicate stage rows.");
         }
 
         return stages.OrderByDescending(s => s.StageNumber).First();
@@ -374,17 +375,17 @@ public sealed class CompleteStageHandler
 
         if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
         }
 
         if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
         }
 
         if (stage.CompletedRounds != existingRounds.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stage.StageNumber} cursor says {stage.CompletedRounds} rounds but {existingRounds.Count} round rows exist.");
         }
 
@@ -392,7 +393,7 @@ public sealed class CompleteStageHandler
         {
             if (existingRounds[i].RoundNumber != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} has non-sequential round rows; rounds must advance in order.");
             }
         }
@@ -462,7 +463,7 @@ public sealed class CompleteStageHandler
             RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             if (document.StageNumber != completion.Stage.StageNumber)
             {
-                throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Persisted round {round.Id} has corrupt stage identity.");
             }
 
             payloads.Add(document);
@@ -629,7 +630,7 @@ public sealed class CompleteStageHandler
             cancellationToken).ConfigureAwait(false);
         if (count != completion.Rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Stage {completion.Stage.StageNumber} must persist exactly {completion.Rules.LeagueSize} standings, was {count}.");
         }
 

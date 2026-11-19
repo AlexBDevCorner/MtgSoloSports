@@ -5,7 +5,7 @@ namespace MtgSoloSports.Features.Cups.DrawTypeCupQualificationGroups;
 /// season selection exists, the source season is odd, the draw already exists,
 /// the team event is already resolved, or the save uses the legacy
 /// single-field format with no qualification stage. Maps to 409. Corrupted
-/// sporting state throws <see cref="InvalidOperationException"/> instead.
+/// sporting state throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class DrawTypeCupQualificationGroupsConflictException : Exception
 {

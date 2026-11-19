@@ -4,9 +4,9 @@ using MtgSoloSports.Features.Saves;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
-using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 

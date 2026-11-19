@@ -3,7 +3,7 @@ namespace MtgSoloSports.Features.Superleague.CreateInaugural;
 /// <summary>
 /// Thrown when the inaugural Superleague cannot be created: Season 1 is not
 /// yet complete, or the Season 2 Superleague already exists. Maps to 409.
-/// Corrupted sporting state throws <see cref="InvalidOperationException"/> instead.
+/// Corrupted sporting state throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class CreateInauguralSuperleagueConflictException : Exception
 {

@@ -1,6 +1,6 @@
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.Shared;
+using MtgSoloSports.SimulationKernel.Leagues;
 
 namespace MtgSoloSports.Features.Qualifiers;
 

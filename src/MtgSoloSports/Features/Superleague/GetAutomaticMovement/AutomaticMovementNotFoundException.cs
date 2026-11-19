@@ -2,7 +2,7 @@ namespace MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 
 /// <summary>
 /// Thrown when no automatic movement has been resolved yet. Maps to 404.
-/// Corrupted sporting state throws <see cref="InvalidOperationException"/> instead.
+/// Corrupted sporting state throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class AutomaticMovementNotFoundException : Exception
 {

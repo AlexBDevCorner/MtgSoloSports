@@ -5,7 +5,7 @@ namespace MtgSoloSports.Features.Cups.AdvanceChaosCupStage;
 /// previous stage is not yet fully complete, or the tournament is already
 /// complete. Retries of an already-drawn stage are idempotent and return the
 /// persisted draw instead of throwing; corrupted sporting state throws
-/// <see cref="InvalidOperationException"/> instead.
+/// <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// Maps to 409.
 /// </summary>
 public sealed class AdvanceChaosCupStageConflictException : Exception

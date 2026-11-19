@@ -1,6 +1,6 @@
 using MtgSoloSports.Persistence.Saves;
-using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.Shared;
+using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Seasons.StartNextSeason;
 

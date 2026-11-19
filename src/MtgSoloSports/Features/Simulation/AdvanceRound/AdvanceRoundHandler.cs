@@ -2,11 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
-using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Simulation.AdvanceRound;
 
