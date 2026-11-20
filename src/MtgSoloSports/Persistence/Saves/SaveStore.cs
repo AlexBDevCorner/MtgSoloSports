@@ -461,7 +461,10 @@ public sealed class SaveStore
     {
         using SaveDbContext context = _factory.Create(path);
         await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
-        await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;", cancellationToken).ConfigureAwait(false);
+        // Only the file-persisted WAL mode is set here; every per-connection
+        // pragma (foreign keys, busy timeout, synchronous=NORMAL) is applied
+        // by SaveSqliteConnectionInterceptor on each opened connection.
+        await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", cancellationToken).ConfigureAwait(false);
 
         using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
             await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -1051,6 +1054,10 @@ public sealed class SaveStore
                 {
                     ClearSaveConnections(staged.StagedPath);
                     ClearSaveConnections(target);
+                    // Ordering invariant: no live main exists, but companions
+                    // orphaned by an earlier crashed delete must not survive to
+                    // pair with the incoming main database.
+                    DeleteCompanionFiles(target);
                     File.Move(staged.StagedPath, target);
                 }
 
@@ -1450,10 +1457,12 @@ public sealed class SaveStore
     /// <summary>
     /// Replaces the live save file with a staged database under the per-save
     /// snapshot gate so a concurrent snapshot capture cannot read a torn file.
-    /// Pooled handles are dropped before the copy so old WAL frames cannot
-    /// resurrect after the replacement when pools close. Callers hold the
-    /// per-save mutation and migration gates; this helper only takes the
-    /// snapshot gate to preserve the Advance -&gt; Migration -&gt; Snapshot order.
+    /// Pooled handles are dropped and the discarded live file's WAL/SHM
+    /// companions are deleted before the copy, so old frames can neither pair
+    /// with the incoming main file nor resurrect after the replacement when
+    /// pools close. Callers hold the per-save mutation and migration gates;
+    /// this helper only takes the snapshot gate to preserve the
+    /// Advance -&gt; Migration -&gt; Snapshot order.
     /// </summary>
     private static async Task ReplaceLiveDatabaseAsync(
         Guid saveId,
@@ -1467,8 +1476,10 @@ public sealed class SaveStore
         {
             ClearSaveConnections(livePath);
             ClearSaveConnections(stagedPath);
-            File.Copy(stagedPath, livePath, overwrite: true);
+            // Ordering invariant: same as ReplaceLiveWithStagedCopy — the
+            // replaced file's companions must not outlive its main database.
             DeleteCompanionFiles(livePath);
+            File.Copy(stagedPath, livePath, overwrite: true);
             ClearSaveConnections(livePath);
         }
         finally
@@ -2041,6 +2052,9 @@ public sealed class SaveStore
     /// verifies the result opens. The checkpoint stages through a temp file
     /// so a failed replacement leaves prior live bytes in place; the
     /// checkpoint itself is only read. A missing live file is recreated.
+    /// The discarded live file's WAL/SHM companions are deleted before the
+    /// staged copy moves in (see <see cref="ReplaceLiveWithStagedCopy"/>) so
+    /// no reader can pair the new main database with stale frames.
     /// Callers hold the per-save mutation and migration gates (Restore) or the
     /// migration gate inside <see cref="EnsureMigratedAsync"/>; this helper
     /// only takes the snapshot gate to preserve Advance -&gt; Migration -&gt;
@@ -2122,10 +2136,17 @@ public sealed class SaveStore
     {
         ClearSaveConnections(livePath);
         ClearSaveConnections(checkpointPath);
+        // Ordering invariant: the replaced live file is being discarded, so its
+        // WAL/SHM companions must be deleted BEFORE the new main database moves
+        // in. A reader opening the path while the new main sits beside the
+        // previous file's stale -wal pairs them, which SQLite documents as
+        // undefined behavior (stale committed frames replayed over the new
+        // pages). Deleting companions first can only lose frames that the
+        // pre-restore/pre-migration checkpoint already captured.
+        DeleteCompanionFiles(livePath);
         File.Copy(checkpointPath, stagingPath);
         ClearSaveConnections(stagingPath);
         File.Move(stagingPath, livePath, overwrite: true);
-        DeleteCompanionFiles(livePath);
     }
 
     /// <summary>

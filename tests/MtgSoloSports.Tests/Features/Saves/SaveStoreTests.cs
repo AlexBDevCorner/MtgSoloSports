@@ -134,6 +134,30 @@ public sealed class SaveStoreTests
     }
 
     [Fact]
+    public async Task OpenedSaveConnections_ApplyDocumentedConnectionPragmas()
+    {
+        // MSS-148: every save connection must run the documented pragmas —
+        // foreign keys on, bounded busy timeout, WAL-recommended
+        // synchronous=NORMAL — because SQLite resets per-connection settings
+        // on every open; the one-time creation pragma does not carry over.
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Pragmas", 9621UL, 9622UL, UniverseTestCatalog.Build());
+
+            using SaveDbContext context = store.OpenDbContext(created.Detail.SaveId);
+            await context.Database.OpenConnectionAsync();
+            (await ReadConnectionSettingAsync(context, "PRAGMA foreign_keys;")).ShouldBe(1L);
+            (await ReadConnectionSettingAsync(context, "PRAGMA busy_timeout;")).ShouldBe(5000L);
+            (await ReadConnectionSettingAsync(context, "PRAGMA synchronous;")).ShouldBe(1L);
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task RngState_CommitsAtomicallyWithSimulationMutation()
     {
         var (store, root) = CreateStore();
@@ -387,6 +411,13 @@ public sealed class SaveStoreTests
         command.CommandText = "PRAGMA journal_mode;";
         object? result = await command.ExecuteScalarAsync().ConfigureAwait(false);
         return result?.ToString() ?? string.Empty;
+    }
+
+    private static async Task<object?> ReadConnectionSettingAsync(SaveDbContext context, string pragma)
+    {
+        using System.Data.Common.DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = pragma;
+        return await command.ExecuteScalarAsync().ConfigureAwait(false);
     }
 
     private sealed class TestHostEnvironment : IHostEnvironment
