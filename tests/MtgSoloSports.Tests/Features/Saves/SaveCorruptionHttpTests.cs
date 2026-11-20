@@ -81,7 +81,7 @@ public sealed class SaveCorruptionHttpTests
     }
 
     [Fact]
-    public async Task CorruptSave_ListSaves_SkipsTheCorruptSaveAndListsTheHealthyOnes()
+    public async Task MissingRngRow_ListSaves_ShowsTheCorruptSaveAsADamagedPlaceholder()
     {
         var (factory, root) = CreateFactory();
         try
@@ -98,13 +98,27 @@ public sealed class SaveCorruptionHttpTests
             SaveStore.CreationRecord healthy = await store.CreateAsync(
                 "Healthy", 81UL, 82UL, UniverseTestCatalog.Build());
 
-            // The listing deliberately skips unreadable saves instead of failing.
+            // MSS-145: an unreadable save must stay visible as an explicit
+            // damaged placeholder instead of silently vanishing from the list.
             using HttpResponseMessage response = await client.GetAsync("/api/saves");
             response.StatusCode.ShouldBe(HttpStatusCode.OK);
             SavesPayload? payload = await response.Content.ReadFromJsonAsync<SavesPayload>();
             payload.ShouldNotBeNull();
-            payload.Saves.ShouldHaveSingleItem();
-            payload.Saves[0].SaveId.ShouldBe(healthy.Detail.SaveId);
+            payload.Saves.Count.ShouldBe(2);
+
+            SavePayload damaged = payload.Saves.Single(row => row.SaveId == corruptId);
+            damaged.Unreadable.ShouldBe(true);
+            damaged.UnreadableReason.ShouldNotBeNullOrWhiteSpace();
+            damaged.UnreadableReason.ShouldContain("missing required rows", Case.Insensitive);
+            damaged.Name.ShouldBe(SaveFileNaming.GetSaveFileName(corruptId));
+            damaged.SchemaVersion.ShouldBe(0);
+            damaged.CurrentSeason.ShouldBe(0);
+            damaged.Phase.ShouldBe(string.Empty);
+
+            SavePayload healthyRow = payload.Saves.Single(row => row.SaveId == healthy.Detail.SaveId);
+            healthyRow.Unreadable.ShouldBe(false);
+            healthyRow.UnreadableReason.ShouldBeNull();
+            healthyRow.Name.ShouldBe("Healthy");
         }
         finally
         {
@@ -132,5 +146,12 @@ public sealed class SaveCorruptionHttpTests
 
     internal sealed record SavesPayload(IReadOnlyList<SavePayload> Saves);
 
-    internal sealed record SavePayload(Guid SaveId);
+    internal sealed record SavePayload(
+        Guid SaveId,
+        string? Name,
+        int? SchemaVersion,
+        int? CurrentSeason,
+        string? Phase,
+        bool? Unreadable,
+        string? UnreadableReason);
 }

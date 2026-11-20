@@ -7,6 +7,9 @@ export interface SaveSummary {
   schemaVersion: number;
   currentSeason: number;
   phase: string;
+  /** MSS-145: the save file exists on disk but could not be read. */
+  unreadable?: boolean;
+  unreadableReason?: string | null;
 }
 
 export interface SaveListResponse {
@@ -74,8 +77,38 @@ export async function deleteSave(saveId: string): Promise<void> {
   const response = await fetch(`/api/saves/${saveId}`, { method: 'DELETE' });
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(body || `Delete failed (${response.status}).`);
+    throw new ApiError(response.status, body || response.statusText);
   }
+}
+
+/** One verified technical recovery checkpoint (newest last in the list). */
+export interface SaveCheckpointSummary {
+  checkpointId: string;
+  saveId: string;
+  createdUtc: string;
+  reason: string;
+  saveName: string;
+  schemaVersion: number;
+  currentSeason: number;
+  phase: string;
+  databaseSha256: string;
+}
+
+export async function listSaveCheckpoints(
+  saveId: string,
+  signal?: AbortSignal,
+): Promise<SaveCheckpointSummary[]> {
+  const response = await fetchJson<{ checkpoints: SaveCheckpointSummary[] }>(
+    `/api/saves/${saveId}/checkpoints`,
+    { signal },
+  );
+  return response.checkpoints;
+}
+
+export async function restoreSaveCheckpoint(saveId: string, checkpointId: string): Promise<void> {
+  await fetchJson<unknown>(`/api/saves/${saveId}/checkpoints/${checkpointId}/restore`, {
+    method: 'POST',
+  });
 }
 
 export function exportSaveUrl(saveId: string): string {

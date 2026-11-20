@@ -17,8 +17,22 @@ public sealed class ListSavesHandler
         List<SaveSummary> summaries = new(records.Count);
         foreach (SaveStore.SaveRecord record in records)
         {
-            _ = SavePhaseParser.Parse(record.Phase);
-            summaries.Add(new SaveSummary(record.SaveId, record.Name, record.CreatedUtc, record.SchemaVersion, record.CurrentSeason, record.Phase));
+            // A damaged placeholder carries no valid phase; it is listed as-is
+            // instead of aborting the whole listing.
+            if (!record.Unreadable)
+            {
+                _ = SavePhaseParser.Parse(record.Phase);
+            }
+
+            summaries.Add(new SaveSummary(
+                record.SaveId,
+                record.Name,
+                record.CreatedUtc,
+                record.SchemaVersion,
+                record.CurrentSeason,
+                record.Phase,
+                record.Unreadable,
+                record.UnreadableReason));
         }
 
         return new ListSavesResponse(summaries);
