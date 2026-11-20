@@ -741,11 +741,12 @@ public static class TypeCupAllocation
     /// one max-flow feasibility check. Realistic athlete-type graphs complete
     /// in the hundreds-to-low-thousands of nodes, so this leaves more than an
     /// order of magnitude of headroom; a pathological connected component
-    /// aborts loudly at the same step every run instead of hanging a
-    /// synchronous mutation. No wall clock is involved: the budget is a step
-    /// count so the abort stays reproducible (kernel purity).
+    /// aborts loudly at the same step every run (and within a few seconds
+    /// even on large pools) instead of hanging a synchronous mutation. No
+    /// wall clock is involved: the budget is a step count so the abort stays
+    /// reproducible (kernel purity).
     /// </summary>
-    internal const int MaxSubsetSearchSteps = 50_000;
+    internal const int MaxSubsetSearchSteps = 20_000;
 
     internal static List<string> FindMaximumFeasibleSubset(
         List<string> ctypes,
