@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
@@ -224,8 +225,8 @@ public sealed class GetQualifierResultHandler
         List<QualifierRoundEntity> rounds,
         List<QualifierStandingMember> members)
     {
-        QualifierRoundPayloadDocument first = QualifierRoundPayloadDocument.FromJson(rounds[0].PayloadJson);
-        QualifierRoundPayloadDocument last = QualifierRoundPayloadDocument.FromJson(rounds[^1].PayloadJson);
+        QualifierRoundPayload first = QualifierRoundPayload.FromJson(rounds[0].PayloadJson);
+        QualifierRoundPayload last = QualifierRoundPayload.FromJson(rounds[^1].PayloadJson);
         string checksum = ComputeChecksum(standings);
         int incumbents = standings.Count(s => s.Role == (int)QualifierRole.Incumbent && s.IsQualified);
         int challengers = standings.Count(s => s.Role == (int)QualifierRole.Challenger && s.IsQualified);

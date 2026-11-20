@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
@@ -94,7 +95,7 @@ internal static class HistoryEventRows
 
     internal static IReadOnlyList<RoundPayloadEntry> DecodePlacements(string key, string stored) => key switch
     {
-        PostseasonEvents.Qualifier => QualifierRoundPayloadDocument.FromJson(RoundPayloadCodec.DecodeToJson(stored)).Placements,
+        PostseasonEvents.Qualifier => QualifierRoundPayload.FromJson(stored).Placements,
         PostseasonEvents.ColorCupIndividual => ColorCupIndividualRoundPayloadDocument.FromStored(stored).Placements,
         PostseasonEvents.ColorCupTeam => ColorCupTeamRoundPayloadDocument.FromStored(stored).Placements,
         _ => TypeCupTeamRoundPayloadDocument.FromStored(stored).Placements,

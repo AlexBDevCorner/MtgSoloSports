@@ -1,4 +1,5 @@
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
@@ -47,15 +48,17 @@ public sealed class PlayQualifierRoundHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        RunQualifierHandler.QualifierState state = await RunQualifierHandler.LoadStateAsync(context, saveId, cancellationToken).ConfigureAwait(false);
-        QualifierRoundPayloadDocument payload = RunQualifierHandler.PlayRound(state, state.Played, state.Rng);
-        List<QualifierRoundPayloadDocument> payloads = [.. state.Played, payload];
+        RunQualifierHandler.SuperleagueQualifierLoad load = await RunQualifierHandler.LoadStateAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        QualifierEngineState state = load.Engine;
+        QualifierEngineHooks hooks = RunQualifierHandler.CreateHooks(load);
+        QualifierRoundPayload payload = QualifierEngine.PlayRound(state, state.Played, state.Rng, hooks.ValidateRound);
+        List<QualifierRoundPayload> payloads = [.. state.Played, payload];
         int total = state.Rules.QualifierRounds;
         bool complete = payloads.Count == total;
 
         if (complete)
         {
-            await RunQualifierHandler.CompleteAsync(context, state, payloads, cancellationToken).ConfigureAwait(false);
+            await QualifierEngine.CompleteAsync(context, state, payloads, hooks, cancellationToken).ConfigureAwait(false);
         }
         else
         {
