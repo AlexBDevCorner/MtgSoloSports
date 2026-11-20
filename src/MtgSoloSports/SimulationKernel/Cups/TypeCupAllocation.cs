@@ -239,50 +239,18 @@ public static class TypeCupAllocation
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
-        int final = right.FinalRatingThousandths.CompareTo(left.FinalRatingThousandths);
-        if (final != 0)
-        {
-            return final;
-        }
-
-        int bonus = right.BonusNormThousandths.CompareTo(left.BonusNormThousandths);
-        if (bonus != 0)
-        {
-            return bonus;
-        }
-
-        int perf = right.PerformanceNormThousandths.CompareTo(left.PerformanceNormThousandths);
-        if (perf != 0)
-        {
-            return perf;
-        }
-
-        int form = right.FormNormThousandths.CompareTo(left.FormNormThousandths);
-        if (form != 0)
-        {
-            return form;
-        }
-
-        int chaos = right.ChaosNormThousandths.CompareTo(left.ChaosNormThousandths);
-        if (chaos != 0)
-        {
-            return chaos;
-        }
-
-        int prestige = right.PrestigeNormThousandths.CompareTo(left.PrestigeNormThousandths);
-        if (prestige != 0)
-        {
-            return prestige;
-        }
-
-        int name = string.Compare(left.Name, right.Name, StringComparison.Ordinal);
-        if (name != 0)
-        {
-            return name;
-        }
-
-        return left.AthleteId.CompareTo(right.AthleteId);
+        return CupSelectionOrder.Compare(OrderKey(left), OrderKey(right));
     }
+
+    private static CupSelectionOrder.Key OrderKey(ScoredCandidate candidate) => new(
+        candidate.FinalRatingThousandths,
+        candidate.BonusNormThousandths,
+        candidate.PerformanceNormThousandths,
+        candidate.FormNormThousandths,
+        candidate.ChaosNormThousandths,
+        candidate.PrestigeNormThousandths,
+        candidate.Name,
+        candidate.AthleteId);
 
     internal static Dictionary<string, List<ScoredCandidate>> GroupByType(List<ScoredCandidate> scored)
     {
@@ -391,6 +359,7 @@ public static class TypeCupAllocation
         }
 
         HashSet<string> open = viable.Keys.ToHashSet(StringComparer.Ordinal);
+        int teamSize = rules.TypeCupMinTeamSize;
         List<AllocatedTeam> teams = [];
 
         while (true)
@@ -404,8 +373,8 @@ public static class TypeCupAllocation
             List<ScoredCandidate> pool = viable[next]
                 .Where(c => remaining.Contains(c.AthleteId))
                 .ToList();
-            List<ScoredCandidate> picked = PickFour(next, pool, remaining, open, preferences, rankLookup, byId);
-            List<AllocatedMember> members = OrderTeamMembers(next, picked, rankLookup);
+            List<ScoredCandidate> picked = PickFour(next, pool, remaining, open, preferences, rankLookup, byId, teamSize);
+            List<AllocatedMember> members = OrderTeamMembers(next, picked, rankLookup, teamSize);
             teams.Add(new AllocatedTeam(next, members));
             foreach (AllocatedMember member in members)
             {
@@ -483,7 +452,8 @@ public static class TypeCupAllocation
         HashSet<string> open,
         Dictionary<int, List<string>> preferences,
         Dictionary<string, int> rankLookup,
-        Dictionary<int, ScoredCandidate> byId)
+        Dictionary<int, ScoredCandidate> byId,
+        int teamSize)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(pool);
@@ -492,7 +462,7 @@ public static class TypeCupAllocation
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentNullException.ThrowIfNull(rankLookup);
         ArgumentNullException.ThrowIfNull(byId);
-        if (pool.Count < 4)
+        if (pool.Count < teamSize)
         {
             throw new InvalidOperationException($"Type Cup type '{type}' has only {pool.Count} remaining candidates.");
         }
@@ -534,7 +504,7 @@ public static class TypeCupAllocation
             int name = string.Compare(left.Name, right.Name, StringComparison.Ordinal);
             return name != 0 ? name : left.AthleteId.CompareTo(right.AthleteId);
         });
-        return ordered.GetRange(0, 4);
+        return ordered.GetRange(0, teamSize);
     }
 
     internal static int PreferenceIndex(int athleteId, string type, Dictionary<int, List<string>> preferences)
@@ -604,14 +574,15 @@ public static class TypeCupAllocation
     internal static List<AllocatedMember> OrderTeamMembers(
         string type,
         List<ScoredCandidate> picked,
-        Dictionary<string, int> rankLookup)
+        Dictionary<string, int> rankLookup,
+        int teamSize)
     {
         ArgumentNullException.ThrowIfNull(type);
         ArgumentNullException.ThrowIfNull(picked);
         ArgumentNullException.ThrowIfNull(rankLookup);
-        if (picked.Count != 4)
+        if (picked.Count != teamSize)
         {
-            throw new InvalidOperationException($"Type Cup team '{type}' must hold exactly 4 athletes, was {picked.Count}.");
+            throw new InvalidOperationException($"Type Cup team '{type}' must hold exactly {teamSize} athletes, was {picked.Count}.");
         }
 
         HashSet<int> ids = new();
@@ -630,7 +601,7 @@ public static class TypeCupAllocation
 
         List<ScoredCandidate> ordered = [.. picked];
         ordered.Sort(CompareScored);
-        List<AllocatedMember> members = new(4);
+        List<AllocatedMember> members = new(teamSize);
         for (int i = 0; i < ordered.Count; i++)
         {
             ScoredCandidate entry = ordered[i];
@@ -728,11 +699,11 @@ public static class TypeCupAllocation
         }
 
         Dictionary<string, List<ScoredCandidate>> assignment =
-            AssignMinCost(best, pool, eligibleRemaining, byId, preferences, rankLookup);
+            AssignMinCost(best, pool, eligibleRemaining, byId, preferences, rankLookup, rules.TypeCupMinTeamSize);
         List<AllocatedTeam> teams = new(best.Count);
         foreach (string type in best)
         {
-            teams.Add(new AllocatedTeam(type, OrderTeamMembers(type, assignment[type], rankLookup)));
+            teams.Add(new AllocatedTeam(type, OrderTeamMembers(type, assignment[type], rankLookup, rules.TypeCupMinTeamSize)));
         }
 
         return teams;
@@ -1020,7 +991,7 @@ public static class TypeCupAllocation
         }
 
         List<string> types = chosen.OrderBy(t => t, StringComparer.Ordinal).ToList();
-        MaxFlowGraph graph = MaxFlowGraph.Build(poolAthletes, types, eligibleRemaining);
+        MaxFlowGraph graph = MaxFlowGraph.Build(poolAthletes, types, eligibleRemaining, rules.TypeCupMinTeamSize);
         int flow = graph.MaxFlow();
         checked
         {
@@ -1034,7 +1005,8 @@ public static class TypeCupAllocation
         Dictionary<int, List<string>> eligibleRemaining,
         Dictionary<int, ScoredCandidate> byId,
         Dictionary<int, List<string>> preferences,
-        Dictionary<string, int> rankLookup)
+        Dictionary<string, int> rankLookup,
+        int teamSize)
     {
         ArgumentNullException.ThrowIfNull(best);
         ArgumentNullException.ThrowIfNull(poolAthletes);
@@ -1043,7 +1015,7 @@ public static class TypeCupAllocation
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentNullException.ThrowIfNull(rankLookup);
         List<string> types = best.OrderBy(t => t, StringComparer.Ordinal).ToList();
-        MinCostFlowGraph graph = MinCostFlowGraph.Build(poolAthletes, types, eligibleRemaining, byId, preferences, rankLookup);
+        MinCostFlowGraph graph = MinCostFlowGraph.Build(poolAthletes, types, eligibleRemaining, byId, preferences, rankLookup, teamSize);
         Dictionary<int, string> athleteToType = graph.MinCostFlow();
         Dictionary<string, List<ScoredCandidate>> assignment = new(StringComparer.Ordinal);
         foreach (string type in types)
@@ -1058,9 +1030,9 @@ public static class TypeCupAllocation
 
         foreach (string type in types)
         {
-            if (assignment[type].Count != 4)
+            if (assignment[type].Count != teamSize)
             {
-                throw new InvalidOperationException($"Type Cup team '{type}' must hold exactly 4 athletes, was {assignment[type].Count}.");
+                throw new InvalidOperationException($"Type Cup team '{type}' must hold exactly {teamSize} athletes, was {assignment[type].Count}.");
             }
         }
 
@@ -1140,7 +1112,8 @@ public static class TypeCupAllocation
         public static MaxFlowGraph Build(
             List<int> poolAthletes,
             List<string> types,
-            Dictionary<int, List<string>> eligibleRemaining)
+            Dictionary<int, List<string>> eligibleRemaining,
+            int teamSize)
         {
             ArgumentNullException.ThrowIfNull(poolAthletes);
             ArgumentNullException.ThrowIfNull(types);
@@ -1154,7 +1127,7 @@ public static class TypeCupAllocation
             Dictionary<string, int> typeNode = BuildTypeNodes(types, athleteCount);
             AddSourceEdges(adj, source, poolAthletes, athleteNode);
             AddAthleteEdges(adj, poolAthletes, types, eligibleRemaining, athleteNode, typeNode);
-            AddSinkEdges(adj, sink, types, typeNode);
+            AddSinkEdges(adj, sink, types, typeNode, teamSize);
             return new MaxFlowGraph(adj, source, sink);
         }
 
@@ -1253,14 +1226,15 @@ public static class TypeCupAllocation
             List<List<FlowEdge>> adj,
             int sink,
             List<string> types,
-            Dictionary<string, int> typeNode)
+            Dictionary<string, int> typeNode,
+            int teamSize)
         {
             ArgumentNullException.ThrowIfNull(adj);
             ArgumentNullException.ThrowIfNull(types);
             ArgumentNullException.ThrowIfNull(typeNode);
             foreach (string type in types)
             {
-                AddFlowEdge(adj, typeNode[type], sink, 4);
+                AddFlowEdge(adj, typeNode[type], sink, teamSize);
             }
         }
 
@@ -1328,6 +1302,7 @@ public static class TypeCupAllocation
         private readonly int _sink;
         private readonly List<int> _poolAthletes;
         private readonly List<string> _types;
+        private readonly int _teamSize;
         private readonly Dictionary<int, int> _athleteNode;
         private readonly Dictionary<string, int> _typeNode;
 
@@ -1337,6 +1312,7 @@ public static class TypeCupAllocation
             int sink,
             List<int> poolAthletes,
             List<string> types,
+            int teamSize,
             Dictionary<int, int> athleteNode,
             Dictionary<string, int> typeNode)
         {
@@ -1345,6 +1321,7 @@ public static class TypeCupAllocation
             _sink = sink;
             _poolAthletes = poolAthletes;
             _types = types;
+            _teamSize = teamSize;
             _athleteNode = athleteNode;
             _typeNode = typeNode;
         }
@@ -1371,7 +1348,8 @@ public static class TypeCupAllocation
             Dictionary<int, List<string>> eligibleRemaining,
             Dictionary<int, ScoredCandidate> byId,
             Dictionary<int, List<string>> preferences,
-            Dictionary<string, int> rankLookup)
+            Dictionary<string, int> rankLookup,
+            int teamSize)
         {
             ArgumentNullException.ThrowIfNull(poolAthletes);
             ArgumentNullException.ThrowIfNull(types);
@@ -1388,8 +1366,8 @@ public static class TypeCupAllocation
             Dictionary<string, int> typeNode = BuildCostTypeNodes(types, athleteCount);
             AddCostSourceEdges(adj, source, poolAthletes, athleteNode);
             AddCostAthleteEdges(adj, poolAthletes, eligibleRemaining, byId, preferences, rankLookup, athleteNode, typeNode);
-            AddCostSinkEdges(adj, sink, types, typeNode);
-            return new MinCostFlowGraph(adj, source, sink, poolAthletes, types, athleteNode, typeNode);
+            AddCostSinkEdges(adj, sink, types, typeNode, teamSize);
+            return new MinCostFlowGraph(adj, source, sink, poolAthletes, types, teamSize, athleteNode, typeNode);
         }
 
         private static List<List<CostEdge>> CreateCostAdjacency(int total)
@@ -1517,14 +1495,15 @@ public static class TypeCupAllocation
             List<List<CostEdge>> adj,
             int sink,
             List<string> types,
-            Dictionary<string, int> typeNode)
+            Dictionary<string, int> typeNode,
+            int teamSize)
         {
             ArgumentNullException.ThrowIfNull(adj);
             ArgumentNullException.ThrowIfNull(types);
             ArgumentNullException.ThrowIfNull(typeNode);
             foreach (string type in types)
             {
-                AddCostEdge(adj, typeNode[type], sink, 4, 0);
+                AddCostEdge(adj, typeNode[type], sink, teamSize, 0);
             }
         }
 
@@ -1533,7 +1512,7 @@ public static class TypeCupAllocation
             int required;
             checked
             {
-                required = _types.Count * 4;
+                required = _types.Count * _teamSize;
             }
 
             int flow = 0;

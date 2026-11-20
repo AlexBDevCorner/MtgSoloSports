@@ -312,50 +312,18 @@ public static class ColorCupSelection
     {
         ArgumentNullException.ThrowIfNull(left);
         ArgumentNullException.ThrowIfNull(right);
-        int final = right.FinalRatingThousandths.CompareTo(left.FinalRatingThousandths);
-        if (final != 0)
-        {
-            return final;
-        }
-
-        int bonus = right.BonusNormThousandths.CompareTo(left.BonusNormThousandths);
-        if (bonus != 0)
-        {
-            return bonus;
-        }
-
-        int perf = right.PerformanceNormThousandths.CompareTo(left.PerformanceNormThousandths);
-        if (perf != 0)
-        {
-            return perf;
-        }
-
-        int form = right.FormNormThousandths.CompareTo(left.FormNormThousandths);
-        if (form != 0)
-        {
-            return form;
-        }
-
-        int chaos = right.ChaosNormThousandths.CompareTo(left.ChaosNormThousandths);
-        if (chaos != 0)
-        {
-            return chaos;
-        }
-
-        int prestige = right.PrestigeNormThousandths.CompareTo(left.PrestigeNormThousandths);
-        if (prestige != 0)
-        {
-            return prestige;
-        }
-
-        int name = string.Compare(left.Name, right.Name, StringComparison.Ordinal);
-        if (name != 0)
-        {
-            return name;
-        }
-
-        return left.AthleteId.CompareTo(right.AthleteId);
+        return CupSelectionOrder.Compare(OrderKey(left), OrderKey(right));
     }
+
+    private static CupSelectionOrder.Key OrderKey(ScoredCandidate candidate) => new(
+        candidate.FinalRatingThousandths,
+        candidate.BonusNormThousandths,
+        candidate.PerformanceNormThousandths,
+        candidate.FormNormThousandths,
+        candidate.ChaosNormThousandths,
+        candidate.PrestigeNormThousandths,
+        candidate.Name,
+        candidate.AthleteId);
 
     internal static IReadOnlyList<ScoredCandidate> TakeTopFour(List<ScoredCandidate> scored)
     {
