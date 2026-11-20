@@ -1,14 +1,10 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace MtgSoloSports.Persistence.Saves.Migrations
 {
     /// <inheritdoc />
-    [DbContext(typeof(SaveDbContext))]
-    [Migration("20261105000000_AddColorCupIndividualFormat")]
     public partial class AddColorCupIndividualFormat : Migration
     {
         /// <inheritdoc />
