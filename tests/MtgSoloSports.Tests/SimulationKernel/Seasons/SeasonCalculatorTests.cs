@@ -159,6 +159,30 @@ public sealed class SeasonCalculatorTests
         first.Length.ShouldBe(64);
     }
 
+    [Fact]
+    public void EncodeRawTotals_PacksStageScoreAheadOfBase_AndKeepsOrdering()
+    {
+        // Stage score occupies bits 32..62, base the low 32 bits, so a higher
+        // stage score outranks even the maximum base total (MSS-152 guard).
+        SeasonCalculator.EncodeRawTotals(2, 0)
+            .ShouldBeGreaterThan(SeasonCalculator.EncodeRawTotals(1, int.MaxValue));
+        SeasonCalculator.EncodeRawTotals(int.MaxValue, int.MaxValue)
+            .ShouldBe(0x7FFF_FFFF_7FFF_FFFFL);
+        SeasonCalculator.EncodeRawTotals(0, 0).ShouldBe(0L);
+    }
+
+    [Fact]
+    public void EncodeRawTotals_RejectsValuesOutsideTheKeyCapacity()
+    {
+        // Negative totals would silently wrap into the ordering key; they abort
+        // loudly instead (MSS-152). The upper bound is int.MaxValue for int
+        // inputs today and documents the 2^31 capacity for future widening.
+        Should.Throw<InvalidOperationException>(() => SeasonCalculator.EncodeRawTotals(-1, 0))
+            .Message.ShouldContain("tie-break key capacity");
+        Should.Throw<InvalidOperationException>(() => SeasonCalculator.EncodeRawTotals(0, -1));
+        SeasonCalculator.MaxStageScoreForKey.ShouldBe(int.MaxValue);
+    }
+
     private static List<List<SeasonStageEntry>> BuildTwoStagesWinnerTakesAll()
     {
         List<List<SeasonStageEntry>> stages = new(2);
