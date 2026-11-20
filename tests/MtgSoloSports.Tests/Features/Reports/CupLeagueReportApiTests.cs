@@ -84,6 +84,7 @@ public sealed class CupLeagueReportApiTests
         {
             Guid saveId = await SharedSaveTemplates.SeedSeason1PlusCupsAsync(savesRoot);
             using HttpClient client = factory.CreateClient();
+            client.Timeout = TimeSpan.FromMinutes(10); // Full-season simulate request can exceed default 100s on loaded CI.
             await SimulateOneSeasonAsync(client, saveId);
             await AssertTypeEditionAsync(client, saveId);
             await AssertTypeTeamAsync(client, saveId);
