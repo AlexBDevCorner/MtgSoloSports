@@ -430,8 +430,34 @@ public sealed class CompleteStageHandler
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
-        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, completion.Rules);
+        IReadOnlyList<StageAthleteTotals> totals = AccumulateStageRounds(roundEntries, completion);
         return new StageRounds(payloads, totals, current);
+    }
+
+    /// <summary>
+    /// Accumulates the stage's rounds through the pure kernel. The kernel's
+    /// placement invariants (duplicate or out-of-range positions, athlete
+    /// coverage, base-point consistency) throw
+    /// <see cref="InvalidOperationException"/>; here the inputs are persisted
+    /// round payloads — the freshly simulated rounds were already checked by
+    /// <see cref="RoundInvariants"/> — so an invariant failure means corrupted
+    /// saved rounds and must surface in the 500 corruption class (MSS-144),
+    /// never as a client error.
+    /// </summary>
+    internal static IReadOnlyList<StageAthleteTotals> AccumulateStageRounds(
+        List<List<StageRoundEntry>> roundEntries,
+        StageCompletionContext completion)
+    {
+        try
+        {
+            return StageCalculator.Accumulate(roundEntries, completion.Rules);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException(
+                $"Stage {completion.Stage.StageNumber} for league '{completion.League.Name}' has corrupt round placements: {ex.Message}",
+                ex);
+        }
     }
 
     /// <summary>
