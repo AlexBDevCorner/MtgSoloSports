@@ -19,9 +19,10 @@ namespace MtgSoloSports.Persistence.Catalog;
 /// with re-import guidance; it never silently auto-recreates or destroys an
 /// existing catalog. Schema-only by construction: this runner never reads or
 /// writes athlete rows and never touches game-rule state.
-/// Normal reads bypass this runner entirely (<see cref="CatalogStore"/> opens
-/// plain connections); only the import path calls it, so schema work happens
-/// on the creation/migration path instead of every operation.
+/// It runs on the creation/migration paths only: the import path (the only
+/// catalog file creator) and the once-per-process read gate in
+/// <see cref="CatalogStore"/>; steady-state reads bypass it entirely, so
+/// schema work never repeats per operation.
 /// </summary>
 public static class CatalogSchemaMigrator
 {
@@ -60,7 +61,8 @@ public static class CatalogSchemaMigrator
     /// application version: fresh files are created directly by EF Core
     /// migrations, legacy files are baselined first, and migrated files get
     /// pending migrations applied. Callers invoke this from the import path
-    /// only; every failure is a loud
+    /// (file creation) and the once-per-process read gate in
+    /// <see cref="CatalogStore"/>; every failure is a loud
     /// <see cref="CatalogSchemaIncompatibleException"/> with re-import guidance.
     /// </summary>
     public static async Task EnsureSchemaAsync(
@@ -83,9 +85,13 @@ public static class CatalogSchemaMigrator
             if (!File.Exists(catalogFilePath))
             {
                 // Fresh install: MigrateAsync creates the file, the history
-                // table and the schema in one transaction.
+                // table and the schema in one transaction. The same
+                // post-creation invariant as the upgrade path applies, so a
+                // stale or incomplete initial migration fails loudly here
+                // instead of surfacing later as runtime "no such column".
                 using CatalogDbContext context = factory.Create(catalogFilePath);
                 await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
+                await EnsureServesCurrentModelAsync(factory, catalogFilePath, cancellationToken).ConfigureAwait(false);
                 await ApplyWalModeAsync(catalogFilePath, cancellationToken).ConfigureAwait(false);
                 return;
             }

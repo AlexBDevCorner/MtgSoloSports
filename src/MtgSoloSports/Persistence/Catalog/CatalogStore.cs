@@ -10,10 +10,13 @@ namespace MtgSoloSports.Persistence.Catalog;
 /// Filesystem + SQLite orchestration for the shared MTG creature catalog.
 /// The catalog database is independent of save databases: imports replace the
 /// candidate set atomically, while saves later copy their own snapshots.
-/// Schema initialization (creation, legacy baselining, migrations) runs once
-/// on the import path through <see cref="CatalogSchemaMigrator"/>; read
-/// methods open plain connections with no schema round-trip and report an
-/// empty catalog when the file is absent.
+/// Schema initialization (creation, legacy baselining, migrations) runs
+/// through <see cref="CatalogSchemaMigrator"/> once per process: on the
+/// import path (the only path that creates the file) and on the first read
+/// against an already existing file, so a catalog from an older application
+/// version is migrated or guarded before any read can hit a raw schema error.
+/// Every later read opens a plain connection with no schema round-trip and
+/// reports an empty catalog when the file is absent.
 /// This is catalog-scoped file management, not a generic repository.
 /// </summary>
 public sealed class CatalogStore
@@ -21,6 +24,8 @@ public sealed class CatalogStore
     private readonly IOptions<CatalogStorageOptions> _options;
     private readonly IHostEnvironment _environment;
     private readonly CatalogDbContextFactory _factory;
+    private readonly SemaphoreSlim _schemaVerificationGate = new(1, 1);
+    private volatile bool _schemaVerified;
 
     public CatalogStore(
         IOptions<CatalogStorageOptions> options,
@@ -59,8 +64,9 @@ public sealed class CatalogStore
     /// <summary>
     /// Replaces the catalog candidate set atomically from collapsed athletes.
     /// Athletes must already be collapsed by card name in deterministic order.
-    /// Schema creation/migration runs once here (the only write path); normal
-    /// reads never pay a schema round-trip.
+    /// This is the only path that creates the catalog file: schema
+    /// creation/migration runs here unconditionally, and the successful pass
+    /// also satisfies the read-side schema gate.
     /// </summary>
     public async Task<CatalogImportResult> ImportAsync(
         IReadOnlyList<BulkCardRecord> rawRecords,
@@ -73,6 +79,7 @@ public sealed class CatalogStore
         (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature, int skippedAmbiguous) = BulkCatalogParser.CountCollapse(rawRecords);
 
         await CatalogSchemaMigrator.EnsureSchemaAsync(_factory, GetCatalogFilePath(), cancellationToken).ConfigureAwait(false);
+        _schemaVerified = true;
 
         using CatalogDbContext context = OpenDbContext();
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -97,12 +104,46 @@ public sealed class CatalogStore
     }
 
     /// <summary>
+    /// Once-per-process schema gate for reads: the first access to an
+    /// existing catalog file adopts it into the migrations story (legacy
+    /// baselining or pending migrations) or fails loudly with re-import
+    /// guidance; every later read is a plain connection with no schema work.
+    /// A missing file stays an empty catalog — reads never create it — and a
+    /// failed verification is never cached, so reads stay loud until the
+    /// file is deleted and re-imported.
+    /// </summary>
+    private async Task EnsureSchemaVerifiedAsync(CancellationToken cancellationToken)
+    {
+        if (_schemaVerified || !File.Exists(GetCatalogFilePath()))
+        {
+            return;
+        }
+
+        await _schemaVerificationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_schemaVerified)
+            {
+                return;
+            }
+
+            await CatalogSchemaMigrator.EnsureSchemaAsync(_factory, GetCatalogFilePath(), cancellationToken).ConfigureAwait(false);
+            _schemaVerified = true;
+        }
+        finally
+        {
+            _schemaVerificationGate.Release();
+        }
+    }
+
+    /// <summary>
     /// Reports persisted unique-athlete counts per sporting color. All eight
     /// colors are always present (zero when absent). A missing catalog file is
     /// an empty catalog: no file is created and no schema round-trip runs.
     /// </summary>
     public async Task<IReadOnlyDictionary<SportingColor, int>> GetCountsAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSchemaVerifiedAsync(cancellationToken).ConfigureAwait(false);
         if (!File.Exists(GetCatalogFilePath()))
         {
             return EmptyCounts();
@@ -132,6 +173,7 @@ public sealed class CatalogStore
     /// </summary>
     public async Task<int> GetTotalAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSchemaVerifiedAsync(cancellationToken).ConfigureAwait(false);
         if (!File.Exists(GetCatalogFilePath()))
         {
             return 0;
@@ -149,6 +191,7 @@ public sealed class CatalogStore
     /// </summary>
     public async Task<IReadOnlyList<CatalogAthlete>> ListAthletesAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureSchemaVerifiedAsync(cancellationToken).ConfigureAwait(false);
         if (!File.Exists(GetCatalogFilePath()))
         {
             return [];

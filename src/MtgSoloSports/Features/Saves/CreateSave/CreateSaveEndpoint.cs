@@ -26,6 +26,12 @@ public static class CreateSaveEndpoint
                 // Corrupted sporting state is a server failure, never a client error (MSS-144).
                 return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
+            catch (MtgSoloSports.Persistence.Catalog.CatalogSchemaIncompatibleException ex)
+            {
+                // An unserveable catalog schema is server state, never a client error (MSS-147);
+                // the message carries the re-import guidance.
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+            }
             catch (InvalidOperationException ex)
             {
                 return Results.BadRequest(new { error = ex.Message });

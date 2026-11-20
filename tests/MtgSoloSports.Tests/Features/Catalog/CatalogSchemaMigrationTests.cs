@@ -18,9 +18,11 @@ namespace MtgSoloSports.Tests.Features.Catalog;
 /// MSS-147 catalog schema-migration coverage: catalogs created by the
 /// previous version (plain EnsureCreated schema, no history table) keep
 /// working without data loss, fresh installs are created once through EF
-/// Core migrations, normal reads issue no schema work, connections run the
-/// documented pragmas, and incompatible future catalogs fail loudly with
-/// re-import guidance instead of a runtime "no such column" break.
+/// Core migrations, the first read against an existing file adopts it once
+/// (baselining or pending migrations) and later reads issue no schema work,
+/// connections run the documented pragmas, and incompatible future catalogs
+/// fail loudly with re-import guidance from imports and reads alike instead
+/// of a runtime "no such column" break.
 /// </summary>
 public sealed class CatalogSchemaMigrationTests
 {
@@ -33,7 +35,8 @@ public sealed class CatalogSchemaMigrationTests
             string path = store.GetCatalogFilePath();
             await CreateLegacyCatalogAsync(factory, path, [Athlete("Legacy White One", SportingColor.White)]);
 
-            // Reads keep working against the legacy shape, plain connections only.
+            // The first read adopts the legacy file into the migrations story
+            // (baseline + migrate, no data loss); every later read is plain.
             IReadOnlyList<CatalogAthlete> athletes = await store.ListAthletesAsync();
             athletes.Count.ShouldBe(1);
             (await store.GetTotalAsync()).ShouldBe(1);
@@ -150,6 +153,80 @@ public sealed class CatalogSchemaMigrationTests
     }
 
     [Fact]
+    public async Task LegacyCatalog_ReadPath_AdoptsSchemaOnceThenReadsPlain()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-mss147-adopt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        RecordingCatalogInterceptor recorder = new();
+        IOptions<CatalogStorageOptions> options = Options.Create(new CatalogStorageOptions { CatalogPath = Path.Combine(root, "catalog.db") });
+        CatalogDbContextFactory factory = new(recorder);
+        CatalogStore store = new(options, new TestHostEnvironment(root), factory);
+        try
+        {
+            string path = store.GetCatalogFilePath();
+            await CreateLegacyCatalogAsync(factory, path, [Athlete("Legacy White One", SportingColor.White)]);
+            recorder.Commands.Clear();
+
+            // MSS-147 correction: a read (not an import) adopts the legacy file
+            // into the migrations story — baseline, migrate, WAL — and serves it,
+            // so save creation never hits a raw legacy-shape break.
+            GetCatalogStatsHandler stats = new(store);
+            _ = await stats.HandleAsync();
+            (await store.ListAthletesAsync()).Count.ShouldBe(1);
+            (await ReadHistoryIdsAsync(path)).ShouldBe([CatalogSchemaMigrator.InitialMigrationId]);
+            (await ReadJournalModeAsync(path)).ShouldBe("wal");
+
+            // The schema pass ran exactly once per process: later reads are
+            // plain SELECTs only, with no DDL or history round-trip.
+            recorder.Commands.Clear();
+            _ = await stats.HandleAsync();
+            IReadOnlyList<CatalogAthlete> athletes = await store.ListAthletesAsync();
+            athletes.Count.ShouldBe(1);
+            recorder.Commands.ShouldNotBeEmpty();
+            recorder.Commands.ShouldAllBe(static command =>
+                command.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task DamagedLegacyCatalog_ReadPath_FailsLoudlyWithReImportGuidance()
+    {
+        var (store, factory, root) = CreateStore();
+        try
+        {
+            string path = store.GetCatalogFilePath();
+            await CreateLegacyCatalogAsync(factory, path, [Athlete("Damaged One", SportingColor.White)]);
+            using (SqliteConnection connection = await OpenRawAsync(path))
+            using (DbCommand alter = connection.CreateCommand())
+            {
+                // A column the pre-migration schema never had: damaged or future-shaped.
+                alter.CommandText = "ALTER TABLE \"CatalogAthletes\" ADD COLUMN \"FutureColumn\" TEXT;";
+                _ = await alter.ExecuteNonQueryAsync();
+            }
+
+            // MSS-147 correction: the read path reaches the loud guard with
+            // actionable guidance, never the raw "no such column" break.
+            CatalogSchemaIncompatibleException ex = await Should.ThrowAsync<CatalogSchemaIncompatibleException>(
+                () => store.GetTotalAsync());
+            ex.Message.ShouldContain("does not match the pre-migration catalog schema");
+            ex.Message.ShouldContain("The catalog is fully re-importable");
+
+            // The failed verification is never cached: reads stay loud until the
+            // file is fixed, and the rows survive untouched.
+            _ = await Should.ThrowAsync<CatalogSchemaIncompatibleException>(() => store.ListAthletesAsync());
+            (await ReadAthleteCountAsync(path)).ShouldBe(1);
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
     public async Task FutureCatalog_WithUnknownMigration_FailsLoudlyAndKeepsData()
     {
         var (store, factory, root) = CreateStore();
@@ -167,8 +244,12 @@ public sealed class CatalogSchemaMigrationTests
             ex.Message.ShouldContain(FutureMigrationId);
             ex.Message.ShouldContain("The catalog is fully re-importable");
 
-            // The failure aborted before any mutation.
-            (await store.GetTotalAsync()).ShouldBe(0);
+            // The failure aborted before any mutation, and the read path reaches
+            // the same loud guard (never a raw "no such column" break).
+            CatalogSchemaIncompatibleException readEx = await Should.ThrowAsync<CatalogSchemaIncompatibleException>(
+                () => store.GetTotalAsync());
+            readEx.Message.ShouldContain("newer application version");
+            (await ReadAthleteCountAsync(path)).ShouldBe(0);
         }
         finally
         {
@@ -199,8 +280,10 @@ public sealed class CatalogSchemaMigrationTests
             ex.Message.ShouldContain("FutureColumn");
             ex.Message.ShouldContain("The catalog is fully re-importable");
 
-            // No silent repair and no destruction: the rows are untouched.
-            (await store.GetTotalAsync()).ShouldBe(1);
+            // No silent repair and no destruction: the rows are untouched, and
+            // the read path stays loud with guidance instead of failing raw.
+            _ = await Should.ThrowAsync<CatalogSchemaIncompatibleException>(() => store.GetTotalAsync());
+            (await ReadAthleteCountAsync(path)).ShouldBe(1);
         }
         finally
         {
@@ -313,6 +396,14 @@ public sealed class CatalogSchemaMigrationTests
         }
 
         return ids;
+    }
+
+    private static async Task<long> ReadAthleteCountAsync(string path)
+    {
+        using SqliteConnection connection = await OpenRawAsync(path).ConfigureAwait(false);
+        using DbCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM \"CatalogAthletes\";";
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
     }
 
     private static async Task<string> ReadJournalModeAsync(string path)

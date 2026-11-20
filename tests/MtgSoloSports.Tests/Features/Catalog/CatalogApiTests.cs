@@ -70,21 +70,7 @@ public sealed class CatalogApiTests
         var (factory, root) = CreateFactory();
         try
         {
-            // A catalog file with a CatalogAthletes table the baseline path must reject:
-            // server state damage is never a client error, and the message must be actionable.
-            string catalogPath = Path.Combine(root, "catalog.db");
-            using (Microsoft.Data.Sqlite.SqliteConnection connection = new($"Data Source={catalogPath}"))
-            {
-                await connection.OpenAsync();
-                using System.Data.Common.DbCommand create = connection.CreateCommand();
-                create.CommandText = """
-                    CREATE TABLE "CatalogAthletes" (
-                        "Id" INTEGER NOT NULL CONSTRAINT "PK_CatalogAthletes" PRIMARY KEY,
-                        "Name" TEXT NOT NULL
-                    );
-                    """;
-                _ = await create.ExecuteNonQueryAsync();
-            }
+            await CreateDamagedCatalogAsync(root);
 
             using HttpClient client = factory.CreateClient();
             using StringContent content = new(
@@ -106,6 +92,80 @@ public sealed class CatalogApiTests
         {
             factory.Dispose();
             TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task StatsAgainstDamagedCatalog_Returns500WithReImportGuidance()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            await CreateDamagedCatalogAsync(root);
+
+            // MSS-147 correction: a read on an existing catalog reaches the
+            // loud schema guard through the real pipeline, never a raw
+            // "no such column" 500 without guidance.
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.GetAsync("/api/catalog/stats");
+            response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            JsonElement payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+            string? error = payload.GetProperty("error").GetString();
+            error.ShouldNotBeNullOrEmpty();
+            error.ShouldContain("The catalog is fully re-importable");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task CreateSaveAgainstDamagedCatalog_Returns500WithReImportGuidance()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            await CreateDamagedCatalogAsync(root);
+
+            // MSS-147 correction: creating a save reads the catalog first, so
+            // the same loud guard must surface as an actionable server failure,
+            // never a raw schema error or a misleading client error.
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage response = await client.PostAsJsonAsync(
+                "/api/saves", new { name = "Broken Catalog Save", seed = 101UL, stream = 202UL });
+            response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            JsonElement payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+            string? error = payload.GetProperty("error").GetString();
+            error.ShouldNotBeNullOrEmpty();
+            error.ShouldContain("The catalog is fully re-importable");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    /// <summary>
+    /// A catalog file with a CatalogAthletes table the schema path must reject:
+    /// server state damage is never a client error, and the message must be actionable.
+    /// </summary>
+    private static async Task CreateDamagedCatalogAsync(string root)
+    {
+        string catalogPath = Path.Combine(root, "catalog.db");
+        using (Microsoft.Data.Sqlite.SqliteConnection connection = new($"Data Source={catalogPath}"))
+        {
+            await connection.OpenAsync().ConfigureAwait(false);
+            using System.Data.Common.DbCommand create = connection.CreateCommand();
+            create.CommandText = """
+                CREATE TABLE "CatalogAthletes" (
+                    "Id" INTEGER NOT NULL CONSTRAINT "PK_CatalogAthletes" PRIMARY KEY,
+                    "Name" TEXT NOT NULL
+                );
+                """;
+            _ = await create.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
     }
 
