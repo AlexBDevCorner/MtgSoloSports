@@ -173,7 +173,7 @@ public sealed class CatalogStoreTests
         Directory.CreateDirectory(root);
         IOptions<CatalogStorageOptions> options = Options.Create(new CatalogStorageOptions { CatalogPath = Path.Combine(root, "catalog.db") });
         TestHostEnvironment environment = new(root);
-        CatalogDbContextFactory factory = new();
+        CatalogDbContextFactory factory = new(new CatalogSqliteConnectionInterceptor());
         CatalogStore store = new(options, environment, factory);
         return (store, root);
     }

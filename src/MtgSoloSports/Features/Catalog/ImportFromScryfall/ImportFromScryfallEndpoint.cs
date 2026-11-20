@@ -1,3 +1,5 @@
+using MtgSoloSports.Persistence.Catalog;
+
 namespace MtgSoloSports.Features.Catalog.ImportFromScryfall;
 
 public static class ImportFromScryfallEndpoint
@@ -41,6 +43,12 @@ public static class ImportFromScryfallEndpoint
         catch (MtgSoloSports.Shared.SaveCorruptionException ex)
         {
             // Corrupted sporting state is a server failure, never a client error (MSS-144).
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+        }
+        catch (CatalogSchemaIncompatibleException ex)
+        {
+            // An unserveable catalog schema is server state, never a client error (MSS-147);
+            // the message carries the re-import guidance.
             return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (InvalidOperationException ex)

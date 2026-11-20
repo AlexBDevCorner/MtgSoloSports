@@ -64,6 +64,51 @@ public sealed class CatalogApiTests
         }
     }
 
+    [Fact]
+    public async Task ImportAgainstDamagedCatalog_Returns500WithReImportGuidance()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            // A catalog file with a CatalogAthletes table the baseline path must reject:
+            // server state damage is never a client error, and the message must be actionable.
+            string catalogPath = Path.Combine(root, "catalog.db");
+            using (Microsoft.Data.Sqlite.SqliteConnection connection = new($"Data Source={catalogPath}"))
+            {
+                await connection.OpenAsync();
+                using System.Data.Common.DbCommand create = connection.CreateCommand();
+                create.CommandText = """
+                    CREATE TABLE "CatalogAthletes" (
+                        "Id" INTEGER NOT NULL CONSTRAINT "PK_CatalogAthletes" PRIMARY KEY,
+                        "Name" TEXT NOT NULL
+                    );
+                    """;
+                _ = await create.ExecuteNonQueryAsync();
+            }
+
+            using HttpClient client = factory.CreateClient();
+            using StringContent content = new(
+                """
+                [
+                  {"name": "White One", "layout": "normal", "type_line": "Creature — Human", "mana_cost": "{W}", "colors": ["W"], "keywords": [], "oracle_text": "", "set": "tst", "image_uris": null}
+                ]
+                """,
+                Encoding.UTF8,
+                "application/json");
+            using HttpResponseMessage response = await client.PostAsync("/api/catalog/import", content);
+            response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            JsonElement payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+            string? error = payload.GetProperty("error").GetString();
+            error.ShouldNotBeNullOrEmpty();
+            error.ShouldContain("The catalog is fully re-importable");
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
     private static (WebApplicationFactory<Program> Factory, string Root) CreateFactory()
     {
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-catalog-api-" + Guid.NewGuid().ToString("N"));

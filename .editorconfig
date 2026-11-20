@@ -44,3 +44,7 @@ indent_size = 2
 # EF Core migrations are scaffolded tool output; analyzers/formatters skip them.
 [src/MtgSoloSports/Persistence/Saves/Migrations/*.cs]
 generated_code = true
+
+# MSS-147: catalog migrations get the same scaffolded-tool treatment as saves.
+[src/MtgSoloSports/Persistence/Catalog/Migrations/*.cs]
+generated_code = true

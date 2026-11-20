@@ -10,6 +10,10 @@ namespace MtgSoloSports.Persistence.Catalog;
 /// Filesystem + SQLite orchestration for the shared MTG creature catalog.
 /// The catalog database is independent of save databases: imports replace the
 /// candidate set atomically, while saves later copy their own snapshots.
+/// Schema initialization (creation, legacy baselining, migrations) runs once
+/// on the import path through <see cref="CatalogSchemaMigrator"/>; read
+/// methods open plain connections with no schema round-trip and report an
+/// empty catalog when the file is absent.
 /// This is catalog-scoped file management, not a generic repository.
 /// </summary>
 public sealed class CatalogStore
@@ -35,6 +39,11 @@ public sealed class CatalogStore
         return Path.GetFullPath(Path.IsPathRooted(relative) ? relative : Path.Combine(_environment.ContentRootPath, relative));
     }
 
+    /// <summary>
+    /// Opens a plain catalog connection (no schema work). Per-connection
+    /// pragmas come from <see cref="CatalogSqliteConnectionInterceptor"/>.
+    /// The caller owns disposal.
+    /// </summary>
     public CatalogDbContext OpenDbContext()
     {
         string path = GetCatalogFilePath();
@@ -50,6 +59,8 @@ public sealed class CatalogStore
     /// <summary>
     /// Replaces the catalog candidate set atomically from collapsed athletes.
     /// Athletes must already be collapsed by card name in deterministic order.
+    /// Schema creation/migration runs once here (the only write path); normal
+    /// reads never pay a schema round-trip.
     /// </summary>
     public async Task<CatalogImportResult> ImportAsync(
         IReadOnlyList<BulkCardRecord> rawRecords,
@@ -61,10 +72,9 @@ public sealed class CatalogStore
 
         (int total, int eligible, int unique, int skippedTokens, int skippedNonCreature, int skippedAmbiguous) = BulkCatalogParser.CountCollapse(rawRecords);
 
-        using CatalogDbContext context = OpenDbContext();
-        _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
-        await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;", cancellationToken).ConfigureAwait(false);
+        await CatalogSchemaMigrator.EnsureSchemaAsync(_factory, GetCatalogFilePath(), cancellationToken).ConfigureAwait(false);
 
+        using CatalogDbContext context = OpenDbContext();
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         _ = await context.Athletes.ExecuteDeleteAsync(cancellationToken).ConfigureAwait(false);
 
@@ -88,12 +98,17 @@ public sealed class CatalogStore
 
     /// <summary>
     /// Reports persisted unique-athlete counts per sporting color. All eight
-    /// colors are always present (zero when absent).
+    /// colors are always present (zero when absent). A missing catalog file is
+    /// an empty catalog: no file is created and no schema round-trip runs.
     /// </summary>
     public async Task<IReadOnlyDictionary<SportingColor, int>> GetCountsAsync(CancellationToken cancellationToken = default)
     {
+        if (!File.Exists(GetCatalogFilePath()))
+        {
+            return EmptyCounts();
+        }
+
         using CatalogDbContext context = OpenDbContext();
-        _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
 
         Dictionary<SportingColor, int> counts = EmptyCounts();
         List<ColorCount> rows = await context.Athletes
@@ -112,24 +127,34 @@ public sealed class CatalogStore
     }
 
     /// <summary>
-    /// Total persisted unique athletes across all sporting colors.
+    /// Total persisted unique athletes across all sporting colors. A missing
+    /// catalog file is an empty catalog (zero), created by no read.
     /// </summary>
     public async Task<int> GetTotalAsync(CancellationToken cancellationToken = default)
     {
+        if (!File.Exists(GetCatalogFilePath()))
+        {
+            return 0;
+        }
+
         using CatalogDbContext context = OpenDbContext();
-        _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
         return await context.Athletes.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Lists every persisted catalog candidate for save-universe selection.
-    /// The selector re-sorts by name, so database row order is never trusted
-    /// as sporting input.
+    /// A missing catalog file is an empty catalog (no athletes), created by
+    /// no read. The selector re-sorts by name, so database row order is never
+    /// trusted as sporting input.
     /// </summary>
     public async Task<IReadOnlyList<CatalogAthlete>> ListAthletesAsync(CancellationToken cancellationToken = default)
     {
+        if (!File.Exists(GetCatalogFilePath()))
+        {
+            return [];
+        }
+
         using CatalogDbContext context = OpenDbContext();
-        _ = await context.Database.EnsureCreatedAsync(cancellationToken).ConfigureAwait(false);
         List<CatalogAthleteEntity> entities = await context.Athletes
             .AsNoTracking()
             .ToListAsync(cancellationToken)
