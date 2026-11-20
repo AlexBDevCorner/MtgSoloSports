@@ -489,3 +489,123 @@ describe('MSS-069 LiveQualifierView mounted behavior', () => {
     (renderer as unknown as { unmount: () => void }).unmount();
   });
 });
+
+describe('MSS-146 LiveQualifierView required-load failures stay actionable', () => {
+  beforeEach(() => {
+    installGlobals();
+  });
+
+  afterEach(() => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    delete g['fetch'];
+  });
+
+  it('renders an error with retry when the rounds detail fails, and retry refetches and recovers', async () => {
+    const fail = { get: true };
+    const log: FetchLog = { gets: [], posts: [] };
+    const state = { played: 3, complete: false };
+    installQualifierFetch(log, state);
+    const g = globalThis as unknown as Record<string, unknown>;
+    const base = g['fetch'] as (input: unknown, init?: { method?: string }) => Promise<unknown>;
+    g['fetch'] = (input: unknown, init?: { method?: string }) => {
+      if (fail.get && (init?.method ?? 'GET').toUpperCase() === 'GET') {
+        return Promise.resolve(errJson(500, 'backend down'));
+      }
+      return base(input, init);
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(LiveQualifierView, baseProps()));
+    });
+    assert.ok(renderer);
+    await flush();
+
+    let text = renderedText(renderer);
+    assert.ok(text.includes('Qualifier unavailable'), 'the load failure surfaces as an error screen');
+    assert.ok(text.includes('backend down'), 'the server message stays visible');
+    assert.ok(text.includes('Retry'), 'a retry action is offered');
+    assert.ok(!text.includes('No rounds played yet.'), 'a failed load never fakes the rounds empty state');
+    assert.ok(!text.includes('Next Round'), 'a failed load never shows dead controls');
+
+    fail.get = false;
+    const retry = findButtonByText(renderer, 'Retry');
+    await act(async () => {
+      (retry.props['onClick'] as () => void)();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await flush();
+    text = renderedText(renderer);
+    assert.ok(!text.includes('Qualifier unavailable'), 'the error clears after a successful retry');
+    assert.ok(text.includes('Round 3 / 16'), 'retry refetches the authoritative rounds detail');
+    assert.ok(text.includes('Round 3 results'), 'the persisted reveal renders after recovery');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+
+  it('a save switch during a pending load keeps the successor spinner and never shows a stale error', async () => {
+    const SAVE_B = '22222222-2222-2222-2222-222222222222';
+    const gate = { released: false, waiters: [] as Array<() => void> };
+    const g = globalThis as unknown as Record<string, unknown>;
+    g['fetch'] = (input: unknown, init?: { method?: string; signal?: AbortSignal }) => {
+      const url = String(input);
+      if ((init?.method ?? 'GET').toUpperCase() !== 'GET') {
+        return Promise.resolve(okJson({}));
+      }
+      const signal = init?.signal;
+      return new Promise((resolve, reject) => {
+        const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (url.includes(SAVE)) {
+          // The pre-switch save never answers on its own; only the abort settles it.
+          return;
+        }
+        const respond = () => {
+          const roundMatch = /\/rounds\/(\d+)/.exec(url);
+          if (roundMatch) {
+            resolve(okJson(makeRoundView(Number.parseInt(roundMatch[1]!, 10))));
+            return;
+          }
+          resolve(okJson(makeDetail(3, false)));
+        };
+        if (gate.released) {
+          respond();
+          return;
+        }
+        gate.waiters.push(respond);
+      });
+    };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(React.createElement(LiveQualifierView, baseProps()));
+    });
+    assert.ok(renderer);
+    await act(async () => {
+      (renderer as unknown as { update: (el: React.ReactElement) => void }).update(
+        React.createElement(LiveQualifierView, baseProps({ saveId: SAVE_B })),
+      );
+    });
+    await flush(2);
+    let text = renderedText(renderer);
+    assert.ok(text.includes('Loading qualifier…'), 'the successor request keeps its spinner after the switch');
+    assert.ok(!text.includes('Qualifier unavailable'), 'an aborted request never surfaces a stale error');
+    assert.ok(!text.includes('Press Next Round to simulate round 1.'), 'the cleared-spinner fallback never renders while the successor is pending');
+
+    await act(async () => {
+      gate.released = true;
+      for (const respond of gate.waiters) {
+        respond();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await flush();
+    text = renderedText(renderer);
+    assert.ok(!text.includes('Loading qualifier…'), 'loading resolves once the successor answers');
+    assert.ok(!text.includes('Qualifier unavailable'), 'the successor data replaces any transient error');
+    assert.ok(text.includes('Round 3 / 16'), 'the successor save renders its own qualifier state');
+    assert.ok(text.includes('Round 3 results'), 'the successor save replays its latest persisted round');
+    (renderer as unknown as { unmount: () => void }).unmount();
+  });
+});

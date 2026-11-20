@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { AthleteLink } from '../routing/router';
@@ -333,14 +333,15 @@ export function MovementReveal({
             (step) => step.direction === 'relegated' && !revealed.has(step.key),
           );
           return (
-            <>
+            // MSS-146: the boundary (not its inner elements) is the array
+            // item, so the fragment itself must carry the boundary key.
+            <Fragment key={boundary.key}>
               {showGroupHeader ? (
-                <h2 className="reveal-subhead movement-boundary-group" key={`group-${boundary.boundaryLabel}`}>
+                <h2 className="reveal-subhead movement-boundary-group">
                   {boundary.boundaryLabel}
                 </h2>
               ) : null}
               <section
-                key={boundary.key}
                 id={`movement-boundary-${boundary.key}`}
                 className={isActive ? 'movement-boundary is-active' : 'movement-boundary'}
                 aria-current={isActive ? 'step' : undefined}
@@ -448,7 +449,7 @@ export function MovementReveal({
                 </div>
               </div>
               </section>
-            </>
+            </Fragment>
           );
         })}
       </div>

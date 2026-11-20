@@ -92,20 +92,28 @@ export function LiveQualifierView({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MSS-146: required-load failure (the qualifier rounds detail). Kept apart
+  // from `error` (round/action failures) so a dead load renders its own
+  // retry screen instead of "No rounds played yet." + dead controls.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setLoadError(null);
     fetchQualifierRounds(saveId, apiBoundary, apiColor, season, controller.signal)
       .then((loaded) => {
         setDetail(loaded);
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
-          setError(apiErrorMessage(failure));
+        // A save switch aborted this load; the successor request owns the
+        // loading/error state, so an abort never touches it (useSaves pattern).
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
         }
+        setLoadError(apiErrorMessage(failure));
         setLoading(false);
       });
     return () => controller.abort();
@@ -146,6 +154,12 @@ export function LiveQualifierView({
     setRevision((value) => value + 1);
     onMutated();
   }, [onMutated]);
+
+  // MSS-146: load retry re-reads persisted state only; it never mutates and
+  // must not trigger the dashboard refresh that post-mutation flows use.
+  const retryLoad = useCallback(() => {
+    setRevision((value) => value + 1);
+  }, []);
 
   async function handleNext(): Promise<void> {
     if (busy) {
@@ -219,6 +233,21 @@ export function LiveQualifierView({
     [detail],
   );
   const pills = detail?.rounds ?? [];
+
+  // MSS-146: a failed required load replaces the whole screen with an
+  // actionable error + retry — never "No rounds played yet." plus dead controls.
+  if (loadError) {
+    return (
+      <Notice tone="error" title="Qualifier unavailable">
+        <p>{loadError}</p>
+        <p>
+          <button type="button" className="ghost-button" onClick={retryLoad}>
+            Retry
+          </button>
+        </p>
+      </Notice>
+    );
+  }
 
   return (
     <div className="live-layout">

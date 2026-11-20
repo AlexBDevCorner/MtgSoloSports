@@ -150,6 +150,10 @@ export function LiveEventView({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // MSS-146: required-load failure (season events, event rounds, standings
+  // summary). Kept apart from `error` (round/action failures) so a dead load
+  // renders its own retry screen instead of "no rounds played" + dead controls.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // MSS-078 correction: stage-scoped starting field for a pending stage with
   // no persisted round (e.g. Final finalists at zero before Round 1).
   // Tagged with the stage key so a stale stage never renders under a new
@@ -177,16 +181,25 @@ export function LiveEventView({
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setLoadError(null);
     const isTypeCup = event === 'type-cup-team';
     const needsTier = event === 'qualifier';
     const isIndividual = event === 'color-cup-individual';
+    // MSS-146: season events, event rounds and the team standings summary are
+    // required — their failure must surface as an actionable load error, never
+    // as a silent empty list. Only genuinely optional payloads below may
+    // degrade to null.
     Promise.all([
-      fetchSeasonEvents(saveId, season, controller.signal).catch(() => [] as SeasonEventSummary[]),
-      fetchEventRounds(saveId, season, event, controller.signal).catch(() => [] as PlayedRound[]),
-      team ? fetchEventTeamStandings(saveId, season, event, controller.signal).catch(() => null) : Promise.resolve(null),
+      fetchSeasonEvents(saveId, season, controller.signal),
+      fetchEventRounds(saveId, season, event, controller.signal),
+      team ? fetchEventTeamStandings(saveId, season, event, controller.signal) : Promise.resolve(null),
+      // Optional: the Type Cup tournament payload; a missing/failed read keeps the legacy stage branch.
       isTypeCup ? optionalTournament(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      // Optional: the Type Cup draw payload; a missing/failed read keeps the legacy stage branch.
       isTypeCup ? optionalDraw(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      // Optional: season progress only refines the qualifier tier CTA; failure keeps the legacy branch.
       needsTier ? fetchSeasonProgress(saveId, season, controller.signal).catch(() => null) : Promise.resolve(null),
+      // Optional: Color Cup individual progress; failure keeps the sidebar card hidden.
       isIndividual
         ? fetchColorCupIndividualProgress(saveId, season, controller.signal).catch(() => null)
         : Promise.resolve(null),
@@ -213,7 +226,15 @@ export function LiveEventView({
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((failure: unknown) => {
+        // A save/round switch aborted this load; the successor request owns
+        // the loading/error state, so an abort never touches it (useSaves pattern).
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        setLoadError(apiErrorMessage(failure));
+        setLoading(false);
+      });
     return () => controller.abort();
   }, [saveId, season, event, team, revision]);
 
@@ -529,6 +550,12 @@ export function LiveEventView({
     onMutated();
   }, [onMutated]);
 
+  // MSS-146: load retry re-reads persisted state only; it never mutates and
+  // must not trigger the dashboard refresh that post-mutation flows use.
+  const retryLoad = useCallback(() => {
+    setRevision((value) => value + 1);
+  }, []);
+
   async function handleNext(): Promise<void> {
     if (busy) {
       return;
@@ -800,6 +827,21 @@ export function LiveEventView({
         (r) => (r.tournamentPhase ?? null) === canonicalStage.tournamentPhase && (r.qualificationGroup ?? null) === canonicalStage.qualificationGroup,
       ).length
     : 0;
+
+  // MSS-146: a failed required load replaces the whole screen with an
+  // actionable error + retry — never "no rounds played" plus dead controls.
+  if (loadError) {
+    return (
+      <Notice tone="error" title="Live event unavailable">
+        <p>{loadError}</p>
+        <p>
+          <button type="button" className="ghost-button" onClick={retryLoad}>
+            Retry
+          </button>
+        </p>
+      </Notice>
+    );
+  }
 
   return (
     <div className="live-layout">
