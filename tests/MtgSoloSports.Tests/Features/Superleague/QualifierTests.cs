@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.GetQualifierResult;
@@ -201,7 +202,7 @@ public sealed class QualifierTests
         rounds.Select(r => r.RoundNumber).ShouldBe(Enumerable.Range(1, 16).ToList());
         foreach (QualifierRoundEntity round in rounds)
         {
-            QualifierRoundPayloadDocument document = QualifierRoundPayloadDocument.FromJson(round.PayloadJson);
+            QualifierRoundPayload document = QualifierRoundPayload.FromJson(round.PayloadJson);
             document.Placements.Count.ShouldBe(32);
             document.Checksum.ShouldBe(round.PayloadChecksum);
         }
@@ -380,7 +381,7 @@ public sealed class QualifierTests
         SeasonEntity next = await context.Seasons.AsNoTracking().SingleAsync(e => e.SeasonNumber == 3).ConfigureAwait(false);
         QualifierRoundEntity round = await context.QualifierRounds.AsNoTracking()
             .SingleAsync(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.RoundNumber == 1).ConfigureAwait(false);
-        QualifierRoundPayloadDocument document = QualifierRoundPayloadDocument.FromJson(round.PayloadJson);
+        QualifierRoundPayload document = QualifierRoundPayload.FromJson(round.PayloadJson);
         return document.Placements.Single(p => p.AthleteId == athleteId).ActiveBonusThousandths;
     }
 

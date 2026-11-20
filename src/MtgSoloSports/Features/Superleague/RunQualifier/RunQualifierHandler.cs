@@ -1,17 +1,13 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using MtgSoloSports.Features.History;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
-using MtgSoloSports.SimulationKernel.FixedPoint;
+using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
-using MtgSoloSports.SimulationKernel.Scoring;
 using MtgSoloSports.SimulationKernel.Stages;
 
 namespace MtgSoloSports.Features.Superleague.RunQualifier;
@@ -33,6 +29,10 @@ namespace MtgSoloSports.Features.Superleague.RunQualifier;
 /// next Superleague is 16 safe + 8 promoted + 8 qualifier winners) and the
 /// RNG-after state in one transaction. Holds one per-save lock; read-only
 /// qualifier queries never lock. No Superleague color quota.
+/// Simulation, ranking, checksums, payload persistence and the completion
+/// spine live in the shared <see cref="QualifierEngine"/> (MSS-150); this
+/// handler owns the Superleague path's guards, field selection, roster
+/// destination rules, persisted validation and first-appearance stories.
 /// </summary>
 public sealed class RunQualifierHandler
 {
@@ -70,27 +70,31 @@ public sealed class RunQualifierHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        QualifierState state = await LoadStateAsync(context, saveId, cancellationToken).ConfigureAwait(false);
-        List<QualifierRoundPayloadDocument> payloads = new(state.Played);
+        SuperleagueQualifierLoad load = await LoadStateAsync(context, saveId, cancellationToken).ConfigureAwait(false);
+        QualifierEngineState state = load.Engine;
+        QualifierEngineHooks hooks = CreateHooks(load);
+        List<QualifierRoundPayload> payloads = new(state.Played);
         Pcg32State current = state.Rng;
-        while (payloads.Count < state.Rules.QualifierRounds)
+        while (payloads.Count < state.TotalRounds)
         {
-            QualifierRoundPayloadDocument payload = PlayRound(state, payloads, current);
+            QualifierRoundPayload payload = QualifierEngine.PlayRound(state, payloads, current, hooks.ValidateRound);
             payloads.Add(payload);
             current = new Pcg32State(payload.RngAfterState, payload.RngAfterStream);
         }
 
-        QualifierSimulation simulation = await CompleteAsync(context, state, payloads, cancellationToken).ConfigureAwait(false);
+        QualifierEngineSimulation simulation = await QualifierEngine.CompleteAsync(
+            context, state, payloads, hooks, cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return await BuildResponseAsync(_store, saveId, state.Source, state.Next, simulation, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Loads everything a qualifier round needs from persisted state and
-    /// validates any partly played qualifier (contiguous rounds, unbroken RNG
-    /// chain, RNG row untouched since the last round). Aborts on corruption.
+    /// Loads everything a Superleague qualifier round needs from persisted
+    /// state and validates any partly played qualifier (contiguous rounds,
+    /// unbroken RNG chain, RNG row untouched since the last round). Aborts on
+    /// corruption.
     /// </summary>
-    internal static async Task<QualifierState> LoadStateAsync(
+    internal static async Task<SuperleagueQualifierLoad> LoadStateAsync(
         SaveDbContext context,
         Guid saveId,
         CancellationToken cancellationToken)
@@ -101,16 +105,20 @@ public sealed class RunQualifierHandler
 
         (SeasonEntity source, SeasonEntity next) = await LoadPendingTransitionAsync(context, cancellationToken).ConfigureAwait(false);
         await EnsureAutomaticMovementResolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
-        await EnsureChaosCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        await QualifierEngine.EnsureChaosCompleteAsync(
+            context, source, rules, static message => new RunQualifierConflictException(message), cancellationToken).ConfigureAwait(false);
         await EnsureQualifierUnresolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
 
         List<LeagueEntity> sourceFeeders = await LoadSourceFeedersAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         LeagueEntity sourceSuperleague = await LoadSourceSuperleagueAsync(context, source, cancellationToken).ConfigureAwait(false);
-        List<SeasonStandingEntity> superStandings = await LoadLeagueStandingsAsync(context, source, sourceSuperleague, rules, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> feederStandings = await LoadFeederStandingsAsync(context, source, sourceFeeders, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonMembershipEntity> sourceMemberships = await LoadSourceMembershipsAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
+        List<SeasonStandingEntity> superStandings = await QualifierEngine.LoadLeagueStandingsAsync(
+            context, source, sourceSuperleague, rules, requireCompleteRanks: true, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, IReadOnlyList<SeasonStandingEntity>> feederStandings = await LoadFeederStandingsAsync(
+            context, source, sourceFeeders, rules, cancellationToken).ConfigureAwait(false);
+        List<SeasonMembershipEntity> sourceMemberships = await QualifierEngine.LoadSourceMembershipsAsync(
+            context, source, rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SeasonMembershipEntity> membershipByAthlete = sourceMemberships.ToDictionary(m => m.SaveAthleteId);
-        Dictionary<int, string> namesByAthlete = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> namesByAthlete = await QualifierEngine.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
 
         QualifierFieldSelection.QualifierField field = QualifierFieldSelection.Select(
             superStandings, feederStandings, sourceFeeders, sourceSuperleague, membershipByAthlete, namesByAthlete, rules);
@@ -119,35 +127,82 @@ public sealed class RunQualifierHandler
         (int stageCountBefore, int seasonCountBefore, int roundCountBefore, _, _) =
             await CapturePreservationAsync(context, cancellationToken).ConfigureAwait(false);
 
-        List<AdvanceRoundHandler.MemberRow> roster = BuildRoster(field);
-        Dictionary<int, Bonus> activeBonuses = await LoadQualifierActiveBonusesAsync(
+        IReadOnlyList<QualifierProvenance> provenance = ToProvenance(field);
+        List<AdvanceRoundHandler.MemberRow> roster = QualifierEngine.BuildRoster(provenance);
+        Dictionary<int, MtgSoloSports.SimulationKernel.FixedPoint.Bonus> activeBonuses = await QualifierEngine.LoadStageStartBonusesAsync(
             context, roster, next, rules, cancellationToken).ConfigureAwait(false);
 
-        List<QualifierRoundPayloadDocument> played = await LoadPlayedRoundsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        List<QualifierRoundPayload> played = await LoadPlayedRoundsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         Pcg32State rng = rngRow.ToState();
         ValidateInProgress(played, rules, rng);
 
-        return new QualifierState(
-            rules, metadata, source, next, field, roster, activeBonuses, played, rng,
+        return new SuperleagueQualifierLoad(new QualifierEngineState(
+            rules, metadata, source, next, QualifierBoundary.Superleague, QualifierIdentity.SuperleagueColorSentinel,
+            rules.QualifierSize, rules.QualifierRounds, rules.QualifierWinners, LeagueLevel.Feeder1,
+            provenance, roster, activeBonuses, played, rng),
             stageCountBefore, seasonCountBefore, roundCountBefore);
     }
 
-    internal static async Task<List<QualifierRoundPayloadDocument>> LoadPlayedRoundsAsync(
+    /// <summary>
+    /// The Superleague path's completion behavior (MSS-150): full per-round
+    /// and completed-qualifier invariants, winners to the next Superleague
+    /// and losers to their returning-color feeders, persisted-state
+    /// validation including league-history preservation, plus
+    /// first-Superleague-appearance stories.
+    /// </summary>
+    internal static QualifierEngineHooks CreateHooks(SuperleagueQualifierLoad load)
+    {
+        int stageCountBefore = load.StageCountBefore;
+        int seasonCountBefore = load.SeasonCountBefore;
+        int roundCountBefore = load.RoundCountBefore;
+        return new QualifierEngineHooks(
+            static (payload, state, rngBefore) =>
+                QualifierInvariants.ValidateRound(payload, state.Rules, rngBefore.State, rngBefore.Stream),
+            static (ranked, totals, rules) => QualifierInvariants.ValidateCompletedQualifier(ranked, totals, rules),
+            static (context, state, simulation, cancellationToken) =>
+                ApplyQualifierToNextRosterAsync(context, state.Next, simulation, state.Rules, cancellationToken),
+            (context, state, simulation, cancellationToken) => ValidatePersistedAsync(
+                context, state.Source, state.Next, simulation, state.Rules,
+                stageCountBefore, seasonCountBefore, roundCountBefore, cancellationToken),
+            static (context, state, simulation, leaguesById, nextByAthlete, cancellationToken) =>
+                EmitQualifierFirstAppearancesAsync(
+                    context, state.Source, state.Next, simulation, state.Rules, leaguesById, nextByAthlete, cancellationToken));
+    }
+
+    internal static IReadOnlyList<QualifierProvenance> ToProvenance(QualifierFieldSelection.QualifierField field)
+    {
+        List<QualifierProvenance> provenance = new(field.All.Count);
+        foreach (QualifierFieldSelection.QualifierPick pick in field.All)
+        {
+            provenance.Add(new QualifierProvenance(
+                pick.SaveAthleteId, pick.Name, pick.SportingColor, pick.FromLeagueId, pick.FromSeasonRank, pick.Role));
+        }
+
+        return provenance;
+    }
+
+    internal sealed record SuperleagueQualifierLoad(
+        QualifierEngineState Engine,
+        int StageCountBefore,
+        int SeasonCountBefore,
+        int RoundCountBefore);
+
+    internal static async Task<List<QualifierRoundPayload>> LoadPlayedRoundsAsync(
         SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
     {
         List<QualifierRoundEntity> rows = await context.QualifierRounds
             .AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
+                && e.QualifierBoundary == (int)QualifierBoundary.Superleague)
             .OrderBy(e => e.RoundNumber)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return rows.Select(r => QualifierRoundPayloadDocument.FromJson(RoundPayloadCodec.DecodeToJson(r.PayloadJson))).ToList();
+        return rows.Select(r => QualifierRoundPayload.FromJson(r.PayloadJson)).ToList();
     }
 
-    internal static void ValidateInProgress(List<QualifierRoundPayloadDocument> played, RulesV1 rules, Pcg32State rngRow)
+    internal static void ValidateInProgress(List<QualifierRoundPayload> played, RulesV1 rules, Pcg32State rngRow)
     {
-        foreach (QualifierRoundPayloadDocument payload in played)
+        foreach (QualifierRoundPayload payload in played)
         {
             QualifierInvariants.ValidateRound(payload, rules, payload.RngBeforeState, payload.RngBeforeStream);
         }
@@ -167,105 +222,19 @@ public sealed class RunQualifierHandler
             rngRow);
     }
 
-    /// <summary>Simulates exactly one qualifier round from <paramref name="rngBefore"/>.</summary>
-    internal static QualifierRoundPayloadDocument PlayRound(
-        QualifierState state,
-        IReadOnlyList<QualifierRoundPayloadDocument> played,
-        Pcg32State rngBefore)
-    {
-        Dictionary<int, Points> cumulative = new(state.Roster.Count);
-        if (played.Count > 0)
-        {
-            foreach (RoundPayloadEntry entry in played[^1].Placements)
-            {
-                cumulative[entry.AthleteId] = Points.FromThousandths(entry.CumulativeAfterThousandths);
-            }
-        }
-
-        int roundNumber = played.Count + 1;
-        RoundSimulationResult simulation = AdvanceRoundHandler.SimulateRound(
-            state.Roster, cumulative, state.ActiveBonuses, rngBefore, state.Rules);
-        QualifierRoundPayloadDocument payload = new(
-            QualifierRoundPayloadDocument.PayloadVersion,
-            state.Rules.Version,
-            state.Source.SeasonNumber,
-            state.Next.SeasonNumber,
-            roundNumber,
-            rngBefore.State,
-            rngBefore.Stream,
-            simulation.RngAfter.State,
-            simulation.RngAfter.Stream,
-            simulation.Checksum,
-            ToPayloadEntries(simulation));
-        QualifierInvariants.ValidateRound(payload, state.Rules, rngBefore.State, rngBefore.Stream);
-        return payload;
-    }
-
     /// <summary>
-    /// Completes the qualifier from all 16 payloads (the source of truth) in the
-    /// caller's transaction: tie-break ranking from the last round's RNG-after,
-    /// newly played round rows, standings, next-roster application, RNG, story
-    /// emission and the persisted phase — the same order as the one-shot run.
+    /// Emits first-Superleague-appearance story events transactionally with
+    /// the qualifier result for every qualifier winner who has never appeared
+    /// in a Superleague before. Idempotent via dedup keys.
     /// </summary>
-    internal static async Task<QualifierSimulation> CompleteAsync(
-        SaveDbContext context,
-        QualifierState state,
-        List<QualifierRoundPayloadDocument> payloads,
-        CancellationToken cancellationToken)
-    {
-        QualifierSimulation simulation = Finish(state.Field, payloads, state.Rules);
-        await PersistQualifierAsync(context, state.Source, state.Next, simulation, state.Played.Count, state.Rules, cancellationToken).ConfigureAwait(false);
-        await ApplyQualifierToNextRosterAsync(context, state.Next, simulation, state.Rules, cancellationToken).ConfigureAwait(false);
-        context.ApplyRngState(simulation.RngAfter);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        await ValidatePersistedAsync(
-            context, state.Source, state.Next, simulation, state.Rules,
-            state.StageCountBefore, state.SeasonCountBefore, state.RoundCountBefore,
-            cancellationToken).ConfigureAwait(false);
-        await EmitQualifierStoriesAsync(context, state.Source, state.Next, simulation, state.Rules, cancellationToken).ConfigureAwait(false);
-        Qualifiers.QualifierProgress progress = await Qualifiers.QualifierProgressEvaluator
-            .LoadAsync(context, state.Source, state.Next, state.Rules, cancellationToken).ConfigureAwait(false);
-        if (progress.IsComplete
-            && Features.Saves.SavePhaseParser.Parse(state.Metadata.Phase) < Features.Saves.SavePhase.QualifierResolved)
-        {
-            state.Metadata.Phase = Features.Saves.SavePhaseParser.ToText(Features.Saves.SavePhase.QualifierResolved);
-        }
-
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return simulation;
-    }
-
-    internal static QualifierSimulation Finish(
-        QualifierFieldSelection.QualifierField field,
-        List<QualifierRoundPayloadDocument> payloads,
-        RulesV1 rules)
-    {
-        List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
-        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, rules);
-        QualifierRoundPayloadDocument last = payloads[^1];
-        Pcg32V1 tieBreakRng = Pcg32V1.Restore(new Pcg32State(last.RngAfterState, last.RngAfterStream));
-        // The qualifier awards no new bonus; the kernel still reports earned at
-        // the baseline Feeder 1 scale, which qualifier invariants ignore.
-        IReadOnlyList<StageRankedAthlete> ranked = StageCalculator.Rank(totals, tieBreakRng, rules, SimulationKernel.Leagues.LeagueLevel.Feeder1);
-        QualifierInvariants.ValidateCompletedQualifier(ranked, totals, rules);
-        Pcg32State rngAfter = tieBreakRng.Snapshot();
-        string checksum = ComputeChecksum(ranked);
-        return new QualifierSimulation(field, payloads, totals, ranked, rngAfter, checksum);
-    }
-
-    /// <summary>
-    /// Emits qualifier-decided promotion (challenger winners), relegation
-    /// (failed incumbents) and first-Superleague-appearance story events
-    /// transactionally with the qualifier result. Retained incumbents and failed
-    /// challengers emit nothing. Idempotent via dedup keys.
-    /// </summary>
-    internal static async Task EmitQualifierStoriesAsync(
+    internal static async Task<bool> EmitQualifierFirstAppearancesAsync(
         SaveDbContext context,
         SeasonEntity source,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         RulesV1 rules,
+        Dictionary<int, LeagueEntity> leaguesById,
+        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -273,107 +242,6 @@ public sealed class RunQualifierHandler
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(simulation);
         ArgumentNullException.ThrowIfNull(rules);
-        Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
-            .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, cancellationToken)
-            .ConfigureAwait(false);
-        Dictionary<int, SeasonMembershipEntity> nextByAthlete = await context.SeasonMemberships
-            .Where(e => e.SeasonId == next.Id)
-            .ToDictionaryAsync(e => e.SaveAthleteId, cancellationToken)
-            .ConfigureAwait(false);
-        bool emitted = await EmitQualifierMovementsAsync(context, source, next, simulation, rules, leaguesById, nextByAthlete, cancellationToken).ConfigureAwait(false);
-        emitted |= await EmitQualifierFirstAppearancesAsync(context, source, next, simulation, rules, leaguesById, nextByAthlete, cancellationToken).ConfigureAwait(false);
-        if (emitted)
-        {
-            await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    internal static async Task<bool> EmitQualifierMovementsAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        SeasonEntity next,
-        QualifierSimulation simulation,
-        RulesV1 rules,
-        Dictionary<int, LeagueEntity> leaguesById,
-        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete =
-            simulation.Field.All.ToDictionary(p => p.SaveAthleteId);
-        string movementDedup = Features.Stories.StoryEventEmitter.MovementDedup(
-            source.SeasonNumber, next.SeasonNumber);
-        bool emitted = false;
-        foreach (StageRankedAthlete entry in simulation.Ranked.OrderBy(r => r.StageRank))
-        {
-            emitted |= await EmitSingleQualifierMovementAsync(
-                context, source, next, rules, leaguesById, nextByAthlete, picksByAthlete, movementDedup, entry, cancellationToken).ConfigureAwait(false);
-        }
-
-        return emitted;
-    }
-
-    internal static async Task<bool> EmitSingleQualifierMovementAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        SeasonEntity next,
-        RulesV1 rules,
-        Dictionary<int, LeagueEntity> leaguesById,
-        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
-        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete,
-        string movementDedup,
-        StageRankedAthlete entry,
-        CancellationToken cancellationToken)
-    {
-        if (!picksByAthlete.TryGetValue(entry.AthleteId, out QualifierFieldSelection.QualifierPick? pick))
-        {
-            throw new SaveCorruptionException($"Qualifier standing for '{entry.Name}' has no field provenance.");
-        }
-
-        bool qualified = entry.StageRank <= rules.QualifierWinners;
-        leaguesById.TryGetValue(pick.FromLeagueId, out LeagueEntity? from);
-        string fromName = from?.Name ?? $"League {pick.FromLeagueId}";
-        nextByAthlete.TryGetValue(entry.AthleteId, out SeasonMembershipEntity? nextMembership);
-        string toName = ResolveQualifierLeagueName(nextMembership, leaguesById, fromName);
-        string eventType = qualified && pick.Role == QualifierRole.Challenger
-            ? Features.Stories.StoryEventType.Promotion
-            : !qualified && pick.Role == QualifierRole.Incumbent
-                ? Features.Stories.StoryEventType.Relegation
-                : string.Empty;
-        if (string.IsNullOrEmpty(eventType))
-        {
-            return false;
-        }
-
-        return await Features.Stories.StoryEventEmitter.TryEmitAsync(
-            context,
-            entry.AthleteId,
-            eventType,
-            movementDedup,
-            next.SeasonNumber,
-            null,
-            new Features.Stories.StoryEventPayload(
-                entry.Name,
-                next.SeasonNumber,
-                FromLeagueName: fromName,
-                ToLeagueName: toName,
-                FromSeasonNumber: source.SeasonNumber,
-                ToSeasonNumber: next.SeasonNumber,
-                FromSeasonRank: pick.FromSeasonRank,
-                ViaQualifier: true),
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    internal static async Task<bool> EmitQualifierFirstAppearancesAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        SeasonEntity next,
-        QualifierSimulation simulation,
-        RulesV1 rules,
-        Dictionary<int, LeagueEntity> leaguesById,
-        Dictionary<int, SeasonMembershipEntity> nextByAthlete,
-        CancellationToken cancellationToken)
-    {
         bool emitted = false;
         foreach (StageRankedAthlete entry in simulation.Ranked.Where(r => r.StageRank <= rules.QualifierWinners).OrderBy(r => r.AthleteId))
         {
@@ -418,207 +286,6 @@ public sealed class RunQualifierHandler
         return fallback;
     }
 
-    internal sealed record QualifierSimulation(
-        QualifierFieldSelection.QualifierField Field,
-        List<QualifierRoundPayloadDocument> Payloads,
-        IReadOnlyList<StageAthleteTotals> Totals,
-        IReadOnlyList<StageRankedAthlete> Ranked,
-        Pcg32State RngAfter,
-        string Checksum);
-
-    internal sealed record QualifierState(
-        RulesV1 Rules,
-        SaveMetadataEntity Metadata,
-        SeasonEntity Source,
-        SeasonEntity Next,
-        QualifierFieldSelection.QualifierField Field,
-        List<AdvanceRoundHandler.MemberRow> Roster,
-        Dictionary<int, Bonus> ActiveBonuses,
-        List<QualifierRoundPayloadDocument> Played,
-        Pcg32State Rng,
-        int StageCountBefore,
-        int SeasonCountBefore,
-        int RoundCountBefore);
-
-    internal static List<AdvanceRoundHandler.MemberRow> BuildRoster(QualifierFieldSelection.QualifierField field)
-    {
-        List<AdvanceRoundHandler.MemberRow> roster = new(field.All.Count);
-        foreach (QualifierFieldSelection.QualifierPick pick in field.All)
-        {
-            roster.Add(new AdvanceRoundHandler.MemberRow(pick.SaveAthleteId, pick.Name, pick.SportingColor));
-        }
-
-        HashSet<string> names = new(StringComparer.Ordinal);
-        foreach (AdvanceRoundHandler.MemberRow row in roster)
-        {
-            if (!names.Add(row.Name))
-            {
-                throw new SaveCorruptionException($"Qualifier field contains duplicate athlete '{row.Name}'.");
-            }
-        }
-
-        roster.Sort(static (left, right) => string.Compare(left.Name, right.Name, StringComparison.Ordinal));
-        return roster;
-    }
-
-    internal static async Task<Dictionary<int, Bonus>> LoadQualifierActiveBonusesAsync(
-        SaveDbContext context,
-        List<AdvanceRoundHandler.MemberRow> roster,
-        SeasonEntity next,
-        RulesV1 rules,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, next, cancellationToken).ConfigureAwait(false);
-        if (!seasonNumbers.TryGetValue(next.Id, out int nextSeasonNumber))
-        {
-            throw new SaveCorruptionException($"Save has no season row for season {next.SeasonNumber}.");
-        }
-
-        List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(
-            context, roster, AdvanceRoundHandler.SelectBonusSeasonIds(seasonNumbers, nextSeasonNumber), cancellationToken).ConfigureAwait(false);
-        Dictionary<int, List<BonusContribution>> contributions = AdvanceRoundHandler.GroupBonusContributions(
-            roster, standings, seasonNumbers, nextSeasonNumber);
-
-        // Identical treatment: role never branches bonus math. Every qualifier
-        // athlete uses the next-season Stage 1 boundary, so source-season
-        // Stage 32 bonus enters at 80% decay like any next-season opener.
-        return AdvanceRoundHandler.ComputeStageStartBonuses(roster, contributions, nextSeasonNumber, 1, rules);
-    }
-
-    internal static IReadOnlyList<RoundPayloadEntry> ToPayloadEntries(RoundSimulationResult simulation)
-    {
-        List<RoundPayloadEntry> entries = new(simulation.Placements.Count);
-        foreach (RoundPlacement placement in simulation.Placements)
-        {
-            entries.Add(new RoundPayloadEntry(
-                placement.AthleteId,
-                placement.Name,
-                placement.Position,
-                placement.BasePoints.Thousandths,
-                placement.ActiveBonus.Thousandths,
-                placement.FinalPoints.Thousandths,
-                placement.CumulativeBefore.Thousandths,
-                placement.CumulativeAfter.Thousandths,
-                placement.RankBefore,
-                placement.RankAfter,
-                placement.RankMovement));
-        }
-
-        return entries;
-    }
-
-    internal static List<List<StageRoundEntry>> BuildRoundEntries(List<QualifierRoundPayloadDocument> payloads)
-    {
-        List<List<StageRoundEntry>> roundEntries = new(payloads.Count);
-        foreach (QualifierRoundPayloadDocument payload in payloads)
-        {
-            List<StageRoundEntry> entries = new(payload.Placements.Count);
-            foreach (RoundPayloadEntry placement in payload.Placements)
-            {
-                entries.Add(new StageRoundEntry(
-                    placement.AthleteId,
-                    placement.Name,
-                    placement.Position,
-                    placement.BaseThousandths,
-                    placement.FinalThousandths));
-            }
-
-            roundEntries.Add(entries);
-        }
-
-        return roundEntries;
-    }
-
-    /// <summary>
-    /// Fingerprints qualifier standings: lowercase hex SHA-256 over lines of
-    /// <c>Rank:AthleteId:Name:Score:Base</c> in rank order.
-    /// SHA-256 is a content fingerprint here, not sporting randomness.
-    /// Championship/earned values are intentionally excluded: the qualifier
-    /// persists no championship points and no new bonus.
-    /// </summary>
-    public static string ComputeChecksum(IReadOnlyList<StageRankedAthlete> ranked)
-    {
-        ArgumentNullException.ThrowIfNull(ranked);
-        using SHA256 sha = SHA256.Create();
-        StringBuilder builder = new();
-        foreach (StageRankedAthlete entry in ranked)
-        {
-            builder.Append(entry.StageRank.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.Append(':');
-            builder.Append(entry.AthleteId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.Append(':');
-            builder.Append(entry.Name);
-            builder.Append(':');
-            builder.Append(entry.StageScoreThousandths.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.Append(':');
-            builder.Append(entry.BaseScoreThousandths.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.Append('\n');
-        }
-
-        byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(builder.ToString()));
-        return Convert.ToHexStringLower(hash);
-    }
-
-    internal static async Task PersistQualifierAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        SeasonEntity next,
-        QualifierSimulation simulation,
-        int alreadyPersisted,
-        RulesV1 rules,
-        CancellationToken cancellationToken)
-    {
-        foreach (QualifierRoundPayloadDocument payload in simulation.Payloads.Skip(alreadyPersisted))
-        {
-            context.QualifierRounds.Add(new QualifierRoundEntity
-            {
-                FromSeasonId = source.Id,
-                ToSeasonId = next.Id,
-                QualifierBoundary = (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
-                QualifierSportingColor = SimulationKernel.Leagues.QualifierIdentity.SuperleagueColorSentinel,
-                RoundNumber = payload.RoundNumber,
-                RulesVersion = payload.RulesVersion,
-                RngBeforeState = unchecked((long)payload.RngBeforeState),
-                RngBeforeStream = unchecked((long)payload.RngBeforeStream),
-                RngAfterState = unchecked((long)payload.RngAfterState),
-                RngAfterStream = unchecked((long)payload.RngAfterStream),
-                PayloadJson = payload.ToJson(),
-                PayloadChecksum = payload.Checksum,
-            });
-        }
-
-        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete =
-            simulation.Field.All.ToDictionary(p => p.SaveAthleteId);
-        foreach (StageRankedAthlete entry in simulation.Ranked)
-        {
-            if (!picksByAthlete.TryGetValue(entry.AthleteId, out QualifierFieldSelection.QualifierPick? pick))
-            {
-                throw new SaveCorruptionException($"Qualifier standing for '{entry.Name}' has no field provenance.");
-            }
-
-            context.QualifierStandings.Add(new QualifierStandingEntity
-            {
-                FromSeasonId = source.Id,
-                ToSeasonId = next.Id,
-                QualifierBoundary = (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
-                QualifierSportingColor = SimulationKernel.Leagues.QualifierIdentity.SuperleagueColorSentinel,
-                SaveAthleteId = entry.AthleteId,
-                QualifierRank = entry.StageRank,
-                QualifierScoreThousandths = entry.StageScoreThousandths,
-                BaseScoreThousandths = entry.BaseScoreThousandths,
-                RoundWins = entry.RoundWins,
-                RoundPlaceCountsJson = JsonSerializer.Serialize(entry.RoundPlaceCounts),
-                IsQualified = entry.StageRank <= rules.QualifierWinners,
-                Role = (int)pick.Role,
-                FromLeagueId = pick.FromLeagueId,
-                FromSeasonRank = pick.FromSeasonRank,
-                SportingColor = pick.SportingColor,
-            });
-        }
-
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Applies the eight qualifier winners to the next-season roster inside the
     /// caller's transaction (no save here). Winners move to (or remain in) the
@@ -632,7 +299,7 @@ public sealed class RunQualifierHandler
     internal static async Task ApplyQualifierToNextRosterAsync(
         SaveDbContext context,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         RulesV1 rules,
         CancellationToken cancellationToken)
     {
@@ -672,7 +339,7 @@ public sealed class RunQualifierHandler
         // Tiered saves carry 24 feeders; qualifier mapping only needs F1.
         // F2/F3 never enter the qualifier, so resolve via F1-only map.
         List<LeagueEntity> f1 = feeders
-            .Where(l => rules.FeederDivisionsPerColor != 3 || l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First)
+            .Where(l => rules.FeederDivisionsPerColor != 3 || l.FeederDivision == (int)FeederDivision.First)
             .ToList();
         if (f1.Count != rules.RegularLeagueCount)
         {
@@ -683,11 +350,11 @@ public sealed class RunQualifierHandler
         return (superleague, f1.ToDictionary(l => l.SportingColor, l => l.Id));
     }
 
-    internal static HashSet<int> ResolveFieldIds(QualifierSimulation simulation, RulesV1 rules)
+    internal static HashSet<int> ResolveFieldIds(QualifierEngineSimulation simulation, RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(simulation);
         ArgumentNullException.ThrowIfNull(rules);
-        HashSet<int> fieldIds = simulation.Field.All.Select(p => p.SaveAthleteId).ToHashSet();
+        HashSet<int> fieldIds = simulation.Field.Select(p => p.SaveAthleteId).ToHashSet();
         if (fieldIds.Count != rules.QualifierSize)
         {
             throw new SaveCorruptionException(
@@ -698,7 +365,7 @@ public sealed class RunQualifierHandler
     }
 
     internal static HashSet<int> ResolveQualifiedIds(
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         HashSet<int> fieldIds,
         RulesV1 rules)
     {
@@ -794,7 +461,7 @@ public sealed class RunQualifierHandler
         SaveDbContext context,
         SeasonEntity source,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         RulesV1 rules,
         int stageCountBefore,
         int seasonCountBefore,
@@ -803,12 +470,12 @@ public sealed class RunQualifierHandler
     {
         List<QualifierRoundEntity> rounds = await context.QualifierRounds
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
+                && e.QualifierBoundary == (int)QualifierBoundary.Superleague)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         List<QualifierStandingEntity> standings = await context.QualifierStandings
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague)
+                && e.QualifierBoundary == (int)QualifierBoundary.Superleague)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         QualifierInvariants.ValidatePersisted(source, next, rounds, standings, rules);
@@ -826,7 +493,7 @@ public sealed class RunQualifierHandler
     internal static async Task ValidateNextRosterAsync(
         SaveDbContext context,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         List<QualifierStandingEntity> standings,
         RulesV1 rules,
         CancellationToken cancellationToken)
@@ -1011,7 +678,7 @@ public sealed class RunQualifierHandler
 
             bool hasQualifier = await context.QualifierStandings.AnyAsync(
                 e => e.FromSeasonId == candidate.Id && e.ToSeasonId == successor.Id
-                    && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                    && e.QualifierBoundary == (int)QualifierBoundary.Superleague,
                 cancellationToken).ConfigureAwait(false);
             if (hasQualifier)
             {
@@ -1022,7 +689,7 @@ public sealed class RunQualifierHandler
         }
 
         bool anyQualifier = await context.QualifierStandings.AnyAsync(
-            e => e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+            e => e.QualifierBoundary == (int)QualifierBoundary.Superleague,
             cancellationToken).ConfigureAwait(false);
         if (anyQualifier)
         {
@@ -1061,7 +728,7 @@ public sealed class RunQualifierHandler
     {
         bool hasStandings = await context.QualifierStandings.AnyAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
-                && e.QualifierBoundary == (int)SimulationKernel.Leagues.QualifierBoundary.Superleague,
+                && e.QualifierBoundary == (int)QualifierBoundary.Superleague,
             cancellationToken).ConfigureAwait(false);
         if (hasStandings)
         {
@@ -1074,27 +741,6 @@ public sealed class RunQualifierHandler
         {
             throw new RunQualifierConflictException(
                 $"{other} is partly played; finish it before playing the {PostseasonEvents.Title(PostseasonEvents.Qualifier)}.");
-        }
-    }
-
-    internal static async Task EnsureChaosCompleteAsync(
-        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(rules);
-        try
-        {
-            await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
-        {
-            throw new RunQualifierConflictException(ex.Message);
-        }
-        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
-        {
-            // Genuine retryable postseason signal; corruption passes through uncaught.
-            throw new RunQualifierConflictException(ex.Message);
         }
     }
 
@@ -1128,33 +774,6 @@ public sealed class RunQualifierHandler
         return league;
     }
 
-    internal static async Task<List<SeasonStandingEntity>> LoadLeagueStandingsAsync(
-        SaveDbContext context,
-        SeasonEntity source,
-        LeagueEntity league,
-        RulesV1 rules,
-        CancellationToken cancellationToken)
-    {
-        List<SeasonStandingEntity> rows = await context.SeasonStandings
-            .AsNoTracking()
-            .Where(e => e.SeasonId == source.Id && e.LeagueId == league.Id)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (rows.Count != rules.LeagueSize)
-        {
-            throw new SaveCorruptionException(
-                $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
-        }
-
-        HashSet<int> ranks = rows.Select(r => r.SeasonRank).ToHashSet();
-        if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
-        {
-            throw new SaveCorruptionException($"League '{league.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
-        }
-
-        return rows;
-    }
-
     internal static async Task<Dictionary<int, IReadOnlyList<SeasonStandingEntity>>> LoadFeederStandingsAsync(
         SaveDbContext context,
         SeasonEntity source,
@@ -1165,36 +784,12 @@ public sealed class RunQualifierHandler
         Dictionary<int, IReadOnlyList<SeasonStandingEntity>> map = new(feeders.Count);
         foreach (LeagueEntity feeder in feeders)
         {
-            List<SeasonStandingEntity> rows = await LoadLeagueStandingsAsync(context, source, feeder, rules, cancellationToken).ConfigureAwait(false);
+            List<SeasonStandingEntity> rows = await QualifierEngine.LoadLeagueStandingsAsync(
+                context, source, feeder, rules, requireCompleteRanks: true, cancellationToken).ConfigureAwait(false);
             map[feeder.Id] = rows;
         }
 
         return map;
-    }
-
-    internal static async Task<List<SeasonMembershipEntity>> LoadSourceMembershipsAsync(
-        SaveDbContext context, SeasonEntity source, RulesV1 rules, CancellationToken cancellationToken)
-    {
-        List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
-            .Where(e => e.SeasonId == source.Id)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (memberships.Count != rules.TotalAthletesInSave)
-        {
-            throw new SaveCorruptionException(
-                $"Season {source.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
-        }
-
-        return memberships;
-    }
-
-    internal static async Task<Dictionary<int, string>> LoadAthleteNamesAsync(
-        SaveDbContext context, CancellationToken cancellationToken)
-    {
-        return await context.SaveAthletes
-            .AsNoTracking()
-            .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken)
-            .ConfigureAwait(false);
     }
 
     internal static async Task<RunQualifierResponse> BuildResponseAsync(
@@ -1202,12 +797,12 @@ public sealed class RunQualifierHandler
         Guid saveId,
         SeasonEntity source,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         CancellationToken cancellationToken)
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
         List<QualifierStandingEntity> standings = await LoadPersistedStandingsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
-        Dictionary<int, string> names = await LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> names = await QualifierEngine.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await LoadLeaguesByIdAsync(context, cancellationToken).ConfigureAwait(false);
         List<QualifierStandingMember> members = MapResponseMembers(standings, names, leaguesById, simulation);
         return await MapResponseAsync(context, saveId, source, next, simulation, standings, members, cancellationToken).ConfigureAwait(false);
@@ -1237,10 +832,10 @@ public sealed class RunQualifierHandler
         List<QualifierStandingEntity> standings,
         Dictionary<int, string> names,
         Dictionary<int, LeagueEntity> leaguesById,
-        QualifierSimulation simulation)
+        QualifierEngineSimulation simulation)
     {
-        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete =
-            simulation.Field.All.ToDictionary(p => p.SaveAthleteId);
+        Dictionary<int, QualifierProvenance> picksByAthlete =
+            simulation.Field.ToDictionary(p => p.SaveAthleteId);
         List<QualifierStandingMember> members = new(standings.Count);
         foreach (QualifierStandingEntity standing in standings)
         {
@@ -1254,11 +849,11 @@ public sealed class RunQualifierHandler
         QualifierStandingEntity standing,
         Dictionary<int, string> names,
         Dictionary<int, LeagueEntity> leaguesById,
-        Dictionary<int, QualifierFieldSelection.QualifierPick> picksByAthlete)
+        Dictionary<int, QualifierProvenance> picksByAthlete)
     {
         names.TryGetValue(standing.SaveAthleteId, out string? name);
         leaguesById.TryGetValue(standing.FromLeagueId, out LeagueEntity? from);
-        picksByAthlete.TryGetValue(standing.SaveAthleteId, out QualifierFieldSelection.QualifierPick? pick);
+        picksByAthlete.TryGetValue(standing.SaveAthleteId, out QualifierProvenance? pick);
         string role = pick?.Role.ToString() ?? ((QualifierRole)standing.Role).ToString();
         string color = ((SportingColor)standing.SportingColor).ToString();
         return new QualifierStandingMember(
@@ -1281,14 +876,14 @@ public sealed class RunQualifierHandler
         Guid saveId,
         SeasonEntity source,
         SeasonEntity next,
-        QualifierSimulation simulation,
+        QualifierEngineSimulation simulation,
         List<QualifierStandingEntity> standings,
         List<QualifierStandingMember> members,
         CancellationToken cancellationToken)
     {
         RngStateEntity rng = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         Pcg32State rngAfter = rng.ToState();
-        QualifierRoundPayloadDocument first = simulation.Payloads[0];
+        QualifierRoundPayload first = simulation.Payloads[0];
         int incumbents = standings.Count(s => s.Role == (int)QualifierRole.Incumbent && s.IsQualified);
         int challengers = standings.Count(s => s.Role == (int)QualifierRole.Challenger && s.IsQualified);
         return new RunQualifierResponse(

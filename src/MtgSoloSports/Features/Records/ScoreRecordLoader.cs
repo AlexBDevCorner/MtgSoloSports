@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunColorCupTeam;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.History;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
@@ -350,11 +351,11 @@ public static class ScoreRecordLoader
                 throw new SaveCorruptionException($"Qualifier round references unknown season {row.ToSeasonId}.");
             }
 
-            QualifierRoundPayloadDocument document;
+            QualifierRoundPayload document;
             try
             {
                 string json = RoundPayloadCodec.DecodeToJson(row.PayloadJson);
-                document = QualifierRoundPayloadDocument.FromJson(json);
+                document = QualifierRoundPayload.FromJson(json);
             }
             catch (SaveCorruptionException ex)
             {

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
@@ -48,8 +49,8 @@ public static class QualifierInvariants
     /// matching the snapshot scoring table, final points matching base plus
     /// stage-start active bonus, cumulative totals chaining and RNG advancement.
     /// </summary>
-    public static void ValidateRound(
-        QualifierRoundPayloadDocument payload,
+    internal static void ValidateRound(
+        QualifierRoundPayload payload,
         RulesV1 rules,
         ulong rngBeforeState,
         ulong rngBeforeStream)
@@ -147,11 +148,11 @@ public static class QualifierInvariants
         }
     }
 
-    private static void CheckRoundIdentity(QualifierRoundPayloadDocument payload, RulesV1 rules)
+    private static void CheckRoundIdentity(QualifierRoundPayload payload, RulesV1 rules)
     {
-        if (payload.Version != QualifierRoundPayloadDocument.PayloadVersion)
+        if (payload.Version != QualifierRoundPayload.PayloadVersion)
         {
-            throw new SaveCorruptionException($"Qualifier payload version must be {QualifierRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
+            throw new SaveCorruptionException($"Qualifier payload version must be {QualifierRoundPayload.PayloadVersion}, was {payload.Version}.");
         }
 
         if (payload.RulesVersion != rules.Version)
@@ -180,7 +181,7 @@ public static class QualifierInvariants
         }
     }
 
-    private static void CheckRoundRng(QualifierRoundPayloadDocument payload, ulong rngBeforeState, ulong rngBeforeStream)
+    private static void CheckRoundRng(QualifierRoundPayload payload, ulong rngBeforeState, ulong rngBeforeStream)
     {
         if (payload.RngBeforeState != rngBeforeState || payload.RngBeforeStream != rngBeforeStream)
         {
@@ -409,7 +410,7 @@ public static class QualifierInvariants
             throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} has an empty payload.");
         }
 
-        QualifierRoundPayloadDocument document = QualifierRoundPayloadDocument.FromJson(round.PayloadJson);
+        QualifierRoundPayload document = QualifierRoundPayload.FromJson(round.PayloadJson);
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
             throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} checksum does not match its payload.");
@@ -689,7 +690,7 @@ public static class QualifierInvariants
         }
     }
 
-    private static void EnsurePlacements(QualifierRoundPayloadDocument payload, RulesV1 rules)
+    private static void EnsurePlacements(QualifierRoundPayload payload, RulesV1 rules)
     {
         PlacementAccumulator accumulator = new();
         foreach (RoundPayloadEntry entry in payload.Placements)
@@ -793,7 +794,7 @@ public static class QualifierInvariants
         }
     }
 
-    private static void EnsureRankConsistency(QualifierRoundPayloadDocument payload)
+    private static void EnsureRankConsistency(QualifierRoundPayload payload)
     {
         List<RoundPayloadEntry> byBefore = payload.Placements.OrderBy(e => e.RankBefore).ToList();
         List<RoundPayloadEntry> byAfter = payload.Placements.OrderBy(e => e.RankAfter).ToList();

@@ -1,4 +1,5 @@
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -70,11 +71,11 @@ public sealed class PlayFeederQualifierRoundHandler
         using SaveDbContext context = _store.OpenDbContext(saveId);
         using var transaction = await context.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        BoundaryQualifierRunner.QualifierState state = await BoundaryQualifierRunner.LoadStateAsync(
+        QualifierEngineState state = await BoundaryQualifierRunner.LoadStateAsync(
             context, saveId, boundary, sportingColor, cancellationToken).ConfigureAwait(false);
-        BoundaryQualifierRunner.QualifierRoundPayload payload = BoundaryQualifierRunner.PlayRound(
-            state, state.Played, state.Rng);
-        List<BoundaryQualifierRunner.QualifierRoundPayload> payloads = [.. state.Played, payload];
+        QualifierEngineHooks hooks = BoundaryQualifierRunner.CreateHooks();
+        QualifierRoundPayload payload = QualifierEngine.PlayRound(state, state.Played, state.Rng, hooks.ValidateRound);
+        List<QualifierRoundPayload> payloads = [.. state.Played, payload];
         bool complete = payloads.Count == state.Rules.FeederQualifierRounds;
 
         await PersistSingleAsync(context, state, payloads, payload, complete, cancellationToken).ConfigureAwait(false);
@@ -95,15 +96,16 @@ public sealed class PlayFeederQualifierRoundHandler
 
     internal static async Task PersistSingleAsync(
         SaveDbContext context,
-        BoundaryQualifierRunner.QualifierState state,
-        List<BoundaryQualifierRunner.QualifierRoundPayload> payloads,
-        BoundaryQualifierRunner.QualifierRoundPayload payload,
+        QualifierEngineState state,
+        List<QualifierRoundPayload> payloads,
+        QualifierRoundPayload payload,
         bool complete,
         CancellationToken cancellationToken)
     {
         if (complete)
         {
-            await BoundaryQualifierRunner.CompleteAsync(context, state, payloads, cancellationToken).ConfigureAwait(false);
+            await QualifierEngine.CompleteAsync(
+                context, state, payloads, BoundaryQualifierRunner.CreateHooks(), cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -128,8 +130,8 @@ public sealed class PlayFeederQualifierRoundHandler
 
     internal static async Task<EventRoundView> BuildViewAsync(
         SaveDbContext context,
-        BoundaryQualifierRunner.QualifierState state,
-        BoundaryQualifierRunner.QualifierRoundPayload payload,
+        QualifierEngineState state,
+        QualifierRoundPayload payload,
         CancellationToken cancellationToken)
     {
         EventRoundView baseView = await EventRoundViews.BuildAsync(

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History.EventRounds;
+using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
@@ -67,7 +68,7 @@ public sealed class GetQualifierRoundsHandler
             ?? throw new QualifierListNotFoundException(
                 $"Qualifier {boundary} color {sportingColor} round {roundNumber} for Season {source.SeasonNumber} has not been played yet.");
 
-        BoundaryQualifierRunner.QualifierRoundPayload payload = BoundaryQualifierRunner.QualifierRoundPayload.FromJson(row.PayloadJson);
+        QualifierRoundPayload payload = QualifierRoundPayload.FromJson(row.PayloadJson);
         EventRoundView baseView = await EventRoundViews.BuildAsync(
             context,
             source.SeasonNumber,
@@ -248,14 +249,14 @@ public sealed class GetQualifierRoundsHandler
     {
         (LeagueEntity upper, LeagueEntity lower) = await BoundaryQualifierRunner.LoadBoundaryLeaguesAsync(
             context, source, boundary, sportingColor, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonStandingEntity> upperStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
-            context, source, upper, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonStandingEntity> lowerStandings = await BoundaryQualifierRunner.LoadLeagueStandingsAsync(
-            context, source, lower, rules, cancellationToken).ConfigureAwait(false);
-        List<SeasonMembershipEntity> sourceMemberships = await BoundaryQualifierRunner.LoadSourceMembershipsAsync(
+        List<SeasonStandingEntity> upperStandings = await QualifierEngine.LoadLeagueStandingsAsync(
+            context, source, upper, rules, requireCompleteRanks: false, cancellationToken).ConfigureAwait(false);
+        List<SeasonStandingEntity> lowerStandings = await QualifierEngine.LoadLeagueStandingsAsync(
+            context, source, lower, rules, requireCompleteRanks: false, cancellationToken).ConfigureAwait(false);
+        List<SeasonMembershipEntity> sourceMemberships = await QualifierEngine.LoadSourceMembershipsAsync(
             context, source, rules, cancellationToken).ConfigureAwait(false);
         Dictionary<int, SeasonMembershipEntity> membershipByAthlete = sourceMemberships.ToDictionary(m => m.SaveAthleteId);
-        Dictionary<int, string> namesByAthlete = await BoundaryQualifierRunner.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
+        Dictionary<int, string> namesByAthlete = await QualifierEngine.LoadAthleteNamesAsync(context, cancellationToken).ConfigureAwait(false);
         FeederQualifierFieldSelection.FeederField field = FeederQualifierFieldSelection.Select(
             boundary, sportingColor, upperStandings, upper, lowerStandings, lower,
             membershipByAthlete, namesByAthlete, rules);
