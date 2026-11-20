@@ -219,11 +219,40 @@ public static class SeasonFinalizer
     {
         List<List<SeasonStageEntry>> stageGroups = await BuildStageGroupsAsync(
             context, season, league, rules, names, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(stageGroups, rules);
-        IReadOnlyList<SeasonRankedAthlete> ranked = SeasonCalculator.Rank(totals, rng, rules);
+        (IReadOnlyList<SeasonAthleteTotals> totals, IReadOnlyList<SeasonRankedAthlete> ranked) =
+            AccumulateAndRankSeason(stageGroups, league, rules, rng);
         SeasonInvariants.ValidateFinalSeason(ranked, totals, rules);
         PersistLeagueStandings(context, season, league, ranked);
         await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Accumulates and ranks a league's persisted stage standings through the
+    /// pure kernel. The kernel's stage invariants (championship points
+    /// matching the scoring table, non-negative scores, rank/roster coverage,
+    /// round-place shapes) throw
+    /// <see cref="InvalidOperationException"/>; here the inputs are persisted
+    /// stage standings, so an invariant failure means corrupted saved rows
+    /// and must surface in the 500 corruption class (MSS-144), never as a
+    /// client error.
+    /// </summary>
+    internal static (IReadOnlyList<SeasonAthleteTotals> Totals, IReadOnlyList<SeasonRankedAthlete> Ranked) AccumulateAndRankSeason(
+        List<List<SeasonStageEntry>> stageGroups,
+        LeagueEntity league,
+        RulesV1 rules,
+        Pcg32V1 rng)
+    {
+        try
+        {
+            IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(stageGroups, rules);
+            return (totals, SeasonCalculator.Rank(totals, rng, rules));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException(
+                $"League '{league.Name}' has corrupt stage standings: {ex.Message}",
+                ex);
+        }
     }
 
     internal static async Task<List<List<SeasonStageEntry>>> BuildStageGroupsAsync(

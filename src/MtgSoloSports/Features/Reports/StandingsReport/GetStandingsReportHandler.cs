@@ -247,8 +247,7 @@ public sealed class GetStandingsReportHandler
 
         List<List<SeasonStageEntry>> groups = GetCurrentStandingsHandler.GroupProvisional(stageRows, league, names);
         Pcg32V1 fork = await GetCurrentStandingsHandler.ForkRngAsync(context, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(groups, rules);
-        IReadOnlyList<SeasonRankedAthlete> ranked = SeasonCalculator.Rank(totals, fork, rules);
+        IReadOnlyList<SeasonRankedAthlete> ranked = GetCurrentStandingsHandler.AccumulateAndRankProvisional(groups, league, rules, fork);
         return new ReportData(
             false,
             "provisional",
