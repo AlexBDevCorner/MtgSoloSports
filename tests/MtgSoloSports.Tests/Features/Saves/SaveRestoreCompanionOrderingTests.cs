@@ -116,34 +116,24 @@ public sealed class SaveRestoreCompanionOrderingTests
     public async Task RestoreInterruptedMidReplacement_LeavesNoStaleCompanionsBesideLiveMain()
     {
         // Crash-between-steps probe through the production restore: the
-        // replacement is interrupted exactly at the final move (the staging
-        // file is removed under the copy so File.Move faults). The invariant
-        // under test: by the time the replacement attempts to move the new
-        // main in, the discarded live file's companions are already gone, so
-        // an interruption can never leave a stale WAL that a later open pairs
+        // replacement is interrupted at its move-in copy (the already-verified
+        // checkpoint file becomes unreadable while the restore is frozen at
+        // its pre-restore-safety checkpoint). The invariant under test: by
+        // the time the replacement attempts to move the new main in, the
+        // discarded live file's companions are already gone, so an
+        // interruption can never leave a stale WAL that a later open pairs
         // with the live main. On the pre-change ordering (companions deleted
         // only after the move) the interrupted restore leaves the stale WAL
         // at the path and this test fails. The pinned reader keeps the
-        // crafted WAL uncheckpointed; the flow assumes POSIX unlink/rename
-        // semantics (the CI platform).
+        // crafted WAL uncheckpointed; the flow assumes POSIX semantics (the
+        // CI platform).
         var (store, root) = CreateStore();
         try
         {
             CraftedSave save = await CreateCraftedSaveAsync(store, root, "Boundary", 9621UL, 9622UL);
             using SqliteConnection observer = await OpenPinnedReaderAsync(save.LivePath);
 
-            using CancellationTokenSource deleterCts = new();
-            Task deleter = Task.Run(() => DeleteRestoreStagingFiles(root, deleterCts.Token));
-            try
-            {
-                Task<SaveStore.SaveDetailRecord> restoreTask = store.RestoreCheckpointAsync(save.SaveId, save.Checkpoint.CheckpointId);
-                await Should.ThrowAsync<FileNotFoundException>(() => restoreTask);
-            }
-            finally
-            {
-                deleterCts.Cancel();
-                await deleter;
-            }
+            await InterruptRestoreAtReplacementCopyAsync(store, save);
 
             File.Exists(save.LivePath + "-wal").ShouldBeFalse();
             File.Exists(save.LivePath + "-shm").ShouldBeFalse();
@@ -336,24 +326,46 @@ public sealed class SaveRestoreCompanionOrderingTests
     }
 
     /// <summary>
-    /// Removes the production restore staging file (`.restore-*.tmp`) the
-    /// moment it appears, so the staged replacement faults at its final move —
-    /// the deterministic interruption point between companion handling and
-    /// the new main database moving in.
+    /// Runs RestoreCheckpointAsync until it is frozen inside its
+    /// pre-restore-safety checkpoint (the verified checkpoint was already
+    /// read at that point), makes the checkpoint file unreadable, and lets
+    /// the replacement fault at its copy — the deterministic interruption
+    /// point after companion handling and before the new main database can
+    /// move in. Restores the checkpoint file mode afterwards. Requires POSIX
+    /// file semantics (the Linux CI platform).
     /// </summary>
-    private static void DeleteRestoreStagingFiles(string root, CancellationToken cancellationToken)
+    private static async Task InterruptRestoreAtReplacementCopyAsync(SaveStore store, CraftedSave save)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        SemaphoreSlim snapshotGate = AcquirePrivateGate("SnapshotGates", save.SaveId);
+        await snapshotGate.WaitAsync().ConfigureAwait(false);
+        bool held = true;
+        try
         {
-            try
+            Task<SaveStore.SaveDetailRecord> restoreTask = store.RestoreCheckpointAsync(save.SaveId, save.Checkpoint.CheckpointId);
+            await WaitUntilMigrationHeldAsync(save.SaveId, restoreTask).ConfigureAwait(false);
+            if (!OperatingSystem.IsWindows())
             {
-                foreach (string staging in Directory.GetFiles(root, ".restore-*.tmp"))
-                {
-                    File.Delete(staging);
-                }
+                File.SetUnixFileMode(save.CheckpointPath, UnixFileMode.None);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            else
             {
+                throw new Xunit.Sdk.XunitException("The interrupted-restore probe requires POSIX file semantics (Linux CI).");
+            }
+
+            snapshotGate.Release();
+            held = false;
+            await Should.ThrowAsync<UnauthorizedAccessException>(() => restoreTask).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (held)
+            {
+                snapshotGate.Release();
+            }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(save.CheckpointPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
         }
     }
