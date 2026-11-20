@@ -245,7 +245,17 @@ public sealed class SaveStoreTests
             File.Exists(store.GetSaveFilePath(created.Detail.SaveId)).ShouldBeFalse();
             File.Exists(sentinel).ShouldBeTrue();
             File.Exists(foreign).ShouldBeTrue();
-            (await store.ListAsync()).Count.ShouldBe(0);
+
+            // MSS-145: a GUID-shaped .db file is a save slot by naming
+            // contract, so the garbage foreign file stays visible as an
+            // explicit damaged placeholder instead of silently vanishing.
+            IReadOnlyList<SaveStore.SaveRecord> listed = await store.ListAsync();
+            listed.Count.ShouldBe(1);
+            SaveStore.SaveRecord damaged = listed.Single();
+            damaged.SaveId.ShouldBe(new Guid("11111111111111111111111111111111"));
+            damaged.Unreadable.ShouldBeTrue();
+            damaged.UnreadableReason.ShouldNotBeNullOrWhiteSpace();
+            damaged.Name.ShouldBe("11111111111111111111111111111111.db");
             await Should.ThrowAsync<SaveNotFoundException>(() => store.OpenAsync(created.Detail.SaveId));
         }
         finally
