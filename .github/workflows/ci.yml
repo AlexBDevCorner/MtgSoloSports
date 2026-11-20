@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Test autonomous worker recovery
+        run: node --test scripts/autonomous-worker.test.mjs
       - name: Restore backend
         run: dotnet restore MtgSoloSports.slnx --locked-mode
       - name: Build backend
