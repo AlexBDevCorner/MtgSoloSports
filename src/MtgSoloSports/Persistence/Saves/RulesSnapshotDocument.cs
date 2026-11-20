@@ -122,10 +122,22 @@ public sealed record RulesSnapshotDocument(
     /// <summary>
     /// Rebuilds a validated <see cref="RulesV1"/> snapshot. Throws on any violation;
     /// invariant failures abort the mutation and never silently repair state.
+    /// The kernel stays pure: its validation failures are rewrapped here, at the
+    /// persistence decode boundary, into <see cref="SaveCorruptionException"/>
+    /// so corrupt persisted values surface as 500 with the corruption message
+    /// instead of escaping as a client-error-class exception (MSS-144).
     /// </summary>
     public RulesV1 ToRules()
     {
-        RulesV1 rules = RulesV1.Create(BuildOverrides());
+        RulesV1 rules;
+        try
+        {
+            rules = RulesV1.Create(BuildOverrides());
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException($"Rules snapshot contains invalid persisted values: {ex.Message}", ex);
+        }
 
         if (rules.Version != Version)
         {
@@ -229,7 +241,14 @@ public sealed record RulesSnapshotDocument(
     public static RulesSnapshotDocument FromJson(string json)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        RulesSnapshotDocument? document = JsonSerializer.Deserialize<RulesSnapshotDocument>(json, JsonOptions);
-        return document ?? throw new SaveCorruptionException("Rules snapshot payload is empty.");
+        try
+        {
+            RulesSnapshotDocument? document = JsonSerializer.Deserialize<RulesSnapshotDocument>(json, JsonOptions);
+            return document ?? throw new SaveCorruptionException("Rules snapshot payload is empty.");
+        }
+        catch (JsonException ex)
+        {
+            throw new SaveCorruptionException("Rules snapshot payload has invalid JSON values.", ex);
+        }
     }
 }

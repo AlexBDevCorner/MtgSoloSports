@@ -1917,7 +1917,7 @@ public sealed class SaveStore
         }
 
         _ = rows.Rng.ToState();
-        _ = SaveRulesCompatibility.ReadSnapshotRules(rows.Rules.RulesJson);
+        _ = SaveRulesCompatibility.ReadImportableSnapshotRules(rows.Rules.RulesJson);
         if (rows.Rules.RulesVersion != manifest.RulesVersion)
         {
             throw new InvalidOperationException(

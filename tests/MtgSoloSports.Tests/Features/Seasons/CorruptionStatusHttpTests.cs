@@ -17,7 +17,10 @@ namespace MtgSoloSports.Tests.Features.Seasons;
 /// schema predates the Chaos and Cup selection formula activations still
 /// returns the legacy status defaults (200) through the real pipeline, while
 /// a schema defect on a migrated save and a corrupt activation row propagate
-/// loudly as 500 instead of silently reporting a healthy legacy save.
+/// loudly as 500 instead of silently reporting a healthy legacy save. Corrupt
+/// persisted rules snapshots (invalid values, and an incompatible snapshot
+/// decoded by the live activation backfill) also stay in the 500 corruption
+/// class instead of escaping as 400 client errors.
 /// </summary>
 public sealed class CorruptionStatusHttpTests
 {
@@ -102,6 +105,78 @@ public sealed class CorruptionStatusHttpTests
             payload.ShouldNotBeNull();
             payload.Error.ShouldNotBeNullOrWhiteSpace();
             payload.Error.ShouldContain("Chaos activation format version", Case.Insensitive);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task CorruptRulesSnapshotValue_SeasonStatus_Returns500WithCorruptionMessage()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            using HttpClient client = factory.CreateClient();
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(SavesRootOf(root));
+            SaveStore store = factory.Services.GetRequiredService<SaveStore>();
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                // Persisted rules-snapshot value corruption: the kernel's
+                // validation failure must be rewrapped at the persistence
+                // decode boundary and surface as 500, never as 400.
+                RulesSnapshotEntity snapshot = await context.RulesSnapshots.SingleAsync(e => e.Id == 1);
+                snapshot.RulesJson.ShouldContain("\"leagueSize\":32");
+                snapshot.RulesJson = snapshot.RulesJson.Replace("\"leagueSize\":32", "\"leagueSize\":31");
+                await context.SaveChangesAsync();
+            }
+
+            using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/season-status");
+            response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            ErrorPayload? payload = await response.Content.ReadFromJsonAsync<ErrorPayload>();
+            payload.ShouldNotBeNull();
+            payload.Error.ShouldNotBeNullOrWhiteSpace();
+            payload.Error.ShouldContain("invalid persisted values", Case.Insensitive);
+            payload.Error.ShouldContain("LeagueSize", Case.Insensitive);
+        }
+        finally
+        {
+            factory.Dispose();
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task MissingActivationRowWithIncompatibleRules_BackfillReturns500WithCorruptionMessage()
+    {
+        var (factory, root) = CreateFactory();
+        try
+        {
+            using HttpClient client = factory.CreateClient();
+            Guid saveId = await SharedSaveTemplates.SeedSeason1CompleteAsync(SavesRootOf(root));
+            SaveStore store = factory.Services.GetRequiredService<SaveStore>();
+            using (SaveDbContext context = store.OpenDbContext(saveId))
+            {
+                // Legacy/backfill shape: the activation row is missing, so the
+                // live migration backfill decodes the snapshot before the
+                // handler's own rules load. An incompatible snapshot must stay
+                // in the 500 corruption class on this live read instead of
+                // being rewrapped into the import 400 path.
+                context.CupSelectionFormulaActivations.RemoveRange(
+                    context.CupSelectionFormulaActivations.ToList());
+                RulesSnapshotEntity snapshot = await context.RulesSnapshots.SingleAsync(e => e.Id == 1);
+                snapshot.RulesJson = "{\"version\":99}";
+                await context.SaveChangesAsync();
+            }
+
+            using HttpResponseMessage response = await client.GetAsync($"/api/saves/{saveId:D}/season-status");
+            response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            ErrorPayload? payload = await response.Content.ReadFromJsonAsync<ErrorPayload>();
+            payload.ShouldNotBeNull();
+            payload.Error.ShouldNotBeNullOrWhiteSpace();
+            payload.Error.ShouldContain("not supported", Case.Insensitive);
         }
         finally
         {

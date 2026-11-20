@@ -118,7 +118,7 @@ public static class SnapshotAcquirer
         ValidateDatabaseMatchesManifest(view, manifest);
 
         // Proves the persisted sporting snapshot still parses; never migrates or repairs it.
-        _ = SaveRulesCompatibility.ReadSnapshotRules(view.RulesJson);
+        _ = SaveRulesCompatibility.ReadImportableSnapshotRules(view.RulesJson);
 
         SnapshotInfo info = BuildInfo(manifest, view, root, acquiredUtc);
         PublishAtomically(extraction.StagedDatabasePath, manifest, info, root);

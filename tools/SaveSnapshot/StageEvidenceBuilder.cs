@@ -61,7 +61,7 @@ public static class StageEvidenceBuilder
 
         Stopwatch elapsed = Stopwatch.StartNew();
         SnapshotReader.DatabaseView view = SnapshotReader.ReadDatabase(databasePath);
-        MtgSoloSports.SimulationKernel.Rules.RulesV1 rules = SaveRulesCompatibility.ReadSnapshotRules(view.RulesJson);
+        MtgSoloSports.SimulationKernel.Rules.RulesV1 rules = SaveRulesCompatibility.ReadImportableSnapshotRules(view.RulesJson);
 
         ResolvedTarget target = await ResolveTargetAsync(databasePath, rules, seasonFilter, stageFilter, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(databasePath, cancellationToken).ConfigureAwait(false);

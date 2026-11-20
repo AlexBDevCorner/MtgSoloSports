@@ -224,7 +224,11 @@ public static class CupSelectionFormulaLifecycle
             .AsNoTracking()
             .SingleAsync(e => e.Id == 1, cancellationToken)
             .ConfigureAwait(false);
-        return SaveRulesCompatibility.ReadSnapshotRules(snapshot.RulesJson);
+        // Live backfill read, not import staging: decode directly so a corrupt
+        // snapshot stays in the 500 SaveCorruptionException class. The import
+        // 400 rewrap in SaveRulesCompatibility.ReadImportableSnapshotRules is
+        // for uploaded artifacts only.
+        return RulesSnapshotCodec.Decode(snapshot.RulesJson);
     }
 
     private static async Task<int> ComputeLegacyEffectiveFromAsync(

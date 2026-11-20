@@ -46,9 +46,12 @@ public static class SaveRulesCompatibility
     /// path; v2 tiered snapshots decode to <see cref="RulesV2"/>. A snapshot
     /// that cannot be trusted rejects the import as a client error (400), so
     /// corruption-class decode failures are rewrapped into
-    /// <see cref="InvalidOperationException"/> for the import path.
+    /// <see cref="InvalidOperationException"/> for the import path. Live save
+    /// reads must never call this wrapper: they decode through
+    /// <see cref="RulesSnapshotCodec"/> directly so corruption stays in the
+    /// 500 <see cref="SaveCorruptionException"/> class.
     /// </summary>
-    public static RulesV1 ReadSnapshotRules(string rulesJson)
+    public static RulesV1 ReadImportableSnapshotRules(string rulesJson)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rulesJson);
         try

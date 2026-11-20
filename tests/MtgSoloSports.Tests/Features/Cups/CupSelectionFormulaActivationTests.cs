@@ -29,7 +29,7 @@ public sealed class CupSelectionFormulaActivationTests
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
         RulesSnapshotEntity snapshot = await context.RulesSnapshots.SingleAsync(e => e.Id == 1);
-        RulesV1 rules = SaveRulesCompatibility.ReadSnapshotRules(snapshot.RulesJson);
+        RulesV1 rules = SaveRulesCompatibility.ReadImportableSnapshotRules(snapshot.RulesJson);
         rules.ShouldNotBeNull();
         CupSelectionFormulaLifecycle.EnsureSupportedWeights(rules);
 
