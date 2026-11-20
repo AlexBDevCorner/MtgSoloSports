@@ -11,8 +11,10 @@ namespace MtgSoloSports.Persistence.Saves;
 /// place that keeps the documented intent real for every save connection.
 /// WAL journal mode itself is a file-persisted property set per save file at
 /// creation time.
+/// Unsealed so focused tests can derive recording interceptors (mirroring the
+/// catalog interceptor) while inheriting the production pragma behavior.
 /// </summary>
-public sealed class SaveSqliteConnectionInterceptor : DbConnectionInterceptor
+public class SaveSqliteConnectionInterceptor : DbConnectionInterceptor
 {
     private const string Pragmas = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;";
 

@@ -7,6 +7,10 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Committed squashed baseline DDL for new saves; kept in sync with the migration chain (MSS-149). -->
+    <EmbeddedResource Include="Persistence\Saves\SaveSchemaBaseline.sql" LogicalName="MtgSoloSports.Persistence.Saves.SaveSchemaBaseline.sql" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Exposes internal tournament RNG helpers to deterministic regression tests (MSS-071). -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>MtgSoloSports.Tests</_Parameter1>

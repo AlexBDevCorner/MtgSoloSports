@@ -1,14 +1,10 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace MtgSoloSports.Persistence.Saves.Migrations
 {
     /// <inheritdoc />
-    [DbContext(typeof(SaveDbContext))]
-    [Migration("20261006090000_AddQualifierBoundary")]
     public partial class AddQualifierBoundary : Migration
     {
         /// <inheritdoc />

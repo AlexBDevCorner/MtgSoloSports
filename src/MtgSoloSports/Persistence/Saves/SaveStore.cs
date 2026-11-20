@@ -459,8 +459,13 @@ public sealed class SaveStore
         string path,
         CancellationToken cancellationToken)
     {
+        // New saves skip the ~39-step historical migration chain: the
+        // baseline creates the exact chain-result schema in one step and
+        // stamps the full migration history, so fresh saves and fully
+        // migrated saves are indistinguishable afterwards. A stale baseline
+        // fails loudly here instead of producing a lying new save.
+        await SaveSchemaBaseline.ApplyAsync(_factory, path, cancellationToken).ConfigureAwait(false);
         using SaveDbContext context = _factory.Create(path);
-        await context.Database.MigrateAsync(cancellationToken).ConfigureAwait(false);
         // Only the file-persisted WAL mode is set here; every per-connection
         // pragma (foreign keys, busy timeout, synchronous=NORMAL) is applied
         // by SaveSqliteConnectionInterceptor on each opened connection.
