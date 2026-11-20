@@ -1,4 +1,3 @@
-using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
@@ -110,7 +109,9 @@ public static class TeamEvent
     /// order; callers must sort deterministically (for example by name
     /// ordinal) before calling. No artificial upper bound is enforced here;
     /// slice invariants enforce genuine field rules (Color Cup exactly eight,
-    /// Type Cup at least two teams).
+    /// Type Cup at least two teams). The shuffle/score/rank/validate pipeline
+    /// lives in <see cref="Scoring.RoundPipeline"/>, shared with league and
+    /// qualifier rounds (MSS-151).
     /// </summary>
     public static RoundSimulationResult SimulateGroupRound(
         IReadOnlyList<RoundAthleteInput> roster,
@@ -127,17 +128,8 @@ public static class TeamEvent
             throw new InvalidOperationException($"Team group size must be at least 2, was {groupSize}.");
         }
 
-        if (roster.Count != groupSize)
-        {
-            throw new InvalidOperationException($"Team group roster must contain exactly {groupSize} athletes, was {roster.Count}.");
-        }
-
-        ValidateGroupInputs(roster);
-        Dictionary<int, int> rankBefore = ComputeGroupRanks(roster);
-        List<RoundPlacement> unranked = ShuffleAndScoreGroup(roster, rng, rules, rankBefore, groupSize);
-        List<RoundPlacement> ranked = ApplyGroupRanks(unranked);
-        ValidateGroupResult(ranked, rules, groupSize);
-        return new RoundSimulationResult(ranked, rng.Snapshot(), RoundSimulator.ComputeChecksum(ranked));
+        return RoundPipeline.Simulate(
+            roster, rng, rules, groupSize, "Team group", ScoringCalculator.TypeCupBasePointsForPosition);
     }
 
     /// <summary>
@@ -455,161 +447,6 @@ public static class TeamEvent
             {
                 LegCount++;
             }
-        }
-    }
-
-    private static void ValidateGroupInputs(IReadOnlyList<RoundAthleteInput> roster)
-    {
-        HashSet<int> ids = new();
-        HashSet<string> names = new(StringComparer.Ordinal);
-        foreach (RoundAthleteInput athlete in roster)
-        {
-            if (athlete.AthleteId <= 0)
-            {
-                throw new InvalidOperationException($"Team group roster contains invalid athlete id {athlete.AthleteId}.");
-            }
-
-            if (string.IsNullOrWhiteSpace(athlete.Name))
-            {
-                throw new InvalidOperationException("Team group roster contains an athlete with an empty name.");
-            }
-
-            if (!ids.Add(athlete.AthleteId))
-            {
-                throw new InvalidOperationException($"Team group roster contains duplicate athlete id {athlete.AthleteId}.");
-            }
-
-            if (!names.Add(athlete.Name))
-            {
-                throw new InvalidOperationException($"Team group roster contains duplicate athlete '{athlete.Name}'.");
-            }
-        }
-    }
-
-    private static Dictionary<int, int> ComputeGroupRanks(IReadOnlyList<RoundAthleteInput> roster)
-    {
-        List<RoundAthleteInput> ordered = new(roster);
-        ordered.Sort(static (left, right) =>
-        {
-            int points = right.CumulativeBefore.Thousandths.CompareTo(left.CumulativeBefore.Thousandths);
-            return points != 0 ? points : string.Compare(left.Name, right.Name, StringComparison.Ordinal);
-        });
-
-        Dictionary<int, int> ranks = new(ordered.Count);
-        for (int i = 0; i < ordered.Count; i++)
-        {
-            ranks[ordered[i].AthleteId] = i + 1;
-        }
-
-        return ranks;
-    }
-
-    private static List<RoundPlacement> ShuffleAndScoreGroup(
-        IReadOnlyList<RoundAthleteInput> roster,
-        Pcg32V1 rng,
-        RulesV1 rules,
-        Dictionary<int, int> rankBefore,
-        int groupSize)
-    {
-        List<RoundAthleteInput> shuffled = new(roster);
-        DeterministicShuffle.Shuffle(shuffled, rng);
-
-        List<RoundPlacement> placements = new(shuffled.Count);
-        for (int i = 0; i < shuffled.Count; i++)
-        {
-            int position = i + 1;
-            if (position > groupSize)
-            {
-                throw new InvalidOperationException($"Team group position {position} exceeds group size {groupSize}.");
-            }
-
-            Points basePoints = ScoringCalculator.TypeCupBasePointsForPosition(position, rules);
-            Points finalPoints = ScoringCalculator.ApplyBonus(basePoints, shuffled[i].ActiveBonus);
-            Points cumulativeAfter = checked(shuffled[i].CumulativeBefore + finalPoints);
-            placements.Add(new RoundPlacement(
-                shuffled[i].AthleteId,
-                shuffled[i].Name,
-                position,
-                basePoints,
-                shuffled[i].ActiveBonus,
-                finalPoints,
-                shuffled[i].CumulativeBefore,
-                cumulativeAfter,
-                rankBefore[shuffled[i].AthleteId],
-                0,
-                0));
-        }
-
-        return placements;
-    }
-
-    private static List<RoundPlacement> ApplyGroupRanks(IReadOnlyList<RoundPlacement> placements)
-    {
-        List<RoundPlacement> ordered = new(placements);
-        ordered.Sort(static (left, right) =>
-        {
-            int points = right.CumulativeAfter.Thousandths.CompareTo(left.CumulativeAfter.Thousandths);
-            return points != 0 ? points : string.Compare(left.Name, right.Name, StringComparison.Ordinal);
-        });
-
-        Dictionary<int, int> rankAfter = new(ordered.Count);
-        for (int i = 0; i < ordered.Count; i++)
-        {
-            rankAfter[ordered[i].AthleteId] = i + 1;
-        }
-
-        List<RoundPlacement> ranked = new(placements.Count);
-        foreach (RoundPlacement placement in placements)
-        {
-            int after = rankAfter[placement.AthleteId];
-            ranked.Add(placement with
-            {
-                RankAfter = after,
-                RankMovement = placement.RankBefore - after,
-            });
-        }
-
-        return ranked;
-    }
-
-    private static void ValidateGroupResult(IReadOnlyList<RoundPlacement> placements, RulesV1 rules, int groupSize)
-    {
-        HashSet<int> positions = new();
-        HashSet<int> ids = new();
-        foreach (RoundPlacement placement in placements)
-        {
-            if (!positions.Add(placement.Position))
-            {
-                throw new InvalidOperationException($"Team group result contains duplicate position {placement.Position}.");
-            }
-
-            if (!ids.Add(placement.AthleteId))
-            {
-                throw new InvalidOperationException($"Team group result contains duplicate athlete id {placement.AthleteId}.");
-            }
-
-            Points expectedBase = ScoringCalculator.TypeCupBasePointsForPosition(placement.Position, rules);
-            if (expectedBase.Thousandths != placement.BasePoints.Thousandths)
-            {
-                throw new InvalidOperationException($"Team group result base points for position {placement.Position} are corrupt.");
-            }
-
-            Points expectedFinal = ScoringCalculator.ApplyBonus(expectedBase, placement.ActiveBonus);
-            if (expectedFinal.Thousandths != placement.FinalPoints.Thousandths)
-            {
-                throw new InvalidOperationException($"Team group result final points for '{placement.Name}' are corrupt.");
-            }
-
-            Points expectedAfter = checked(placement.CumulativeBefore + placement.FinalPoints);
-            if (expectedAfter.Thousandths != placement.CumulativeAfter.Thousandths)
-            {
-                throw new InvalidOperationException($"Team group result cumulative total for '{placement.Name}' is corrupt.");
-            }
-        }
-
-        if (positions.Count != groupSize || !positions.SetEquals(Enumerable.Range(1, groupSize)))
-        {
-            throw new InvalidOperationException($"Team group result must cover positions 1..{groupSize} exactly once.");
         }
     }
 

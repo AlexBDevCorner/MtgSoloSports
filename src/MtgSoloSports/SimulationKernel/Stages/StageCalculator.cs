@@ -206,7 +206,7 @@ public static class StageCalculator
 
     private static StageRankedAthlete AwardStanding(int rank, StageAthleteTotals entry, RulesV1 rules, LeagueLevel level)
     {
-        int championship = rules.ScoringTable[rank - 1] * RulesV1.FixedScale;
+        int championship = ScoringCalculator.ChampionshipPointsForPosition(rank, rules).Thousandths;
         int earned = checked(ComputeRoundBonusTotal(entry, rules, level) +
             ScoringCalculator.StageBonusForPosition(rank, rules, level).Thousandths);
         return new StageRankedAthlete(
