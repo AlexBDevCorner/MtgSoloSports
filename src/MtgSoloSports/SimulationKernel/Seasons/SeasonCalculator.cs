@@ -489,11 +489,26 @@ public static class SeasonCalculator
         return ranked.Select(r => r.Entry).ToList();
     }
 
+    /// <summary>
+    /// Stage-score capacity of the packed 64-bit tie-break key: bits 32..62
+    /// (bit 63 must stay clear so the key stays non-negative and ordered).
+    /// Current season maxima leave ~35x headroom; anything outside the
+    /// capacity aborts loudly instead of silently producing a mis-ordered key.
+    /// </summary>
+    internal const int MaxStageScoreForKey = int.MaxValue;
+
     internal static long EncodeRawTotals(int stageScoreThousandths, int baseScoreThousandths)
     {
         // Stage score decides before base score; packing into one ordered
         // 64-bit key keeps the generic tie-breaker unchanged while preserving
         // that order (higher stage score ranks ahead, base breaks remaining ties).
+        if (stageScoreThousandths < 0 || stageScoreThousandths > MaxStageScoreForKey
+            || baseScoreThousandths < 0)
+        {
+            throw new InvalidOperationException(
+                $"Season raw totals {stageScoreThousandths}/{baseScoreThousandths} exceed the 64-bit tie-break key capacity; sporting state is corrupt.");
+        }
+
         checked
         {
             return (((long)stageScoreThousandths) << 32) | (uint)baseScoreThousandths;

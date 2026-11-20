@@ -27,6 +27,13 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 /// Superleague appearances count completed Superleague seasons only; feeder
 /// and pool participation add nothing. Cup runner-up/third-place honours and
 /// Type Cup qualification-group success (which persists no honour) add nothing.
+/// Prestige resolution dispatches through the virtual tiered-prestige
+/// accessors on the rules hierarchy (MSS-152), so a future RulesV4 subclass
+/// inherits the v3 tiered model instead of falling into a legacy cast path;
+/// v1/v2 snapshots keep their legacy values via the base accessors. Known
+/// prestige-neutral honour kinds (Features.Records.HonourKind 5..17: league
+/// and Cup runner-up/third plus the MSS-104 Chaos podium) are ignored, and
+/// any other kind int aborts loudly as corruption.
 /// Unknown or corrupt league references for achievements that require a level
 /// abort loudly; Cup majors carry sentinel LeagueIds and never resolve levels.
 /// SimulationKernel pure: no HTTP, EF Core, filesystem, clock or RNG.
@@ -43,6 +50,14 @@ public static class CupPrestigeCalculator
     private const int ColorCupIndividualChampionKind = 2;
     private const int ColorCupTeamChampionKind = 3;
     private const int TypeCupTeamChampionKind = 4;
+
+    // Known prestige-neutral kinds (Features.Records.HonourKind values 5..17):
+    // league/Cup runner-up and third places (5..14) plus the MSS-104 Chaos Cup
+    // individual podium (15..17). Anything outside 0..17 is a corrupt kind int
+    // and aborts loudly instead of being silently swallowed (MSS-152).
+    private const int FirstNeutralHonourKind = 5;
+
+    private const int LastNeutralHonourKind = 17;
 
     public sealed record PrestigeHonour(int AthleteId, int Kind, int LeagueId);
 
@@ -93,7 +108,11 @@ public static class CupPrestigeCalculator
     /// <summary>
     /// Computes league-aware prestige for every athlete in one shared pass.
     /// Returns one breakdown per athlete id present in any input; athletes with
-    /// no achievements map to an all-zero breakdown.
+    /// no achievements map to an all-zero breakdown. Prestige resolution uses
+    /// the virtual tiered-prestige accessors on the rules hierarchy
+    /// (<see cref="RulesV1.GetLeagueTitlePrestige"/> and siblings, MSS-152),
+    /// so RulesV4+ subclasses resolve through inheritance rather than version
+    /// casts; v1/v2 snapshots keep the legacy level-blind values.
     /// </summary>
     public static IReadOnlyDictionary<int, PrestigeBreakdown> ComputeAll(
         IReadOnlyList<PrestigeHonour> honours,
@@ -108,11 +127,10 @@ public static class CupPrestigeCalculator
         ArgumentNullException.ThrowIfNull(levelsByLeagueId);
         ArgumentNullException.ThrowIfNull(rules);
 
-        bool tiered = rules is RulesV3;
         Dictionary<int, Mutable> accumulators = new();
-        ApplyAllHonours(accumulators, honours, levelsByLeagueId, rules, tiered);
-        ApplyAllStages(accumulators, stages, levelsByLeagueId, rules, tiered);
-        ApplyAllAppearances(accumulators, memberships, levelsByLeagueId, rules, tiered);
+        ApplyAllHonours(accumulators, honours, levelsByLeagueId, rules);
+        ApplyAllStages(accumulators, stages, levelsByLeagueId, rules);
+        ApplyAllAppearances(accumulators, memberships, levelsByLeagueId, rules);
         return Finalize(accumulators);
     }
 
@@ -120,8 +138,7 @@ public static class CupPrestigeCalculator
         Dictionary<int, Mutable> accumulators,
         IReadOnlyList<PrestigeHonour> honours,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         foreach (PrestigeHonour honour in honours)
         {
@@ -136,7 +153,7 @@ public static class CupPrestigeCalculator
             }
 
             Mutable acc = GetOrCreate(accumulators, honour.AthleteId);
-            ApplyHonour(acc, honour, levelsByLeagueId, rules, tiered);
+            ApplyHonour(acc, honour, levelsByLeagueId, rules);
         }
     }
 
@@ -144,12 +161,11 @@ public static class CupPrestigeCalculator
         Dictionary<int, Mutable> accumulators,
         IReadOnlyList<PrestigeStage> stages,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         foreach (PrestigeStage stage in stages)
         {
-            ApplySingleStage(accumulators, stage, levelsByLeagueId, rules, tiered);
+            ApplySingleStage(accumulators, stage, levelsByLeagueId, rules);
         }
     }
 
@@ -157,8 +173,7 @@ public static class CupPrestigeCalculator
         Dictionary<int, Mutable> accumulators,
         PrestigeStage stage,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         if (stage is null)
         {
@@ -179,15 +194,7 @@ public static class CupPrestigeCalculator
         Mutable acc = GetOrCreate(accumulators, stage.AthleteId);
         checked
         {
-            if (tiered)
-            {
-                RulesV3 v3 = (RulesV3)rules;
-                acc.AddStage(level, v3.GetTieredStagePrestige(level, stage.Rank));
-            }
-            else
-            {
-                acc.AddStageLegacy(level, LegacyStagePoints(rules, stage.Rank));
-            }
+            acc.AddStage(level, rules.GetStagePrestige(level, stage.Rank));
         }
     }
 
@@ -195,12 +202,11 @@ public static class CupPrestigeCalculator
         Dictionary<int, Mutable> accumulators,
         IReadOnlyList<PrestigeMembership> memberships,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         foreach (PrestigeMembership membership in memberships)
         {
-            ApplySingleAppearance(accumulators, membership, levelsByLeagueId, rules, tiered);
+            ApplySingleAppearance(accumulators, membership, levelsByLeagueId, rules);
         }
     }
 
@@ -208,8 +214,7 @@ public static class CupPrestigeCalculator
         Dictionary<int, Mutable> accumulators,
         PrestigeMembership membership,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         if (membership is null)
         {
@@ -235,9 +240,7 @@ public static class CupPrestigeCalculator
         Mutable acc = GetOrCreate(accumulators, membership.AthleteId);
         checked
         {
-            acc.AppearanceRaw += tiered
-                ? ((RulesV3)rules).PrestigeSuperAppearancePoints
-                : rules.Prestige.SuperleagueAppearancePoints;
+            acc.AppearanceRaw += rules.GetSuperleagueAppearancePrestige();
         }
     }
 
@@ -280,29 +283,33 @@ public static class CupPrestigeCalculator
         Mutable acc,
         PrestigeHonour honour,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         switch (honour.Kind)
         {
             case FeederTitleKind:
-                ApplyFeederTitle(acc, honour, levelsByLeagueId, rules, tiered);
+                ApplyFeederTitle(acc, honour, levelsByLeagueId, rules);
                 break;
 
             case SuperleagueTitleKind:
-                ApplySuperTitle(acc, honour, levelsByLeagueId, rules, tiered);
+                ApplySuperTitle(acc, honour, levelsByLeagueId, rules);
                 break;
 
             case ColorCupIndividualChampionKind:
             case ColorCupTeamChampionKind:
             case TypeCupTeamChampionKind:
-                ApplyMajorTitle(acc, rules, tiered);
+                ApplyMajorTitle(acc, rules);
+                break;
+
+            case >= FirstNeutralHonourKind and <= LastNeutralHonourKind:
+                // League/Cup runner-up and third-place honours (5..14) and the
+                // MSS-104 Chaos Cup individual podium (15..17) are honours but
+                // prestige-neutral by win-only prestige semantics; ignore.
                 break;
 
             default:
-                // Runner-up/third-place honours (league and Cup) are honours but
-                // prestige-neutral by win-only prestige semantics; ignore.
-                break;
+                throw new InvalidOperationException(
+                    $"Prestige honour has unknown kind {honour.Kind}; sporting state is corrupt.");
         }
     }
 
@@ -310,8 +317,7 @@ public static class CupPrestigeCalculator
         Mutable acc,
         PrestigeHonour honour,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         LeagueLevel level = ResolveLevel(levelsByLeagueId, honour.LeagueId, "feeder title honour");
         if (level == LeagueLevel.Superleague)
@@ -322,15 +328,7 @@ public static class CupPrestigeCalculator
 
         checked
         {
-            if (tiered)
-            {
-                RulesV3 v3 = (RulesV3)rules;
-                acc.AddTitle(level, v3.GetTieredTitlePrestige(level));
-            }
-            else
-            {
-                acc.AddTitle(level, rules.Prestige.FeederTitlePoints);
-            }
+            acc.AddTitle(level, rules.GetLeagueTitlePrestige(level));
         }
     }
 
@@ -338,8 +336,7 @@ public static class CupPrestigeCalculator
         Mutable acc,
         PrestigeHonour honour,
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
-        RulesV1 rules,
-        bool tiered)
+        RulesV1 rules)
     {
         LeagueLevel level = ResolveLevel(levelsByLeagueId, honour.LeagueId, "Superleague title honour");
         if (level != LeagueLevel.Superleague)
@@ -350,29 +347,17 @@ public static class CupPrestigeCalculator
 
         checked
         {
-            acc.SuperTitleRaw += tiered
-                ? ((RulesV3)rules).PrestigeSuperTitlePoints
-                : rules.Prestige.SuperleagueTitlePoints;
+            acc.SuperTitleRaw += rules.GetLeagueTitlePrestige(LeagueLevel.Superleague);
         }
     }
 
-    private static void ApplyMajorTitle(Mutable acc, RulesV1 rules, bool tiered)
+    private static void ApplyMajorTitle(Mutable acc, RulesV1 rules)
     {
         checked
         {
-            acc.MajorCupRaw += tiered
-                ? ((RulesV3)rules).PrestigeMajorCupTitlePoints
-                : rules.Prestige.OtherMajorHonourPoints;
+            acc.MajorCupRaw += rules.GetMajorCupTitlePrestige();
         }
     }
-
-    private static int LegacyStagePoints(RulesV1 rules, int rank) => rank switch
-    {
-        1 => rules.Prestige.StageWinPoints,
-        2 => rules.Prestige.StageSecondPoints,
-        3 => rules.Prestige.StageThirdPoints,
-        _ => throw new ArgumentOutOfRangeException(nameof(rank), $"Stage place {rank} is not a podium."),
-    };
 
     private static LeagueLevel ResolveLevel(
         IReadOnlyDictionary<int, LeagueLevel> levelsByLeagueId,
@@ -454,13 +439,6 @@ public static class CupPrestigeCalculator
                 default:
                     throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}.");
             }
-        }
-
-        public void AddStageLegacy(LeagueLevel level, int points)
-        {
-            // Legacy v1/v2 stage values are level-blind for totals, but the
-            // breakdown still splits by the stage's own league for explainability.
-            AddStage(level, points);
         }
 
         public PrestigeBreakdown ToBreakdown()

@@ -28,7 +28,8 @@ public static class RoundSimulator
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
+        // Rules validation happens once at snapshot load (RulesSnapshotCodec decode
+        // path); per-round hot paths keep only cheap structural guards (MSS-152).
         return SimulateWithFieldSize(roster, rng, rules, rules.LeagueSize);
     }
 
@@ -48,7 +49,6 @@ public static class RoundSimulator
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
 
         if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
         {

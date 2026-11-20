@@ -44,7 +44,8 @@ public static class StageCalculator
     {
         ArgumentNullException.ThrowIfNull(rounds);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
+        // Rules validation happens once at snapshot load (RulesSnapshotCodec decode
+        // path); per-round hot paths keep only cheap structural guards (MSS-152).
 
         if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
         {
@@ -126,7 +127,8 @@ public static class StageCalculator
         ArgumentNullException.ThrowIfNull(totals);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
+        // Rules validation happens once at snapshot load; cheap guards below
+        // still abort the mutation on structural corruption (MSS-152).
 
         if (fieldSize != rules.LeagueSize && fieldSize != rules.FeederQualifierSize && fieldSize != rules.QualifierSize)
         {
@@ -229,15 +231,6 @@ public static class StageCalculator
         public int CountSum;
     }
 
-    private static void ValidateRound(
-        IReadOnlyList<StageRoundEntry> round,
-        RulesV1 rules,
-        Dictionary<int, Accumulator> accumulators,
-        Dictionary<int, string> names)
-    {
-        ValidateRoundWithFieldSize(round, rules, accumulators, names, rules.LeagueSize);
-    }
-
     private static void ValidateRoundWithFieldSize(
         IReadOnlyList<StageRoundEntry> round,
         RulesV1 rules,
@@ -265,15 +258,6 @@ public static class StageCalculator
             throw new InvalidOperationException(
                 $"Stage round must cover positions 1..{fieldSize} exactly once.");
         }
-    }
-
-    private static void ValidateRoundEntry(
-        StageRoundEntry entry,
-        RulesV1 rules,
-        HashSet<int> positions,
-        HashSet<int> athleteIds)
-    {
-        ValidateRoundEntryWithFieldSize(entry, rules, positions, athleteIds, rules.LeagueSize);
     }
 
     private static void ValidateRoundEntryWithFieldSize(
@@ -321,15 +305,6 @@ public static class StageCalculator
         }
     }
 
-    private static void TrackRoundEntry(
-        StageRoundEntry entry,
-        RulesV1 rules,
-        Dictionary<int, Accumulator> accumulators,
-        Dictionary<int, string> names)
-    {
-        TrackRoundEntryWithFieldSize(entry, rules, accumulators, names, rules.LeagueSize);
-    }
-
     private static void TrackRoundEntryWithFieldSize(
         StageRoundEntry entry,
         RulesV1 rules,
@@ -360,11 +335,6 @@ public static class StageCalculator
 
         accumulator.Counts[entry.Position - 1]++;
         accumulator.CountSum++;
-    }
-
-    private static void ValidateTotals(IReadOnlyList<StageAthleteTotals> totals, RulesV1 rules)
-    {
-        ValidateTotalsWithFieldSize(totals, rules, rules.LeagueSize, rules.RoundsPerStage);
     }
 
     private static void ValidateTotalsWithFieldSize(

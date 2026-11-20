@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Shared;
+using MtgSoloSports.SimulationKernel.Careers;
 
 namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 
@@ -121,11 +122,39 @@ public sealed record TypeCupSelectionReportDocument(
         try
         {
             TypeCupSelectionReportDocument? document = JsonSerializer.Deserialize<TypeCupSelectionReportDocument>(json, JsonOptions);
-            return document ?? throw new SaveCorruptionException("Type Cup selection report is empty.");
+            if (document is null)
+            {
+                throw new SaveCorruptionException("Type Cup selection report is empty.");
+            }
+
+            EnsureKnownWeightsVersion(document.PrestigeWeightsVersion);
+            return document;
         }
         catch (JsonException ex)
         {
             throw new SaveCorruptionException("Type Cup selection report is corrupt.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Persistence boundary for the persisted career-prestige weights version
+    /// (MSS-152): legacy payloads store an empty version and v4+ payloads store
+    /// <see cref="CareerPerformanceScorer.WeightsVersion"/>; anything else means
+    /// the document was scored under weights this build cannot reproduce, so
+    /// the read aborts instead of silently misexplaining prestige.
+    /// </summary>
+    internal static void EnsureKnownWeightsVersion(string? prestigeWeightsVersion)
+    {
+        if (string.IsNullOrEmpty(prestigeWeightsVersion))
+        {
+            return;
+        }
+
+        if (!string.Equals(prestigeWeightsVersion, CareerPerformanceScorer.WeightsVersion, StringComparison.Ordinal))
+        {
+            throw new SaveCorruptionException(
+                $"Type Cup selection report was scored with career-prestige weights '{prestigeWeightsVersion}', " +
+                $"which this build does not support (expects '{CareerPerformanceScorer.WeightsVersion}').");
         }
     }
 }
