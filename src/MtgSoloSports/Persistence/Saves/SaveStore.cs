@@ -102,13 +102,21 @@ public sealed class SaveStore
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// One listed save. <see cref="Unreadable"/> marks a file that exists on
+    /// disk but could not be read: it is returned as an explicit damaged
+    /// placeholder (never silently omitted or repaired) with the file name as
+    /// <see cref="Name"/> and a short <see cref="UnreadableReason"/>.
+    /// </summary>
     public sealed record SaveRecord(
         Guid SaveId,
         string Name,
         DateTimeOffset CreatedUtc,
         int SchemaVersion,
         int CurrentSeason,
-        string Phase);
+        string Phase,
+        bool Unreadable = false,
+        string? UnreadableReason = null);
 
     public sealed record SaveDetailRecord(
         Guid SaveId,
@@ -741,7 +749,16 @@ public sealed class SaveStore
             }
             catch (Exception ex) when (ex is InvalidOperationException or SaveCorruptionException or DbException or IOException or UnauthorizedAccessException)
             {
-                _logger.LogWarning(ex, "Skipping unreadable save file {FileName}.", fileName);
+                _logger.LogWarning(ex, "Save file {FileName} is unreadable; listing it as a damaged placeholder.", fileName);
+                records.Add(new SaveRecord(
+                    saveId,
+                    fileName,
+                    DateTimeOffset.MinValue,
+                    0,
+                    0,
+                    string.Empty,
+                    Unreadable: true,
+                    UnreadableReason: DescribeUnreadableSave(ex)));
             }
         }
 
@@ -752,6 +769,16 @@ public sealed class SaveStore
         });
         return records;
     }
+
+    /// <summary>Short user-facing reason for one unreadable save file.</summary>
+    private static string DescribeUnreadableSave(Exception ex) => ex switch
+    {
+        SaveCorruptionException corruption => corruption.Message,
+        UnauthorizedAccessException => "Access to the save file was denied.",
+        DbException => "The save database could not be opened.",
+        IOException => "The save file could not be read.",
+        _ => "The save metadata could not be read.",
+    };
 
     public Task<SaveDetailRecord> OpenAsync(Guid saveId, CancellationToken cancellationToken = default)
         => ReadDetailAsync(saveId, cancellationToken);

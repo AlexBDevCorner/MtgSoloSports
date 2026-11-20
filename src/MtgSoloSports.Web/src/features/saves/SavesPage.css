@@ -14,8 +14,34 @@
   min-width: 0;
 }
 
+/* MSS-145: unreadable saves stay visible as damaged entries (red edge and
+   badge) and deletion needs an explicit inline second click. */
+.save-row.save-damaged {
+  border-left-color: var(--bad);
+}
+
+.save-row.save-damaged .badge {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.save-confirm-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  max-width: 220px;
+  text-align: right;
+}
+
 @media (max-width: 1020px) {
   .saves-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .save-row {
+    flex-wrap: wrap;
+  }
+
+  .save-confirm-hint {
+    text-align: left;
   }
 }

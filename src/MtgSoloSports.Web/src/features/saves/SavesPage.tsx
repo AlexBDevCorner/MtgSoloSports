@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiErrorMessage } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -7,7 +7,15 @@ import { dashboardPath } from '../routing/routes';
 import { CatalogCounts } from '../catalog/CatalogCounts';
 import type { CatalogStats } from '../catalog/catalogApi';
 import { ScryfallImportPanel } from '../catalog/ScryfallImportPanel';
-import { createSave, exportSaveUrl, importSave, type SaveDetail, type SaveSummary } from './savesApi';
+import {
+  createSave,
+  exportSaveUrl,
+  importSave,
+  listSaveCheckpoints,
+  restoreSaveCheckpoint,
+  type SaveDetail,
+  type SaveSummary,
+} from './savesApi';
 import { MAX_SAFE_SEED_VALUE, parseDeterministicField } from './seedInput';
 import { phaseLabel } from '../../shared/displayLabels';
 import type { SavesState } from './useSaves';
@@ -29,6 +37,86 @@ function toSaveSummary(result: {
     currentSeason: result.currentSeason,
     phase: result.phase,
   };
+}
+
+/** MSS-145: damaged placeholder body — no open action, id and reason visible. */
+function DamagedSaveInfo({ save }: { save: SaveSummary }) {
+  return (
+    <span className="save-open">
+      <span className="save-name">
+        {save.name} <span className="badge">Damaged</span>
+      </span>
+      <span className="save-meta">
+        Unreadable save — {save.unreadableReason ?? 'the save file could not be read.'}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * MSS-145: a damaged save may still have verified recovery checkpoints beside
+ * its unreadable database. They are listed lazily and the newest one can be
+ * restored; failures are surfaced inline, never swallowed.
+ */
+function DamagedCheckpointRestore({ save, onRestored }: { save: SaveSummary; onRestored: () => void }) {
+  const [checkpointId, setCheckpointId] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listSaveCheckpoints(save.saveId, controller.signal)
+      .then((found) => {
+        setCheckpointId(found.length > 0 ? found[found.length - 1].checkpointId : null);
+        setChecked(true);
+      })
+      .catch((failure: unknown) => {
+        if (failure instanceof DOMException && failure.name === 'AbortError') {
+          return;
+        }
+        setError(apiErrorMessage(failure));
+        setChecked(true);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [save.saveId]);
+
+  async function handleRestore() {
+    if (checkpointId === null || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await restoreSaveCheckpoint(save.saveId, checkpointId);
+      onRestored();
+    } catch (failure) {
+      setError(apiErrorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!checked || checkpointId === null) {
+    return error ? <span className="save-meta">{error}</span> : null;
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="ghost-button"
+        disabled={busy}
+        onClick={() => {
+          void handleRestore();
+        }}
+      >
+        {busy ? 'Restoring…' : 'Restore checkpoint'}
+      </button>
+      {error ? <span className="save-meta">{error}</span> : null}
+    </>
+  );
 }
 
 export function SavesPage({
@@ -57,7 +145,17 @@ export function SavesPage({
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importedName, setImportedName] = useState<string | null>(null);
+  /** MSS-145: the save row whose delete is awaiting its second, explicit click. */
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function confirmDelete(save: SaveSummary) {
+    setConfirmingId(null);
+    const deleted = await saves.remove(save.saveId);
+    if (deleted && save.saveId === activeSaveId) {
+      removeLastSelectedSave();
+    }
+  }
 
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault();
@@ -115,6 +213,16 @@ export function SavesPage({
           Refresh
         </button>
       }>
+        {saves.removeError ? (
+          <Notice tone="error" title="Could not delete save">
+            <p>{saves.removeError}</p>
+            <p>
+              <button type="button" className="ghost-button" onClick={saves.clearRemoveError}>
+                Dismiss
+              </button>
+            </p>
+          </Notice>
+        ) : null}
         {saves.loading ? (
           <Loading label="Loading saves…" />
         ) : saves.error ? (
@@ -130,44 +238,69 @@ export function SavesPage({
             {saves.saves.map((save) => {
               const active = save.saveId === activeSaveId;
               const deleting = saves.deletingId === save.saveId;
+              const confirming = confirmingId === save.saveId;
               return (
-                <li key={save.saveId} className={active ? 'save-row active' : 'save-row'}>
-                  <Link
-                    to={dashboardPath(save.saveId)}
-                    className="save-open"
-                    ariaCurrent={active ? 'page' : undefined}
-                  >
-                    <span className="save-name">{save.name}</span>
-                    <span className="save-meta">
-                      Season {save.currentSeason} · {phaseLabel(save.phase)} ·{' '}
-                      {new Date(save.createdUtc).toLocaleDateString()}
-                    </span>
-                  </Link>
-                  <span className="save-row-actions">
-                    {active ? <span className="badge">Open</span> : null}
-                    <a className="ghost-button" href={exportSaveUrl(save.saveId)} download>
-                      Export
-                    </a>
-                    <button
-                      type="button"
-                      className="danger-link"
-                      disabled={deleting}
-                      onClick={() => {
-                        void saves
-                          .remove(save.saveId)
-                          .then(() => {
-                            if (save.saveId === activeSaveId) {
-                              removeLastSelectedSave();
-                            }
-                          })
-                          .catch(() => {
-                            // remove() already filters on success; list refresh surfaces failures
-                          });
-                      }}
+                <li
+                  key={save.saveId}
+                  className={save.unreadable ? 'save-row save-damaged' : active ? 'save-row active' : 'save-row'}
+                >
+                  {save.unreadable ? (
+                    <DamagedSaveInfo save={save} />
+                  ) : (
+                    <Link
+                      to={dashboardPath(save.saveId)}
+                      className="save-open"
+                      ariaCurrent={active ? 'page' : undefined}
                     >
-                      {deleting ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </span>
+                      <span className="save-name">{save.name}</span>
+                      <span className="save-meta">
+                        Season {save.currentSeason} · {phaseLabel(save.phase)} ·{' '}
+                        {new Date(save.createdUtc).toLocaleDateString()}
+                      </span>
+                    </Link>
+                  )}
+                  {confirming ? (
+                    <span className="save-row-actions" role="group" aria-label={`Confirm deleting ${save.name}`}>
+                      <span className="save-confirm-hint">Delete this save permanently? This cannot be undone.</span>
+                      <button
+                        type="button"
+                        className="danger-link"
+                        disabled={deleting}
+                        onClick={() => {
+                          void confirmDelete(save);
+                        }}
+                      >
+                        {deleting ? 'Deleting…' : 'Yes, delete'}
+                      </button>
+                      <button type="button" className="ghost-button" disabled={deleting} onClick={() => {
+                        setConfirmingId(null);
+                      }}>
+                        Keep
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="save-row-actions">
+                      {active && !save.unreadable ? <span className="badge">Open</span> : null}
+                      {save.unreadable ? (
+                        <DamagedCheckpointRestore save={save} onRestored={saves.refresh} />
+                      ) : (
+                        <a className="ghost-button" href={exportSaveUrl(save.saveId)} download>
+                          Export
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        className="danger-link"
+                        disabled={deleting}
+                        aria-label={`Delete ${save.name}`}
+                        onClick={() => {
+                          setConfirmingId(save.saveId);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </span>
+                  )}
                 </li>
               );
             })}

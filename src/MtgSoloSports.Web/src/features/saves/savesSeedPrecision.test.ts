@@ -97,9 +97,11 @@ async function mountSavesPage(): Promise<{ renderer: SavesPageRenderer; opened: 
           loading: false,
           error: null,
           deletingId: null,
+          removeError: null,
           refresh: () => undefined,
-          remove: () => Promise.resolve(),
+          remove: () => Promise.resolve(true),
           addCreated: () => undefined,
+          clearRemoveError: () => undefined,
         },
         activeSaveId: null,
         onOpenSave: (saveId: string) => {
