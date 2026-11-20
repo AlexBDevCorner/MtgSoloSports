@@ -174,7 +174,7 @@ public sealed class ImportFromScryfallHandlerTests
         string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-scryfall-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         IOptions<CatalogStorageOptions> options = Options.Create(new CatalogStorageOptions { CatalogPath = Path.Combine(root, "catalog.db") });
-        CatalogDbContextFactory factory = new();
+        CatalogDbContextFactory factory = new(new CatalogSqliteConnectionInterceptor());
         CatalogStore store = new(options, new TestHostEnvironment(root), factory);
         return (store, root);
     }

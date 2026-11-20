@@ -101,6 +101,13 @@ Each save is a separate SQLite database file. A separate application catalog dat
 
 The save copies the metadata required for its 2,048 selected athletes so future catalog changes cannot rewrite history.
 
+Catalog schema lifecycle (MSS-147):
+
+- The catalog database is created and migrated through EF Core migrations (`CatalogSchemaMigrator`) on two paths only: the import path (the only path that creates the file) and a once-per-process read gate — the first read against an existing file adopts or migrates it before any query can hit a raw schema error. Every later read opens a plain connection with no schema round-trip and treats a missing file as an empty catalog; a failed verification is never cached, so reads stay loud until the file is fixed.
+- Catalogs created before migrations existed (plain `EnsureCreated` schema, no history table) are adopted by verifying the pre-migration column set and baselining them onto the initial migration, without data loss and without a silent auto-recreate. Both creation and migration paths verify the persisted shape against the current model, so a stale migration fails loudly instead of surfacing later as runtime errors.
+- A catalog containing migrations this application does not know (created by a newer version), or whose persisted shape cannot serve the current model, fails loudly with `CatalogSchemaIncompatibleException` (HTTP 500 carrying delete-and-re-import guidance) on import, catalog stats and save creation; the catalog is fully re-importable and saves keep their own snapshots.
+- Catalog connections run the same per-connection pragmas as saves (foreign keys on, bounded busy timeout) through a catalog connection interceptor. WAL journal mode is a file-persisted property applied once at schema creation/baselining — identical to saves, which also set WAL per file at creation — so per-connection code only re-applies settings SQLite resets on each connection.
+
 Important durable concepts:
 
 - SaveMetadata / RulesSnapshot

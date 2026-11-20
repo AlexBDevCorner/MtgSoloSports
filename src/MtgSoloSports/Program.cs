@@ -110,6 +110,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<SaveSqliteConnectionInterceptor>();
 builder.Services.AddSingleton<SaveDbContextFactory>();
 builder.Services.AddSingleton<SaveStore>();
+builder.Services.AddSingleton<CatalogSqliteConnectionInterceptor>();
 builder.Services.AddSingleton<CatalogDbContextFactory>();
 builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<DrivePublishingStore>();
