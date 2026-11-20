@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Seasons.StartNextSeason;
@@ -36,7 +37,7 @@ internal static class StartNextSeasonInvariants
     {
         if (nextLeagues.Count != rules.PostInauguralLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.PostInauguralLeagueCount} leagues ({rules.TieredFeederLeagueCount} feeders + Superleague), was {nextLeagues.Count}.");
         }
 
@@ -44,7 +45,7 @@ internal static class StartNextSeasonInvariants
         int supers = nextLeagues.Count(l => l.Kind == (int)LeagueKind.Superleague);
         if (feeders != rules.TieredFeederLeagueCount || supers != 1)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have {rules.TieredFeederLeagueCount} feeders and 1 Superleague, was {feeders}/{supers}.");
         }
     }
@@ -56,7 +57,7 @@ internal static class StartNextSeasonInvariants
     {
         if (nextMemberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {nextMemberships.Count}.");
         }
 
@@ -65,7 +66,7 @@ internal static class StartNextSeasonInvariants
         {
             if (!athleteIds.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season {next.SeasonNumber} contains duplicate athlete id {membership.SaveAthleteId}.");
             }
         }
@@ -83,7 +84,7 @@ internal static class StartNextSeasonInvariants
             counts.TryGetValue(league.Id, out int count);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contain exactly {rules.LeagueSize} athletes to start season {next.SeasonNumber}, was {count}.");
             }
         }
@@ -107,7 +108,7 @@ internal static class StartNextSeasonInvariants
 
             if (!leaguesById.ContainsKey(membership.LeagueId.Value))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season {next.SeasonNumber} membership references unknown league {membership.LeagueId.Value}.");
             }
 
@@ -127,14 +128,14 @@ internal static class StartNextSeasonInvariants
         int expectedActive = rules.PostInauguralActiveTotal;
         if (active != expectedActive)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must hold exactly {expectedActive} active athletes, was {active}.");
         }
 
         int pool = nextMemberships.Count(m => m.LeagueId is null);
         if (pool != rules.TotalAthletesInSave - expectedActive)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must hold exactly {rules.TotalAthletesInSave - expectedActive} pool athletes, was {pool}.");
         }
     }
@@ -154,7 +155,7 @@ internal static class StartNextSeasonInvariants
             LeagueEntity league = leaguesById[membership.LeagueId.Value];
             if (league.Kind == (int)LeagueKind.Feeder && membership.SportingColor != league.SportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match feeder '{league.Name}'.");
             }
         }
@@ -170,13 +171,13 @@ internal static class StartNextSeasonInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (inauguralPicks.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Inaugural Superleague must hold exactly {rules.SuperleagueSize} promoted athletes, was {inauguralPicks.Count}.");
         }
 
         if (!superAthletes.SetEquals(inauguralPicks))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Next Superleague roster does not match the 32 inaugural promotions (8 x 4).");
         }
     }
@@ -197,7 +198,7 @@ internal static class StartNextSeasonInvariants
         HashSet<int> expected = BuildExpectedSuper(safe, promoted, qualified, rules);
         if (!superAthletes.SetEquals(expected))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Next Superleague roster does not match 16 safe + 8 promoted + 8 qualifier winners.");
         }
     }
@@ -210,19 +211,19 @@ internal static class StartNextSeasonInvariants
     {
         if (safe.Count != rules.SuperleagueSafeCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must hold exactly {rules.SuperleagueSafeCount} safe athletes, was {safe.Count}.");
         }
 
         if (promoted.Count != rules.FeederAutoPromotedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must hold exactly {rules.FeederAutoPromotedCount} promoted champions, was {promoted.Count}.");
         }
 
         if (qualified.Count != rules.QualifierWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must hold exactly {rules.QualifierWinners} qualifier winners, was {qualified.Count}.");
         }
     }
@@ -243,7 +244,7 @@ internal static class StartNextSeasonInvariants
         {
             if (!expected.Add(id))
             {
-                throw new InvalidOperationException($"Superleague roster contains duplicate athlete {id}.");
+                throw new SaveCorruptionException($"Superleague roster contains duplicate athlete {id}.");
             }
         }
 
@@ -251,13 +252,13 @@ internal static class StartNextSeasonInvariants
         {
             if (!expected.Add(id))
             {
-                throw new InvalidOperationException($"Superleague roster contains duplicate athlete {id}.");
+                throw new SaveCorruptionException($"Superleague roster contains duplicate athlete {id}.");
             }
         }
 
         if (expected.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next Superleague must satisfy 16 safe + 8 champions + 8 qualifier winners = 32, was {expected.Count}.");
         }
 
@@ -282,7 +283,7 @@ internal static class StartNextSeasonInvariants
         int[] expected = [1000, 800, 600, 400, 200, 0];
         if (rules.BonusAgeWeightsThousandths.Count != expected.Length)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Bonus decay must hold {expected.Length} age weights, was {rules.BonusAgeWeightsThousandths.Count}.");
         }
 
@@ -290,14 +291,14 @@ internal static class StartNextSeasonInvariants
         {
             if (rules.BonusAgeWeightsThousandths[i] != expected[i])
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Bonus decay age {i} must be {expected[i]}, was {rules.BonusAgeWeightsThousandths[i]}.");
             }
         }
 
         if (sourceLeagues.Count == 0)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} has no leagues for bonus aging.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} has no leagues for bonus aging.");
         }
     }
 }

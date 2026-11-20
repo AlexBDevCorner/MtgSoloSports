@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Leagues;
@@ -166,7 +167,7 @@ public sealed class BoundaryQualifierRunner
             FeederPayloadDocument? document = JsonSerializer.Deserialize<FeederPayloadDocument>(decoded, JsonOptions);
             if (document is null)
             {
-                throw new InvalidOperationException("Feeder qualifier round payload is empty.");
+                throw new SaveCorruptionException("Feeder qualifier round payload is empty.");
             }
 
             return new QualifierRoundPayload(
@@ -282,7 +283,7 @@ public sealed class BoundaryQualifierRunner
         ArgumentNullException.ThrowIfNull(rules);
         if (played.Count >= rules.FeederQualifierRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier {boundary} color {sportingColor} has all {rules.FeederQualifierRounds} rounds persisted but no standings; sporting state is corrupt.");
         }
 
@@ -291,13 +292,13 @@ public sealed class BoundaryQualifierRunner
             QualifierRoundPayload payload = played[index];
             if (payload.RoundNumber != index + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder qualifier {boundary} color {sportingColor} round sequence is corrupt: expected round {index + 1}, found {payload.RoundNumber}.");
             }
 
             if (payload.Boundary != boundary || payload.SportingColor != sportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder qualifier {boundary} color {sportingColor} round {payload.RoundNumber} has corrupt event identity.");
             }
 
@@ -306,7 +307,7 @@ public sealed class BoundaryQualifierRunner
                 QualifierRoundPayload previous = played[index - 1];
                 if (payload.RngBeforeState != previous.RngAfterState || payload.RngBeforeStream != previous.RngAfterStream)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Feeder qualifier {boundary} color {sportingColor} RNG chain is broken before round {payload.RoundNumber}.");
                 }
             }
@@ -321,7 +322,7 @@ public sealed class BoundaryQualifierRunner
         Pcg32State expectedRow = new(last.RngAfterState, last.RngAfterStream);
         if (rngRow != expectedRow)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier {boundary} color {sportingColor} is in progress but the save RNG moved since its last round; sporting state is corrupt.");
         }
     }
@@ -339,7 +340,7 @@ public sealed class BoundaryQualifierRunner
         {
             if (!names.Add(row.Name))
             {
-                throw new InvalidOperationException($"Feeder qualifier field contains duplicate athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Feeder qualifier field contains duplicate athlete '{row.Name}'.");
             }
         }
 
@@ -396,7 +397,7 @@ public sealed class BoundaryQualifierRunner
             Points before = cumulativeBefore.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
             if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Missing stage-start bonus for athlete '{row.Name}'.");
             }
 
             inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
@@ -432,7 +433,7 @@ public sealed class BoundaryQualifierRunner
     {
         if (payload.Placements.Count != state.Rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier round must contain exactly {state.Rules.FeederQualifierSize} placements, was {payload.Placements.Count}.");
         }
 
@@ -442,7 +443,7 @@ public sealed class BoundaryQualifierRunner
         {
             if (!positions.Add(entry.Position) || !ids.Add(entry.AthleteId))
             {
-                throw new InvalidOperationException("Feeder qualifier payload contains duplicates.");
+                throw new SaveCorruptionException("Feeder qualifier payload contains duplicates.");
             }
 
             FeederQualifierInvariants.ValidateRound(entry, state.Boundary, state.Rules);
@@ -450,7 +451,7 @@ public sealed class BoundaryQualifierRunner
 
         if (!positions.SetEquals(Enumerable.Range(1, state.Rules.FeederQualifierSize)))
         {
-            throw new InvalidOperationException("Feeder qualifier payload must cover positions 1..16 exactly once.");
+            throw new SaveCorruptionException("Feeder qualifier payload must cover positions 1..16 exactly once.");
         }
     }
 
@@ -566,7 +567,7 @@ public sealed class BoundaryQualifierRunner
         {
             if (!picksByAthlete.TryGetValue(entry.AthleteId, out FeederQualifierFieldSelection.FeederPick? pick))
             {
-                throw new InvalidOperationException($"Feeder qualifier standing for '{entry.Name}' has no field provenance.");
+                throw new SaveCorruptionException($"Feeder qualifier standing for '{entry.Name}' has no field provenance.");
             }
 
             context.QualifierStandings.Add(new QualifierStandingEntity
@@ -606,14 +607,14 @@ public sealed class BoundaryQualifierRunner
             .ToHashSet();
         if (qualifiedIds.Count != state.Rules.FeederQualifierWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly {state.Rules.FeederQualifierWinners} winners, was {qualifiedIds.Count}.");
         }
 
         HashSet<int> fieldIds = simulation.Field.All.Select(p => p.SaveAthleteId).ToHashSet();
         if (fieldIds.Count != state.Rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException("Feeder qualifier field size is corrupt.");
+            throw new SaveCorruptionException("Feeder qualifier field size is corrupt.");
         }
 
         List<SeasonMembershipEntity> memberships = await context.SeasonMemberships
@@ -622,7 +623,7 @@ public sealed class BoundaryQualifierRunner
             .ConfigureAwait(false);
         if (memberships.Count != state.Rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season must hold exactly {state.Rules.FeederQualifierSize} feeder qualifier memberships, was {memberships.Count}.");
         }
 
@@ -630,7 +631,7 @@ public sealed class BoundaryQualifierRunner
         {
             if (membership.LeagueId is null)
             {
-                throw new InvalidOperationException($"Feeder qualifier athlete {membership.SaveAthleteId} has no provisional league.");
+                throw new SaveCorruptionException($"Feeder qualifier athlete {membership.SaveAthleteId} has no provisional league.");
             }
 
             membership.LeagueId = qualifiedIds.Contains(membership.SaveAthleteId) ? upperLeagueId : lowerLeagueId;
@@ -649,13 +650,13 @@ public sealed class BoundaryQualifierRunner
         {
             QualifierBoundary.Feeder1Feeder2 => FeederDivision.First,
             QualifierBoundary.Feeder2Feeder3 => FeederDivision.Second,
-            _ => throw new InvalidOperationException($"Unexpected feeder boundary {boundary}."),
+            _ => throw new SaveCorruptionException($"Unexpected feeder boundary {boundary}."),
         };
         FeederDivision lowerDivision = boundary switch
         {
             QualifierBoundary.Feeder1Feeder2 => FeederDivision.Second,
             QualifierBoundary.Feeder2Feeder3 => FeederDivision.Third,
-            _ => throw new InvalidOperationException($"Unexpected feeder boundary {boundary}."),
+            _ => throw new SaveCorruptionException($"Unexpected feeder boundary {boundary}."),
         };
 
         LeagueEntity? upper = await context.Leagues.AsNoTracking().SingleOrDefaultAsync(
@@ -668,7 +669,7 @@ public sealed class BoundaryQualifierRunner
             cancellationToken).ConfigureAwait(false);
         if (upper is null || lower is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} is missing the {boundary} leagues for color {sportingColor}.");
         }
 
@@ -699,7 +700,7 @@ public sealed class BoundaryQualifierRunner
         HashSet<int> standingIds = standings.Select(s => s.SaveAthleteId).ToHashSet();
         if (!fieldIds.SetEquals(standingIds))
         {
-            throw new InvalidOperationException("Feeder qualifier standings do not match the qualifier field.");
+            throw new SaveCorruptionException("Feeder qualifier standings do not match the qualifier field.");
         }
     }
 
@@ -762,7 +763,7 @@ public sealed class BoundaryQualifierRunner
     {
         if (!picksByAthlete.TryGetValue(entry.AthleteId, out FeederQualifierFieldSelection.FeederPick? pick))
         {
-            throw new InvalidOperationException($"Feeder qualifier standing for '{entry.Name}' has no provenance.");
+            throw new SaveCorruptionException($"Feeder qualifier standing for '{entry.Name}' has no provenance.");
         }
 
         bool qualified = entry.StageRank <= state.Rules.FeederQualifierWinners;
@@ -888,8 +889,13 @@ public sealed class BoundaryQualifierRunner
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new RunFeederQualifierConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal; corruption passes through uncaught.
             throw new RunFeederQualifierConflictException(ex.Message);
         }
     }
@@ -943,7 +949,7 @@ public sealed class BoundaryQualifierRunner
             }
         }
 
-        throw new InvalidOperationException($"Unknown qualifier identity {boundary} color {sportingColor}.");
+        throw new SaveCorruptionException($"Unknown qualifier identity {boundary} color {sportingColor}.");
     }
 
     internal static async Task EnsureAllF1F2ResolvedAsync(
@@ -989,7 +995,7 @@ public sealed class BoundaryQualifierRunner
         {
             QualifierBoundary.Feeder1Feeder2 => (FeederDivision.First, FeederDivision.Second),
             QualifierBoundary.Feeder2Feeder3 => (FeederDivision.Second, FeederDivision.Third),
-            _ => throw new InvalidOperationException($"Unexpected feeder boundary {boundary}."),
+            _ => throw new SaveCorruptionException($"Unexpected feeder boundary {boundary}."),
         };
 
         LeagueEntity? upper = await context.Leagues.SingleOrDefaultAsync(
@@ -1002,7 +1008,7 @@ public sealed class BoundaryQualifierRunner
             cancellationToken).ConfigureAwait(false);
         if (upper is null || lower is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} is missing the {boundary} leagues for color {sportingColor}.");
         }
 
@@ -1020,7 +1026,7 @@ public sealed class BoundaryQualifierRunner
             .ConfigureAwait(false);
         if (rows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
         }
 
@@ -1036,7 +1042,7 @@ public sealed class BoundaryQualifierRunner
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -1062,7 +1068,7 @@ public sealed class BoundaryQualifierRunner
         Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, next, cancellationToken).ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(next.Id, out int nextSeasonNumber))
         {
-            throw new InvalidOperationException($"Save has no season row for season {next.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {next.SeasonNumber}.");
         }
 
         List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(

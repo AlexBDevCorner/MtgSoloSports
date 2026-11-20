@@ -7,6 +7,7 @@ using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -171,7 +172,7 @@ public sealed class RunColorCupIndividualHandler
                     new Pcg32State(p.RngBeforeState, p.RngBeforeStream),
                     new Pcg32State(p.RngAfterState, p.RngAfterStream))).ToList(),
                 new PostseasonEvents.EventShape(1, ColorCupIndividualFormat.TotalRounds(formatVersion)),
-                _ => throw new InvalidOperationException("The Color Cup individual event has a single stage."),
+                _ => throw new SaveCorruptionException("The Color Cup individual event has a single stage."),
                 rng);
         }
 
@@ -200,14 +201,14 @@ public sealed class RunColorCupIndividualHandler
 
         if (rows.Count != payloads.Count)
         {
-            throw new InvalidOperationException("Color Cup round rows and payloads are out of sync.");
+            throw new SaveCorruptionException("Color Cup round rows and payloads are out of sync.");
         }
 
         int rowFormat = ColorCupIndividualInvariants.ResolvePersistedFormat(rows);
         int payloadFormat = ColorCupIndividualInvariants.ResolvePayloadFormat(payloads);
         if (rowFormat != payloadFormat)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup edition mixes stored format versions {rowFormat} and {payloadFormat}; sporting state is corrupt.");
         }
 
@@ -244,7 +245,7 @@ public sealed class RunColorCupIndividualHandler
         int total = ColorCupIndividualFormat.TotalRounds(ColorCupIndividualFormat.PhasedFormatVersion);
         if (played.Count <= ColorCupIndividualFormat.QualifyingRounds || played.Count >= total)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup phased in-progress validation requires 17..{total - 1} rounds, was {played.Count}.");
         }
     }
@@ -255,7 +256,7 @@ public sealed class RunColorCupIndividualHandler
         {
             if (played[index].RoundNumber != index + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup — individual round sequence is corrupt: expected round {index + 1}, found {played[index].RoundNumber}.");
             }
         }
@@ -269,7 +270,7 @@ public sealed class RunColorCupIndividualHandler
             Pcg32State prevAfter = new(played[index - 1].RngAfterState, played[index - 1].RngAfterStream);
             if (before != prevAfter)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup — individual RNG chain is broken before round {played[index].RoundNumber}.");
             }
         }
@@ -287,7 +288,7 @@ public sealed class RunColorCupIndividualHandler
         Pcg32State round17Before = new(round17.RngBeforeState, round17.RngBeforeStream);
         if (round17Before != cutoff.RngAfterCutoff)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Color Cup — individual RNG chain is broken before round 17 (cutoff advancement).");
         }
 
@@ -295,7 +296,7 @@ public sealed class RunColorCupIndividualHandler
         HashSet<int> round17Ids = round17.Placements.Select(p => p.AthleteId).ToHashSet();
         if (!round17Ids.SetEquals(expectedQualifiers))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Color Cup — individual final roster does not match the round-16 cutoff.");
         }
 
@@ -312,14 +313,14 @@ public sealed class RunColorCupIndividualHandler
             Pcg32State prevAfter = new(played[index - 1].RngAfterState, played[index - 1].RngAfterStream);
             if (before != prevAfter)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup — individual RNG chain is broken before round {played[index].RoundNumber}.");
             }
 
             HashSet<int> roundIds = played[index].Placements.Select(p => p.AthleteId).ToHashSet();
             if (!roundIds.SetEquals(expectedQualifiers))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup — individual final round {played[index].RoundNumber} roster does not match the round-17 qualifiers.");
             }
         }
@@ -332,7 +333,7 @@ public sealed class RunColorCupIndividualHandler
         Pcg32State lastAfter = new(played[^1].RngAfterState, played[^1].RngAfterStream);
         if (rngRow != lastAfter)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Color Cup — individual is in progress but the save RNG moved since its last round; sporting state is corrupt.");
         }
     }
@@ -478,14 +479,14 @@ public sealed class RunColorCupIndividualHandler
         ArgumentNullException.ThrowIfNull(qualifierAthleteIds);
         if (qualifierAthleteIds.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup final roster must hold exactly {ColorCupIndividualFormat.FinalFieldSize} qualifiers, was {qualifierAthleteIds.Count}.");
         }
 
         HashSet<int> qualifiers = new(qualifierAthleteIds);
         if (qualifiers.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException("Color Cup final roster contains duplicate qualifiers.");
+            throw new SaveCorruptionException("Color Cup final roster contains duplicate qualifiers.");
         }
 
         Dictionary<int, AdvanceRoundHandler.MemberRow> byId = fullRoster.ToDictionary(r => r.AthleteId);
@@ -494,7 +495,7 @@ public sealed class RunColorCupIndividualHandler
         {
             if (!byId.TryGetValue(id, out AdvanceRoundHandler.MemberRow? row))
             {
-                throw new InvalidOperationException($"Color Cup final roster references unknown athlete {id}.");
+                throw new SaveCorruptionException($"Color Cup final roster references unknown athlete {id}.");
             }
 
             roster.Add(row);
@@ -521,7 +522,7 @@ public sealed class RunColorCupIndividualHandler
         {
             if (!carried.TryGetValue(row.AthleteId, out Points before))
             {
-                throw new InvalidOperationException($"Color Cup finalist '{row.Name}' has no carried qualifying total.");
+                throw new SaveCorruptionException($"Color Cup finalist '{row.Name}' has no carried qualifying total.");
             }
 
             cumulative[row.AthleteId] = before;
@@ -548,7 +549,7 @@ public sealed class RunColorCupIndividualHandler
             Points before = cumulativeBefore.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
             if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Missing stage-start bonus for athlete '{row.Name}'.");
             }
 
             inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
@@ -635,7 +636,7 @@ public sealed class RunColorCupIndividualHandler
         ArgumentNullException.ThrowIfNull(payloads);
         if (payloads.Count != ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup phased completion requires exactly {ColorCupIndividualFormat.QualifyingRounds + ColorCupIndividualFormat.FinalRounds} rounds, was {payloads.Count}.");
         }
 
@@ -648,19 +649,19 @@ public sealed class RunColorCupIndividualHandler
             finalists.Add(entry.AthleteId);
             if (!carried.TryGetValue(entry.AthleteId, out int expectedBefore))
             {
-                throw new InvalidOperationException($"Color Cup finalist '{entry.Name}' has no qualifying total to carry over.");
+                throw new SaveCorruptionException($"Color Cup finalist '{entry.Name}' has no qualifying total to carry over.");
             }
 
             if (entry.CumulativeBeforeThousandths != expectedBefore)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup finalist '{entry.Name}' must carry 100% of qualifying points into round 17.");
             }
         }
 
         if (finalists.Count != ColorCupIndividualFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Color Cup final must hold exactly {ColorCupIndividualFormat.FinalFieldSize} qualifiers, was {finalists.Count}.");
         }
 
@@ -670,7 +671,7 @@ public sealed class RunColorCupIndividualHandler
             {
                 if (!finalists.Contains(entry.AthleteId))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Color Cup eliminated athlete '{entry.Name}' must never reappear in final rounds.");
                 }
             }
@@ -678,7 +679,7 @@ public sealed class RunColorCupIndividualHandler
             HashSet<int> roundIds = payloads[i].Placements.Select(p => p.AthleteId).ToHashSet();
             if (!roundIds.SetEquals(finalists))
             {
-                throw new InvalidOperationException($"Color Cup final round {payloads[i].RoundNumber} roster does not match the round-17 qualifiers.");
+                throw new SaveCorruptionException($"Color Cup final round {payloads[i].RoundNumber} roster does not match the round-17 qualifiers.");
             }
         }
     }
@@ -742,7 +743,7 @@ public sealed class RunColorCupIndividualHandler
             .ConfigureAwait(false);
         if (latest is null || !latest.IsComplete)
         {
-            throw new InvalidOperationException("Color Cup selection references an unknown or incomplete season.");
+            throw new SaveCorruptionException("Color Cup selection references an unknown or incomplete season.");
         }
 
         return latest;
@@ -797,7 +798,7 @@ public sealed class RunColorCupIndividualHandler
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {
-            throw new InvalidOperationException($"Color Cup individual event for Season {source.SeasonNumber} has corrupt partial honours.");
+            throw new SaveCorruptionException($"Color Cup individual event for Season {source.SeasonNumber} has corrupt partial honours.");
         }
 
         string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.ColorCupIndividual, source.Id, cancellationToken).ConfigureAwait(false);
@@ -820,7 +821,7 @@ public sealed class RunColorCupIndividualHandler
             .ToDictionary(e => e.Id, e => e.Name);
         if (names.Count != selection.Count)
         {
-            throw new InvalidOperationException("Color Cup selection references unknown athletes.");
+            throw new SaveCorruptionException("Color Cup selection references unknown athletes.");
         }
 
         Dictionary<int, int> colors = context.SaveAthletes
@@ -838,7 +839,7 @@ public sealed class RunColorCupIndividualHandler
         {
             if (!seen.Add(row.Name))
             {
-                throw new InvalidOperationException($"Color Cup field contains duplicate athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Color Cup field contains duplicate athlete '{row.Name}'.");
             }
         }
 
@@ -856,7 +857,7 @@ public sealed class RunColorCupIndividualHandler
         Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, source, cancellationToken).ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(source.Id, out int sourceSeasonNumber))
         {
-            throw new InvalidOperationException($"Save has no season row for season {source.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {source.SeasonNumber}.");
         }
 
         int cupSeason = checked(sourceSeasonNumber + 1);
@@ -1007,7 +1008,7 @@ public sealed class RunColorCupIndividualHandler
     {
         if (!selectionByAthlete.TryGetValue(entry.AthleteId, out ColorCupSelectionEntity? selection))
         {
-            throw new InvalidOperationException($"Color Cup standing for '{entry.Name}' has no selection provenance.");
+            throw new SaveCorruptionException($"Color Cup standing for '{entry.Name}' has no selection provenance.");
         }
 
         context.ColorCupIndividualStandings.Add(new ColorCupIndividualStandingEntity
@@ -1088,35 +1089,35 @@ public sealed class RunColorCupIndividualHandler
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stageCountBefore)
         {
-            throw new InvalidOperationException("Color Cup must not create league stage standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Color Cup must not create league stage standings; championship totals are preserved.");
         }
 
         if (seasons != seasonCountBefore)
         {
-            throw new InvalidOperationException("Color Cup must not create league season standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Color Cup must not create league season standings; championship totals are preserved.");
         }
 
         if (rounds != roundCountBefore)
         {
-            throw new InvalidOperationException("Color Cup must not create league rounds; Cup history lives in Cup tables only.");
+            throw new SaveCorruptionException("Color Cup must not create league rounds; Cup history lives in Cup tables only.");
         }
 
         long lifetime = await context.AthleteCareers.SumAsync(e => (long)e.LifetimeEarnedBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (lifetime != lifetimeBefore)
         {
-            throw new InvalidOperationException("Color Cup participation must not change career bonus.");
+            throw new SaveCorruptionException("Color Cup participation must not change career bonus.");
         }
 
         long effective = await context.AthleteCareers.SumAsync(e => (long)e.CurrentEffectiveBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (effective != effectiveBefore)
         {
-            throw new InvalidOperationException("Color Cup participation must not change effective bonus projections.");
+            throw new SaveCorruptionException("Color Cup participation must not change effective bonus projections.");
         }
 
         long championship = await context.SeasonStandings.SumAsync(e => (long)e.TotalChampionshipPointsThousandths, cancellationToken).ConfigureAwait(false);
         if (championship != championshipBefore)
         {
-            throw new InvalidOperationException("Color Cup must not award league championship points.");
+            throw new SaveCorruptionException("Color Cup must not award league championship points.");
         }
     }
 
@@ -1148,7 +1149,7 @@ public sealed class RunColorCupIndividualHandler
         ColorCupIndividualInvariants.ValidatePersisted(source, rounds, standings, honours, rules);
         if (!string.Equals(ComputeChecksum(simulation.Ranked), simulation.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Color Cup checksum does not match simulated standings.");
+            throw new SaveCorruptionException("Color Cup checksum does not match simulated standings.");
         }
 
         await VerifyPreservationAsync(
@@ -1234,7 +1235,7 @@ public sealed class RunColorCupIndividualHandler
             .ConfigureAwait(false);
         if (standings.Count != simulation.Ranked.Count || rounds.Count != simulation.Payloads.Count)
         {
-            throw new InvalidOperationException("Color Cup persisted result does not match the simulation.");
+            throw new SaveCorruptionException("Color Cup persisted result does not match the simulation.");
         }
 
         Dictionary<int, string> names = await context.SaveAthletes

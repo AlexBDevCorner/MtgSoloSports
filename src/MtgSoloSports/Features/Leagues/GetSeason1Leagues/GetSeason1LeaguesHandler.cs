@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Leagues.InauguralDraw;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -89,7 +90,7 @@ public sealed class GetSeason1LeaguesHandler
             .ConfigureAwait(false);
         if (row is null || string.IsNullOrWhiteSpace(row.RulesJson))
         {
-            throw new InvalidOperationException("Save is missing its rules snapshot.");
+            throw new SaveCorruptionException("Save is missing its rules snapshot.");
         }
 
         return RulesSnapshotCodec.Decode(row.RulesJson);
@@ -182,7 +183,7 @@ public sealed class GetSeason1LeaguesHandler
             {
                 if (!names.TryGetValue(member.SaveAthleteId, out string? name))
                 {
-                    throw new InvalidOperationException($"Season 1 membership references unknown athlete {member.SaveAthleteId}.");
+                    throw new SaveCorruptionException($"Season 1 membership references unknown athlete {member.SaveAthleteId}.");
                 }
 
                 roster.Add(new Season1RosterAthlete(name, member.DrawIndex));

@@ -111,7 +111,7 @@ public sealed class SaveCheckpointTests
             bytes[200] ^= 0xFF;
             await File.WriteAllBytesAsync(databasePath, bytes);
 
-            InvalidOperationException failure = await Should.ThrowAsync<InvalidOperationException>(
+            MtgSoloSports.Shared.SaveCorruptionException failure = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => store.RestoreCheckpointAsync(created.Detail.SaveId, checkpoint.CheckpointId));
             failure.Message.ShouldContain("checksum");
 
@@ -207,7 +207,7 @@ public sealed class SaveCheckpointTests
             }
 
             SqliteConnection.ClearAllPools();
-            await Should.ThrowAsync<InvalidOperationException>(() => store.OpenAsync(created.Detail.SaveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => store.OpenAsync(created.Detail.SaveId));
 
             SaveStore.SaveDetailRecord restored = await store.RestoreCheckpointAsync(created.Detail.SaveId, checkpoint.CheckpointId);
             restored.ShouldBe(created.Detail);
@@ -243,7 +243,7 @@ public sealed class SaveCheckpointTests
             }
 
             SqliteConnection.ClearAllPools();
-            await Should.ThrowAsync<InvalidOperationException>(() => store.OpenAsync(created.Detail.SaveId));
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(() => store.OpenAsync(created.Detail.SaveId));
 
             SaveStore.SaveDetailRecord restored = await store.RestoreCheckpointAsync(created.Detail.SaveId, checkpoint.CheckpointId);
             restored.ShouldBe(created.Detail);
@@ -335,7 +335,7 @@ public sealed class SaveCheckpointTests
             await RefreshCheckpointSidecarShaAsync(directory, checkpoint.CheckpointId);
             SqliteConnection.ClearAllPools();
 
-            InvalidOperationException failure = await Should.ThrowAsync<InvalidOperationException>(
+            MtgSoloSports.Shared.SaveCorruptionException failure = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => store.RestoreCheckpointAsync(created.Detail.SaveId, checkpoint.CheckpointId));
             failure.Message.ShouldContain("missing required rows");
 
@@ -368,7 +368,7 @@ public sealed class SaveCheckpointTests
             await RefreshCheckpointSidecarShaAsync(directory, checkpoint.CheckpointId);
             SqliteConnection.ClearAllPools();
 
-            InvalidOperationException failure = await Should.ThrowAsync<InvalidOperationException>(
+            MtgSoloSports.Shared.SaveCorruptionException failure = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => store.RestoreCheckpointAsync(created.Detail.SaveId, checkpoint.CheckpointId));
             failure.Message.ShouldContain("mismatched identity");
 

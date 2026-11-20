@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Records;
 
@@ -161,7 +162,7 @@ public static class RecordStoryEmitter
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Record story context is corrupt.", ex);
+            throw new SaveCorruptionException("Record story context is corrupt.", ex);
         }
     }
 

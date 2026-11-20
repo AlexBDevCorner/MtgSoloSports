@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Leagues.UpgradeToTiered;
@@ -28,19 +29,19 @@ public static class UpgradeToTieredInvariants
 
         if (plan.PerColor.Count != rules.RegularLeagueCount || inputs.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade requires exactly {rules.RegularLeagueCount} colors, was {plan.PerColor.Count}.");
         }
 
         if (plan.AllF2.Count != rules.RegularLeagueCount * rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade must seed exactly {rules.RegularLeagueCount * rules.LeagueSize} F2 athletes, was {plan.AllF2.Count}.");
         }
 
         if (plan.AllF3.Count != rules.RegularLeagueCount * rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade must seed exactly {rules.RegularLeagueCount * rules.LeagueSize} F3 athletes, was {plan.AllF3.Count}.");
         }
 
@@ -60,12 +61,12 @@ public static class UpgradeToTieredInvariants
     {
         if (!byColor.TryGetValue(colorPlan.Color.ToString(), out UpgradeToTieredSelection.ColorInput? input))
         {
-            throw new InvalidOperationException($"Tier upgrade references unknown color {colorPlan.Color}.");
+            throw new SaveCorruptionException($"Tier upgrade references unknown color {colorPlan.Color}.");
         }
 
         if (colorPlan.F2.Count != rules.LeagueSize || colorPlan.F3.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League {colorPlan.Color} must seed exactly {rules.LeagueSize} F2 and {rules.LeagueSize} F3, was {colorPlan.F2.Count}/{colorPlan.F3.Count}.");
         }
 
@@ -74,13 +75,13 @@ public static class UpgradeToTieredInvariants
         {
             if (!poolIds.Contains(seed.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Seeded athlete {seed.SaveAthleteId} is not in the {colorPlan.Color} common pool.");
             }
 
             if (f1AthleteIds.Contains(seed.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Seeded athlete {seed.SaveAthleteId} is an F1 athlete; F1 is never demoted to populate F2/F3.");
             }
         }
@@ -112,18 +113,18 @@ public static class UpgradeToTieredInvariants
 
         if (next.SeasonNumber != source.SeasonNumber + 1 || !next.HasSuperleague || next.IsComplete)
         {
-            throw new InvalidOperationException("Upgraded next season must be the consecutive incomplete Superleague season.");
+            throw new SaveCorruptionException("Upgraded next season must be the consecutive incomplete Superleague season.");
         }
 
         if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Upgraded season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         if (nextMemberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Upgraded season must carry exactly {rules.TotalAthletesInSave} memberships, was {nextMemberships.Count}.");
         }
 
@@ -145,7 +146,7 @@ public static class UpgradeToTieredInvariants
 
             if (!active.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues after tier upgrade.");
             }
         }
@@ -161,7 +162,7 @@ public static class UpgradeToTieredInvariants
             int count = memberships.Count(m => m.LeagueId == feeder.Id);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{feeder.Name}' must contain exactly {rules.LeagueSize} athletes after tier upgrade, was {count}.");
             }
         }
@@ -175,7 +176,7 @@ public static class UpgradeToTieredInvariants
         int count = memberships.Count(m => m.LeagueId == superleague.Id);
         if (count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must still contain exactly {rules.SuperleagueSize} athletes after tier upgrade, was {count}.");
         }
     }
@@ -191,7 +192,7 @@ public static class UpgradeToTieredInvariants
         int expected = plan.AllF2.Count + plan.AllF3.Count;
         if (movements.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade must persist exactly {expected} movement rows, was {movements.Count}.");
         }
 
@@ -200,17 +201,17 @@ public static class UpgradeToTieredInvariants
         {
             if (movement.FromSeasonId != source.Id || movement.ToSeasonId != next.Id)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has corrupt season linkage.");
             }
 
             if (movement.Kind != (int)MovementKind.TierUpgradeSeed)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
             }
 
             if (!seen.Add(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Tier upgrade contains duplicate athlete id {movement.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Tier upgrade contains duplicate athlete id {movement.SaveAthleteId}.");
             }
         }
     }

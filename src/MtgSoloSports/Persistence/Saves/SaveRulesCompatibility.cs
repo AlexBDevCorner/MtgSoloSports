@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -40,12 +41,17 @@ public static class SaveRulesCompatibility
     }
 
     /// <summary>
-    /// Rebuilds and validates the persisted rules snapshot. v1 snapshots use
-    /// the v1 compatibility path; v2 tiered snapshots decode to
-    /// <see cref="RulesV2"/>. Throws with a rules-specific message when
-    /// sporting mathematics cannot be trusted.
+    /// Rebuilds and validates the persisted rules snapshot of an uploaded
+    /// artifact during import staging. v1 snapshots use the v1 compatibility
+    /// path; v2 tiered snapshots decode to <see cref="RulesV2"/>. A snapshot
+    /// that cannot be trusted rejects the import as a client error (400), so
+    /// corruption-class decode failures are rewrapped into
+    /// <see cref="InvalidOperationException"/> for the import path. Live save
+    /// reads must never call this wrapper: they decode through
+    /// <see cref="RulesSnapshotCodec"/> directly so corruption stays in the
+    /// 500 <see cref="SaveCorruptionException"/> class.
     /// </summary>
-    public static RulesV1 ReadSnapshotRules(string rulesJson)
+    public static RulesV1 ReadImportableSnapshotRules(string rulesJson)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rulesJson);
         try
@@ -54,7 +60,7 @@ public static class SaveRulesCompatibility
             rules.Validate();
             return rules;
         }
-        catch (InvalidOperationException ex)
+        catch (SaveCorruptionException ex)
         {
             throw new InvalidOperationException(
                 $"Save rules snapshot is invalid or incompatible: {ex.Message}", ex);
@@ -64,7 +70,8 @@ public static class SaveRulesCompatibility
     /// <summary>
     /// Proves a database-schema migration left sporting mathematics untouched
     /// by comparing the immutable rules snapshot JSON before and after.
-    /// Any difference aborts the caller; schema migration must never change rules.
+    /// Any difference aborts the caller as a corruption-class failure;
+    /// schema migration must never change rules.
     /// </summary>
     public static void EnsureSnapshotUnchanged(string beforeJson, string afterJson)
     {
@@ -72,7 +79,7 @@ public static class SaveRulesCompatibility
         ArgumentException.ThrowIfNullOrWhiteSpace(afterJson);
         if (!string.Equals(beforeJson, afterJson, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Database-schema migration changed the game-rules snapshot. " +
                 "Schema migration and game-rule migration are separate; the migration was rejected.");
         }

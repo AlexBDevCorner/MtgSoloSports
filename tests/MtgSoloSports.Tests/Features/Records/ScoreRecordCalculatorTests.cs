@@ -348,7 +348,7 @@ public sealed class ScoreRecordCalculatorTests
         Dictionary<int, string> names = Names((1, "Alpha"));
         List<ScoreRecordCalculator.LeagueRoundOccurrence> rounds =
             [new("white", 1, 1, 1, 1, -5, "White League")];
-        Should.Throw<InvalidOperationException>(() => ComputeAll(names, rounds: rounds));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ComputeAll(names, rounds: rounds));
     }
 
     [Fact]
@@ -356,7 +356,7 @@ public sealed class ScoreRecordCalculatorTests
     {
         Dictionary<int, string> names = Names((1, "Alpha"));
         List<ScoreRecordCalculator.CupIndividualRoundOccurrence> rounds = [new(1, 1, 999, 80000)];
-        Should.Throw<InvalidOperationException>(() => ComputeAll(names, cupRounds: rounds));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ComputeAll(names, cupRounds: rounds));
     }
 
     [Fact]

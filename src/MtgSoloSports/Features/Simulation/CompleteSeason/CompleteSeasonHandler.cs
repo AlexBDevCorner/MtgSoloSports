@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -145,7 +146,7 @@ public sealed class CompleteSeasonHandler
         ArgumentNullException.ThrowIfNull(completed);
         if (completed.SeasonNumber != seasonNumber)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Bulk completion crossed seasons ({seasonNumber} -> {completed.SeasonNumber}); seasons must complete one at a time.");
         }
     }
@@ -164,7 +165,7 @@ public sealed class CompleteSeasonHandler
 
         if (!isComplete)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {seasonNumber} stopped at global stage {globalAfter} after {stagesCompleted} fast stages; expected a complete season.");
         }
 
@@ -222,7 +223,7 @@ public sealed class CompleteSeasonHandler
         SeasonEntity season = await context.Seasons
             .SingleOrDefaultAsync(e => e.SeasonNumber == seasonNumber, cancellationToken)
             .ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Save has no season {seasonNumber}.");
+            ?? throw new SaveCorruptionException($"Save has no season {seasonNumber}.");
         _ = metadata;
         GlobalStageGate.GlobalStageView global = await GlobalStageGate
             .LoadGlobalStageAsync(context, season, rules, cancellationToken)

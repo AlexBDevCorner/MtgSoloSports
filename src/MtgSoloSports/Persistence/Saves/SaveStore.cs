@@ -10,6 +10,7 @@ using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Leagues.InauguralDraw;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Universe.CreateUniverse;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -242,7 +243,7 @@ public sealed class SaveStore
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 await OverwriteLiveFromCheckpointAsync(saveId, checkpoint.CheckpointId, cancellationToken).ConfigureAwait(false);
-                throw new InvalidOperationException(
+                throw new MtgSoloSports.Shared.SaveCorruptionException(
                     $"Database-schema migration failed and the save was rolled back to verified checkpoint '{checkpoint.CheckpointId:D}'.",
                     ex);
             }
@@ -321,10 +322,11 @@ public sealed class SaveStore
         {
             _ = await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("ChaosCupActivations", StringComparison.OrdinalIgnoreCase))
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "ChaosCupActivations"))
         {
             // Table predates the Chaos activation migration; the pending-migration path
-            // applies it before this backfill runs again.
+            // applies it before this backfill runs again. A missing-column or other
+            // schema defect is not this condition and propagates loudly.
             return;
         }
 
@@ -343,10 +345,12 @@ public sealed class SaveStore
         {
             _ = await Features.Cups.SelectionFormula.CupSelectionFormulaLifecycle.EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1 && ex.Message.Contains("CupSelectionFormulaActivations", StringComparison.OrdinalIgnoreCase))
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "CupSelectionFormulaActivations"))
         {
             // Table predates the selection-formula migration; the
             // pending-migration path applies it before this backfill runs again.
+            // A missing-column or other schema defect is not this condition
+            // and propagates loudly.
             return;
         }
 
@@ -459,7 +463,7 @@ public sealed class SaveStore
         int persisted = await context.SaveAthletes.CountAsync(cancellationToken).ConfigureAwait(false);
         if (persisted != preparation.Rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Save universe must contain exactly {preparation.Rules.TotalAthletesInSave} athletes, was {persisted}.");
         }
 
@@ -558,7 +562,7 @@ public sealed class SaveStore
 
         if (ids.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Save universe must contain exactly {rules.TotalAthletesInSave} athletes before Season 1 leagues, was {ids.Count}.");
         }
 
@@ -642,7 +646,7 @@ public sealed class SaveStore
         {
             if (!athleteIds.TryGetValue(entry.Name, out int athleteId))
             {
-                throw new InvalidOperationException($"Season 1 draw references unknown athlete '{entry.Name}'.");
+                throw new SaveCorruptionException($"Season 1 draw references unknown athlete '{entry.Name}'.");
             }
 
             int? leagueId = ResolveInauguralLeague(entry, leagueIds, tiered, rules);
@@ -682,7 +686,7 @@ public sealed class SaveStore
                     : (int)SimulationKernel.Leagues.FeederDivision.Third;
         if (!leagueIds.TryGetValue((entry.SportingColor, division), out int leagueId))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 is missing the {entry.SportingColor} division {division} league for draw index {entry.DrawIndex}.");
         }
 
@@ -735,7 +739,7 @@ public sealed class SaveStore
                 SaveDetailRecord detail = await ReadDetailAsync(saveId, cancellationToken).ConfigureAwait(false);
                 records.Add(new SaveRecord(detail.SaveId, detail.Name, detail.CreatedUtc, detail.SchemaVersion, detail.CurrentSeason, detail.Phase));
             }
-            catch (Exception ex) when (ex is InvalidOperationException or DbException or IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is InvalidOperationException or SaveCorruptionException or DbException or IOException or UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "Skipping unreadable save file {FileName}.", fileName);
             }
@@ -1463,7 +1467,7 @@ public sealed class SaveStore
         if (reloaded.CheckpointId != sidecar.CheckpointId
             || !string.Equals(reloaded.DatabaseSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Checkpoint sidecar verification failed for save '{sidecar.SaveId:D}'.");
         }
     }
@@ -1515,7 +1519,7 @@ public sealed class SaveStore
                     sidecar.Phase,
                     sidecar.DatabaseSha256));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or SaveCorruptionException or ArgumentException)
             {
                 _logger.LogWarning(ex, "Skipping unreadable checkpoint sidecar {SidecarPath}.", sidecarPath);
             }
@@ -1619,20 +1623,20 @@ public sealed class SaveStore
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Checkpoint '{checkpointId:D}' sidecar is unreadable; restore was rejected.", ex);
         }
 
         if (sidecar.SaveId != saveId || sidecar.CheckpointId != checkpointId)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Checkpoint '{checkpointId:D}' sidecar identity mismatch; restore was rejected.");
         }
 
         string actualSha = SaveBundle.ComputeFileSha256Hex(databasePath);
         if (!string.Equals(actualSha, sidecar.DatabaseSha256, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Checkpoint '{checkpointId:D}' checksum mismatch; the backup is corrupt and restore was rejected.");
         }
 
@@ -1655,6 +1659,7 @@ public sealed class SaveStore
         }
         catch (Exception ex) when (ex is SaveNotFoundException
             or InvalidOperationException
+            or SaveCorruptionException
             or DbException
             or IOException
             or UnauthorizedAccessException)
@@ -1801,27 +1806,27 @@ public sealed class SaveStore
         RngStateEntity? rngRow = rows.Rng;
         if (metadata is null || rulesRow is null || rngRow is null)
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' is missing required rows.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' is missing required rows.");
         }
 
         if (metadata.SaveId != saveId)
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' has mismatched identity.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' has mismatched identity.");
         }
 
         if (metadata.SchemaVersion != SaveSchemaVersion.Current)
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' has unsupported schema version {metadata.SchemaVersion}.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' has unsupported schema version {metadata.SchemaVersion}.");
         }
 
         if (string.IsNullOrWhiteSpace(metadata.Phase))
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' has an empty phase.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' has an empty phase.");
         }
 
         if (string.IsNullOrWhiteSpace(rulesRow.RulesJson))
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' has an empty rules snapshot.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' has an empty rules snapshot.");
         }
 
         Pcg32State rngState = rngRow.ToState();
@@ -1912,7 +1917,7 @@ public sealed class SaveStore
         }
 
         _ = rows.Rng.ToState();
-        _ = SaveRulesCompatibility.ReadSnapshotRules(rows.Rules.RulesJson);
+        _ = SaveRulesCompatibility.ReadImportableSnapshotRules(rows.Rules.RulesJson);
         if (rows.Rules.RulesVersion != manifest.RulesVersion)
         {
             throw new InvalidOperationException(
@@ -1924,28 +1929,40 @@ public sealed class SaveStore
     /// Migrates an older staged import database forward to the current
     /// schema. Runs on the staging copy only, proves the rules snapshot is
     /// unchanged, and verifies the result maps cleanly before placement.
+    /// A staged artifact that fails here is a rejected upload (client
+    /// error), so corruption-class failures are rewrapped into
+    /// <see cref="InvalidOperationException"/> for the 400 import path
+    /// instead of surfacing as a server failure.
     /// </summary>
     private async Task MigrateStagedDatabaseIfNeededAsync(
         string stagedDatabasePath,
         SaveBundleManifest manifest,
         CancellationToken cancellationToken)
     {
-        string rulesBefore = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<string> pending = await SaveSchemaMigrator
-            .GetPendingMigrationsAsync(_factory, stagedDatabasePath, cancellationToken)
-            .ConfigureAwait(false);
-        if (pending.Count == 0)
+        try
         {
-            return;
+            string rulesBefore = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<string> pending = await SaveSchemaMigrator
+                .GetPendingMigrationsAsync(_factory, stagedDatabasePath, cancellationToken)
+                .ConfigureAwait(false);
+            if (pending.Count == 0)
+            {
+                return;
+            }
+
+            await SaveSchemaMigrator.ApplyPendingAsync(_factory, stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+            string rulesAfter = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
+            SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
+
+            using SaveDbContext context = _factory.Create(stagedDatabasePath);
+            SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
+            _ = MapDetail(manifest.SaveId, rows);
         }
-
-        await SaveSchemaMigrator.ApplyPendingAsync(_factory, stagedDatabasePath, cancellationToken).ConfigureAwait(false);
-        string rulesAfter = await ReadRulesJsonByPathAsync(stagedDatabasePath, cancellationToken).ConfigureAwait(false);
-        SaveRulesCompatibility.EnsureSnapshotUnchanged(rulesBefore, rulesAfter);
-
-        using SaveDbContext context = _factory.Create(stagedDatabasePath);
-        SaveRows rows = await LoadRowsAsync(context, cancellationToken).ConfigureAwait(false);
-        _ = MapDetail(manifest.SaveId, rows);
+        catch (SaveCorruptionException ex)
+        {
+            throw new InvalidOperationException(
+                $"Imported save failed verification after schema migration: {ex.Message}", ex);
+        }
     }
 
     private async Task<string> ReadRulesJsonByPathAsync(string saveFilePath, CancellationToken cancellationToken)
@@ -1957,7 +1974,7 @@ public sealed class SaveStore
             .ConfigureAwait(false);
         if (rules is null || string.IsNullOrWhiteSpace(rules.RulesJson))
         {
-            throw new InvalidOperationException("Save has an empty rules snapshot.");
+            throw new SaveCorruptionException("Save has an empty rules snapshot.");
         }
 
         return rules.RulesJson;
@@ -1968,7 +1985,7 @@ public sealed class SaveStore
     /// expected save identity, and parsable rules/RNG snapshots (the same
     /// bar as a live open). Cleans up SQLite companions opened by the check.
     /// A checkpoint that fails here is rejected before anything live is
-    /// touched. Throws <see cref="InvalidOperationException"/> (or the
+    /// touched. Throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> (or the
     /// underlying <see cref="DbException"/>/IO failure) without modifying
     /// live data or other checkpoints.
     /// </summary>

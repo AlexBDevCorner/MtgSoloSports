@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Records;
 
@@ -65,12 +66,12 @@ public static class HonourUpdater
         {
             if (!seasonsById.TryGetValue(podium.SeasonId, out SeasonEntity? season))
             {
-                throw new InvalidOperationException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
             }
 
             if (!leaguesById.TryGetValue(podium.LeagueId, out LeagueEntity? league))
             {
-                throw new InvalidOperationException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
+                throw new SaveCorruptionException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
             }
 
             await UpsertAsync(context, season, league, podium, cancellationToken).ConfigureAwait(false);
@@ -113,7 +114,7 @@ public static class HonourUpdater
 
         if (leagueHonourCount > podiumCount)
         {
-            throw new InvalidOperationException($"League honours ({leagueHonourCount}) exceed podiums ({podiumCount}); sporting state is corrupt.");
+            throw new SaveCorruptionException($"League honours ({leagueHonourCount}) exceed podiums ({podiumCount}); sporting state is corrupt.");
         }
 
         await RebuildAllAsync(context, cancellationToken).ConfigureAwait(false);
@@ -132,12 +133,12 @@ public static class HonourUpdater
             .ConfigureAwait(false);
         if (podiums.Count != 3)
         {
-            throw new InvalidOperationException($"League '{league.Name}' must have exactly three podium finishers for honours, was {podiums.Count}.");
+            throw new SaveCorruptionException($"League '{league.Name}' must have exactly three podium finishers for honours, was {podiums.Count}.");
         }
 
         if (podiums[0].SeasonRank != 1 || podiums[1].SeasonRank != 2 || podiums[2].SeasonRank != 3)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt podium ranks for honours.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt podium ranks for honours.");
         }
 
         HashSet<int> athletes = new();
@@ -145,13 +146,13 @@ public static class HonourUpdater
         {
             if (!athletes.Add(podium.SaveAthleteId))
             {
-                throw new InvalidOperationException($"League '{league.Name}' has duplicate podium athlete {podium.SaveAthleteId}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has duplicate podium athlete {podium.SaveAthleteId}.");
             }
 
             bool expectedChampion = podium.SeasonRank == 1;
             if (podium.IsChampion != expectedChampion)
             {
-                throw new InvalidOperationException($"League '{league.Name}' rank {podium.SeasonRank} has corrupt champion flag for honours.");
+                throw new SaveCorruptionException($"League '{league.Name}' rank {podium.SeasonRank} has corrupt champion flag for honours.");
             }
         }
 
@@ -170,7 +171,7 @@ public static class HonourUpdater
     {
         if (podium.SeasonRank < 1 || podium.SeasonRank > 3)
         {
-            throw new InvalidOperationException($"Season standing {podium.Id} rank {podium.SeasonRank} is not a podium honour.");
+            throw new SaveCorruptionException($"Season standing {podium.Id} rank {podium.SeasonRank} is not a podium honour.");
         }
 
         HonourKind kind = HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
@@ -196,7 +197,7 @@ public static class HonourUpdater
 
         if (existing.SaveAthleteId != podium.SaveAthleteId)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Honour for league '{league.Name}' season {season.SeasonNumber} rank {podium.SeasonRank} conflicts with the persisted podium; sporting state is corrupt.");
         }
 

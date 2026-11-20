@@ -1,4 +1,5 @@
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Universe.CreateUniverse;
@@ -22,17 +23,17 @@ public static class UniverseInvariants
 
         if (athletesPerSportingColor <= 0)
         {
-            throw new InvalidOperationException($"Athletes per sporting color must be positive, was {athletesPerSportingColor}.");
+            throw new SaveCorruptionException($"Athletes per sporting color must be positive, was {athletesPerSportingColor}.");
         }
 
         if (totalAthletesInSave <= 0)
         {
-            throw new InvalidOperationException($"Total athletes in save must be positive, was {totalAthletesInSave}.");
+            throw new SaveCorruptionException($"Total athletes in save must be positive, was {totalAthletesInSave}.");
         }
 
         if (selected.Count != totalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Save universe must contain exactly {totalAthletesInSave} athletes, was {selected.Count}.");
         }
 
@@ -42,12 +43,12 @@ public static class UniverseInvariants
         {
             if (string.IsNullOrWhiteSpace(athlete.Name))
             {
-                throw new InvalidOperationException("Save universe contains an athlete with an empty name.");
+                throw new SaveCorruptionException("Save universe contains an athlete with an empty name.");
             }
 
             if (!names.Add(athlete.Name))
             {
-                throw new InvalidOperationException($"Save universe contains duplicate athlete '{athlete.Name}'.");
+                throw new SaveCorruptionException($"Save universe contains duplicate athlete '{athlete.Name}'.");
             }
 
             counts.TryGetValue(athlete.SportingColor, out int count);
@@ -59,7 +60,7 @@ public static class UniverseInvariants
             int count = counts.TryGetValue(color, out int value) ? value : 0;
             if (count != athletesPerSportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Save universe must contain exactly {athletesPerSportingColor} {color} athletes, was {count}.");
             }
         }

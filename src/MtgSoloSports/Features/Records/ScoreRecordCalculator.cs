@@ -1,3 +1,5 @@
+using MtgSoloSports.Shared;
+
 namespace MtgSoloSports.Features.Records;
 
 /// <summary>
@@ -293,7 +295,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.StageScoreThousandths, o.SaveAthleteId);
             if (o.SeasonNumber < 1 || o.StageNumber < 1)
             {
-                throw new InvalidOperationException($"League stage occurrence has corrupt season/stage {o.SeasonNumber}/{o.StageNumber}.");
+                throw new SaveCorruptionException($"League stage occurrence has corrupt season/stage {o.SeasonNumber}/{o.StageNumber}.");
             }
         }
 
@@ -329,7 +331,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.ChampionshipPointsThousandths, o.SaveAthleteId);
             if (o.SeasonNumber < 1)
             {
-                throw new InvalidOperationException($"League points occurrence has corrupt season {o.SeasonNumber}.");
+                throw new SaveCorruptionException($"League points occurrence has corrupt season {o.SeasonNumber}.");
             }
         }
 
@@ -394,7 +396,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.CupScoreThousandths, o.SaveAthleteId);
             if (o.SeasonNumber < 1)
             {
-                throw new InvalidOperationException($"Cup stage occurrence has corrupt season {o.SeasonNumber}.");
+                throw new SaveCorruptionException($"Cup stage occurrence has corrupt season {o.SeasonNumber}.");
             }
         }
 
@@ -428,7 +430,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.FinalThousandths, o.SaveAthleteId);
             if (o.FromSeasonNumber < 1 || o.ToSeasonNumber < 1 || o.RoundNumber < 1)
             {
-                throw new InvalidOperationException("Qualifier round occurrence has corrupt identity.");
+                throw new SaveCorruptionException("Qualifier round occurrence has corrupt identity.");
             }
         }
 
@@ -462,7 +464,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.QualifierScoreThousandths, o.SaveAthleteId);
             if (o.FromSeasonNumber < 1 || o.ToSeasonNumber < 1)
             {
-                throw new InvalidOperationException("Qualifier stage occurrence has corrupt identity.");
+                throw new SaveCorruptionException("Qualifier stage occurrence has corrupt identity.");
             }
         }
 
@@ -498,7 +500,7 @@ public static class ScoreRecordCalculator
             ValidateTeamKey(o.TeamKey);
             if (o.SeasonNumber < 1 || o.GroupNumber < 1 || o.RoundNumber < 1)
             {
-                throw new InvalidOperationException("Team leg round occurrence has corrupt identity.");
+                throw new SaveCorruptionException("Team leg round occurrence has corrupt identity.");
             }
         }
 
@@ -534,7 +536,7 @@ public static class ScoreRecordCalculator
             ValidateTeamKey(o.TeamKey);
             if (o.SeasonNumber < 1 || o.GroupNumber < 1)
             {
-                throw new InvalidOperationException("Team leg stage occurrence has corrupt identity.");
+                throw new SaveCorruptionException("Team leg stage occurrence has corrupt identity.");
             }
         }
 
@@ -569,7 +571,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.TeamScoreThousandths, 0);
             if (o.SeasonNumber < 1)
             {
-                throw new InvalidOperationException("Team total occurrence has corrupt season.");
+                throw new SaveCorruptionException("Team total occurrence has corrupt season.");
             }
         }
 
@@ -611,7 +613,7 @@ public static class ScoreRecordCalculator
             ValidateNonNegative(o.TeamRoundTotalThousandths, 0);
             if (o.SeasonNumber < 1 || o.RoundNumber < 1)
             {
-                throw new InvalidOperationException("Team round occurrence has corrupt identity.");
+                throw new SaveCorruptionException("Team round occurrence has corrupt identity.");
             }
         }
 
@@ -691,12 +693,12 @@ public static class ScoreRecordCalculator
     {
         if (athleteId <= 0)
         {
-            throw new InvalidOperationException($"Scoring occurrence references corrupt athlete {athleteId}.");
+            throw new SaveCorruptionException($"Scoring occurrence references corrupt athlete {athleteId}.");
         }
 
         if (!names.ContainsKey(athleteId))
         {
-            throw new InvalidOperationException($"Scoring occurrence references unknown athlete {athleteId}.");
+            throw new SaveCorruptionException($"Scoring occurrence references unknown athlete {athleteId}.");
         }
     }
 
@@ -704,7 +706,7 @@ public static class ScoreRecordCalculator
     {
         if (value < 0)
         {
-            throw new InvalidOperationException($"Athlete {athleteId} has corrupt negative scoring value {value}.");
+            throw new SaveCorruptionException($"Athlete {athleteId} has corrupt negative scoring value {value}.");
         }
     }
 
@@ -712,7 +714,7 @@ public static class ScoreRecordCalculator
     {
         if (string.IsNullOrWhiteSpace(teamKey))
         {
-            throw new InvalidOperationException("Team scoring occurrence has corrupt empty team key.");
+            throw new SaveCorruptionException("Team scoring occurrence has corrupt empty team key.");
         }
     }
 
@@ -720,7 +722,7 @@ public static class ScoreRecordCalculator
     {
         if (season < 1 || stage < 1 || round < 1)
         {
-            throw new InvalidOperationException($"Scoring occurrence has corrupt season/stage/round {season}/{stage}/{round}.");
+            throw new SaveCorruptionException($"Scoring occurrence has corrupt season/stage/round {season}/{stage}/{round}.");
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Text;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -122,7 +123,7 @@ public sealed partial class RunTypeCupTeamHandler
             // Final field for a tournament is built once qualifiers are known.
             // Step-by-step callers reach the Final only after every qual group
             // is complete with persisted standings, so the field must exist.
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} has no field; qualification must complete first.");
         }
 
@@ -240,7 +241,7 @@ public sealed partial class RunTypeCupTeamHandler
         ArgumentNullException.ThrowIfNull(state);
         if (!state.Fields.TryGetValue(stage, out TypeCupStageField? field))
         {
-            throw new InvalidOperationException($"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} has no field.");
+            throw new SaveCorruptionException($"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} has no field.");
         }
 
         List<TypeCupSelectionEntity> members = field.Groups[rankGroup];
@@ -265,7 +266,7 @@ public sealed partial class RunTypeCupTeamHandler
     {
         if (!state.Fields.TryGetValue(stage, out TypeCupStageField? field))
         {
-            throw new InvalidOperationException($"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} has no field.");
+            throw new SaveCorruptionException($"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} has no field.");
         }
 
         List<TeamEvent.TeamLegRanked> allLegs = new(field.FieldSize * state.Rules.TypeCupMinTeamSize);
@@ -280,7 +281,7 @@ public sealed partial class RunTypeCupTeamHandler
                 TypeCupTeamRoundPayloadDocument nextStart = stagePayloads.Single(p => p.GroupNumber == group + 1 && p.RoundNumber == 1);
                 if (after != new Pcg32State(nextStart.RngBeforeState, nextStart.RngBeforeStream))
                 {
-                    throw new InvalidOperationException($"Type Cup tournament RNG chain is broken at the start of group {group + 1} in phase {stage.Phase} qual {stage.QualificationGroup}.");
+                    throw new SaveCorruptionException($"Type Cup tournament RNG chain is broken at the start of group {group + 1} in phase {stage.Phase} qual {stage.QualificationGroup}.");
                 }
             }
 
@@ -357,7 +358,7 @@ public sealed partial class RunTypeCupTeamHandler
         ArgumentNullException.ThrowIfNull(ordered);
         if (ordered.Count != state.Plan.TotalRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament requires exactly {state.Plan.TotalRounds} rounds, was {ordered.Count}.");
         }
 
@@ -408,7 +409,7 @@ public sealed partial class RunTypeCupTeamHandler
         int perStage = state.Rules.TypeCupMinTeamSize * state.Rules.TypeCupGroupRounds;
         if (stagePayloads.Count != perStage)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament stage phase {stage.Phase} qual {stage.QualificationGroup} must hold exactly {perStage} rounds.");
         }
     }
@@ -437,7 +438,7 @@ public sealed partial class RunTypeCupTeamHandler
 
         if (expectedBefore != new Pcg32State(firstPayload.RngBeforeState, firstPayload.RngBeforeStream))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup tournament RNG chain is broken at the start of phase {stage.Phase} qual {stage.QualificationGroup}.");
         }
     }
@@ -596,7 +597,7 @@ public sealed partial class RunTypeCupTeamHandler
         ArgumentNullException.ThrowIfNull(finalists);
         if (finalists.Count != state.Rules.TypeCupFinalTeamCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup Final must hold exactly {state.Rules.TypeCupFinalTeamCount} teams, was {finalists.Count}.");
         }
 
@@ -606,7 +607,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ToList();
         if (finalSelection.Count != finalists.Count * state.Rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException("Type Cup Final selection does not cover exactly four athletes per finalist.");
+            throw new SaveCorruptionException("Type Cup Final selection does not cover exactly four athletes per finalist.");
         }
 
         Dictionary<int, List<TypeCupSelectionEntity>> groups = new(state.Rules.TypeCupMinTeamSize);
@@ -615,7 +616,7 @@ public sealed partial class RunTypeCupTeamHandler
             groups[rank] = finalSelection.Where(e => e.SelectionRank == rank).ToList();
             if (groups[rank].Count != finalists.Count)
             {
-                throw new InvalidOperationException($"Type Cup Final rank group {rank} must hold exactly {finalists.Count} athletes.");
+                throw new SaveCorruptionException($"Type Cup Final rank group {rank} must hold exactly {finalists.Count} athletes.");
             }
         }
 
@@ -673,7 +674,7 @@ public sealed partial class RunTypeCupTeamHandler
             }
         }
 
-        throw new InvalidOperationException($"Type Cup Final references unknown athlete {athleteId}.");
+        throw new SaveCorruptionException($"Type Cup Final references unknown athlete {athleteId}.");
     }
 
     /// <summary>Completes the team event from all stored payloads (legacy).</summary>
@@ -702,7 +703,7 @@ public sealed partial class RunTypeCupTeamHandler
                 TypeCupTeamRoundPayloadDocument nextStart = payloads.Single(p => p.GroupNumber == group + 1 && p.RoundNumber == 1);
                 if (after != new Pcg32State(nextStart.RngBeforeState, nextStart.RngBeforeStream))
                 {
-                    throw new InvalidOperationException($"Type Cup team RNG chain is broken at the start of group {group + 1}.");
+                    throw new SaveCorruptionException($"Type Cup team RNG chain is broken at the start of group {group + 1}.");
                 }
             }
 
@@ -731,7 +732,7 @@ public sealed partial class RunTypeCupTeamHandler
             Points before = cumulative.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
             if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Missing stage-start bonus for athlete '{row.Name}'.");
             }
 
             inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
@@ -792,12 +793,12 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (!byAthlete.TryGetValue(placement.AthleteId, out TypeCupSelectionEntity? selection))
             {
-                throw new InvalidOperationException($"Type Cup team group {payload.GroupNumber} round contains athlete {placement.AthleteId} from the wrong rank group.");
+                throw new SaveCorruptionException($"Type Cup team group {payload.GroupNumber} round contains athlete {placement.AthleteId} from the wrong rank group.");
             }
 
             if (!teamIds.TryGetValue(selection.CreatureType, out int teamId))
             {
-                throw new InvalidOperationException($"Type Cup team '{selection.CreatureType}' has no deterministic team id.");
+                throw new SaveCorruptionException($"Type Cup team '{selection.CreatureType}' has no deterministic team id.");
             }
 
             entries.Add(new TeamEvent.TeamGroupRoundEntry(

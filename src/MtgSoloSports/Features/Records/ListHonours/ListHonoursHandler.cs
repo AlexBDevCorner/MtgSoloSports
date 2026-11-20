@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Records.ListHonours;
 
@@ -67,7 +68,7 @@ public sealed class ListHonoursHandler
         int expectedCups = await CountExpectedCupPodiumsAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         if (leaguePersisted > expectedLeague || cupPersisted > expectedCups)
         {
-            throw new InvalidOperationException($"Persisted honours exceed authoritative podiums; sporting state is corrupt.");
+            throw new SaveCorruptionException($"Persisted honours exceed authoritative podiums; sporting state is corrupt.");
         }
 
         if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
@@ -214,12 +215,12 @@ public sealed class ListHonoursHandler
     {
         if (!seasonNumbers.TryGetValue(podium.SeasonId, out int seasonNumber))
         {
-            throw new InvalidOperationException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
+            throw new SaveCorruptionException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
         }
 
         if (!leaguesById.TryGetValue(podium.LeagueId, out LeagueEntity? league))
         {
-            throw new InvalidOperationException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
+            throw new SaveCorruptionException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
         }
 
         HonourKind kind = HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
@@ -381,7 +382,7 @@ public sealed class ListHonoursHandler
                 .ToList();
             if (members.Count != 4)
             {
-                throw new InvalidOperationException($"Color Cup team rank {team.TeamRank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Color Cup team rank {team.TeamRank} must field exactly four legs.");
             }
 
             foreach (ColorCupTeamGroupStandingEntity leg in members.OrderBy(l => l.SaveAthleteId))
@@ -442,7 +443,7 @@ public sealed class ListHonoursHandler
                 .ToList();
             if (members.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team rank {team.TeamRank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Type Cup team rank {team.TeamRank} must field exactly four legs.");
             }
 
             foreach (TypeCupTeamGroupStandingEntity leg in members.OrderBy(l => l.SaveAthleteId))

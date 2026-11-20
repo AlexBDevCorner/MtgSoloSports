@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
@@ -19,7 +20,7 @@ public static class TypeCupSelectionInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (rows.Count % rules.TypeCupMinTeamSize != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup allocation for Season {source.SeasonNumber} must hold whole teams of {rules.TypeCupMinTeamSize}, was {rows.Count} rows.");
         }
 
@@ -28,7 +29,7 @@ public static class TypeCupSelectionInvariants
         {
             if (!athletes.Add(row.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup allocation for Season {source.SeasonNumber} contains duplicate athlete {row.SaveAthleteId}.");
             }
         }
@@ -50,20 +51,20 @@ public static class TypeCupSelectionInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (string.IsNullOrWhiteSpace(creatureType))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup allocation for Season {source.SeasonNumber} contains an empty creature type.");
         }
 
         if (teamRows.Count != rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team '{creatureType}' for Season {source.SeasonNumber} must hold exactly {rules.TypeCupMinTeamSize} athletes, was {teamRows.Count}.");
         }
 
         HashSet<int> ranks = teamRows.Select(r => r.SelectionRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, rules.TypeCupMinTeamSize)))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup team '{creatureType}' for Season {source.SeasonNumber} must cover ranks 1..{rules.TypeCupMinTeamSize} exactly once.");
         }
 
@@ -83,46 +84,46 @@ public static class TypeCupSelectionInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (row.SourceSeasonId != source.Id || row.SourceSeasonNumber != source.SeasonNumber)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup selection row {row.Id} references the wrong source season.");
         }
 
         if (!string.Equals(row.CreatureType, creatureType, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup selection row {row.Id} mixes creature types within one team.");
         }
 
         if (row.SelectionRank < 1 || row.SelectionRank > rules.TypeCupMinTeamSize)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt rank {row.SelectionRank}.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has corrupt rank {row.SelectionRank}.");
         }
 
         if (row.TypeRank < 1)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt type rank {row.TypeRank}.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has corrupt type rank {row.TypeRank}.");
         }
 
         if (row.FinalRatingThousandths < 0 || row.BonusNormThousandths < 0 || row.PerformanceNormThousandths < 0
             || row.FormNormThousandths < 0 || row.ChaosNormThousandths < 0 || row.PrestigeNormThousandths < 0)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt negative scores.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has corrupt negative scores.");
         }
 
         if (row.BonusNormThousandths > 1000 || row.PerformanceNormThousandths > 1000
             || row.FormNormThousandths > 1000 || row.ChaosNormThousandths > 1000 || row.PrestigeNormThousandths > 1000)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt normalized component above 1000.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has corrupt normalized component above 1000.");
         }
 
         if (row.BonusRawThousandths < 0 || row.PerformanceRawThousandths < 0 || row.FormRaw < 0 || row.ChaosRaw < 0 || row.PrestigeRaw < 0)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has corrupt negative raw inputs.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has corrupt negative raw inputs.");
         }
 
         if (row.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Type Cup selection row {row.Id} has rules version {row.RulesVersion}, expected {rules.Version}.");
+            throw new SaveCorruptionException($"Type Cup selection row {row.Id} has rules version {row.RulesVersion}, expected {rules.Version}.");
         }
     }
 
@@ -134,7 +135,7 @@ public static class TypeCupSelectionInvariants
         {
             if (ordered[i].FinalRatingThousandths > ordered[i - 1].FinalRatingThousandths)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup team '{ordered[i].CreatureType}' rank {ordered[i].SelectionRank} outranks #{ordered[i - 1].SelectionRank} by final rating; ranks must follow selection order.");
             }
         }

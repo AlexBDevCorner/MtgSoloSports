@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Stories;
 
@@ -70,11 +71,11 @@ public static class StoryEventRenderer
         try
         {
             StoryEventPayload? payload = JsonSerializer.Deserialize<StoryEventPayload>(contextJson, Options);
-            return payload ?? throw new InvalidOperationException("Story context is corrupt.");
+            return payload ?? throw new SaveCorruptionException("Story context is corrupt.");
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Story context is corrupt.", ex);
+            throw new SaveCorruptionException("Story context is corrupt.", ex);
         }
     }
 

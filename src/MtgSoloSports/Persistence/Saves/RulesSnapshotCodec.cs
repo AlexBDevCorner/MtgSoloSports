@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -30,14 +31,14 @@ public static class RulesSnapshotCodec
                 versionElement.ValueKind != JsonValueKind.Number ||
                 !versionElement.TryGetInt32(out int version))
             {
-                throw new InvalidOperationException("Rules snapshot payload has no numeric 'version'.");
+                throw new SaveCorruptionException("Rules snapshot payload has no numeric 'version'.");
             }
 
             return version;
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Rules snapshot payload is not valid JSON.", ex);
+            throw new SaveCorruptionException("Rules snapshot payload is not valid JSON.", ex);
         }
     }
 
@@ -72,7 +73,7 @@ public static class RulesSnapshotCodec
             1 => RulesSnapshotDocument.FromJson(json).ToRules(),
             2 => RulesV2SnapshotDocument.FromJson(json).ToRules(),
             3 => RulesV3SnapshotDocument.FromJson(json).ToRules(),
-            _ => throw new InvalidOperationException(
+            _ => throw new SaveCorruptionException(
                 $"Rules version {version} is not supported by this build (supports v1, v2 and v3). " +
                 "Game-rule migration is separate from database-schema migration and is not performed automatically."),
         };

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Seasons.SeasonLifecycle;
 
@@ -71,7 +72,7 @@ public static class CupExtensionPoint
                 .ConfigureAwait(false);
             if ((individual || team) && !selection)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup for Season {source.SeasonNumber} has event results without team selection; sporting state is corrupt.");
             }
 
@@ -95,7 +96,7 @@ public static class CupExtensionPoint
                 .ConfigureAwait(false);
             if (team && !selection)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup for Season {source.SeasonNumber} has team results without allocation; sporting state is corrupt.");
             }
 
@@ -103,7 +104,7 @@ public static class CupExtensionPoint
             return new CupState(selection, IndividualResolved: false, team, complete);
         }
 
-        throw new InvalidOperationException($"Unsupported expected Cup '{expectedCup}'.");
+        throw new SaveCorruptionException($"Unsupported expected Cup '{expectedCup}'.");
     }
 
     /// <summary>
@@ -120,8 +121,10 @@ public static class CupExtensionPoint
     }
 
     /// <summary>
-    /// Requires the persisted Cup for one source season to be complete. Throws
-    /// <c>InvalidOperationException</c> when the Cup is pending or corrupt; the
+    /// Requires the persisted Cup for one source season to be complete. A
+    /// pending Cup is a user-resolvable precondition (InvalidOperationException,
+    /// 400); corrupt Cup state throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/>
+    /// (500). Never consumes sporting RNG.
     /// StartNextSeason gate converts pending Cups to a legal conflict. Never
     /// consumes sporting RNG.
     /// </summary>

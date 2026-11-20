@@ -25,8 +25,10 @@ public sealed class ValidateLongRunInvariantsHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        using SaveDbContext context = _store.OpenDbContext(saveId);
+        // Migration first, then the context: the migration-rollback path can
+        // replace the save file, so no context handle may predate it.
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        using SaveDbContext context = _store.OpenDbContext(saveId);
         SimulationKernel.Rules.RulesV1 rules = await AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         LongRunInvariantChecks.Snapshot snapshot = await LongRunInvariantChecks.LoadSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         IReadOnlyList<LongRunInvariantChecks.InvariantResult> results = LongRunInvariantChecks.ValidateAll(snapshot, rules);

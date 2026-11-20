@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Records;
 
@@ -178,7 +179,7 @@ public static class RecordCalculator
 
             if (row.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Season standing references corrupt athlete {row.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Season standing references corrupt athlete {row.SaveAthleteId}.");
             }
 
             feeder.TryAdd(row.SaveAthleteId, 0);
@@ -366,7 +367,7 @@ public static class RecordCalculator
 
             if (row.StageNumber < 1 || row.StageNumber > 32)
             {
-                throw new InvalidOperationException($"Stage standing for athlete {row.SaveAthleteId} has corrupt stage {row.StageNumber}.");
+                throw new SaveCorruptionException($"Stage standing for athlete {row.SaveAthleteId} has corrupt stage {row.StageNumber}.");
             }
 
             if (!winsByAthlete.TryGetValue(row.SaveAthleteId, out HashSet<(int Season, int Stage)>? wins))
@@ -495,7 +496,7 @@ public static class RecordCalculator
     {
         if (value < 0)
         {
-            throw new InvalidOperationException($"Athlete {athleteId} has corrupt negative sporting value {value}.");
+            throw new SaveCorruptionException($"Athlete {athleteId} has corrupt negative sporting value {value}.");
         }
 
         return value;

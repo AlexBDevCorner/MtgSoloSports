@@ -27,11 +27,11 @@ public sealed class ChaosCupAdvanceStageTests
         List<AdvanceChaosCupStageSelection.StageAdvancer> advancers = Enumerable.Range(1, 512)
             .Select(id => new AdvanceChaosCupStageSelection.StageAdvancer(id, $"Athlete {id}"))
             .ToList();
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             AdvanceChaosCupStageSelection.DrawRandomStage(advancers, Pcg32V1.Restore(new Pcg32State(1UL, 2UL)), stageIndex: 0));
 
         List<AdvanceChaosCupStageSelection.StageAdvancer> shortList = advancers.Take(511).ToList();
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             AdvanceChaosCupStageSelection.DrawRandomStage(shortList, Pcg32V1.Restore(new Pcg32State(11UL, 12UL)), stageIndex: 1));
     }
 

@@ -93,7 +93,7 @@ public sealed class RulesV2Tests
     [Fact]
     public void Codec_RejectsUnknownVersion()
     {
-        Should.Throw<InvalidOperationException>(() => RulesSnapshotCodec.Decode("{\"version\":99}"));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => RulesSnapshotCodec.Decode("{\"version\":99}"));
     }
 
     [Fact]

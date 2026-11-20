@@ -143,7 +143,7 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             activation = await ChaosCup.ChaosCupLifecycle.LoadActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("predates Chaos", StringComparison.OrdinalIgnoreCase))
+        catch (ChaosCup.SavePredatesChaosActivationException)
         {
             throw new SelectChaosCupFieldConflictException(
                 $"Chaos Cup is not enabled for Season {source.SeasonNumber}; save predates Chaos activation.");

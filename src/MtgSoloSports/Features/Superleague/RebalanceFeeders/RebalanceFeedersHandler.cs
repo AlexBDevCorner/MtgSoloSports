@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -360,8 +361,13 @@ public sealed class RebalanceFeedersHandler
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new RebalanceFeedersConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal; corruption passes through uncaught.
             throw new RebalanceFeedersConflictException(ex.Message);
         }
 
@@ -448,7 +454,7 @@ public sealed class RebalanceFeedersHandler
             .ConfigureAwait(false);
         if (ids.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next Superleague must contain exactly {rules.SuperleagueSize} athletes before rebalancing, was {ids.Count}.");
         }
 
@@ -465,7 +471,7 @@ public sealed class RebalanceFeedersHandler
             .ConfigureAwait(false);
         if (leagues.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {leagues.Count}.");
         }
 
@@ -479,7 +485,7 @@ public sealed class RebalanceFeedersHandler
             e => e.SeasonId == season.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken).ConfigureAwait(false);
         if (league is null)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} has no Superleague.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} has no Superleague.");
         }
 
         return league;
@@ -502,14 +508,14 @@ public sealed class RebalanceFeedersHandler
                 .ConfigureAwait(false);
             if (rows.Count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{feeder.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
             }
 
             HashSet<int> ranks = rows.Select(r => r.SeasonRank).ToHashSet();
             if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
             {
-                throw new InvalidOperationException($"League '{feeder.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
+                throw new SaveCorruptionException($"League '{feeder.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
             }
 
             map[feeder.Id] = rows;
@@ -527,7 +533,7 @@ public sealed class RebalanceFeedersHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -673,7 +679,7 @@ public sealed class RebalanceFeedersHandler
     {
         if (!nextByColorDivision.TryGetValue(((int)color, (int)division), out LeagueEntity? nextLeague))
         {
-            throw new InvalidOperationException($"Next season is missing the {color} {division} feeder.");
+            throw new SaveCorruptionException($"Next season is missing the {color} {division} feeder.");
         }
 
         List<SeasonMembershipEntity> provisional = nextByLeagueMembers.TryGetValue(nextLeague.Id, out List<SeasonMembershipEntity>? members)
@@ -699,30 +705,30 @@ public sealed class RebalanceFeedersHandler
     {
         if (membership.SportingColor != (int)color)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match feeder {color} {division}.");
         }
 
         if (!sourceByAthlete.TryGetValue(membership.SaveAthleteId, out SeasonMembershipEntity? source))
         {
-            throw new InvalidOperationException($"Athlete {membership.SaveAthleteId} has no source membership.");
+            throw new SaveCorruptionException($"Athlete {membership.SaveAthleteId} has no source membership.");
         }
 
         if (source.SportingColor != membership.SportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} changed sporting color; returning athletes keep their color.");
         }
 
         if (source.LeagueId is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} entered the {color} {division} feeder from the common pool before rebalancing; pool vacancies fill only here.");
         }
 
         if (!sourceByLeague.TryGetValue(source.LeagueId.Value, out LeagueEntity? sourceLeague))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} source league {source.LeagueId.Value} is unknown.");
         }
 
@@ -731,13 +737,13 @@ public sealed class RebalanceFeedersHandler
             || sourceLeague.FeederDivision != (int)division;
         if (!sourceRanks.TryGetValue(membership.SaveAthleteId, out int sourceRank))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} has no source-season rank.");
         }
 
         if (sourceRank < 1 || sourceRank > 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} has corrupt source rank {sourceRank}.");
         }
 
@@ -759,7 +765,7 @@ public sealed class RebalanceFeedersHandler
         {
             if (membership.SportingColor != (int)color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Pool athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match pool {color}.");
             }
 
@@ -853,7 +859,7 @@ public sealed class RebalanceFeedersHandler
             counts.TryGetValue(league.Id, out int count);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Tiered league '{league.Name}' must hold exactly {rules.LeagueSize} athletes before F1 rebalancing, was {count}.");
             }
         }
@@ -862,7 +868,7 @@ public sealed class RebalanceFeedersHandler
         int f1Next = nextFeeders.Count(l => l.FeederDivision == (int)SimulationKernel.Leagues.FeederDivision.First);
         if (f1Source != rules.RegularLeagueCount || f1Next != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered transition must have exactly {rules.RegularLeagueCount} F1 leagues per season, was {f1Source}/{f1Next}.");
         }
     }
@@ -910,17 +916,17 @@ public sealed class RebalanceFeedersHandler
     {
         if (!sourceByColor.TryGetValue((int)color, out LeagueEntity? sourceFeeder))
         {
-            throw new InvalidOperationException($"Source season is missing the {color} feeder.");
+            throw new SaveCorruptionException($"Source season is missing the {color} feeder.");
         }
 
         if (!nextByColor.TryGetValue((int)color, out LeagueEntity? nextFeeder))
         {
-            throw new InvalidOperationException($"Next season is missing the {color} feeder.");
+            throw new SaveCorruptionException($"Next season is missing the {color} feeder.");
         }
 
         if (!sourceStandings.TryGetValue(sourceFeeder.Id, out IReadOnlyList<SeasonStandingEntity>? standings))
         {
-            throw new InvalidOperationException($"League '{sourceFeeder.Name}' has no final standings.");
+            throw new SaveCorruptionException($"League '{sourceFeeder.Name}' has no final standings.");
         }
 
         return (sourceFeeder, nextFeeder, standings.ToDictionary(r => r.SaveAthleteId, r => r.SeasonRank));
@@ -983,25 +989,25 @@ public sealed class RebalanceFeedersHandler
     {
         if (membership.SportingColor != (int)color)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match feeder {color}.");
         }
 
         if (!sourceByAthlete.TryGetValue(membership.SaveAthleteId, out SeasonMembershipEntity? source))
         {
-            throw new InvalidOperationException($"Athlete {membership.SaveAthleteId} has no source membership.");
+            throw new SaveCorruptionException($"Athlete {membership.SaveAthleteId} has no source membership.");
         }
 
         if (source.SportingColor != membership.SportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} changed sporting color; returning athletes keep their color.");
         }
 
         bool isRetained = source.LeagueId == sourceFeeder.Id;
         if (!isRetained && source.LeagueId is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {membership.SaveAthleteId} entered the {color} feeder from the common pool before rebalancing; pool vacancies fill only here.");
         }
 
@@ -1033,7 +1039,7 @@ public sealed class RebalanceFeedersHandler
 
         if (!rankByAthlete.TryGetValue(membership.SaveAthleteId, out int sourceRank))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Retained athlete {membership.SaveAthleteId} has no source feeder rank.");
         }
 
@@ -1053,7 +1059,7 @@ public sealed class RebalanceFeedersHandler
         {
             if (membership.SportingColor != (int)color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Pool athlete {membership.SaveAthleteId} color {membership.SportingColor} does not match pool {color}.");
             }
 
@@ -1123,30 +1129,30 @@ public sealed class RebalanceFeedersHandler
     {
         if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.FromDivision), out int fromId))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season is missing the {move.Color} {move.FromDivision} feeder for structural move {move.SaveAthleteId}.");
         }
 
         if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.ToDivision), out int toId))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season is missing the {move.Color} {move.ToDivision} feeder for structural move {move.SaveAthleteId}.");
         }
 
         if (!byAthlete.TryGetValue(move.SaveAthleteId, out SeasonMembershipEntity? membership))
         {
-            throw new InvalidOperationException($"Structural move athlete {move.SaveAthleteId} has no next-season membership.");
+            throw new SaveCorruptionException($"Structural move athlete {move.SaveAthleteId} has no next-season membership.");
         }
 
         if (membership.LeagueId != fromId)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Structural move athlete {move.SaveAthleteId} is not in the expected {move.Color} {move.FromDivision} feeder.");
         }
 
         if (membership.SportingColor != (int)move.Color)
         {
-            throw new InvalidOperationException($"Structural move athlete {move.SaveAthleteId} has the wrong sporting color.");
+            throw new SaveCorruptionException($"Structural move athlete {move.SaveAthleteId} has the wrong sporting color.");
         }
 
         membership.LeagueId = toId;
@@ -1187,7 +1193,7 @@ public sealed class RebalanceFeedersHandler
         {
             if (!legacyByColor.TryGetValue(colorPlan.Color.ToString(), out f3Id))
             {
-                throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} F3 feeder.");
+                throw new SaveCorruptionException($"Next season is missing the {colorPlan.Color} F3 feeder.");
             }
         }
 
@@ -1195,12 +1201,12 @@ public sealed class RebalanceFeedersHandler
         {
             if (!byAthlete.TryGetValue(displaced.SaveAthleteId, out SeasonMembershipEntity? membership))
             {
-                throw new InvalidOperationException($"Displaced athlete {displaced.SaveAthleteId} has no next-season membership.");
+                throw new SaveCorruptionException($"Displaced athlete {displaced.SaveAthleteId} has no next-season membership.");
             }
 
             if (membership.LeagueId != f3Id)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Displaced athlete {displaced.SaveAthleteId} is not in the {colorPlan.Color} F3 feeder; only F3 may displace to pool.");
             }
 
@@ -1211,17 +1217,17 @@ public sealed class RebalanceFeedersHandler
         {
             if (!byAthlete.TryGetValue(draw.SaveAthleteId, out SeasonMembershipEntity? membership))
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
             }
 
             if (membership.LeagueId is not null)
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
             }
 
             if (membership.SportingColor != (int)colorPlan.Color)
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
             }
 
             membership.LeagueId = f3Id;
@@ -1249,19 +1255,19 @@ public sealed class RebalanceFeedersHandler
     {
         if (!feederByColor.TryGetValue(colorPlan.Color.ToString(), out int feederId))
         {
-            throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} feeder.");
+            throw new SaveCorruptionException($"Next season is missing the {colorPlan.Color} feeder.");
         }
 
         foreach (RebalanceFeedersSelection.RetainedCandidate displaced in colorPlan.Displaced)
         {
             if (!byAthlete.TryGetValue(displaced.SaveAthleteId, out SeasonMembershipEntity? membership))
             {
-                throw new InvalidOperationException($"Displaced athlete {displaced.SaveAthleteId} has no next-season membership.");
+                throw new SaveCorruptionException($"Displaced athlete {displaced.SaveAthleteId} has no next-season membership.");
             }
 
             if (membership.LeagueId != feederId)
             {
-                throw new InvalidOperationException($"Displaced athlete {displaced.SaveAthleteId} is not in the {colorPlan.Color} feeder.");
+                throw new SaveCorruptionException($"Displaced athlete {displaced.SaveAthleteId} is not in the {colorPlan.Color} feeder.");
             }
 
             membership.LeagueId = null;
@@ -1271,17 +1277,17 @@ public sealed class RebalanceFeedersHandler
         {
             if (!byAthlete.TryGetValue(draw.SaveAthleteId, out SeasonMembershipEntity? membership))
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} has no next-season membership.");
             }
 
             if (membership.LeagueId is not null)
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} is not in the common pool.");
             }
 
             if (membership.SportingColor != (int)colorPlan.Color)
             {
-                throw new InvalidOperationException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
+                throw new SaveCorruptionException($"Drawn athlete {draw.SaveAthleteId} has the wrong sporting color.");
             }
 
             membership.LeagueId = feederId;
@@ -1352,7 +1358,7 @@ public sealed class RebalanceFeedersHandler
         if (!leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.FromDivision), out int fromId)
             || !leagueByColorDivision.TryGetValue(((int)move.Color, (int)move.ToDivision), out int toId))
         {
-            throw new InvalidOperationException($"Next season is missing feeder leagues for structural move {move.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Next season is missing feeder leagues for structural move {move.SaveAthleteId}.");
         }
 
         movements.Add(new MovementEntity
@@ -1399,7 +1405,7 @@ public sealed class RebalanceFeedersHandler
         if (!f3ByColor.TryGetValue((int)colorPlan.Color, out f3Id)
             && !legacyByColor.TryGetValue(colorPlan.Color.ToString(), out f3Id))
         {
-            throw new InvalidOperationException($"Next season is missing the {colorPlan.Color} F3 feeder.");
+            throw new SaveCorruptionException($"Next season is missing the {colorPlan.Color} F3 feeder.");
         }
 
         foreach (RebalanceFeedersSelection.PoolCandidate draw in colorPlan.Draws.OrderBy(d => d.SaveAthleteId))
@@ -1470,26 +1476,26 @@ public sealed class RebalanceFeedersHandler
             .ToHashSet();
         if (!superleagueBefore.SetEquals(superleagueAfter))
         {
-            throw new InvalidOperationException("Rebalancing must not alter the next Superleague roster.");
+            throw new SaveCorruptionException("Rebalancing must not alter the next Superleague roster.");
         }
 
         bool needsRng = plan.AllDraws.Count > 0;
         bool rngAdvanced = rngAfter.State != rngBefore.State || rngAfter.Stream != rngBefore.Stream;
         if (needsRng && !rngAdvanced)
         {
-            throw new InvalidOperationException("Rebalancing pool draws must advance the save RNG.");
+            throw new SaveCorruptionException("Rebalancing pool draws must advance the save RNG.");
         }
 
         if (!needsRng && rngAdvanced)
         {
-            throw new InvalidOperationException("Rebalancing without pool draws must not consume sporting RNG.");
+            throw new SaveCorruptionException("Rebalancing without pool draws must not consume sporting RNG.");
         }
 
         RngStateEntity rng = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         Pcg32State persisted = rng.ToState();
         if (persisted.State != rngAfter.State || persisted.Stream != rngAfter.Stream)
         {
-            throw new InvalidOperationException("Persisted RNG state does not match the rebalancing draw chain.");
+            throw new SaveCorruptionException("Persisted RNG state does not match the rebalancing draw chain.");
         }
 
         int stages = await context.StageStandings.CountAsync(cancellationToken).ConfigureAwait(false);
@@ -1499,12 +1505,12 @@ public sealed class RebalanceFeedersHandler
         int qualifierStandings = await context.QualifierStandings.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stagesBefore || seasons != seasonsBefore || rounds != roundsBefore)
         {
-            throw new InvalidOperationException("Rebalancing must preserve league stage/season/round history.");
+            throw new SaveCorruptionException("Rebalancing must preserve league stage/season/round history.");
         }
 
         if (qualifierRounds != qualifierRoundsBefore || qualifierStandings != qualifierStandingsBefore)
         {
-            throw new InvalidOperationException("Rebalancing must preserve qualifier history.");
+            throw new SaveCorruptionException("Rebalancing must preserve qualifier history.");
         }
     }
 
@@ -1780,7 +1786,7 @@ public sealed class RebalanceFeedersHandler
         int expectedProvisional = 32 - transfers.Departed + transfers.Returned;
         if (expectedProvisional != colorPlan.ProvisionalCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{feeder.Name}' provisional count {colorPlan.ProvisionalCount} does not match Superleague transfers (32 - {transfers.Departed} + {transfers.Returned} = {expectedProvisional}).");
         }
 

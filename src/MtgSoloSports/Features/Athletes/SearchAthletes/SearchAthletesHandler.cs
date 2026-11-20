@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Athletes.SearchAthletes;
@@ -592,7 +593,7 @@ public sealed class SearchAthletesHandler
 
             if (!leagueKinds.TryGetValue(row.LeagueId.Value, out int kind))
             {
-                throw new InvalidOperationException($"Membership references unknown league {row.LeagueId.Value}.");
+                throw new SaveCorruptionException($"Membership references unknown league {row.LeagueId.Value}.");
             }
 
             fallback.TryGetValue(row.SaveAthleteId, out (bool EverSuper, int SuperSeasons) existing);

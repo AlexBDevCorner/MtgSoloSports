@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -225,7 +226,7 @@ public sealed partial class RunColorCupTeamHandler
             .ConfigureAwait(false);
         if (latest is null || !latest.IsComplete)
         {
-            throw new InvalidOperationException("Color Cup selection references an unknown or incomplete season.");
+            throw new SaveCorruptionException("Color Cup selection references an unknown or incomplete season.");
         }
 
         return latest;
@@ -276,7 +277,7 @@ public sealed partial class RunColorCupTeamHandler
         {
             if (!groups.TryGetValue(row.SelectionRank, out List<ColorCupSelectionEntity>? members))
             {
-                throw new InvalidOperationException($"Color Cup selection rank {row.SelectionRank} is out of range for team groups.");
+                throw new SaveCorruptionException($"Color Cup selection rank {row.SelectionRank} is out of range for team groups.");
             }
 
             members.Add(row);
@@ -302,7 +303,7 @@ public sealed partial class RunColorCupTeamHandler
             e => e.SourceSeasonId == source.Id, cancellationToken).ConfigureAwait(false);
         if (hasLegs)
         {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
+            throw new SaveCorruptionException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial legs.");
         }
 
         bool hasHonour = await context.Honours.AnyAsync(
@@ -312,7 +313,7 @@ public sealed partial class RunColorCupTeamHandler
             cancellationToken).ConfigureAwait(false);
         if (hasHonour)
         {
-            throw new InvalidOperationException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
+            throw new SaveCorruptionException($"Color Cup team event for Season {source.SeasonNumber} has corrupt partial honours.");
         }
 
         string? other = await PostseasonEvents.FindOtherInProgressAsync(context, PostseasonEvents.ColorCupTeam, source.Id, cancellationToken).ConfigureAwait(false);
@@ -336,7 +337,7 @@ public sealed partial class RunColorCupTeamHandler
             .ToDictionary(e => e.Id, e => (e.Name, e.SportingColor));
         if (athletes.Count != allIds.Count)
         {
-            throw new InvalidOperationException("Color Cup team selection references unknown athletes.");
+            throw new SaveCorruptionException("Color Cup team selection references unknown athletes.");
         }
 
         Dictionary<int, List<AdvanceRoundHandler.MemberRow>> rosters = new(groups.Count);
@@ -354,7 +355,7 @@ public sealed partial class RunColorCupTeamHandler
             {
                 if (!seen.Add(row.Name))
                 {
-                    throw new InvalidOperationException($"Color Cup team group {groupNumber} contains duplicate athlete '{row.Name}'.");
+                    throw new SaveCorruptionException($"Color Cup team group {groupNumber} contains duplicate athlete '{row.Name}'.");
                 }
             }
 
@@ -376,7 +377,7 @@ public sealed partial class RunColorCupTeamHandler
         Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, source, cancellationToken).ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(source.Id, out int sourceSeasonNumber))
         {
-            throw new InvalidOperationException($"Save has no season row for season {source.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {source.SeasonNumber}.");
         }
 
         int cupSeason = checked(sourceSeasonNumber + 1);

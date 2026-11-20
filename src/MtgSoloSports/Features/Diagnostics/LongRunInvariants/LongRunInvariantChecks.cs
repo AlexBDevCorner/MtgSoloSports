@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Diagnostics.LongRunInvariants;
 
@@ -84,7 +85,7 @@ public static class LongRunInvariantChecks
         List<InvariantResult> failed = results.Where(r => !r.Passed).ToList();
         if (failed.Count != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Long-run invariants failed: " + string.Join("; ", failed.Select(f => $"{f.Name}: {f.Detail}")));
         }
     }

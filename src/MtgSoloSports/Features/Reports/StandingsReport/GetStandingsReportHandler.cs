@@ -8,6 +8,7 @@ using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Seasons;
@@ -139,7 +140,7 @@ public sealed class GetStandingsReportHandler
 
         if (rows.Count != 32 || !rows.Select(r => r.SeasonRank).ToHashSet().SetEquals(Enumerable.Range(1, 32)))
         {
-            throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
         }
 
         StagePlacementReport.ValidateFinalRoster(rows, league);
@@ -153,18 +154,18 @@ public sealed class GetStandingsReportHandler
         IReadOnlyList<SeasonPlacementCell> placements = await StagePlacementReport.LoadValidatedAsync(context, season, league, rules, cancellationToken).ConfigureAwait(false);
         if (placements.Count == 0)
         {
-            throw new InvalidOperationException($"League '{league.Name}' is marked final but has no persisted stage history.");
+            throw new SaveCorruptionException($"League '{league.Name}' is marked final but has no persisted stage history.");
         }
 
         int completedStages = placements.Select(c => c.StageNumber).Distinct().Count();
         if (completedStages != rules.StagesPerSeason)
         {
-            throw new InvalidOperationException($"League '{league.Name}' is marked final but has {completedStages} completed stages; expected {rules.StagesPerSeason}.");
+            throw new SaveCorruptionException($"League '{league.Name}' is marked final but has {completedStages} completed stages; expected {rules.StagesPerSeason}.");
         }
 
         if (placements.Count != completedStages * 32)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage history must hold {completedStages * 32} cells, was {placements.Count}.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage history must hold {completedStages * 32} cells, was {placements.Count}.");
         }
 
         StagePlacementReport.ValidateFinalPlacementsCoverage(rows, placements, league);
@@ -246,8 +247,7 @@ public sealed class GetStandingsReportHandler
 
         List<List<SeasonStageEntry>> groups = GetCurrentStandingsHandler.GroupProvisional(stageRows, league, names);
         Pcg32V1 fork = await GetCurrentStandingsHandler.ForkRngAsync(context, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(groups, rules);
-        IReadOnlyList<SeasonRankedAthlete> ranked = SeasonCalculator.Rank(totals, fork, rules);
+        IReadOnlyList<SeasonRankedAthlete> ranked = GetCurrentStandingsHandler.AccumulateAndRankProvisional(groups, league, rules, fork);
         return new ReportData(
             false,
             "provisional",

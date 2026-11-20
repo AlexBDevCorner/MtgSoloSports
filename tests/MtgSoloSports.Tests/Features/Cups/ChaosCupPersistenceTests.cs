@@ -162,10 +162,10 @@ public sealed class ChaosCupPersistenceTests
             (firstBlue.SportingColor, firstWhite.SportingColor) = (firstWhite.SportingColor, firstBlue.SportingColor);
 
             ChaosCupInvariants.ComputeEditionChecksum(swapped).Equals(checksum, StringComparison.Ordinal).ShouldBeFalse();
-            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, swapped));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, swapped));
 
             ChaosCupEditionEntity tamperedEdition = NewEdition(setup, new string('0', 64));
-            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, tamperedEdition, setup.Entrants));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, tamperedEdition, setup.Entrants));
         }
         finally
         {
@@ -190,7 +190,7 @@ public sealed class ChaosCupPersistenceTests
             leagueEntrant.SourceFeederDivision += 11;
 
             ChaosCupInvariants.ComputeEditionChecksum(tampered).Equals(checksum, StringComparison.Ordinal).ShouldBeFalse();
-            Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, tampered));
+            Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateEntrants(setup.Source, edition, tampered));
         }
         finally
         {
@@ -311,7 +311,7 @@ public sealed class ChaosCupPersistenceTests
             SportingColor = s.SportingColor,
             IsAdvanced = s.IsAdvanced,
         }).ToList();
-        Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateStageStandings(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateStageStandings(
             setup.Source, field.Edition, stage0, rounds0, tampered, 0, setup.Rules));
         List<ChaosCupDrawEntity> stage1 = field.Draws.Where(d => d.StageIndex == 1).ToList();
         stage1.Count.ShouldBe(ChaosCupFormat.EntrantCountForStage(1));
@@ -819,7 +819,7 @@ public sealed class ChaosCupPersistenceTests
             SportingColor = (int)SportingColor.White,
             IsAdvanced = true,
         }).ToList();
-        Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateStageStandings(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateStageStandings(
             setup.Source, field.Edition, stage0, field.Rounds.Where(r => r.StageIndex == 0).ToList(),
             corrupt.Concat(field.Standings.Where(s => !(s.StageIndex == 0 && s.GroupNumber == 1))).ToList(),
             0, setup.Rules));
@@ -829,6 +829,6 @@ public sealed class ChaosCupPersistenceTests
     {
         List<ChaosCupRoundEntity> groupRounds = field.Rounds.Where(r => r.StageIndex == 0 && r.GroupNumber == 1).ToList();
         List<ChaosCupRoundEntity> gapped = groupRounds.Where(r => r.RoundNumber != 2).ToList();
-        Should.Throw<InvalidOperationException>(() => ChaosCupInvariants.ValidateGroupRoundsContiguous(gapped, 0, 1));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => ChaosCupInvariants.ValidateGroupRoundsContiguous(gapped, 0, 1));
     }
 }

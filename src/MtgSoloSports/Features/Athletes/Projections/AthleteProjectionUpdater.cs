@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Scoring;
 
@@ -65,7 +66,7 @@ public static class AthleteProjectionUpdater
             .ConfigureAwait(false);
         if (seasons.Count == 0)
         {
-            throw new InvalidOperationException("Save has no seasons for projection rebuild.");
+            throw new SaveCorruptionException("Save has no seasons for projection rebuild.");
         }
 
         Dictionary<int, LeagueEntity> leaguesById = await context.Leagues
@@ -336,7 +337,7 @@ public static class AthleteProjectionUpdater
             .ConfigureAwait(false);
         if (athleteIds.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must contain exactly {rules.LeagueSize} athletes for projection refresh, was {athleteIds.Count}.");
         }
 
@@ -351,7 +352,7 @@ public static class AthleteProjectionUpdater
         bool exists = await context.SaveAthletes.AnyAsync(e => e.Id == saveAthleteId, cancellationToken).ConfigureAwait(false);
         if (!exists)
         {
-            throw new InvalidOperationException($"Athlete {saveAthleteId} does not exist.");
+            throw new SaveCorruptionException($"Athlete {saveAthleteId} does not exist.");
         }
 
         List<SeasonEntity> seasons = await context.Seasons
@@ -360,7 +361,7 @@ public static class AthleteProjectionUpdater
             .ConfigureAwait(false);
         if (seasons.Count == 0)
         {
-            throw new InvalidOperationException("Save has no seasons for projection rebuild.");
+            throw new SaveCorruptionException("Save has no seasons for projection rebuild.");
         }
 
         Dictionary<int, int> seasonNumbers = seasons.ToDictionary(e => e.Id, e => e.SeasonNumber);
@@ -437,7 +438,7 @@ public static class AthleteProjectionUpdater
 
         if (!leaguesById.TryGetValue(membership.LeagueId.Value, out LeagueEntity? league))
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} references unknown league {membership.LeagueId.Value}.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} references unknown league {membership.LeagueId.Value}.");
         }
 
         return (membership.LeagueId, league.Name, league.Kind);
@@ -457,13 +458,13 @@ public static class AthleteProjectionUpdater
 
         if (seasonStages.Count != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} pool athlete has {seasonStages.Count} stage standings.");
         }
 
         if (final is not null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} pool athlete has a final season standing.");
         }
     }
@@ -477,7 +478,7 @@ public static class AthleteProjectionUpdater
         return membership?.SaveAthleteId
             ?? final?.SaveAthleteId
             ?? seasonStages.FirstOrDefault()?.SaveAthleteId
-            ?? throw new InvalidOperationException($"Season {season.SeasonNumber} summary has no athlete identity.");
+            ?? throw new SaveCorruptionException($"Season {season.SeasonNumber} summary has no athlete identity.");
     }
 
     internal static AthleteSeasonSummaryEntity MapSeasonSummary(
@@ -546,7 +547,7 @@ public static class AthleteProjectionUpdater
 
         if (!history.LeaguesById.TryGetValue(leagueId.Value, out LeagueEntity? league))
         {
-            throw new InvalidOperationException($"Latest season references unknown league {leagueId.Value}.");
+            throw new SaveCorruptionException($"Latest season references unknown league {leagueId.Value}.");
         }
 
         return (isActive, leagueId, league.Name, league.Kind);
@@ -560,7 +561,7 @@ public static class AthleteProjectionUpdater
         {
             if (!history.SeasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Season standing {row.Id} references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing {row.Id} references unknown season {row.SeasonId}.");
             }
 
             if (bestFinish is null || row.SeasonRank < bestFinish)
@@ -596,7 +597,7 @@ public static class AthleteProjectionUpdater
         int distinct = history.StageRows.Where(r => r.SeasonId == latest.Id).Select(r => r.StageNumber).Distinct().Count();
         if (distinct != completed)
         {
-            throw new InvalidOperationException($"Athlete has duplicate stage rows in season {latest.SeasonNumber}.");
+            throw new SaveCorruptionException($"Athlete has duplicate stage rows in season {latest.SeasonNumber}.");
         }
 
         return completed;

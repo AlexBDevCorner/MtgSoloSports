@@ -229,7 +229,7 @@ public sealed class SimulateSeasonsHandler
     {
         if (steps >= maxSteps)
         {
-            throw new InvalidOperationException(
+            throw new MtgSoloSports.Shared.SaveCorruptionException(
                 $"Simulation exceeded {maxSteps} lifecycle steps without completing {seasonsRequested} seasons; sporting state may be corrupt.");
         }
     }

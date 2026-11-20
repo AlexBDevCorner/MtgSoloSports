@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -138,50 +139,62 @@ public sealed record RulesV3SnapshotDocument(
 
     /// <summary>
     /// Rebuilds a validated <see cref="RulesV3"/> snapshot. Throws on any violation.
+    /// The kernel stays pure: its validation failures are rewrapped here, at the
+    /// persistence decode boundary, into <see cref="SaveCorruptionException"/>
+    /// so corrupt persisted values surface as 500 with the corruption message
+    /// instead of escaping as a client-error-class exception (MSS-144).
     /// </summary>
     public RulesV3 ToRules()
     {
-        RulesV3 rules = RulesV3.Create(
-            BuildOverrides(),
-            SuperleagueBonusNumerator,
-            SuperleagueBonusDenominator,
-            Feeder1BonusNumerator,
-            Feeder1BonusDenominator,
-            Feeder2BonusNumerator,
-            Feeder2BonusDenominator,
-            Feeder3BonusNumerator,
-            Feeder3BonusDenominator,
-            ResolveStrength(CupSuperleagueStrengthPermille, RulesV2.CupSuperleagueStrengthPermilleDefault),
-            ResolveStrength(CupFeeder1StrengthPermille, RulesV2.CupFeeder1StrengthPermilleDefault),
-            ResolveStrength(CupFeeder2StrengthPermille, RulesV2.CupFeeder2StrengthPermilleDefault),
-            ResolveStrength(CupFeeder3StrengthPermille, RulesV2.CupFeeder3StrengthPermilleDefault),
-            ResolveTiered(PrestigeSuperTitlePoints, RulesV3.PrestigeSuperTitlePointsDefault),
-            ResolveTiered(PrestigeFeeder1TitlePoints, RulesV3.PrestigeFeeder1TitlePointsDefault),
-            ResolveTiered(PrestigeFeeder2TitlePoints, RulesV3.PrestigeFeeder2TitlePointsDefault),
-            ResolveTiered(PrestigeFeeder3TitlePoints, RulesV3.PrestigeFeeder3TitlePointsDefault),
-            ResolveTiered(PrestigeSuperAppearancePoints, RulesV3.PrestigeSuperAppearancePointsDefault),
-            ResolveTiered(PrestigeMajorCupTitlePoints, RulesV3.PrestigeMajorCupTitlePointsDefault),
-            ResolveTiered(PrestigeSuperStageWinPoints, RulesV3.PrestigeSuperStageWinPointsDefault),
-            ResolveTiered(PrestigeSuperStageSecondPoints, RulesV3.PrestigeSuperStageSecondPointsDefault),
-            ResolveTiered(PrestigeSuperStageThirdPoints, RulesV3.PrestigeSuperStageThirdPointsDefault),
-            ResolveTiered(PrestigeFeeder1StageWinPoints, RulesV3.PrestigeFeeder1StageWinPointsDefault),
-            ResolveTiered(PrestigeFeeder1StageSecondPoints, RulesV3.PrestigeFeeder1StageSecondPointsDefault),
-            ResolveTiered(PrestigeFeeder1StageThirdPoints, RulesV3.PrestigeFeeder1StageThirdPointsDefault),
-            ResolveTiered(PrestigeFeeder2StageWinPoints, RulesV3.PrestigeFeeder2StageWinPointsDefault),
-            ResolveTiered(PrestigeFeeder2StageSecondPoints, RulesV3.PrestigeFeeder2StageSecondPointsDefault),
-            ResolveTiered(PrestigeFeeder2StageThirdPoints, RulesV3.PrestigeFeeder2StageThirdPointsDefault),
-            ResolveTiered(PrestigeFeeder3StageWinPoints, RulesV3.PrestigeFeeder3StageWinPointsDefault),
-            ResolveTiered(PrestigeFeeder3StageSecondPoints, RulesV3.PrestigeFeeder3StageSecondPointsDefault),
-            ResolveTiered(PrestigeFeeder3StageThirdPoints, RulesV3.PrestigeFeeder3StageThirdPointsDefault));
+        RulesV3 rules;
+        try
+        {
+            rules = RulesV3.Create(
+                BuildOverrides(),
+                SuperleagueBonusNumerator,
+                SuperleagueBonusDenominator,
+                Feeder1BonusNumerator,
+                Feeder1BonusDenominator,
+                Feeder2BonusNumerator,
+                Feeder2BonusDenominator,
+                Feeder3BonusNumerator,
+                Feeder3BonusDenominator,
+                ResolveStrength(CupSuperleagueStrengthPermille, RulesV2.CupSuperleagueStrengthPermilleDefault),
+                ResolveStrength(CupFeeder1StrengthPermille, RulesV2.CupFeeder1StrengthPermilleDefault),
+                ResolveStrength(CupFeeder2StrengthPermille, RulesV2.CupFeeder2StrengthPermilleDefault),
+                ResolveStrength(CupFeeder3StrengthPermille, RulesV2.CupFeeder3StrengthPermilleDefault),
+                ResolveTiered(PrestigeSuperTitlePoints, RulesV3.PrestigeSuperTitlePointsDefault),
+                ResolveTiered(PrestigeFeeder1TitlePoints, RulesV3.PrestigeFeeder1TitlePointsDefault),
+                ResolveTiered(PrestigeFeeder2TitlePoints, RulesV3.PrestigeFeeder2TitlePointsDefault),
+                ResolveTiered(PrestigeFeeder3TitlePoints, RulesV3.PrestigeFeeder3TitlePointsDefault),
+                ResolveTiered(PrestigeSuperAppearancePoints, RulesV3.PrestigeSuperAppearancePointsDefault),
+                ResolveTiered(PrestigeMajorCupTitlePoints, RulesV3.PrestigeMajorCupTitlePointsDefault),
+                ResolveTiered(PrestigeSuperStageWinPoints, RulesV3.PrestigeSuperStageWinPointsDefault),
+                ResolveTiered(PrestigeSuperStageSecondPoints, RulesV3.PrestigeSuperStageSecondPointsDefault),
+                ResolveTiered(PrestigeSuperStageThirdPoints, RulesV3.PrestigeSuperStageThirdPointsDefault),
+                ResolveTiered(PrestigeFeeder1StageWinPoints, RulesV3.PrestigeFeeder1StageWinPointsDefault),
+                ResolveTiered(PrestigeFeeder1StageSecondPoints, RulesV3.PrestigeFeeder1StageSecondPointsDefault),
+                ResolveTiered(PrestigeFeeder1StageThirdPoints, RulesV3.PrestigeFeeder1StageThirdPointsDefault),
+                ResolveTiered(PrestigeFeeder2StageWinPoints, RulesV3.PrestigeFeeder2StageWinPointsDefault),
+                ResolveTiered(PrestigeFeeder2StageSecondPoints, RulesV3.PrestigeFeeder2StageSecondPointsDefault),
+                ResolveTiered(PrestigeFeeder2StageThirdPoints, RulesV3.PrestigeFeeder2StageThirdPointsDefault),
+                ResolveTiered(PrestigeFeeder3StageWinPoints, RulesV3.PrestigeFeeder3StageWinPointsDefault),
+                ResolveTiered(PrestigeFeeder3StageSecondPoints, RulesV3.PrestigeFeeder3StageSecondPointsDefault),
+                ResolveTiered(PrestigeFeeder3StageThirdPoints, RulesV3.PrestigeFeeder3StageThirdPointsDefault));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException($"Rules snapshot contains invalid persisted values: {ex.Message}", ex);
+        }
 
         if (rules.Version != Version)
         {
-            throw new InvalidOperationException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
+            throw new SaveCorruptionException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
         }
 
         if (!string.Equals(rules.Algorithm, Algorithm, StringComparison.Ordinal) || rules.AlgorithmVersion != AlgorithmVersion)
         {
-            throw new InvalidOperationException("Rules RNG algorithm mismatch.");
+            throw new SaveCorruptionException("Rules RNG algorithm mismatch.");
         }
 
         return rules;
@@ -250,7 +263,14 @@ public sealed record RulesV3SnapshotDocument(
     public static RulesV3SnapshotDocument FromJson(string json)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        RulesV3SnapshotDocument? document = JsonSerializer.Deserialize<RulesV3SnapshotDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Rules snapshot payload is empty.");
+        try
+        {
+            RulesV3SnapshotDocument? document = JsonSerializer.Deserialize<RulesV3SnapshotDocument>(json, JsonOptions);
+            return document ?? throw new SaveCorruptionException("Rules snapshot payload is empty.");
+        }
+        catch (JsonException ex)
+        {
+            throw new SaveCorruptionException("Rules snapshot payload has invalid JSON values.", ex);
+        }
     }
 }

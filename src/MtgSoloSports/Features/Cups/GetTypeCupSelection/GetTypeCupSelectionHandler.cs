@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.GetTypeCupSelection;
 
@@ -80,7 +81,7 @@ public sealed class GetTypeCupSelectionHandler
             .ConfigureAwait(false);
         if (latest is null)
         {
-            throw new InvalidOperationException("Type Cup allocation references an unknown season.");
+            throw new SaveCorruptionException("Type Cup allocation references an unknown season.");
         }
 
         return latest;

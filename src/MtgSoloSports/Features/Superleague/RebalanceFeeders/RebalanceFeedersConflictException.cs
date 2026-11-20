@@ -4,7 +4,7 @@ namespace MtgSoloSports.Features.Superleague.RebalanceFeeders;
 /// Thrown when feeder rebalancing cannot run: no pending postseason transition,
 /// movement/qualifier outcomes unresolved, or rebalancing already completed.
 /// Maps to 409. Corrupted sporting state throws
-/// <see cref="InvalidOperationException"/> instead.
+/// <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class RebalanceFeedersConflictException : Exception
 {

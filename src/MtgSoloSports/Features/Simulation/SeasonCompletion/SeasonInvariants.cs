@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Seasons;
 
@@ -28,13 +29,13 @@ public static class SeasonInvariants
 
         if (ranked.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Final season must rank exactly {rules.LeagueSize} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Final season must total exactly {rules.LeagueSize} athletes, was {totals.Count}.");
         }
 
@@ -50,7 +51,7 @@ public static class SeasonInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
         {
-            throw new InvalidOperationException("Final season must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException("Final season must cover ranks 1..32 exactly once.");
         }
 
         CheckChampion(ranked);
@@ -72,32 +73,32 @@ public static class SeasonInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Final season contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Final season contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Final season contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Final season contains an athlete with an empty name.");
         }
 
         if (entry.SeasonRank < 1 || entry.SeasonRank > rules.LeagueSize)
         {
-            throw new InvalidOperationException($"Final season rank {entry.SeasonRank} is out of range.");
+            throw new SaveCorruptionException($"Final season rank {entry.SeasonRank} is out of range.");
         }
 
         if (!ranks.Add(entry.SeasonRank))
         {
-            throw new InvalidOperationException($"Final season contains duplicate rank {entry.SeasonRank}.");
+            throw new SaveCorruptionException($"Final season contains duplicate rank {entry.SeasonRank}.");
         }
 
         if (!athleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Final season contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Final season contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Final season contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Final season contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -108,7 +109,7 @@ public static class SeasonInvariants
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out SeasonAthleteTotals? totals))
         {
-            throw new InvalidOperationException($"Final season standing for '{entry.Name}' has no accumulated totals.");
+            throw new SaveCorruptionException($"Final season standing for '{entry.Name}' has no accumulated totals.");
         }
 
         CheckTotalsMatch(entry, totals);
@@ -119,22 +120,22 @@ public static class SeasonInvariants
     {
         if (!string.Equals(totals.Name, entry.Name, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Final season standing for id {entry.AthleteId} has inconsistent names.");
+            throw new SaveCorruptionException($"Final season standing for id {entry.AthleteId} has inconsistent names.");
         }
 
         if (entry.TotalChampionshipPointsThousandths != totals.TotalChampionshipPointsThousandths)
         {
-            throw new InvalidOperationException($"Final season championship total for '{entry.Name}' does not match stage points.");
+            throw new SaveCorruptionException($"Final season championship total for '{entry.Name}' does not match stage points.");
         }
 
         if (entry.TotalStageScoreThousandths != totals.TotalStageScoreThousandths)
         {
-            throw new InvalidOperationException($"Final season stage score for '{entry.Name}' does not match accumulated finals.");
+            throw new SaveCorruptionException($"Final season stage score for '{entry.Name}' does not match accumulated finals.");
         }
 
         if (entry.TotalBaseScoreThousandths != totals.TotalBaseScoreThousandths)
         {
-            throw new InvalidOperationException($"Final season base score for '{entry.Name}' does not match accumulated base points.");
+            throw new SaveCorruptionException($"Final season base score for '{entry.Name}' does not match accumulated base points.");
         }
     }
 
@@ -145,14 +146,14 @@ public static class SeasonInvariants
     {
         if (entry.StagePlaceCounts.Count != rules.LeagueSize || entry.RoundPlaceCounts.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException($"Final season place counts for '{entry.Name}' do not match accumulated totals.");
+            throw new SaveCorruptionException($"Final season place counts for '{entry.Name}' do not match accumulated totals.");
         }
 
         for (int i = 0; i < entry.StagePlaceCounts.Count; i++)
         {
             if (entry.StagePlaceCounts[i] != totals.StagePlaceCounts[i])
             {
-                throw new InvalidOperationException($"Final season stage-place counts for '{entry.Name}' do not match accumulated totals.");
+                throw new SaveCorruptionException($"Final season stage-place counts for '{entry.Name}' do not match accumulated totals.");
             }
         }
 
@@ -160,19 +161,19 @@ public static class SeasonInvariants
         {
             if (entry.RoundPlaceCounts[i] != totals.RoundPlaceCounts[i])
             {
-                throw new InvalidOperationException($"Final season round-place counts for '{entry.Name}' do not match accumulated totals.");
+                throw new SaveCorruptionException($"Final season round-place counts for '{entry.Name}' do not match accumulated totals.");
             }
         }
 
         if (entry.StageWins != totals.StageWins || entry.RoundWins != totals.RoundWins)
         {
-            throw new InvalidOperationException($"Final season wins for '{entry.Name}' do not match placement counts.");
+            throw new SaveCorruptionException($"Final season wins for '{entry.Name}' do not match placement counts.");
         }
 
         bool expectedChampion = entry.SeasonRank == 1;
         if (entry.IsChampion != expectedChampion)
         {
-            throw new InvalidOperationException($"Final season champion flag for '{entry.Name}' must be {expectedChampion}.");
+            throw new SaveCorruptionException($"Final season champion flag for '{entry.Name}' must be {expectedChampion}.");
         }
     }
 
@@ -181,13 +182,13 @@ public static class SeasonInvariants
         int champions = ranked.Count(r => r.IsChampion);
         if (champions != 1)
         {
-            throw new InvalidOperationException($"Final season must have exactly one champion, was {champions}.");
+            throw new SaveCorruptionException($"Final season must have exactly one champion, was {champions}.");
         }
 
         SeasonRankedAthlete champion = ranked.Single(r => r.IsChampion);
         if (champion.SeasonRank != 1)
         {
-            throw new InvalidOperationException("Final season champion must hold season rank 1.");
+            throw new SaveCorruptionException("Final season champion must hold season rank 1.");
         }
     }
 
@@ -198,7 +199,7 @@ public static class SeasonInvariants
             int stageSum = entry.StagePlaceCounts.Sum();
             if (stageSum != rules.StagesPerSeason)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Final season totals for '{entry.Name}' cover {stageSum} stages, expected {rules.StagesPerSeason}.");
             }
 
@@ -207,7 +208,7 @@ public static class SeasonInvariants
             {
                 if (roundSum != rules.StagesPerSeason * rules.RoundsPerStage)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Final season totals for '{entry.Name}' cover {roundSum} rounds, expected {rules.StagesPerSeason * rules.RoundsPerStage}.");
                 }
             }

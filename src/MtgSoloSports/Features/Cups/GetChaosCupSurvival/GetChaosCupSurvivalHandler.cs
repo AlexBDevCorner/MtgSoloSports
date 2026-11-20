@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
@@ -112,7 +113,7 @@ public sealed class GetChaosCupSurvivalHandler
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == latest.SourceSeasonId, cancellationToken)
             .ConfigureAwait(false);
-        return source ?? throw new InvalidOperationException("Chaos Cup edition references an unknown season.");
+        return source ?? throw new SaveCorruptionException("Chaos Cup edition references an unknown season.");
     }
 
     internal static GetChaosCupSurvivalResponse BuildResponse(
@@ -141,7 +142,7 @@ public sealed class GetChaosCupSurvivalHandler
         {
             if (stage < 0 || stage >= ChaosCupFormat.StageCount)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stage} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stage} is out of range.");
             }
         }
 
@@ -190,7 +191,7 @@ public sealed class GetChaosCupSurvivalHandler
 
         if (stageDraws.Count == 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} has standings without a persisted draw.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} has standings without a persisted draw.");
         }
 
         HashSet<int> drawn = stageDraws.Select(d => d.SaveAthleteId).ToHashSet();
@@ -200,39 +201,39 @@ public sealed class GetChaosCupSurvivalHandler
         {
             if (!drawn.Contains(standing.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} outside its draw.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} outside its draw.");
             }
 
             if (!seen.Add(standing.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} more than once.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} more than once.");
             }
 
             if (!entrantByAthlete.ContainsKey(standing.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} outside the frozen field.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} ranks athlete {standing.SaveAthleteId} outside the frozen field.");
             }
 
             if (standing.GroupRank < 1 || standing.GroupRank > ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} rank {standing.GroupRank} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} rank {standing.GroupRank} is out of range.");
             }
 
             bool shouldAdvance = !isFinal && standing.GroupRank <= ChaosCupFormat.AdvancingPerGroup;
             if (standing.IsAdvanced != shouldAdvance)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} rank {standing.GroupRank} has corrupt advancement flag.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} rank {standing.GroupRank} has corrupt advancement flag.");
             }
         }
 
         if (stageStandings.Count > stageDraws.Count)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} holds {stageStandings.Count} standings for {stageDraws.Count} drawn athletes.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} holds {stageStandings.Count} standings for {stageDraws.Count} drawn athletes.");
         }
 
         if (stageStandings.Count % ChaosCupFormat.GroupSize != 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} holds {stageStandings.Count} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} holds {stageStandings.Count} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
         }
     }
 
@@ -269,7 +270,7 @@ public sealed class GetChaosCupSurvivalHandler
 
         if (pending < 0)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} counts do not sum: initial {initial}, advanced {advanced}, eliminated {eliminated}, finalists {finalists}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} counts do not sum: initial {initial}, advanced {advanced}, eliminated {eliminated}, finalists {finalists}.");
         }
 
         IReadOnlyList<GetChaosCupSurvivalResponse.BucketCount> byColor = BuildByColor(
@@ -470,7 +471,7 @@ public sealed class GetChaosCupSurvivalHandler
             LeagueLevel.Feeder1 => "Feeder1",
             LeagueLevel.Feeder2 => "Feeder2",
             LeagueLevel.Feeder3 => "Feeder3",
-            _ => throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
+            _ => throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
         };
     }
 
@@ -516,7 +517,7 @@ public sealed class GetChaosCupSurvivalHandler
             || buckets.Sum(b => b.Pending) != pending
             || buckets.Sum(b => b.Finalists) != finalists)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} {kind} breakdown does not sum to stage totals.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} {kind} breakdown does not sum to stage totals.");
         }
     }
 }

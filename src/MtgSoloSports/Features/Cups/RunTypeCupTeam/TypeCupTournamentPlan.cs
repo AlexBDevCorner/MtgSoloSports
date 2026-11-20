@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -134,7 +135,7 @@ public static class TypeCupTournamentPlan
         ArgumentNullException.ThrowIfNull(rules);
         if (stages.Count == 0)
         {
-            throw new InvalidOperationException("Qualification tournament requires at least one group.");
+            throw new SaveCorruptionException("Qualification tournament requires at least one group.");
         }
 
         int perStage = rules.TypeCupMinTeamSize * rules.TypeCupGroupRounds;
@@ -188,7 +189,7 @@ public static class TypeCupTournamentPlan
         {
             if (draws.Count != 0)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     "Direct-Final Type Cup must not persist a qualification draw.");
             }
 
@@ -204,14 +205,14 @@ public static class TypeCupTournamentPlan
         int policy = draws.First().TournamentFormatVersion;
         if (draws.Any(d => d.TournamentFormatVersion != policy))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Type Cup qualification draw has mixed tournament format versions within one edition.");
         }
 
         if (policy != RulesV1.FixedQuotaTypeCupTournamentFormatVersion
             && policy != RulesV1.WildcardTypeCupTournamentFormatVersion)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup draw format version {policy} is not a scalable qualification version.");
         }
 
@@ -291,14 +292,14 @@ public static class TypeCupTournamentPlan
         int quota = rows.First().FinalPlacesForGroup;
         if (rows.Any(r => r.GroupSize != size || r.FinalPlacesForGroup != quota))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup draw group {group} has inconsistent size/quota metadata.");
         }
 
         TypeCupTournamentFormat.ValidateCompetitionFieldSize(size, rules);
         if (types.Count != size)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup draw group {group} must hold exactly {size} teams, was {types.Count}.");
         }
 
@@ -316,7 +317,7 @@ public static class TypeCupTournamentPlan
             int totalQuota = stages.Sum(s => s.FinalPlaces);
             if (totalQuota != rules.TypeCupFinalTeamCount)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification quotas must total exactly {rules.TypeCupFinalTeamCount}, was {totalQuota}.");
             }
         }
@@ -327,7 +328,7 @@ public static class TypeCupTournamentPlan
             {
                 if (stage.FinalPlaces != expectedBase)
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Type Cup qualification group {stage.QualificationGroup} guaranteed quota must be {expectedBase} under the wildcard policy, was {stage.FinalPlaces}.");
                 }
             }
@@ -336,7 +337,7 @@ public static class TypeCupTournamentPlan
             int total = stages.Sum(s => s.FinalPlaces) + wildcards;
             if (total != rules.TypeCupFinalTeamCount)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup guaranteed quotas plus wildcards must total exactly {rules.TypeCupFinalTeamCount}, was {total}.");
             }
         }
@@ -345,7 +346,7 @@ public static class TypeCupTournamentPlan
         HashSet<string> selected = selectedTypes.ToHashSet(StringComparer.Ordinal);
         if (!assigned.SetEquals(selected))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Type Cup qualification draw does not cover the selected field exactly once.");
         }
     }
@@ -377,7 +378,7 @@ public static class TypeCupTournamentPlan
         ArgumentNullException.ThrowIfNull(qualStandings);
         if (!plan.IsTournament)
         {
-            throw new InvalidOperationException("Finalist selection requires a qualification tournament.");
+            throw new SaveCorruptionException("Finalist selection requires a qualification tournament.");
         }
 
         List<string> finalists = new(32);
@@ -385,7 +386,7 @@ public static class TypeCupTournamentPlan
         {
             if (!qualStandings.TryGetValue(stage.QualificationGroup, out IReadOnlyList<(string Team, int Rank)>? standings))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} has no completed standings.");
             }
 
@@ -397,7 +398,7 @@ public static class TypeCupTournamentPlan
                 .ToList();
             if (top.Count != stage.FinalPlaces)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} must advance exactly {stage.FinalPlaces} teams.");
             }
 
@@ -406,13 +407,13 @@ public static class TypeCupTournamentPlan
 
         if (finalists.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup Final must hold exactly 32 teams, was {finalists.Count}.");
         }
 
         if (finalists.Distinct(StringComparer.Ordinal).Count() != 32)
         {
-            throw new InvalidOperationException("Type Cup Finalists contain duplicate teams.");
+            throw new SaveCorruptionException("Type Cup Finalists contain duplicate teams.");
         }
 
         return finalists.OrderBy(t => t, StringComparer.Ordinal).ToList();
@@ -497,12 +498,12 @@ public static class TypeCupTournamentPlan
     {
         if (!plan.IsTournament)
         {
-            throw new InvalidOperationException("Finalist selection requires a qualification tournament.");
+            throw new SaveCorruptionException("Finalist selection requires a qualification tournament.");
         }
 
         if (!plan.IsWildcardPolicy)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Wildcard selection requires policy v{RulesV1.WildcardTypeCupTournamentFormatVersion}, was v{plan.QualificationPolicyVersion}.");
         }
     }
@@ -519,13 +520,13 @@ public static class TypeCupTournamentPlan
     {
         if (!qualStandings.TryGetValue(stage.QualificationGroup, out WildcardGroupStandings? group))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification group {stage.QualificationGroup} has no completed standings.");
         }
 
         if (group.Teams.Count != stage.GroupSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup qualification group {stage.QualificationGroup} must hold exactly {stage.GroupSize} teams, was {group.Teams.Count}.");
         }
 
@@ -544,7 +545,7 @@ public static class TypeCupTournamentPlan
         {
             if (ordered.Count <= guaranteed)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} has no wildcard candidate at rank {guaranteed + 1}.");
             }
 
@@ -569,7 +570,7 @@ public static class TypeCupTournamentPlan
         {
             if (ordered[i].Rank != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {group} ranks are corrupt.");
             }
         }
@@ -579,13 +580,13 @@ public static class TypeCupTournamentPlan
     {
         if (finalists.Count != rules.TypeCupFinalTeamCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup Final must hold exactly {rules.TypeCupFinalTeamCount} teams, was {finalists.Count}.");
         }
 
         if (finalists.Distinct(StringComparer.Ordinal).Count() != rules.TypeCupFinalTeamCount)
         {
-            throw new InvalidOperationException("Type Cup Finalists contain duplicate teams.");
+            throw new SaveCorruptionException("Type Cup Finalists contain duplicate teams.");
         }
     }
 
@@ -607,7 +608,7 @@ public static class TypeCupTournamentPlan
         {
             if (!ranks.TryGetValue(stage.QualificationGroup, out var groupRanks))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup qualification group {stage.QualificationGroup} has no completed standings.");
             }
 
@@ -616,7 +617,7 @@ public static class TypeCupTournamentPlan
             {
                 if (!scores.TryGetValue((stage.QualificationGroup, entry.Team), out var score))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Type Cup qualification group {stage.QualificationGroup} team '{entry.Team}' has no persisted score.");
                 }
 

@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.GetRoundReplay;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Features.History.EventRounds;
@@ -39,7 +40,7 @@ public static class EventRoundViews
         {
             if (!cards.TryGetValue(placement.AthleteId, out SaveAthleteEntity? card))
             {
-                throw new InvalidOperationException($"{title} round {roundNumber} references unknown athlete {placement.AthleteId}.");
+                throw new SaveCorruptionException($"{title} round {roundNumber} references unknown athlete {placement.AthleteId}.");
             }
 
             mapped.Add(new HistoryRoundPlacement(

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -73,7 +74,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false)).ToDictionary(e => e.SaveAthleteId);
         if (selectionByAthlete.Count != state.Selection.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection changed during the team event; aborting.");
+            throw new SaveCorruptionException("Type Cup team selection changed during the team event; aborting.");
         }
 
         foreach (StageSimulation stage in simulation.Stages)
@@ -107,7 +108,7 @@ public sealed partial class RunTypeCupTeamHandler
         {
             if (legsExist != teamsExist)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup tournament stage phase {stage.Key.Phase} qual {stage.Key.QualificationGroup} has corrupt partial standings.");
             }
 
@@ -171,12 +172,12 @@ public sealed partial class RunTypeCupTeamHandler
     {
         if (!selectionByAthlete.TryGetValue(leg.AthleteId, out TypeCupSelectionEntity? row))
         {
-            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' has no selection provenance.");
+            throw new SaveCorruptionException($"Type Cup team leg for '{leg.Name}' has no selection provenance.");
         }
 
         if (!string.Equals(leg.TeamName, row.CreatureType, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' changes creature type within the event.");
+            throw new SaveCorruptionException($"Type Cup team leg for '{leg.Name}' changes creature type within the event.");
         }
 
         int groupNumber = GroupNumberForLeg(row);
@@ -217,7 +218,7 @@ public sealed partial class RunTypeCupTeamHandler
                 .ToList();
             if (legs.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Type Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
             }
 
             foreach (TeamEvent.TeamLegRanked leg in legs)
@@ -264,7 +265,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ToDictionary(e => e.SaveAthleteId, e => e.CreatureType);
         if (typeByAthlete.Count != participantIds.Count)
         {
-            throw new InvalidOperationException("Type Cup tournament participants have no selection provenance.");
+            throw new SaveCorruptionException("Type Cup tournament participants have no selection provenance.");
         }
 
         List<int> ids = typeByAthlete.Keys.ToList();
@@ -274,7 +275,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (athletes.Count != ids.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+            throw new SaveCorruptionException("Type Cup team selection references unknown athletes.");
         }
 
         foreach (SaveAthleteEntity athlete in athletes)
@@ -288,7 +289,7 @@ public sealed partial class RunTypeCupTeamHandler
 
             if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
             }
         }
@@ -322,7 +323,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (athletes.Count != ids.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+            throw new SaveCorruptionException("Type Cup team selection references unknown athletes.");
         }
 
         foreach (SaveAthleteEntity athlete in athletes)
@@ -336,7 +337,7 @@ public sealed partial class RunTypeCupTeamHandler
 
             if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
             }
         }
@@ -401,7 +402,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false)).ToDictionary(e => e.SaveAthleteId);
         if (selectionByAthlete.Count != selection.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection changed during the team event; aborting.");
+            throw new SaveCorruptionException("Type Cup team selection changed during the team event; aborting.");
         }
 
         foreach (TeamEvent.TeamLegRanked leg in simulation.Legs)
@@ -418,12 +419,12 @@ public sealed partial class RunTypeCupTeamHandler
     {
         if (!selectionByAthlete.TryGetValue(leg.AthleteId, out TypeCupSelectionEntity? row))
         {
-            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' has no selection provenance.");
+            throw new SaveCorruptionException($"Type Cup team leg for '{leg.Name}' has no selection provenance.");
         }
 
         if (!string.Equals(leg.TeamName, row.CreatureType, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Type Cup team leg for '{leg.Name}' changes creature type within the event.");
+            throw new SaveCorruptionException($"Type Cup team leg for '{leg.Name}' changes creature type within the event.");
         }
 
         int groupNumber = GroupNumberForLeg(row);
@@ -448,7 +449,7 @@ public sealed partial class RunTypeCupTeamHandler
         ArgumentNullException.ThrowIfNull(selection);
         if (selection.SelectionRank < 1 || selection.SelectionRank > 4)
         {
-            throw new InvalidOperationException($"Type Cup team selection rank {selection.SelectionRank} is out of range.");
+            throw new SaveCorruptionException($"Type Cup team selection rank {selection.SelectionRank} is out of range.");
         }
 
         return selection.SelectionRank;
@@ -507,7 +508,7 @@ public sealed partial class RunTypeCupTeamHandler
                 .ToList();
             if (legs.Count != 4)
             {
-                throw new InvalidOperationException($"Type Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
+                throw new SaveCorruptionException($"Type Cup team '{podiumTeam.TeamName}' rank {podiumTeam.TeamRank} must field exactly four legs.");
             }
 
             foreach (TeamEvent.TeamLegRanked leg in legs)
@@ -547,7 +548,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (athletes.Count != ids.Count)
         {
-            throw new InvalidOperationException("Type Cup team selection references unknown athletes.");
+            throw new SaveCorruptionException("Type Cup team selection references unknown athletes.");
         }
 
         foreach (SaveAthleteEntity athlete in athletes)
@@ -561,7 +562,7 @@ public sealed partial class RunTypeCupTeamHandler
 
             if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
             }
         }
@@ -594,35 +595,35 @@ public sealed partial class RunTypeCupTeamHandler
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stageCountBefore)
         {
-            throw new InvalidOperationException("Type Cup team must not create league stage standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Type Cup team must not create league stage standings; championship totals are preserved.");
         }
 
         if (seasons != seasonCountBefore)
         {
-            throw new InvalidOperationException("Type Cup team must not create league season standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Type Cup team must not create league season standings; championship totals are preserved.");
         }
 
         if (rounds != roundCountBefore)
         {
-            throw new InvalidOperationException("Type Cup team must not create league rounds; Cup history lives in Cup tables only.");
+            throw new SaveCorruptionException("Type Cup team must not create league rounds; Cup history lives in Cup tables only.");
         }
 
         long lifetime = await context.AthleteCareers.SumAsync(e => (long)e.LifetimeEarnedBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (lifetime != lifetimeBefore)
         {
-            throw new InvalidOperationException("Type Cup team participation must not change career bonus.");
+            throw new SaveCorruptionException("Type Cup team participation must not change career bonus.");
         }
 
         long effective = await context.AthleteCareers.SumAsync(e => (long)e.CurrentEffectiveBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (effective != effectiveBefore)
         {
-            throw new InvalidOperationException("Type Cup team participation must not change effective bonus projections.");
+            throw new SaveCorruptionException("Type Cup team participation must not change effective bonus projections.");
         }
 
         long championship = await context.SeasonStandings.SumAsync(e => (long)e.TotalChampionshipPointsThousandths, cancellationToken).ConfigureAwait(false);
         if (championship != championshipBefore)
         {
-            throw new InvalidOperationException("Type Cup team must not award league championship points.");
+            throw new SaveCorruptionException("Type Cup team must not award league championship points.");
         }
     }
 
@@ -651,7 +652,7 @@ public sealed partial class RunTypeCupTeamHandler
         TypeCupTeamInvariants.ValidateTournamentPersisted(state.Source, rounds, legs, teams, honours, state.Rules, state.Plan);
         if (!string.Equals(ComputeChecksum(simulation.Final.Teams), simulation.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Type Cup team checksum does not match simulated standings.");
+            throw new SaveCorruptionException("Type Cup team checksum does not match simulated standings.");
         }
 
         await VerifyPreservationAsync(
@@ -692,7 +693,7 @@ public sealed partial class RunTypeCupTeamHandler
         TypeCupTeamInvariants.ValidatePersisted(source, rounds, legs, teams, honours, rules);
         if (!string.Equals(ComputeChecksum(simulation.Teams), simulation.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Type Cup team checksum does not match simulated standings.");
+            throw new SaveCorruptionException("Type Cup team checksum does not match simulated standings.");
         }
 
         await VerifyPreservationAsync(
@@ -725,7 +726,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (athletes.Count != participantIds.Count)
         {
-            throw new InvalidOperationException("Type Cup team participants reference unknown athletes.");
+            throw new SaveCorruptionException("Type Cup team participants reference unknown athletes.");
         }
 
         foreach (SaveAthleteEntity athlete in athletes)
@@ -733,12 +734,12 @@ public sealed partial class RunTypeCupTeamHandler
             string allocated = typeByAthlete[athlete.Id];
             if (string.IsNullOrWhiteSpace(athlete.TypeCupNationality))
             {
-                throw new InvalidOperationException($"Athlete '{athlete.Name}' participated for '{allocated}' but has no permanent nationality.");
+                throw new SaveCorruptionException($"Athlete '{athlete.Name}' participated for '{allocated}' but has no permanent nationality.");
             }
 
             if (!string.Equals(athlete.TypeCupNationality.Trim(), allocated, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete '{athlete.Name}' is capped for '{athlete.TypeCupNationality}' but participated for '{allocated}'; nationality can never change.");
             }
         }
@@ -914,7 +915,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (teams.Count != final.Teams.Count || legs.Count != final.Legs.Count)
         {
-            throw new InvalidOperationException("Type Cup team persisted result does not match the simulation.");
+            throw new SaveCorruptionException("Type Cup team persisted result does not match the simulation.");
         }
 
         Dictionary<int, string> names = await context.SaveAthletes
@@ -979,7 +980,7 @@ public sealed partial class RunTypeCupTeamHandler
             .ConfigureAwait(false);
         if (teams.Count != simulation.Teams.Count || legs.Count != simulation.Legs.Count || rounds.Count != simulation.Payloads.Count)
         {
-            throw new InvalidOperationException("Type Cup team persisted result does not match the simulation.");
+            throw new SaveCorruptionException("Type Cup team persisted result does not match the simulation.");
         }
 
         Dictionary<int, string> names = await context.SaveAthletes

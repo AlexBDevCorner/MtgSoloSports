@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Superleague.GetAutomaticMovement;
@@ -99,7 +100,7 @@ public sealed class GetAutomaticMovementHandler
             .ConfigureAwait(false);
         if (latestNext is null || latestSource is null)
         {
-            throw new InvalidOperationException("Automatic movement references unknown seasons.");
+            throw new SaveCorruptionException("Automatic movement references unknown seasons.");
         }
 
         return (latestSource, latestNext);
@@ -297,13 +298,13 @@ public sealed class GetAutomaticMovementHandler
         int challengers = movements.Count(m => m.Kind == (int)MovementKind.QualifierChallenger);
         if (promotions != 8 || relegations != 8 || incumbents != 8 || challengers != 24)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must hold 8 promotions, 8 relegations, 8 incumbents and 24 challengers, was {promotions}/{relegations}/{incumbents}/{challengers}.");
         }
 
         if (movements.Count != 48)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must hold exactly 48 records, was {movements.Count}.");
         }
     }
@@ -343,7 +344,7 @@ public sealed class GetAutomaticMovementHandler
 
         if (members.Count != 16)
         {
-            throw new InvalidOperationException($"Automatic movement must expose exactly 16 safe athletes, was {members.Count}.");
+            throw new SaveCorruptionException($"Automatic movement must expose exactly 16 safe athletes, was {members.Count}.");
         }
 
         return members;

@@ -4,6 +4,7 @@ using MtgSoloSports.Features.History.GetEventRound;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
@@ -238,12 +239,12 @@ public sealed class GetHistoryEventTeamStandingsHandler
             {
                 if (!teamByAthlete.TryGetValue(placement.AthleteId, out string? team))
                 {
-                    throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} round references athlete {placement.AthleteId} outside the selected field.");
+                    throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} round references athlete {placement.AthleteId} outside the selected field.");
                 }
 
                 if (roster is not null && !roster.Contains(team))
                 {
-                    throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} stage {tournamentPhase}/{qualificationGroup} round references team '{team}' outside the persisted stage roster.");
+                    throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} stage {tournamentPhase}/{qualificationGroup} round references team '{team}' outside the persisted stage roster.");
                 }
 
                 totals[team] += placement.FinalThousandths;
@@ -409,7 +410,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
         int policy = draws[0].TournamentFormatVersion;
         if (draws.Any(d => d.TournamentFormatVersion != policy))
         {
-            throw new InvalidOperationException("Type Cup qualification draw has mixed tournament format versions within one edition.");
+            throw new SaveCorruptionException("Type Cup qualification draw has mixed tournament format versions within one edition.");
         }
 
         List<int> groups = draws.Select(d => d.QualificationGroup).Distinct().OrderBy(g => g).ToList();
@@ -456,7 +457,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
             int quota = drawRows[0].FinalPlacesForGroup;
             if (drawRows.Any(r => r.GroupSize != size || r.FinalPlacesForGroup != quota))
             {
-                throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent size/quota metadata.");
+                throw new SaveCorruptionException($"Type Cup draw group {group} has inconsistent size/quota metadata.");
             }
 
             List<TypeCupTeamStandingEntity> ordered = qualTeams
@@ -529,7 +530,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
         int size = drawRows[0].GroupSize;
         if (drawRows.Any(r => r.GroupSize != size))
         {
-            throw new InvalidOperationException($"Type Cup draw group {group} has inconsistent size metadata.");
+            throw new SaveCorruptionException($"Type Cup draw group {group} has inconsistent size metadata.");
         }
 
         List<TypeCupTeamStandingEntity> ordered = qualTeams
@@ -596,7 +597,7 @@ public sealed class GetHistoryEventTeamStandingsHandler
         {
             if (ordered[i].TeamRank != i + 1)
             {
-                throw new InvalidOperationException($"Type Cup qualification group {group} ranks are corrupt.");
+                throw new SaveCorruptionException($"Type Cup qualification group {group} ranks are corrupt.");
             }
         }
     }
@@ -671,12 +672,12 @@ public sealed class GetHistoryEventTeamStandingsHandler
             {
                 if (!teamByAthlete.TryGetValue(placement.AthleteId, out string? team))
                 {
-                    throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} round references athlete {placement.AthleteId} outside the selected field.");
+                    throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} round references athlete {placement.AthleteId} outside the selected field.");
                 }
 
                 if (roster is not null && !roster.Contains(team))
                 {
-                    throw new InvalidOperationException($"{PostseasonEvents.Title(eventKey)} stage {tournamentPhase}/{qualificationGroup} round references team '{team}' outside the persisted stage roster.");
+                    throw new SaveCorruptionException($"{PostseasonEvents.Title(eventKey)} stage {tournamentPhase}/{qualificationGroup} round references team '{team}' outside the persisted stage roster.");
                 }
 
                 totals[team] += placement.FinalThousandths;

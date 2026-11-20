@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -35,12 +36,12 @@ public sealed class RngStateEntity
     {
         if (!string.Equals(Algorithm, Pcg32V1.AlgorithmName, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Unsupported RNG algorithm '{Algorithm}'.");
+            throw new SaveCorruptionException($"Unsupported RNG algorithm '{Algorithm}'.");
         }
 
         if (AlgorithmVersion != Pcg32V1.AlgorithmVersion)
         {
-            throw new InvalidOperationException($"Unsupported RNG version {AlgorithmVersion}.");
+            throw new SaveCorruptionException($"Unsupported RNG version {AlgorithmVersion}.");
         }
 
         return new Pcg32State(unchecked((ulong)State), unchecked((ulong)Stream));

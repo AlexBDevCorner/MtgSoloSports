@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -139,32 +140,44 @@ public sealed record RulesV2SnapshotDocument(
 
     /// <summary>
     /// Rebuilds a validated <see cref="RulesV2"/> snapshot. Throws on any violation.
+    /// The kernel stays pure: its validation failures are rewrapped here, at the
+    /// persistence decode boundary, into <see cref="SaveCorruptionException"/>
+    /// so corrupt persisted values surface as 500 with the corruption message
+    /// instead of escaping as a client-error-class exception (MSS-144).
     /// </summary>
     public RulesV2 ToRules()
     {
-        RulesV2 rules = RulesV2.Create(
-            BuildOverrides(),
-            SuperleagueBonusNumerator,
-            SuperleagueBonusDenominator,
-            Feeder1BonusNumerator,
-            Feeder1BonusDenominator,
-            Feeder2BonusNumerator,
-            Feeder2BonusDenominator,
-            Feeder3BonusNumerator,
-            Feeder3BonusDenominator,
-            ResolveStrength(CupSuperleagueStrengthPermille, RulesV2.CupSuperleagueStrengthPermilleDefault),
-            ResolveStrength(CupFeeder1StrengthPermille, RulesV2.CupFeeder1StrengthPermilleDefault),
-            ResolveStrength(CupFeeder2StrengthPermille, RulesV2.CupFeeder2StrengthPermilleDefault),
-            ResolveStrength(CupFeeder3StrengthPermille, RulesV2.CupFeeder3StrengthPermilleDefault));
+        RulesV2 rules;
+        try
+        {
+            rules = RulesV2.Create(
+                BuildOverrides(),
+                SuperleagueBonusNumerator,
+                SuperleagueBonusDenominator,
+                Feeder1BonusNumerator,
+                Feeder1BonusDenominator,
+                Feeder2BonusNumerator,
+                Feeder2BonusDenominator,
+                Feeder3BonusNumerator,
+                Feeder3BonusDenominator,
+                ResolveStrength(CupSuperleagueStrengthPermille, RulesV2.CupSuperleagueStrengthPermilleDefault),
+                ResolveStrength(CupFeeder1StrengthPermille, RulesV2.CupFeeder1StrengthPermilleDefault),
+                ResolveStrength(CupFeeder2StrengthPermille, RulesV2.CupFeeder2StrengthPermilleDefault),
+                ResolveStrength(CupFeeder3StrengthPermille, RulesV2.CupFeeder3StrengthPermilleDefault));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException($"Rules snapshot contains invalid persisted values: {ex.Message}", ex);
+        }
 
         if (rules.Version != Version)
         {
-            throw new InvalidOperationException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
+            throw new SaveCorruptionException($"Rules version mismatch: expected {Version}, was {rules.Version}.");
         }
 
         if (!string.Equals(rules.Algorithm, Algorithm, StringComparison.Ordinal) || rules.AlgorithmVersion != AlgorithmVersion)
         {
-            throw new InvalidOperationException("Rules RNG algorithm mismatch.");
+            throw new SaveCorruptionException("Rules RNG algorithm mismatch.");
         }
 
         return rules;
@@ -231,7 +244,14 @@ public sealed record RulesV2SnapshotDocument(
     public static RulesV2SnapshotDocument FromJson(string json)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
-        RulesV2SnapshotDocument? document = JsonSerializer.Deserialize<RulesV2SnapshotDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Rules snapshot payload is empty.");
+        try
+        {
+            RulesV2SnapshotDocument? document = JsonSerializer.Deserialize<RulesV2SnapshotDocument>(json, JsonOptions);
+            return document ?? throw new SaveCorruptionException("Rules snapshot payload is empty.");
+        }
+        catch (JsonException ex)
+        {
+            throw new SaveCorruptionException("Rules snapshot payload has invalid JSON values.", ex);
+        }
     }
 }

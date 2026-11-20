@@ -288,10 +288,10 @@ public sealed class AdvanceRoundTests
             .Select(e => string.Equals(e.Name, victim.Name, StringComparison.Ordinal) ? e with { BaseThousandths = e.BaseThousandths + 1000 } : e)
             .ToList();
         RoundPayloadDocument corrupted = valid with { Placements = tampered };
-        Should.Throw<InvalidOperationException>(() => RoundInvariants.ValidateSimulation(corrupted, rules, valid.RngBeforeState, valid.RngBeforeStream));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => RoundInvariants.ValidateSimulation(corrupted, rules, valid.RngBeforeState, valid.RngBeforeStream));
 
         RoundPayloadDocument badRng = valid with { RngBeforeState = valid.RngBeforeState + 1UL };
-        Should.Throw<InvalidOperationException>(() => RoundInvariants.ValidateSimulation(badRng, rules, valid.RngBeforeState, valid.RngBeforeStream));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => RoundInvariants.ValidateSimulation(badRng, rules, valid.RngBeforeState, valid.RngBeforeStream));
     }
 
     private static void AssertRoundOnePayload(AdvanceRoundResponse response)

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Persistence.Saves;
 
@@ -29,6 +30,6 @@ public sealed record SaveCheckpointSidecar(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         SaveCheckpointSidecar? sidecar = JsonSerializer.Deserialize<SaveCheckpointSidecar>(json, JsonOptions);
-        return sidecar ?? throw new InvalidOperationException("Checkpoint sidecar payload is empty.");
+        return sidecar ?? throw new SaveCorruptionException("Checkpoint sidecar payload is empty.");
     }
 }

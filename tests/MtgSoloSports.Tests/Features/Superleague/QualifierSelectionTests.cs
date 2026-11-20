@@ -42,7 +42,7 @@ public sealed class QualifierSelectionTests
             superStandings.Add(BuildStanding(rank, 1, 1, rank));
         }
 
-        Should.Throw<InvalidOperationException>(() => QualifierFieldSelection.Select(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => QualifierFieldSelection.Select(
             superStandings, new Dictionary<int, IReadOnlyList<SeasonStandingEntity>>(), feeders, superleague,
             new Dictionary<int, SeasonMembershipEntity>(), new Dictionary<int, string>(), rules));
     }

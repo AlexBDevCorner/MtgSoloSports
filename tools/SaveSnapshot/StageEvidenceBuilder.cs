@@ -8,6 +8,7 @@ using MtgSoloSports.Features.Reports;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Seasons;
 using MtgSoloSports.SimulationKernel.TieBreaking;
 
@@ -60,7 +61,7 @@ public static class StageEvidenceBuilder
 
         Stopwatch elapsed = Stopwatch.StartNew();
         SnapshotReader.DatabaseView view = SnapshotReader.ReadDatabase(databasePath);
-        MtgSoloSports.SimulationKernel.Rules.RulesV1 rules = SaveRulesCompatibility.ReadSnapshotRules(view.RulesJson);
+        MtgSoloSports.SimulationKernel.Rules.RulesV1 rules = SaveRulesCompatibility.ReadImportableSnapshotRules(view.RulesJson);
 
         ResolvedTarget target = await ResolveTargetAsync(databasePath, rules, seasonFilter, stageFilter, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string> names = await LoadAthleteNamesAsync(databasePath, cancellationToken).ConfigureAwait(false);
@@ -539,15 +540,7 @@ public static class StageEvidenceBuilder
                 throw new InvalidOperationException($"Superleague season {target.SeasonNumber} stage {target.StageNumber} has non-sequential round rows; rounds must advance in order.");
             }
 
-            RoundPayloadDocument document;
-            try
-            {
-                document = RoundPayloadCodec.DecodeRound(row.PayloadJson);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new InvalidOperationException($"Superleague season {target.SeasonNumber} stage {target.StageNumber} round {row.RoundNumber} has corrupt payload and cannot be replayed: {ex.Message}", ex);
-            }
+            RoundPayloadDocument document = DecodeRoundPayload(row, target);
 
             if (document.StageNumber != target.StageNumber || document.RoundNumber != row.RoundNumber)
             {
@@ -584,6 +577,19 @@ public static class StageEvidenceBuilder
         }
 
         return decoded;
+    }
+
+    private static RoundPayloadDocument DecodeRoundPayload(RoundRow row, ResolvedTarget target)
+    {
+        try
+        {
+            return RoundPayloadCodec.DecodeRound(row.PayloadJson);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or SaveCorruptionException)
+        {
+            // The app codec throws the corruption class (MSS-144); the CLI reports it as its own replay error.
+            throw new InvalidOperationException($"Superleague season {target.SeasonNumber} stage {target.StageNumber} round {row.RoundNumber} has corrupt payload and cannot be replayed: {ex.Message}", ex);
+        }
     }
 
     private static string ComputeStageChecksum(List<StageStandingRow> rows, Dictionary<int, string> names)

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
@@ -31,13 +32,13 @@ public static class StageInvariants
 
         if (ranked.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed stage must rank exactly {rules.LeagueSize} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed stage must total exactly {rules.LeagueSize} athletes, was {totals.Count}.");
         }
 
@@ -53,7 +54,7 @@ public static class StageInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
         {
-            throw new InvalidOperationException("Completed stage must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException("Completed stage must cover ranks 1..32 exactly once.");
         }
     }
 
@@ -106,32 +107,32 @@ public static class StageInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Completed stage contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed stage contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Completed stage contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Completed stage contains an athlete with an empty name.");
         }
 
         if (entry.StageRank < 1 || entry.StageRank > rules.LeagueSize)
         {
-            throw new InvalidOperationException($"Completed stage rank {entry.StageRank} is out of range.");
+            throw new SaveCorruptionException($"Completed stage rank {entry.StageRank} is out of range.");
         }
 
         if (!ranks.Add(entry.StageRank))
         {
-            throw new InvalidOperationException($"Completed stage contains duplicate rank {entry.StageRank}.");
+            throw new SaveCorruptionException($"Completed stage contains duplicate rank {entry.StageRank}.");
         }
 
         if (!athleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Completed stage contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed stage contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Completed stage contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Completed stage contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -143,53 +144,53 @@ public static class StageInvariants
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out StageAthleteTotals? totals))
         {
-            throw new InvalidOperationException($"Completed stage standing for '{entry.Name}' has no accumulated totals.");
+            throw new SaveCorruptionException($"Completed stage standing for '{entry.Name}' has no accumulated totals.");
         }
 
         if (!string.Equals(totals.Name, entry.Name, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Completed stage standing for id {entry.AthleteId} has inconsistent names.");
+            throw new SaveCorruptionException($"Completed stage standing for id {entry.AthleteId} has inconsistent names.");
         }
 
         if (entry.StageScoreThousandths != totals.StageScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed stage score for '{entry.Name}' does not match accumulated round finals.");
+            throw new SaveCorruptionException($"Completed stage score for '{entry.Name}' does not match accumulated round finals.");
         }
 
         if (entry.BaseScoreThousandths != totals.BaseScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed stage base score for '{entry.Name}' does not match accumulated round base points.");
+            throw new SaveCorruptionException($"Completed stage base score for '{entry.Name}' does not match accumulated round base points.");
         }
 
         int expectedChampionship = rules.ScoringTable[entry.StageRank - 1] * RulesV1.FixedScale;
         if (entry.ChampionshipPointsThousandths != expectedChampionship)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed stage championship points for '{entry.Name}' must be {expectedChampionship}, was {entry.ChampionshipPointsThousandths}.");
         }
 
         int expectedEarned = ComputeExpectedEarned(entry, rules, level);
         if (entry.EarnedBonusThousandths != expectedEarned)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed stage earned bonus for '{entry.Name}' must be {expectedEarned}, was {entry.EarnedBonusThousandths}.");
         }
 
         if (entry.RoundWins != totals.RoundWins)
         {
-            throw new InvalidOperationException($"Completed stage round wins for '{entry.Name}' do not match round placements.");
+            throw new SaveCorruptionException($"Completed stage round wins for '{entry.Name}' do not match round placements.");
         }
 
         if (entry.RoundPlaceCounts.Count != totals.RoundPlaceCounts.Count)
         {
-            throw new InvalidOperationException($"Completed stage round-place counts for '{entry.Name}' do not match accumulated totals.");
+            throw new SaveCorruptionException($"Completed stage round-place counts for '{entry.Name}' do not match accumulated totals.");
         }
 
         for (int i = 0; i < entry.RoundPlaceCounts.Count; i++)
         {
             if (entry.RoundPlaceCounts[i] != totals.RoundPlaceCounts[i])
             {
-                throw new InvalidOperationException($"Completed stage round-place counts for '{entry.Name}' do not match accumulated totals.");
+                throw new SaveCorruptionException($"Completed stage round-place counts for '{entry.Name}' do not match accumulated totals.");
             }
         }
     }

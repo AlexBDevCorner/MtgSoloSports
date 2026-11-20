@@ -105,7 +105,7 @@ public sealed class AutomaticMovementSelectionTests
         superRows.RemoveAll(r => r.SeasonRank == 32);
         Dictionary<int, IReadOnlyList<SeasonStandingEntity>> feederMap = FeederMap(feeders, 50000);
 
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             AutomaticMovementSelection.Select(superRows, feederMap, feeders, superleague, rules));
     }
 
@@ -120,7 +120,7 @@ public sealed class AutomaticMovementSelectionTests
         int victim = feeders[0].Id;
         feederMap[victim] = feederMap[victim].Where(r => r.SeasonRank != 1).ToList();
 
-        Should.Throw<InvalidOperationException>(() =>
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() =>
             AutomaticMovementSelection.Select(superRows, feederMap, feeders, superleague, rules));
     }
 

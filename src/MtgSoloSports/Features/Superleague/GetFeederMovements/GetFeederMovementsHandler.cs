@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
 
@@ -102,7 +103,7 @@ public sealed class GetFeederMovementsHandler
             .ConfigureAwait(false);
         if (latestNext is null || latestSource is null)
         {
-            throw new InvalidOperationException("Feeder movement references unknown seasons.");
+            throw new SaveCorruptionException("Feeder movement references unknown seasons.");
         }
 
         return (latestSource, latestNext);
@@ -163,7 +164,7 @@ public sealed class GetFeederMovementsHandler
         const int expected = 8 * 2 * 4 * 8;
         if (movements.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder movement must hold exactly {expected} records, was {movements.Count}.");
         }
 
@@ -178,7 +179,7 @@ public sealed class GetFeederMovementsHandler
             int count = movements.Count(m => m.Kind == (int)kind);
             if (count != 8 * 2 * 8)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder movement kind {kind} must hold exactly {8 * 2 * 8} records, was {count}.");
             }
         }
@@ -201,7 +202,7 @@ public sealed class GetFeederMovementsHandler
             leaguesById.TryGetValue(movement.FromLeagueId, out LeagueEntity? from);
             if (from is null)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder movement references unknown source league {movement.FromLeagueId}.");
             }
 
@@ -257,7 +258,7 @@ public sealed class GetFeederMovementsHandler
             (MovementKind.FeederQualifierIncumbent, LeagueLevel.Feeder2) => QualifierBoundary.Feeder2Feeder3,
             (MovementKind.FeederQualifierChallenger, LeagueLevel.Feeder2) => QualifierBoundary.Feeder1Feeder2,
             (MovementKind.FeederQualifierChallenger, LeagueLevel.Feeder3) => QualifierBoundary.Feeder2Feeder3,
-            _ => throw new InvalidOperationException(
+            _ => throw new SaveCorruptionException(
                 $"Feeder movement kind {kind} from {fromLevel} is not on an adjacent feeder boundary."),
         };
     }

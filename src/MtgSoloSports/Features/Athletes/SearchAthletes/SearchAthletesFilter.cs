@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Athletes.SearchAthletes;
 
@@ -215,12 +216,12 @@ public static class SearchAthletesFilter
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException($"Athlete creature types are corrupt: {ex.Message}", ex);
+            throw new SaveCorruptionException($"Athlete creature types are corrupt: {ex.Message}", ex);
         }
 
         if (parsed is null)
         {
-            throw new InvalidOperationException("Athlete creature types are corrupt.");
+            throw new SaveCorruptionException("Athlete creature types are corrupt.");
         }
 
         return parsed;

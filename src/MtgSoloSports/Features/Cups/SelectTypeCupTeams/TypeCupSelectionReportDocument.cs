@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MtgSoloSports.Features.History;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 
@@ -120,11 +121,11 @@ public sealed record TypeCupSelectionReportDocument(
         try
         {
             TypeCupSelectionReportDocument? document = JsonSerializer.Deserialize<TypeCupSelectionReportDocument>(json, JsonOptions);
-            return document ?? throw new InvalidOperationException("Type Cup selection report is empty.");
+            return document ?? throw new SaveCorruptionException("Type Cup selection report is empty.");
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Type Cup selection report is corrupt.", ex);
+            throw new SaveCorruptionException("Type Cup selection report is corrupt.", ex);
         }
     }
 }

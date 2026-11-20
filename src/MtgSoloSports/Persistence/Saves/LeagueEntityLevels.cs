@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 
 namespace MtgSoloSports.Persistence.Saves;
@@ -19,7 +20,7 @@ public static class LeagueEntityLevels
         {
             if (league.FeederDivision != (int)FeederDivision.None)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Superleague '{league.Name}' must carry feeder division None, was {league.FeederDivision}.");
             }
 
@@ -28,7 +29,7 @@ public static class LeagueEntityLevels
 
         if (league.Kind != (int)LeagueKind.Feeder)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt kind {league.Kind}.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt kind {league.Kind}.");
         }
 
         return LeagueHierarchy.LevelForDivision((FeederDivision)league.FeederDivision, isSuperleague: false);

@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -48,17 +49,17 @@ public static class Season1PersistedInvariants
     {
         if (seasonNumber != 1)
         {
-            throw new InvalidOperationException($"Season 1 must have season number 1, was {seasonNumber}.");
+            throw new SaveCorruptionException($"Season 1 must have season number 1, was {seasonNumber}.");
         }
 
         if (hasSuperleague)
         {
-            throw new InvalidOperationException("Season 1 must have no Superleague.");
+            throw new SaveCorruptionException("Season 1 must have no Superleague.");
         }
 
         if (leagues.Count != rules.Season1FeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {rules.Season1FeederLeagueCount} leagues, was {leagues.Count}.");
         }
     }
@@ -82,7 +83,7 @@ public static class Season1PersistedInvariants
         {
             if (league.Kind != 0)
             {
-                throw new InvalidOperationException($"Season 1 league '{league.Name}' must be a feeder league.");
+                throw new SaveCorruptionException($"Season 1 league '{league.Name}' must be a feeder league.");
             }
 
             // Historical v1 rows predate the division column (stored None/0) or
@@ -91,12 +92,12 @@ public static class Season1PersistedInvariants
             if (league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.First &&
                 league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.None)
             {
-                throw new InvalidOperationException($"Season 1 league '{league.Name}' must be Feeder 1, was division {league.FeederDivision}.");
+                throw new SaveCorruptionException($"Season 1 league '{league.Name}' must be Feeder 1, was division {league.FeederDivision}.");
             }
 
             if (!colors.Add(league.SportingColor))
             {
-                throw new InvalidOperationException($"Season 1 has duplicate league for {league.SportingColor}.");
+                throw new SaveCorruptionException($"Season 1 has duplicate league for {league.SportingColor}.");
             }
         }
 
@@ -104,7 +105,7 @@ public static class Season1PersistedInvariants
         {
             if (!colors.Contains(color))
             {
-                throw new InvalidOperationException($"Season 1 is missing the {color} league.");
+                throw new SaveCorruptionException($"Season 1 is missing the {color} league.");
             }
         }
     }
@@ -121,19 +122,19 @@ public static class Season1PersistedInvariants
         {
             if (league.Kind != 0)
             {
-                throw new InvalidOperationException($"Season 1 league '{league.Name}' must be a feeder league.");
+                throw new SaveCorruptionException($"Season 1 league '{league.Name}' must be a feeder league.");
             }
 
             if (league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.First &&
                 league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.Second &&
                 league.FeederDivision != (int)SimulationKernel.Leagues.FeederDivision.Third)
             {
-                throw new InvalidOperationException($"Season 1 league '{league.Name}' must carry an explicit feeder division (1..3), was {league.FeederDivision}.");
+                throw new SaveCorruptionException($"Season 1 league '{league.Name}' must carry an explicit feeder division (1..3), was {league.FeederDivision}.");
             }
 
             if (!divisions[league.SportingColor].Add(league.FeederDivision))
             {
-                throw new InvalidOperationException($"Season 1 has duplicate division {league.FeederDivision} for {league.SportingColor}.");
+                throw new SaveCorruptionException($"Season 1 has duplicate division {league.FeederDivision} for {league.SportingColor}.");
             }
         }
 
@@ -142,7 +143,7 @@ public static class Season1PersistedInvariants
             HashSet<int> seen = divisions[color];
             if (seen.Count != rules.FeederDivisionsPerColor)
             {
-                throw new InvalidOperationException($"Season 1 is missing feeder divisions for {color} (has {seen.Count}, needs {rules.FeederDivisionsPerColor}).");
+                throw new SaveCorruptionException($"Season 1 is missing feeder divisions for {color} (has {seen.Count}, needs {rules.FeederDivisionsPerColor}).");
             }
         }
     }
@@ -154,7 +155,7 @@ public static class Season1PersistedInvariants
     {
         if (memberships.Count != totalSaveAthletes || memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
     }
@@ -200,13 +201,13 @@ public static class Season1PersistedInvariants
     {
         if (!athleteIds.Add(membership.SaveAthleteId))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 contains duplicate membership for athlete id {membership.SaveAthleteId}.");
         }
 
         if (membership.DrawIndex < 0 || membership.DrawIndex >= rules.AthletesPerSportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 draw index {membership.DrawIndex} for athlete id {membership.SaveAthleteId} is out of range.");
         }
 
@@ -218,7 +219,7 @@ public static class Season1PersistedInvariants
                 : membership.DrawIndex >= rules.LeagueSize;
             if (!expectedPool)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 pool member draw index must be at or above {rules.Season1ActivePerColor}, was {membership.DrawIndex}.");
             }
 
@@ -227,13 +228,13 @@ public static class Season1PersistedInvariants
 
         if (!byId.TryGetValue(membership.LeagueId.Value, out PersistedLeague? league))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 membership references unknown league {membership.LeagueId.Value}.");
         }
 
         if (league.SportingColor != membership.SportingColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 membership color {membership.SportingColor} does not match league {league.SportingColor}.");
         }
 
@@ -241,7 +242,7 @@ public static class Season1PersistedInvariants
         {
             if (membership.DrawIndex >= rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 league member draw index must be below {rules.LeagueSize}, was {membership.DrawIndex}.");
             }
 
@@ -251,7 +252,7 @@ public static class Season1PersistedInvariants
         int expectedDivision = DivisionForDrawIndex(membership.DrawIndex, rules);
         if (league.FeederDivision != expectedDivision)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 member draw index {membership.DrawIndex} belongs to division {expectedDivision}, not league '{league.Name}' division {league.FeederDivision}.");
         }
     }
@@ -260,7 +261,7 @@ public static class Season1PersistedInvariants
     {
         if (drawIndex < 0 || drawIndex >= rules.AthletesPerSportingColor)
         {
-            throw new InvalidOperationException($"Draw index {drawIndex} is out of range.");
+            throw new SaveCorruptionException($"Draw index {drawIndex} is out of range.");
         }
 
         if (drawIndex < rules.LeagueSize)
@@ -278,7 +279,7 @@ public static class Season1PersistedInvariants
             return (int)SimulationKernel.Leagues.FeederDivision.Third;
         }
 
-        throw new InvalidOperationException($"Draw index {drawIndex} is a pool index, not a feeder division.");
+        throw new SaveCorruptionException($"Draw index {drawIndex} is a pool index, not a feeder division.");
     }
 
     private static void EnsurePersistedPerColor(PersistedCounts counts, RulesV1 rules)
@@ -289,13 +290,13 @@ public static class Season1PersistedInvariants
         {
             if (counts.ActivePerColor[color] != expectedActive)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 league {color} must contain exactly {expectedActive} athletes, was {counts.ActivePerColor[color]}.");
             }
 
             if (counts.PoolPerColor[color] != expectedPool)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 pool {color} must contain exactly {expectedPool} athletes, was {counts.PoolPerColor[color]}.");
             }
         }
@@ -307,7 +308,7 @@ public static class Season1PersistedInvariants
         int expected = rules.Season1ActiveTotal;
         if (active != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {expected} active athletes, was {active}.");
         }
     }
@@ -321,7 +322,7 @@ public static class Season1PersistedInvariants
         {
             if (!counts.ActivePerLeague.TryGetValue(league.LeagueId, out int count) || count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 league '{league.Name}' must contain exactly {rules.LeagueSize} athletes, was {count}.");
             }
         }

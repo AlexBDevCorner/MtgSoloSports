@@ -86,7 +86,7 @@ public sealed class FeederDivisionPersistenceTests
             Name = "Superleague",
         };
 
-        Should.Throw<InvalidOperationException>(() => LeagueEntityLevels.GetLevel(corrupt));
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(() => LeagueEntityLevels.GetLevel(corrupt));
     }
 
     [Fact]

@@ -256,10 +256,11 @@ public sealed class SavePortabilityApiTests
     }
 
     [Fact]
-    public async Task Restore_TamperedCheckpoint_ViaApi_ReturnsBadRequest_LiveUntouched()
+    public async Task Restore_TamperedCheckpoint_ViaApi_ReturnsCorruption500_LiveUntouched()
     {
-        // MSS-127: a corrupt checkpoint is rejected over HTTP without
-        // touching the healthy live save.
+        // MSS-127 + MSS-144: a corrupt checkpoint is rejected over HTTP without
+        // touching the healthy live save; since MSS-144 the corrupt backup is a
+        // server failure (500 with the corruption message), never a 400/409.
         var (factory, root) = CreateFactory();
         try
         {
@@ -292,7 +293,9 @@ public sealed class SavePortabilityApiTests
             using HttpContent empty = new StringContent(string.Empty);
             using HttpResponseMessage rejected = await client.PostAsync(
                 $"/api/saves/{createdPayload.SaveId:D}/checkpoints/{checkpoint.CheckpointId:D}/restore", empty);
-            rejected.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            rejected.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+            string rejectedBody = await rejected.Content.ReadAsStringAsync();
+            rejectedBody.ShouldContain("checksum", Case.Insensitive);
 
             using HttpResponseMessage opened = await client.GetAsync($"/api/saves/{createdPayload.SaveId:D}");
             opened.StatusCode.ShouldBe(HttpStatusCode.OK);

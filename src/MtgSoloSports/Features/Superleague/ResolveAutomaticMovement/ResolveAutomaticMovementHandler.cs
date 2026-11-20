@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Qualifiers;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -282,7 +283,7 @@ public sealed class ResolveAutomaticMovementHandler
             {
                 if (!byAthlete.ContainsKey(pick.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Feeder movement athlete {pick.SaveAthleteId} has no source membership.");
+                    throw new SaveCorruptionException($"Feeder movement athlete {pick.SaveAthleteId} has no source membership.");
                 }
             }
         }
@@ -300,8 +301,13 @@ public sealed class ResolveAutomaticMovementHandler
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new ResolveAutomaticMovementConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal; corruption passes through uncaught.
             throw new ResolveAutomaticMovementConflictException(ex.Message);
         }
     }
@@ -325,7 +331,7 @@ public sealed class ResolveAutomaticMovementHandler
             || f2ByColor.Count != rules.RegularLeagueCount
             || f3ByColor.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException("Tiered transition must have 8 F1, 8 F2 and 8 F3 leagues.");
+            throw new SaveCorruptionException("Tiered transition must have 8 F1, 8 F2 and 8 F3 leagues.");
         }
 
         return FeederMovementSelection.Select(leaguesById, feederMap, f1ByColor, f2ByColor, f3ByColor, rules);
@@ -358,7 +364,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (superIds.Contains(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {pick.SaveAthleteId} appears in both Superleague and feeder movement; rank bands must be non-overlapping and one tier per postseason.");
             }
         }
@@ -475,7 +481,7 @@ public sealed class ResolveAutomaticMovementHandler
         int expectedFeeder = rules.SportingColorCount * 8 * 8;
         if (feederMovements.Count != expectedFeeder)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder movement must persist exactly {expectedFeeder} records, was {feederMovements.Count}.");
         }
     }
@@ -496,7 +502,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (superIds.Contains(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {movement.SaveAthleteId} appears in both Superleague and feeder movement.");
             }
         }
@@ -507,7 +513,7 @@ public sealed class ResolveAutomaticMovementHandler
         HashSet<int> feederIds = feederMovements.Select(m => m.SaveAthleteId).ToHashSet();
         if (feederIds.Count != feederMovements.Count)
         {
-            throw new InvalidOperationException("Feeder movement contains duplicate athlete ids.");
+            throw new SaveCorruptionException("Feeder movement contains duplicate athlete ids.");
         }
     }
 
@@ -533,7 +539,7 @@ public sealed class ResolveAutomaticMovementHandler
             countsByLeague.TryGetValue(league.Id, out int count);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Tiered league '{league.Name}' must provisionally hold exactly {rules.LeagueSize} athletes after automatic movement, was {count}.");
             }
         }
@@ -563,7 +569,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if ((ulong)rng.State != rngBefore)
             {
-                throw new InvalidOperationException("Automatic movement must not consume sporting RNG.");
+                throw new SaveCorruptionException("Automatic movement must not consume sporting RNG.");
             }
         }
 
@@ -571,12 +577,12 @@ public sealed class ResolveAutomaticMovementHandler
         int seasons = await context.SeasonStandings.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stageCountBefore)
         {
-            throw new InvalidOperationException("Automatic movement must preserve stage bonus history.");
+            throw new SaveCorruptionException("Automatic movement must preserve stage bonus history.");
         }
 
         if (seasons != seasonCountBefore)
         {
-            throw new InvalidOperationException("Automatic movement must preserve season bonus history.");
+            throw new SaveCorruptionException("Automatic movement must preserve season bonus history.");
         }
     }
 
@@ -647,7 +653,7 @@ public sealed class ResolveAutomaticMovementHandler
             .ConfigureAwait(false);
         if (leagues.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {leagues.Count}.");
         }
 
@@ -664,7 +670,7 @@ public sealed class ResolveAutomaticMovementHandler
             .ConfigureAwait(false);
         if (league is null)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} has no Superleague.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} has no Superleague.");
         }
 
         return league;
@@ -684,14 +690,14 @@ public sealed class ResolveAutomaticMovementHandler
             .ConfigureAwait(false);
         if (rows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
         }
 
         HashSet<int> ranks = rows.Select(r => r.SeasonRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
         {
-            throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
+            throw new SaveCorruptionException($"League '{league.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
         }
 
         return rows;
@@ -723,7 +729,7 @@ public sealed class ResolveAutomaticMovementHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -738,7 +744,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (!membershipByAthlete.ContainsKey(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Movement athlete {pick.SaveAthleteId} has no source membership.");
+                throw new SaveCorruptionException($"Movement athlete {pick.SaveAthleteId} has no source membership.");
             }
         }
     }
@@ -755,7 +761,7 @@ public sealed class ResolveAutomaticMovementHandler
 
             if (!active.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues in the source season.");
             }
         }
@@ -905,7 +911,7 @@ public sealed class ResolveAutomaticMovementHandler
 
         if (safe.Count != rules.SuperleagueSafeCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must hold exactly {rules.SuperleagueSafeCount} safe athletes, was {safe.Count}.");
         }
 
@@ -1105,7 +1111,7 @@ public sealed class ResolveAutomaticMovementHandler
             if (!feederByColorDivision.TryGetValue(
                 (source.SportingColor, (int)SimulationKernel.Leagues.FeederDivision.First), out int f1Id))
             {
-                throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} F1.");
+                throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor} F1.");
             }
 
             return f1Id;
@@ -1125,13 +1131,13 @@ public sealed class ResolveAutomaticMovementHandler
         // from F2 means the source season is corrupt.
         if (!sourceDivisionByLeague.TryGetValue(source.LeagueId!.Value, out int sourceDivision))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {source.SaveAthleteId} source league {source.LeagueId.Value} is not a feeder; Superleague members must be in safe/incumbent/relegated bands.");
         }
 
         if (sourceDivision == (int)SimulationKernel.Leagues.FeederDivision.Second && feederSets is not null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {source.SaveAthleteId} from F2 has no automatic movement band; F2 ranks must be 1-8 auto-up, 9-16 challenger, 17-24 incumbent, 25-32 auto-down.");
         }
 
@@ -1139,12 +1145,12 @@ public sealed class ResolveAutomaticMovementHandler
             sourceDivision != (int)SimulationKernel.Leagues.FeederDivision.Second &&
             sourceDivision != (int)SimulationKernel.Leagues.FeederDivision.Third)
         {
-            throw new InvalidOperationException($"Athlete {source.SaveAthleteId} has corrupt source division {sourceDivision}.");
+            throw new SaveCorruptionException($"Athlete {source.SaveAthleteId} has corrupt source division {sourceDivision}.");
         }
 
         if (!feederByColorDivision.TryGetValue((source.SportingColor, sourceDivision), out int retainedId))
         {
-            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} division {sourceDivision}.");
+            throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor} division {sourceDivision}.");
         }
 
         return retainedId;
@@ -1208,7 +1214,7 @@ public sealed class ResolveAutomaticMovementHandler
     {
         if (!feederByColorDivision.TryGetValue((sportingColor, (int)division), out int leagueId))
         {
-            throw new InvalidOperationException($"Unknown sporting color {sportingColor} division {division}.");
+            throw new SaveCorruptionException($"Unknown sporting color {sportingColor} division {division}.");
         }
 
         return leagueId;
@@ -1249,7 +1255,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (!feederByColor.TryGetValue(source.SportingColor, out int feederId))
             {
-                throw new InvalidOperationException($"Unknown sporting color {source.SportingColor}.");
+                throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor}.");
             }
 
             return feederId;
@@ -1257,7 +1263,7 @@ public sealed class ResolveAutomaticMovementHandler
 
         if (!feederByColor.TryGetValue(source.SportingColor, out int retainedId))
         {
-            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor}.");
+            throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor}.");
         }
 
         return retainedId;
@@ -1365,7 +1371,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (!membershipByAthlete.TryGetValue(pick.SaveAthleteId, out SeasonMembershipEntity? origin))
             {
-                throw new InvalidOperationException($"Movement athlete {pick.SaveAthleteId} has no source membership.");
+                throw new SaveCorruptionException($"Movement athlete {pick.SaveAthleteId} has no source membership.");
             }
 
             int toLeague = ResolveSuperMovementTarget(pick, origin, nextSuperleague, feederByColor);
@@ -1395,11 +1401,11 @@ public sealed class ResolveAutomaticMovementHandler
             MovementKind.QualifierIncumbent => nextSuperleague.Id,
             MovementKind.AutomaticRelegation => feederByColor.TryGetValue(origin.SportingColor, out int relegatedFeeder)
                 ? relegatedFeeder
-                : throw new InvalidOperationException($"Unknown sporting color {origin.SportingColor}."),
+                : throw new SaveCorruptionException($"Unknown sporting color {origin.SportingColor}."),
             MovementKind.QualifierChallenger => feederByColor.TryGetValue(origin.SportingColor, out int challengerFeeder)
                 ? challengerFeeder
-                : throw new InvalidOperationException($"Unknown sporting color {origin.SportingColor}."),
-            _ => throw new InvalidOperationException($"Unexpected movement kind {pick.Kind}."),
+                : throw new SaveCorruptionException($"Unknown sporting color {origin.SportingColor}."),
+            _ => throw new SaveCorruptionException($"Unexpected movement kind {pick.Kind}."),
         };
     }
 
@@ -1421,7 +1427,7 @@ public sealed class ResolveAutomaticMovementHandler
         {
             if (!membershipByAthlete.TryGetValue(pick.SaveAthleteId, out SeasonMembershipEntity? origin))
             {
-                throw new InvalidOperationException($"Feeder movement athlete {pick.SaveAthleteId} has no source membership.");
+                throw new SaveCorruptionException($"Feeder movement athlete {pick.SaveAthleteId} has no source membership.");
             }
 
             int toLeague = ResolveFeederMovementTarget(pick, nextByColorDivision, sourceDivisionByLeague);
@@ -1446,7 +1452,7 @@ public sealed class ResolveAutomaticMovementHandler
     {
         if (!sourceDivisionByLeague.TryGetValue(pick.FromLeagueId, out int sourceDivision))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder pick {pick.SaveAthleteId} references unknown source league {pick.FromLeagueId}.");
         }
 
@@ -1456,24 +1462,24 @@ public sealed class ResolveAutomaticMovementHandler
             {
                 (int)SimulationKernel.Leagues.FeederDivision.Second => (int)SimulationKernel.Leagues.FeederDivision.First,
                 (int)SimulationKernel.Leagues.FeederDivision.Third => (int)SimulationKernel.Leagues.FeederDivision.Second,
-                _ => throw new InvalidOperationException(
+                _ => throw new SaveCorruptionException(
                     $"Feeder promotion {pick.SaveAthleteId} has corrupt source division {sourceDivision}."),
             },
             MovementKind.FeederAutomaticRelegation => sourceDivision switch
             {
                 (int)SimulationKernel.Leagues.FeederDivision.First => (int)SimulationKernel.Leagues.FeederDivision.Second,
                 (int)SimulationKernel.Leagues.FeederDivision.Second => (int)SimulationKernel.Leagues.FeederDivision.Third,
-                _ => throw new InvalidOperationException(
+                _ => throw new SaveCorruptionException(
                     $"Feeder relegation {pick.SaveAthleteId} has corrupt source division {sourceDivision}."),
             },
             MovementKind.FeederQualifierIncumbent => sourceDivision,
             MovementKind.FeederQualifierChallenger => sourceDivision,
-            _ => throw new InvalidOperationException($"Unexpected feeder movement kind {pick.Kind}."),
+            _ => throw new SaveCorruptionException($"Unexpected feeder movement kind {pick.Kind}."),
         };
 
         if (!nextByColorDivision.TryGetValue((pick.SportingColor, targetDivision), out int toLeague))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Unknown sporting color {pick.SportingColor} division {targetDivision} for feeder movement.");
         }
 

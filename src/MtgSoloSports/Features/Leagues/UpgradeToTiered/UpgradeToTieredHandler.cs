@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
@@ -81,7 +82,7 @@ public sealed class UpgradeToTieredHandler
 
         if (rules.Version != RulesV1.RulesVersion)
         {
-            throw new InvalidOperationException($"Unsupported rules version {rules.Version}.");
+            throw new SaveCorruptionException($"Unsupported rules version {rules.Version}.");
         }
 
         await EnsureSafeBoundaryAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
@@ -124,7 +125,7 @@ public sealed class UpgradeToTieredHandler
             .ConfigureAwait(false);
         if (source is null)
         {
-            throw new InvalidOperationException($"Save has no season {metadata.CurrentSeason}.");
+            throw new SaveCorruptionException($"Save has no season {metadata.CurrentSeason}.");
         }
 
         SeasonEntity? next = await context.Seasons
@@ -145,7 +146,7 @@ public sealed class UpgradeToTieredHandler
         List<LeagueEntity> feeders = await LoadNextFeedersAsync(context, next, cancellationToken).ConfigureAwait(false);
         if (feeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered save target season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeders, was {feeders.Count}; partial tier creation fails loudly.");
         }
 
@@ -155,7 +156,7 @@ public sealed class UpgradeToTieredHandler
             .ConfigureAwait(false);
         if (seeds.Count != rules.RegularLeagueCount * rules.LeagueSize * 2)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered upgrade for {source.SeasonNumber}->{next.SeasonNumber} must hold exactly {rules.RegularLeagueCount * rules.LeagueSize * 2} seed rows, was {seeds.Count}.");
         }
 
@@ -356,7 +357,7 @@ public sealed class UpgradeToTieredHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {season.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -482,17 +483,17 @@ public sealed class UpgradeToTieredHandler
     {
         if (!byAthlete.TryGetValue(seed.SaveAthleteId, out SeasonMembershipEntity? membership))
         {
-            throw new InvalidOperationException($"Seeded athlete {seed.SaveAthleteId} has no target-season membership.");
+            throw new SaveCorruptionException($"Seeded athlete {seed.SaveAthleteId} has no target-season membership.");
         }
 
         if (membership.LeagueId is not null)
         {
-            throw new InvalidOperationException($"Seeded athlete {seed.SaveAthleteId} is not in the common pool.");
+            throw new SaveCorruptionException($"Seeded athlete {seed.SaveAthleteId} is not in the common pool.");
         }
 
         if (!leagueByDivision.TryGetValue((color, (int)division), out int leagueId))
         {
-            throw new InvalidOperationException($"Missing {color} division {division} league for upgrade.");
+            throw new SaveCorruptionException($"Missing {color} division {division} league for upgrade.");
         }
 
         membership.LeagueId = leagueId;
@@ -574,7 +575,7 @@ public sealed class UpgradeToTieredHandler
     {
         if (!leagueByDivision.TryGetValue((color, (int)division), out int leagueId))
         {
-            throw new InvalidOperationException($"Missing {color} division {division} league for upgrade movements.");
+            throw new SaveCorruptionException($"Missing {color} division {division} league for upgrade movements.");
         }
 
         foreach (UpgradeToTieredSelection.PoolCandidate seed in seeds.OrderBy(s => s.SaveAthleteId))
@@ -651,7 +652,7 @@ public sealed class UpgradeToTieredHandler
             .ConfigureAwait(false)).ToHashSet();
         if (!f1Before.SetEquals(f1After))
         {
-            throw new InvalidOperationException("Tier upgrade must preserve existing F1 rosters; F1 athletes were changed.");
+            throw new SaveCorruptionException("Tier upgrade must preserve existing F1 rosters; F1 athletes were changed.");
         }
     }
 
@@ -674,17 +675,17 @@ public sealed class UpgradeToTieredHandler
         int movements = await context.Movements.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stagesBefore || seasons != seasonsBefore || rounds != roundsBefore)
         {
-            throw new InvalidOperationException("Tier upgrade must preserve league stage/season/round history.");
+            throw new SaveCorruptionException("Tier upgrade must preserve league stage/season/round history.");
         }
 
         if (qualifierRounds != qualifierRoundsBefore || qualifierStandings != qualifierStandingsBefore)
         {
-            throw new InvalidOperationException("Tier upgrade must preserve qualifier history.");
+            throw new SaveCorruptionException("Tier upgrade must preserve qualifier history.");
         }
 
         if (movements != movementsBefore + newSeeds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tier upgrade must add exactly {newSeeds} movement rows, was {movements - movementsBefore}.");
         }
     }
@@ -692,11 +693,11 @@ public sealed class UpgradeToTieredHandler
     internal static void EnsureRngPersisted(SaveDbContext context, Pcg32State rngAfter)
     {
         RngStateEntity tracked = context.RngStates.Local.SingleOrDefault(e => e.Id == 1)
-            ?? throw new InvalidOperationException("RNG state row is not tracked.");
+            ?? throw new SaveCorruptionException("RNG state row is not tracked.");
         Pcg32State persisted = new(unchecked((ulong)tracked.State), unchecked((ulong)tracked.Stream));
         if (persisted.State != rngAfter.State || persisted.Stream != rngAfter.Stream)
         {
-            throw new InvalidOperationException("Persisted RNG state does not match the tier-upgrade draw chain.");
+            throw new SaveCorruptionException("Persisted RNG state does not match the tier-upgrade draw chain.");
         }
     }
 
@@ -705,7 +706,7 @@ public sealed class UpgradeToTieredHandler
         bool advanced = after.State != before.State || after.Stream != before.Stream;
         if (plan.AllF2.Count > 0 && !advanced)
         {
-            throw new InvalidOperationException("Tier-upgrade pool draws must advance the save RNG.");
+            throw new SaveCorruptionException("Tier-upgrade pool draws must advance the save RNG.");
         }
     }
 

@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Superleague.RebalanceFeeders;
@@ -93,7 +94,7 @@ public static class RebalanceSuperleagueTransfers
         {
             if (!nextByAthlete.TryGetValue(source.SaveAthleteId, out SeasonMembershipEntity? next))
             {
-                throw new InvalidOperationException($"Athlete {source.SaveAthleteId} has no next-season membership.");
+                throw new SaveCorruptionException($"Athlete {source.SaveAthleteId} has no next-season membership.");
             }
 
             if (IsDeparture(source, next, sourceFeederIds, nextSuperleague.Id))
@@ -211,7 +212,7 @@ public static class RebalanceSuperleagueTransfers
         ArgumentNullException.ThrowIfNull(ranks);
         if (!ranks.TryGetValue(athleteId, out int rank) || rank < 1 || rank > 32)
         {
-            throw new InvalidOperationException($"{label} athlete {athleteId} has corrupt source rank.");
+            throw new SaveCorruptionException($"{label} athlete {athleteId} has corrupt source rank.");
         }
 
         return rank;

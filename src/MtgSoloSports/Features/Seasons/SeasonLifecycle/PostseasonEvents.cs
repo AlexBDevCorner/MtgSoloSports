@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -124,7 +125,8 @@ public static class PostseasonEvents
     }
 
     /// <summary>
-    /// Validates a partly played event; throws <see cref="InvalidOperationException"/>
+    /// Validates a partly played event; throws
+    /// <see cref="MtgSoloSports.Shared.SaveCorruptionException"/>
     /// on any corruption. Rounds must be contiguous in (group, round) order and
     /// fewer than the total; each round must start where the previous one
     /// ended, or — at a group boundary — where <paramref name="afterGroup"/>
@@ -145,7 +147,7 @@ public static class PostseasonEvents
         string title = Title(key);
         if (played.Count >= shape.TotalRounds)
         {
-            throw new InvalidOperationException($"{title} has all {shape.TotalRounds} rounds persisted but no results; sporting state is corrupt.");
+            throw new SaveCorruptionException($"{title} has all {shape.TotalRounds} rounds persisted but no results; sporting state is corrupt.");
         }
 
         for (int index = 0; index < played.Count; index++)
@@ -154,7 +156,7 @@ public static class PostseasonEvents
             (int group, int round) = Cursor(index, shape);
             if (link.Group != group || link.Round != round)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"{title} round sequence is corrupt: expected group {group} round {round}, found group {link.Group} round {link.Round}.");
             }
 
@@ -166,7 +168,7 @@ public static class PostseasonEvents
             Pcg32State expectedBefore = round == 1 ? afterGroup(group - 1) : played[index - 1].After;
             if (link.Before != expectedBefore)
             {
-                throw new InvalidOperationException($"{title} RNG chain is broken before group {group} round {round}.");
+                throw new SaveCorruptionException($"{title} RNG chain is broken before group {group} round {round}.");
             }
         }
 
@@ -181,7 +183,7 @@ public static class PostseasonEvents
             : last.After;
         if (rngRow != expectedRow)
         {
-            throw new InvalidOperationException($"{title} is in progress but the save RNG moved since its last round; sporting state is corrupt.");
+            throw new SaveCorruptionException($"{title} is in progress but the save RNG moved since its last round; sporting state is corrupt.");
         }
     }
 
@@ -473,7 +475,7 @@ public static class PostseasonEvents
 
         if (played != 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup for Season {source.SeasonNumber} has {played} rounds persisted without a qualification draw; sporting state is corrupt.");
         }
 

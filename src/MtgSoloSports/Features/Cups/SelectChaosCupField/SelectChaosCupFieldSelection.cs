@@ -1,3 +1,4 @@
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
@@ -96,7 +97,7 @@ public static class SelectChaosCupFieldSelection
     {
         if (!poolByColor.TryGetValue(color, out IReadOnlyList<PoolCandidate>? pool))
         {
-            throw new InvalidOperationException($"Chaos Pool selection misses sporting color {color}.");
+            throw new SaveCorruptionException($"Chaos Pool selection misses sporting color {color}.");
         }
 
         return pool;
@@ -106,7 +107,7 @@ public static class SelectChaosCupFieldSelection
     {
         if (!requiredByColor.TryGetValue(color, out int required))
         {
-            throw new InvalidOperationException($"Chaos Pool quotas miss sporting color {color}.");
+            throw new SaveCorruptionException($"Chaos Pool quotas miss sporting color {color}.");
         }
 
         return required;
@@ -116,7 +117,7 @@ public static class SelectChaosCupFieldSelection
     {
         if (required < 0 || required > ChaosCupFormat.EntrantsPerColor)
         {
-            throw new InvalidOperationException($"Chaos Pool invitations for {color} must be 0..{ChaosCupFormat.EntrantsPerColor}, was {required}.");
+            throw new SaveCorruptionException($"Chaos Pool invitations for {color} must be 0..{ChaosCupFormat.EntrantsPerColor}, was {required}.");
         }
     }
 
@@ -128,7 +129,7 @@ public static class SelectChaosCupFieldSelection
             .ToList();
         if (ordered.Count < 0)
         {
-            throw new InvalidOperationException($"Chaos pool for {color} is corrupt.");
+            throw new SaveCorruptionException($"Chaos pool for {color} is corrupt.");
         }
 
         foreach (PoolCandidate candidate in ordered)
@@ -143,17 +144,17 @@ public static class SelectChaosCupFieldSelection
     {
         if (candidate.SaveAthleteId <= 0)
         {
-            throw new InvalidOperationException($"Chaos pool for {color} contains corrupt athlete id {candidate.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Chaos pool for {color} contains corrupt athlete id {candidate.SaveAthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(candidate.Name))
         {
-            throw new InvalidOperationException($"Chaos pool athlete {candidate.SaveAthleteId} has an empty name.");
+            throw new SaveCorruptionException($"Chaos pool athlete {candidate.SaveAthleteId} has an empty name.");
         }
 
         if (candidate.SportingColor != color)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos pool athlete {candidate.SaveAthleteId} color {candidate.SportingColor} does not match pool {color}.");
         }
     }
@@ -166,7 +167,7 @@ public static class SelectChaosCupFieldSelection
     {
         if (ordered.Count < required)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos pool for {color} holds {ordered.Count} athletes but needs {required} invitations.");
         }
 
@@ -178,7 +179,7 @@ public static class SelectChaosCupFieldSelection
         {
             if (!seen.Add(candidate.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Chaos Pool invitations for {color} contain duplicate athlete {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos Pool invitations for {color} contain duplicate athlete {candidate.SaveAthleteId}.");
             }
         }
 
@@ -205,12 +206,12 @@ public static class SelectChaosCupFieldSelection
     {
         if (!entrantsByColor.TryGetValue(color, out IReadOnlyList<EntrantCandidate>? entrants))
         {
-            throw new InvalidOperationException($"Chaos field misses sporting color {color}.");
+            throw new SaveCorruptionException($"Chaos field misses sporting color {color}.");
         }
 
         if (entrants.Count != ChaosCupFormat.EntrantsPerColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos field must hold exactly {ChaosCupFormat.EntrantsPerColor} {color} entrants, was {entrants.Count}.");
         }
 
@@ -222,12 +223,12 @@ public static class SelectChaosCupFieldSelection
         {
             if (candidate.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Chaos field for {color} contains corrupt athlete id {candidate.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos field for {color} contains corrupt athlete id {candidate.SaveAthleteId}.");
             }
 
             if (candidate.SportingColor != color)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Chaos entrant {candidate.SaveAthleteId} color {candidate.SportingColor} does not match field color {color}.");
             }
         }
@@ -246,7 +247,7 @@ public static class SelectChaosCupFieldSelection
             {
                 if (!seen.Add(candidate.SaveAthleteId))
                 {
-                    throw new InvalidOperationException($"Chaos field contains duplicate athlete {candidate.SaveAthleteId}.");
+                    throw new SaveCorruptionException($"Chaos field contains duplicate athlete {candidate.SaveAthleteId}.");
                 }
             }
         }

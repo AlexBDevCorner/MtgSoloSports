@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
@@ -16,19 +17,22 @@ public sealed class DriveCallbackHandler
     private readonly IOptions<DrivePublishingOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly DriveAutoPublishTracker _tracker;
+    private readonly ILogger<DriveCallbackHandler> _logger;
 
     public DriveCallbackHandler(
         DrivePublishingStore publishing,
         IGoogleOAuthClient oauth,
         IOptions<DrivePublishingOptions> options,
         TimeProvider timeProvider,
-        DriveAutoPublishTracker tracker)
+        DriveAutoPublishTracker tracker,
+        ILogger<DriveCallbackHandler> logger)
     {
         _publishing = publishing ?? throw new ArgumentNullException(nameof(publishing));
         _oauth = oauth ?? throw new ArgumentNullException(nameof(oauth));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _tracker = tracker ?? throw new ArgumentNullException(nameof(tracker));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public sealed record CallbackResult(bool Success, Guid SaveId, string RedirectTo);
@@ -147,8 +151,15 @@ public sealed class DriveCallbackHandler
         {
             all = await _publishing.ListDestinationsAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // Reconnect catch-up is best effort and must never fail the already
+            // persisted connection, but the skip is logged so an operator can
+            // see why automatic publishing stayed paused for reconnectable
+            // saves. Post-commit-only semantics stay intact.
+            _logger.LogWarning(
+                ex,
+                "Skipping Drive reconnect catch-up: destination listing failed after connection was persisted.");
             return;
         }
 
@@ -167,34 +178,49 @@ public sealed class DriveCallbackHandler
                 continue;
             }
 
-            SemaphoreSlim gate = DriveSaveGates.ForSave(destination.SaveId);
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                DrivePublishingStore.DestinationDocument? current =
-                    await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
-                if (current is null || !current.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(current))
-                {
-                    continue;
-                }
-
-                await _publishing.SaveDestinationAsync(current with
-                {
-                    AutoPausedForAuth = false,
-                    AutoLastError = null,
-                    AutoNextRetryUtc = now,
-                }, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                continue;
-            }
-            finally
-            {
-                gate.Release();
-            }
-
-            _tracker.Signal(destination.SaveId);
+            await UnpauseSingleDestinationAsync(destination, now, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task UnpauseSingleDestinationAsync(
+        DrivePublishingStore.DestinationDocument destination,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        SemaphoreSlim gate = DriveSaveGates.ForSave(destination.SaveId);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DrivePublishingStore.DestinationDocument? current =
+                await _publishing.GetDestinationAsync(destination.SaveId, cancellationToken).ConfigureAwait(false);
+            if (current is null || !current.AutoPublishEnabled || !DriveAutoPublishStatus.HasPendingRequest(current))
+            {
+                return;
+            }
+
+            await _publishing.SaveDestinationAsync(current with
+            {
+                AutoPausedForAuth = false,
+                AutoLastError = null,
+                AutoNextRetryUtc = now,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // A per-save unpause failure never fails the already persisted
+            // connection, but the skip is logged so an operator can see
+            // which saves stayed paused. Post-commit-only semantics stay
+            // intact.
+            _logger.LogWarning(
+                ex,
+                "Skipping Drive reconnect unpause for save {SaveId}; automatic publishing stays paused until the next signal.",
+                destination.SaveId);
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        _tracker.Signal(destination.SaveId);
     }
 }

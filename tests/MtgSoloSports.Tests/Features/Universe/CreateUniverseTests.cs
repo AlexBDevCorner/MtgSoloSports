@@ -101,7 +101,7 @@ public sealed class CreateUniverseTests
             catalog.RemoveAll(a => a.SportingColor == SportingColor.Red && a.Name.EndsWith("0003", StringComparison.Ordinal));
             catalog.RemoveAll(a => a.SportingColor == SportingColor.Red && a.Name.EndsWith("0004", StringComparison.Ordinal));
 
-            InvalidOperationException ex = await Should.ThrowAsync<InvalidOperationException>(
+            MtgSoloSports.Shared.SaveCorruptionException ex = await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => store.CreateAsync("Short", 1UL, 2UL, catalog));
             ex.Message.ShouldContain("Red");
             ex.Message.ShouldContain("256");
@@ -225,17 +225,17 @@ public sealed class CreateUniverseTests
 
         List<CatalogAthlete> duplicated = [.. catalog];
         duplicated[0] = duplicated[1];
-        Should.Throw<InvalidOperationException>(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(
             () => UniverseInvariants.ValidateSelection(duplicated, 256, 2048));
 
-        Should.Throw<InvalidOperationException>(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(
             () => UniverseInvariants.ValidateSelection(catalog.Take(2047).ToList(), 256, 2048));
 
         List<CatalogAthlete> missingColor = catalog.Where(a => a.SportingColor != SportingColor.Red).ToList();
-        Should.Throw<InvalidOperationException>(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(
             () => UniverseInvariants.ValidateSelection(missingColor, 256, 2048));
 
-        Should.Throw<InvalidOperationException>(
+        Should.Throw<MtgSoloSports.Shared.SaveCorruptionException>(
             () => UniverseSelector.Select(UniverseTestCatalog.Build(perColor: 10), new Pcg32V1(1UL, 2UL), RulesV1.CreateDefault()));
     }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MtgSoloSports.Features.History;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.SelectColorCupTeams;
 
@@ -103,11 +104,11 @@ public sealed record ColorCupSelectionReportDocument(
         try
         {
             ColorCupSelectionReportDocument? document = JsonSerializer.Deserialize<ColorCupSelectionReportDocument>(json, JsonOptions);
-            return document ?? throw new InvalidOperationException("Color Cup selection report is empty.");
+            return document ?? throw new SaveCorruptionException("Color Cup selection report is empty.");
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Color Cup selection report is corrupt.", ex);
+            throw new SaveCorruptionException("Color Cup selection report is corrupt.", ex);
         }
     }
 }

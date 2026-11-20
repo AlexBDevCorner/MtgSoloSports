@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Cups.RunTypeCupTeam;
 
@@ -53,7 +54,7 @@ public sealed record TypeCupTeamRoundPayloadDocument(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         TypeCupTeamRoundPayloadDocument? document = JsonSerializer.Deserialize<TypeCupTeamRoundPayloadDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Type Cup team round payload is empty.");
+        return document ?? throw new SaveCorruptionException("Type Cup team round payload is empty.");
     }
 
     /// <summary>
@@ -70,7 +71,7 @@ public sealed record TypeCupTeamRoundPayloadDocument(
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException("Type Cup team round payload is corrupt and cannot be replayed.", ex);
+            throw new SaveCorruptionException("Type Cup team round payload is corrupt and cannot be replayed.", ex);
         }
     }
 }

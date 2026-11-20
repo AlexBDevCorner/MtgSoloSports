@@ -5,7 +5,7 @@ namespace MtgSoloSports.Features.Leagues.UpgradeToTiered;
 /// safe season boundary (live season in progress, pending transition without
 /// rebalancing/Cup, or no pending next season). The save stays on v1 with no
 /// partial upgrade. Maps to 409. Corrupted sporting state throws
-/// <see cref="InvalidOperationException"/> instead.
+/// <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class UpgradeToTieredConflictException : Exception
 {

@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
@@ -149,7 +150,7 @@ public sealed class GetQualifierRoundsHandler
             SeasonEntity? latestSource = await context.Seasons.AsNoTracking().SingleOrDefaultAsync(e => e.Id == fromId, cancellationToken).ConfigureAwait(false);
             if (latestNext is null || latestSource is null)
             {
-                throw new InvalidOperationException("Qualifier references unknown seasons.");
+                throw new SaveCorruptionException("Qualifier references unknown seasons.");
             }
 
             return (latestSource, latestNext);

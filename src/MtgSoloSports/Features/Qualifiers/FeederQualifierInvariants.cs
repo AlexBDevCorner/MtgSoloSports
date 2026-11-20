@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
@@ -44,19 +45,19 @@ public static class FeederQualifierInvariants
     {
         if (field.Incumbents.Count != rules.FeederQualifierIncumbentPerColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly {rules.FeederQualifierIncumbentPerColor} incumbents, was {field.Incumbents.Count}.");
         }
 
         if (field.Challengers.Count != rules.FeederQualifierChallengerPerColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly {rules.FeederQualifierChallengerPerColor} challengers, was {field.Challengers.Count}.");
         }
 
         if (field.All.Count != rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly {rules.FeederQualifierSize} athletes, was {field.All.Count}.");
         }
     }
@@ -68,22 +69,22 @@ public static class FeederQualifierInvariants
         {
             if (pick.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Feeder qualifier contains invalid athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Feeder qualifier contains invalid athlete id {pick.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(pick.Name))
             {
-                throw new InvalidOperationException($"Feeder qualifier athlete {pick.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Feeder qualifier athlete {pick.SaveAthleteId} has an empty name.");
             }
 
             if (!ids.Add(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Feeder qualifier contains duplicate athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Feeder qualifier contains duplicate athlete id {pick.SaveAthleteId}.");
             }
 
             if (pick.SportingColor != field.SportingColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder qualifier athlete {pick.SaveAthleteId} color {pick.SportingColor} does not match boundary color {field.SportingColor}; no cross-color movement.");
             }
         }
@@ -97,18 +98,18 @@ public static class FeederQualifierInvariants
         {
             if (pick.FromLeagueId != upperLeague.Id)
             {
-                throw new InvalidOperationException($"Feeder qualifier incumbent {pick.SaveAthleteId} must come from the upper tier.");
+                throw new SaveCorruptionException($"Feeder qualifier incumbent {pick.SaveAthleteId} must come from the upper tier.");
             }
 
             if (pick.FromSeasonRank < 17 || pick.FromSeasonRank > 24)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder qualifier incumbent rank {pick.FromSeasonRank} is outside places 17-24.");
             }
 
             if (pick.Role != QualifierRole.Incumbent)
             {
-                throw new InvalidOperationException($"Feeder qualifier incumbent {pick.SaveAthleteId} has corrupt role {pick.Role}.");
+                throw new SaveCorruptionException($"Feeder qualifier incumbent {pick.SaveAthleteId} has corrupt role {pick.Role}.");
             }
         }
     }
@@ -121,18 +122,18 @@ public static class FeederQualifierInvariants
         {
             if (pick.FromLeagueId != lowerLeague.Id)
             {
-                throw new InvalidOperationException($"Feeder qualifier challenger {pick.SaveAthleteId} must come from the lower tier.");
+                throw new SaveCorruptionException($"Feeder qualifier challenger {pick.SaveAthleteId} must come from the lower tier.");
             }
 
             if (pick.FromSeasonRank < 9 || pick.FromSeasonRank > 16)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Feeder qualifier challenger rank {pick.FromSeasonRank} is outside places 9-16.");
             }
 
             if (pick.Role != QualifierRole.Challenger)
             {
-                throw new InvalidOperationException($"Feeder qualifier challenger {pick.SaveAthleteId} has corrupt role {pick.Role}.");
+                throw new SaveCorruptionException($"Feeder qualifier challenger {pick.SaveAthleteId} has corrupt role {pick.Role}.");
             }
         }
     }
@@ -150,13 +151,13 @@ public static class FeederQualifierInvariants
             bool inLower = lowerRanks.TryGetValue(pick.SaveAthleteId, out int lowerRank);
             if (inUpper == inLower)
             {
-                throw new InvalidOperationException($"Athlete {pick.SaveAthleteId} must appear in exactly one source table.");
+                throw new SaveCorruptionException($"Athlete {pick.SaveAthleteId} must appear in exactly one source table.");
             }
 
             int actual = inUpper ? upperRank : lowerRank;
             if (actual != pick.FromSeasonRank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {pick.SaveAthleteId} rank {pick.FromSeasonRank} does not match final standing rank {actual}.");
             }
         }
@@ -171,13 +172,13 @@ public static class FeederQualifierInvariants
         ArgumentNullException.ThrowIfNull(rules);
         if (entry.Position < 1 || entry.Position > rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException($"Feeder qualifier payload position {entry.Position} is out of range.");
+            throw new SaveCorruptionException($"Feeder qualifier payload position {entry.Position} is out of range.");
         }
 
         int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
         if (entry.BaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
         }
     }
@@ -193,13 +194,13 @@ public static class FeederQualifierInvariants
 
         if (ranked.Count != rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed feeder qualifier must rank exactly {rules.FeederQualifierSize} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed feeder qualifier must total exactly {rules.FeederQualifierSize} athletes, was {totals.Count}.");
         }
 
@@ -217,23 +218,23 @@ public static class FeederQualifierInvariants
         {
             if (entry.StageRank < 1 || entry.StageRank > rules.FeederQualifierSize)
             {
-                throw new InvalidOperationException($"Completed feeder qualifier rank {entry.StageRank} is out of range.");
+                throw new SaveCorruptionException($"Completed feeder qualifier rank {entry.StageRank} is out of range.");
             }
 
             if (!ranks.Add(entry.StageRank))
             {
-                throw new InvalidOperationException($"Completed feeder qualifier contains duplicate rank {entry.StageRank}.");
+                throw new SaveCorruptionException($"Completed feeder qualifier contains duplicate rank {entry.StageRank}.");
             }
 
             if (!ids.Add(entry.AthleteId))
             {
-                throw new InvalidOperationException($"Completed feeder qualifier contains duplicate athlete id {entry.AthleteId}.");
+                throw new SaveCorruptionException($"Completed feeder qualifier contains duplicate athlete id {entry.AthleteId}.");
             }
         }
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.FeederQualifierSize)))
         {
-            throw new InvalidOperationException("Completed feeder qualifier must cover ranks 1..16 exactly once.");
+            throw new SaveCorruptionException("Completed feeder qualifier must cover ranks 1..16 exactly once.");
         }
     }
 
@@ -245,7 +246,7 @@ public static class FeederQualifierInvariants
         {
             if (entry.RoundPlaceCounts.Count != rules.FeederQualifierSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Completed feeder qualifier round-place counts for '{entry.Name}' must cover 16 positions.");
             }
 
@@ -260,7 +261,7 @@ public static class FeederQualifierInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Completed feeder qualifier counts for '{entry.Name}' cannot be negative.");
+                throw new SaveCorruptionException($"Completed feeder qualifier counts for '{entry.Name}' cannot be negative.");
             }
 
             checked
@@ -271,7 +272,7 @@ public static class FeederQualifierInvariants
 
         if (sum != rules.FeederQualifierRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed feeder qualifier totals for '{entry.Name}' sum to {sum}, expected {rules.FeederQualifierRounds}.");
         }
     }
@@ -302,12 +303,12 @@ public static class FeederQualifierInvariants
     {
         if (!source.HasSuperleague || !source.IsComplete)
         {
-            throw new InvalidOperationException("Feeder qualifier requires a completed source season with a Superleague.");
+            throw new SaveCorruptionException("Feeder qualifier requires a completed source season with a Superleague.");
         }
 
         if (next.SeasonNumber != source.SeasonNumber + 1 || !next.HasSuperleague || next.IsComplete)
         {
-            throw new InvalidOperationException("Feeder qualifier next season must be the consecutive incomplete Superleague season.");
+            throw new SaveCorruptionException("Feeder qualifier next season must be the consecutive incomplete Superleague season.");
         }
     }
 
@@ -318,13 +319,13 @@ public static class FeederQualifierInvariants
     {
         if (rounds.Count != rules.FeederQualifierRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must persist exactly {rules.FeederQualifierRounds} rounds, was {rounds.Count}.");
         }
 
         if (standings.Count != rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must persist exactly {rules.FeederQualifierSize} standings, was {standings.Count}.");
         }
     }
@@ -342,23 +343,23 @@ public static class FeederQualifierInvariants
         {
             if (round.FromSeasonId != source.Id || round.ToSeasonId != next.Id)
             {
-                throw new InvalidOperationException($"Feeder qualifier round {round.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Feeder qualifier round {round.Id} has corrupt season linkage.");
             }
 
             if (round.QualifierBoundary != (int)boundary || round.QualifierSportingColor != color)
             {
-                throw new InvalidOperationException($"Feeder qualifier round {round.Id} has corrupt event identity.");
+                throw new SaveCorruptionException($"Feeder qualifier round {round.Id} has corrupt event identity.");
             }
 
             if (!roundNumbers.Add(round.RoundNumber))
             {
-                throw new InvalidOperationException($"Feeder qualifier contains duplicate round {round.RoundNumber}.");
+                throw new SaveCorruptionException($"Feeder qualifier contains duplicate round {round.RoundNumber}.");
             }
         }
 
         if (!roundNumbers.SetEquals(Enumerable.Range(1, rules.FeederQualifierRounds)))
         {
-            throw new InvalidOperationException("Feeder qualifier must cover rounds 1..16 exactly once.");
+            throw new SaveCorruptionException("Feeder qualifier must cover rounds 1..16 exactly once.");
         }
     }
 
@@ -376,22 +377,22 @@ public static class FeederQualifierInvariants
         {
             if (standing.FromSeasonId != source.Id || standing.ToSeasonId != next.Id)
             {
-                throw new InvalidOperationException($"Feeder qualifier standing {standing.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Feeder qualifier standing {standing.Id} has corrupt season linkage.");
             }
 
             if (standing.QualifierBoundary != (int)boundary || standing.QualifierSportingColor != color)
             {
-                throw new InvalidOperationException($"Feeder qualifier standing {standing.Id} has corrupt event identity.");
+                throw new SaveCorruptionException($"Feeder qualifier standing {standing.Id} has corrupt event identity.");
             }
 
             if (!ranks.Add(standing.QualifierRank))
             {
-                throw new InvalidOperationException($"Feeder qualifier contains duplicate rank {standing.QualifierRank}.");
+                throw new SaveCorruptionException($"Feeder qualifier contains duplicate rank {standing.QualifierRank}.");
             }
 
             if (!athleteIds.Add(standing.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Feeder qualifier contains duplicate athlete id {standing.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Feeder qualifier contains duplicate athlete id {standing.SaveAthleteId}.");
             }
 
             CheckStandingPlaceCounts(standing, rules);
@@ -403,7 +404,7 @@ public static class FeederQualifierInvariants
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
         if (counts is null || counts.Count != rules.FeederQualifierSize)
         {
-            throw new InvalidOperationException($"Feeder qualifier standing {standing.Id} has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Feeder qualifier standing {standing.Id} has corrupt round-place counts.");
         }
     }
 
@@ -414,13 +415,13 @@ public static class FeederQualifierInvariants
         HashSet<int> ranks = standings.Select(s => s.QualifierRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, rules.FeederQualifierSize)))
         {
-            throw new InvalidOperationException("Feeder qualifier must cover ranks 1..16 exactly once.");
+            throw new SaveCorruptionException("Feeder qualifier must cover ranks 1..16 exactly once.");
         }
 
         int qualified = standings.Count(s => s.IsQualified);
         if (qualified != rules.FeederQualifierWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly {rules.FeederQualifierWinners} successful qualifiers, was {qualified}.");
         }
 
@@ -428,7 +429,7 @@ public static class FeederQualifierInvariants
         int challengers = standings.Count(s => s.Role == (int)QualifierRole.Challenger);
         if (incumbents != rules.FeederQualifierIncumbentPerColor || challengers != rules.FeederQualifierChallengerPerColor)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Feeder qualifier must hold exactly 8 incumbents and 8 challengers, was {incumbents}/{challengers}.");
         }
     }

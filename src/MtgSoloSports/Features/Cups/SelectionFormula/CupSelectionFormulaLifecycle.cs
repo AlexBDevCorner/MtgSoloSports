@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Cups.SelectionFormula;
@@ -74,7 +75,7 @@ public static class CupSelectionFormulaLifecycle
         ArgumentNullException.ThrowIfNull(rules);
         if (!IsLegacyWeights(rules) && !IsCurrentWeights(rules))
         {
-            throw new InvalidOperationException(
+            throw new UnsupportedCupSelectionWeightsException(
                 "Save rules snapshot has unsupported Cup selection weights; game-rule migration is explicit and never implicit.");
         }
     }
@@ -223,7 +224,11 @@ public static class CupSelectionFormulaLifecycle
             .AsNoTracking()
             .SingleAsync(e => e.Id == 1, cancellationToken)
             .ConfigureAwait(false);
-        return SaveRulesCompatibility.ReadSnapshotRules(snapshot.RulesJson);
+        // Live backfill read, not import staging: decode directly so a corrupt
+        // snapshot stays in the 500 SaveCorruptionException class. The import
+        // 400 rewrap in SaveRulesCompatibility.ReadImportableSnapshotRules is
+        // for uploaded artifacts only.
+        return RulesSnapshotCodec.Decode(snapshot.RulesJson);
     }
 
     private static async Task<int> ComputeLegacyEffectiveFromAsync(
@@ -279,8 +284,7 @@ public static class CupSelectionFormulaLifecycle
 
             return chaos.EffectiveFromSeasonNumber < 1 ? fallback : chaos.EffectiveFromSeasonNumber;
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1
-            && ex.Message.Contains("ChaosCupActivations", StringComparison.OrdinalIgnoreCase))
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "ChaosCupActivations"))
         {
             // Table predates the Chaos activation migration; treat Chaos as not
             // yet activated and keep the N+1 boundary.
@@ -350,12 +354,12 @@ public static class CupSelectionFormulaLifecycle
         ArgumentNullException.ThrowIfNull(activation);
         if (activation.EffectiveFromSeasonNumber < 1)
         {
-            throw new InvalidOperationException("Cup selection formula effective season must be positive.");
+            throw new SaveCorruptionException("Cup selection formula effective season must be positive.");
         }
 
         if (activation.FormulaVersion != FormulaVersion)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Cup selection formula version must be {FormulaVersion}, was {activation.FormulaVersion}.");
         }
     }
@@ -368,9 +372,10 @@ public static class CupSelectionFormulaLifecycle
         {
             return await EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "CupSelectionFormulaActivations"))
         {
-            throw new InvalidOperationException("Save schema predates Cup selection formula activation; migrate the save first.", ex);
+            throw new SavePredatesSelectionFormulaActivationException(
+                "Save schema predates Cup selection formula activation; migrate the save first.", ex);
         }
     }
 }

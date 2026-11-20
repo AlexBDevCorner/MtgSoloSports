@@ -9,6 +9,7 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -466,7 +467,7 @@ public sealed class GetCupEditionReportHandler
         if (rows.Teams.Any(t => t.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification)
             || rows.Legs.Any(l => l.TournamentPhase != (int)SimulationKernel.Cups.TypeCupTournamentFormat.TournamentPhase.Qualification))
         {
-            throw new InvalidOperationException("Type Cup tournament gained Final standings during the report read.");
+            throw new SaveCorruptionException("Type Cup tournament gained Final standings during the report read.");
         }
     }
 
@@ -477,7 +478,7 @@ public sealed class GetCupEditionReportHandler
         TypeCupTournamentPlan.Plan plan = TypeCupTournamentPlan.BuildFromSelection(teamCount, selectedTypes, rows.Draws, rows.Rules);
         if (plan.IsLegacy || plan.IsDirectFinal)
         {
-            throw new InvalidOperationException("Type Cup qualification standings exist without a qualification tournament plan.");
+            throw new SaveCorruptionException("Type Cup qualification standings exist without a qualification tournament plan.");
         }
 
         return plan;
@@ -503,7 +504,7 @@ public sealed class GetCupEditionReportHandler
             // short row count is corruption, not a reportable partial state.
             if (stageTeams.Count != stage.GroupSize || stageLegs.Count != stage.GroupSize * rows.Rules.TypeCupMinTeamSize)
             {
-                throw new InvalidOperationException($"Type Cup qualification group {stage.QualificationGroup} has corrupt partial standings.");
+                throw new SaveCorruptionException($"Type Cup qualification group {stage.QualificationGroup} has corrupt partial standings.");
             }
 
             groups.Add(BuildPartialQualGroup(plan, stage, stageTeams, stageLegs, names));

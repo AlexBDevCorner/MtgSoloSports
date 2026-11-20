@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.FixedPoint;
@@ -50,7 +51,7 @@ public sealed partial class SelectChaosCupFieldHandler
     {
         if (after.State == before.State && after.Stream == before.Stream)
         {
-            throw new InvalidOperationException("Chaos Cup field selection must advance the save RNG.");
+            throw new SaveCorruptionException("Chaos Cup field selection must advance the save RNG.");
         }
     }
 
@@ -143,7 +144,7 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             if (!invited.TryGetValue(color, out IReadOnlyList<SelectChaosCupFieldSelection.PoolCandidate>? list))
             {
-                throw new InvalidOperationException($"Chaos Pool invitations miss sporting color {color}.");
+                throw new SaveCorruptionException($"Chaos Pool invitations miss sporting color {color}.");
             }
 
             foreach (SelectChaosCupFieldSelection.PoolCandidate candidate in list.OrderBy(c => c.SaveAthleteId))
@@ -192,7 +193,7 @@ public sealed partial class SelectChaosCupFieldHandler
         Dictionary<int, Bonus> bonuses = ComputeBonuses(roster, standings, seasonNumbers, cupSeason, rules);
         if (bonuses.Count != entrants.Count)
         {
-            throw new InvalidOperationException("Chaos Cup bonus freeze misses entrants.");
+            throw new SaveCorruptionException("Chaos Cup bonus freeze misses entrants.");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -209,7 +210,7 @@ public sealed partial class SelectChaosCupFieldHandler
         {
             if (!bonuses.TryGetValue(entrant.SaveAthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Chaos Cup bonus freeze misses athlete {entrant.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos Cup bonus freeze misses athlete {entrant.SaveAthleteId}.");
             }
 
             entrant.EffectiveBonusThousandths = bonus.Thousandths;
@@ -223,7 +224,7 @@ public sealed partial class SelectChaosCupFieldHandler
             .ToDictionary(e => e.Id, e => e.SeasonNumber);
         if (!seasonNumbers.ContainsKey(source.Id))
         {
-            throw new InvalidOperationException($"Save has no season row for season {source.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {source.SeasonNumber}.");
         }
 
         return seasonNumbers;
@@ -290,7 +291,7 @@ public sealed partial class SelectChaosCupFieldHandler
             SportingColor color = (SportingColor)entrant.SportingColor;
             if (!namesByAthlete.TryGetValue(entrant.SaveAthleteId, out string? name))
             {
-                throw new InvalidOperationException($"Chaos field references unknown athlete {entrant.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Chaos field references unknown athlete {entrant.SaveAthleteId}.");
             }
 
             grouped[color].Add(new SelectChaosCupFieldSelection.EntrantCandidate(
@@ -369,7 +370,7 @@ public sealed partial class SelectChaosCupFieldHandler
     {
         if (groups.Count != ChaosCupFormat.GroupCountForStage(0))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos first draw must hold exactly {ChaosCupFormat.GroupCountForStage(0)} groups, was {groups.Count}.");
         }
     }
@@ -385,7 +386,7 @@ public sealed partial class SelectChaosCupFieldHandler
     {
         if (group.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos first-stage group {groupIndex + 1} must hold exactly {ChaosCupFormat.GroupSize} athletes, was {group.Count}.");
         }
 

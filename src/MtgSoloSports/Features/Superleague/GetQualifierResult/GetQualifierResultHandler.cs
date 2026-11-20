@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Stages;
 
@@ -99,7 +100,7 @@ public sealed class GetQualifierResultHandler
             .ConfigureAwait(false);
         if (latestNext is null || latestSource is null)
         {
-            throw new InvalidOperationException("Qualifier references unknown seasons.");
+            throw new SaveCorruptionException("Qualifier references unknown seasons.");
         }
 
         return (latestSource, latestNext);
@@ -250,33 +251,33 @@ public sealed class GetQualifierResultHandler
     {
         if (standings.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly 32 standings, was {standings.Count}.");
         }
 
         if (rounds.Count != 16)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly 16 rounds, was {rounds.Count}.");
         }
 
         int qualified = standings.Count(s => s.IsQualified);
         if (qualified != 8)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly 8 successful qualifiers, was {qualified}.");
         }
 
         HashSet<int> ranks = standings.Select(s => s.QualifierRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, 32)))
         {
-            throw new InvalidOperationException("Qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException("Qualifier must cover ranks 1..32 exactly once.");
         }
 
         HashSet<int> roundNumbers = rounds.Select(r => r.RoundNumber).ToHashSet();
         if (!roundNumbers.SetEquals(Enumerable.Range(1, 16)))
         {
-            throw new InvalidOperationException("Qualifier must cover rounds 1..16 exactly once.");
+            throw new SaveCorruptionException("Qualifier must cover rounds 1..16 exactly once.");
         }
     }
 

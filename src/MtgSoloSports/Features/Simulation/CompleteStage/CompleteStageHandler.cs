@@ -1,11 +1,13 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Features.Simulation.SeasonCompletion;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -31,11 +33,16 @@ public sealed class CompleteStageHandler
 {
     private readonly SaveStore _store;
     private readonly DriveAutoPublishNotifier? _autoPublish;
+    private readonly ILogger<CompleteStageHandler>? _logger;
 
-    public CompleteStageHandler(SaveStore store, DriveAutoPublishNotifier? autoPublish = null)
+    public CompleteStageHandler(
+        SaveStore store,
+        DriveAutoPublishNotifier? autoPublish = null,
+        ILogger<CompleteStageHandler>? logger = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _autoPublish = autoPublish;
+        _logger = logger;
     }
 
     public async Task<CompleteStageResponse> HandleAsync(Guid saveId, int leagueId, CancellationToken cancellationToken = default)
@@ -98,10 +105,18 @@ public sealed class CompleteStageHandler
                 .ConfigureAwait(false);
             return global.IsSeasonComplete || global.CurrentStage != response.StageNumber;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // The sporting commit already succeeded; a failed boundary read
             // must not fail the command. The next global completion notifies.
+            // Logged, never silently swallowed: an operator must see why the
+            // post-commit boundary read was skipped. Post-commit-only
+            // semantics stay intact.
+            _logger?.LogWarning(
+                ex,
+                "Post-commit global-stage boundary read failed for save {SaveId} after stage {StageNumber}; the next global completion notifies.",
+                saveId,
+                response.StageNumber);
             return false;
         }
     }
@@ -286,19 +301,19 @@ public sealed class CompleteStageHandler
         {
             if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
             {
-                throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
             }
 
             if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
             {
-                throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+                throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
             }
         }
 
         int distinct = stages.Select(s => s.StageNumber).Distinct().Count();
         if (distinct != stages.Count)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has duplicate stage rows.");
+            throw new SaveCorruptionException($"League '{league.Name}' has duplicate stage rows.");
         }
 
         return stages.OrderByDescending(s => s.StageNumber).First();
@@ -360,17 +375,17 @@ public sealed class CompleteStageHandler
 
         if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+            throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
         }
 
         if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
         }
 
         if (stage.CompletedRounds != existingRounds.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {stage.StageNumber} cursor says {stage.CompletedRounds} rounds but {existingRounds.Count} round rows exist.");
         }
 
@@ -378,7 +393,7 @@ public sealed class CompleteStageHandler
         {
             if (existingRounds[i].RoundNumber != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} has non-sequential round rows; rounds must advance in order.");
             }
         }
@@ -415,8 +430,34 @@ public sealed class CompleteStageHandler
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         List<List<StageRoundEntry>> roundEntries = BuildRoundEntries(payloads);
-        IReadOnlyList<StageAthleteTotals> totals = StageCalculator.Accumulate(roundEntries, completion.Rules);
+        IReadOnlyList<StageAthleteTotals> totals = AccumulateStageRounds(roundEntries, completion);
         return new StageRounds(payloads, totals, current);
+    }
+
+    /// <summary>
+    /// Accumulates the stage's rounds through the pure kernel. The kernel's
+    /// placement invariants (duplicate or out-of-range positions, athlete
+    /// coverage, base-point consistency) throw
+    /// <see cref="InvalidOperationException"/>; here the inputs are persisted
+    /// round payloads — the freshly simulated rounds were already checked by
+    /// <see cref="RoundInvariants"/> — so an invariant failure means corrupted
+    /// saved rounds and must surface in the 500 corruption class (MSS-144),
+    /// never as a client error.
+    /// </summary>
+    internal static IReadOnlyList<StageAthleteTotals> AccumulateStageRounds(
+        List<List<StageRoundEntry>> roundEntries,
+        StageCompletionContext completion)
+    {
+        try
+        {
+            return StageCalculator.Accumulate(roundEntries, completion.Rules);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException(
+                $"Stage {completion.Stage.StageNumber} for league '{completion.League.Name}' has corrupt round placements: {ex.Message}",
+                ex);
+        }
     }
 
     /// <summary>
@@ -448,7 +489,7 @@ public sealed class CompleteStageHandler
             RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(round.PayloadJson);
             if (document.StageNumber != completion.Stage.StageNumber)
             {
-                throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage identity.");
+                throw new SaveCorruptionException($"Persisted round {round.Id} has corrupt stage identity.");
             }
 
             payloads.Add(document);
@@ -615,7 +656,7 @@ public sealed class CompleteStageHandler
             cancellationToken).ConfigureAwait(false);
         if (count != completion.Rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Stage {completion.Stage.StageNumber} must persist exactly {completion.Rules.LeagueSize} standings, was {count}.");
         }
 

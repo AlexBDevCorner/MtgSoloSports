@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.CupHistory;
 using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 
@@ -155,7 +156,7 @@ public sealed class ListCupEditionsHandler
         {
             if (!athletes.TryGetValue(champion.SaveAthleteId, out SaveAthleteEntity? athlete))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup individual champion of Season {champion.SourceSeasonNumber} references unknown athlete {champion.SaveAthleteId}.");
             }
 
@@ -359,7 +360,7 @@ public sealed class ListCupEditionsHandler
         if (!finalsBySeason.TryGetValue(edition.SourceSeasonId, out List<ChaosCupGroupStandingEntity>? finals)
             || finals.Count != ChaosCupFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos Cup for Season {edition.SourceSeasonNumber} is marked complete but misses its 32-athlete Final.");
         }
 
@@ -368,7 +369,7 @@ public sealed class ListCupEditionsHandler
         {
             if (ordered[rank - 1].GroupRank != rank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Chaos Cup Final for Season {edition.SourceSeasonNumber} must cover ranks 1..{ChaosCupFormat.FinalFieldSize} exactly once.");
             }
         }
@@ -378,7 +379,7 @@ public sealed class ListCupEditionsHandler
         {
             if (!athletesById.TryGetValue(standing.SaveAthleteId, out SaveAthleteEntity? athlete))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Chaos Cup Final for Season {edition.SourceSeasonNumber} references unknown athlete {standing.SaveAthleteId}.");
             }
 
@@ -500,7 +501,7 @@ public sealed class ListCupEditionsHandler
                         && medal.Medal != (int)ColorCupMedal.Silver
                         && medal.Medal != (int)ColorCupMedal.Bronze)
                     {
-                        throw new InvalidOperationException(
+                        throw new SaveCorruptionException(
                             $"Color Cup individual medal for Season {medal.SeasonNumber} has unknown medal {medal.Medal}.");
                     }
                 }

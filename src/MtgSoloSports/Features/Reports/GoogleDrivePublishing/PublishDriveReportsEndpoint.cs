@@ -1,6 +1,7 @@
 using MtgSoloSports.Features.Reports.SeasonDossier;
 using MtgSoloSports.Features.Reports.UniverseAlmanac;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 
@@ -68,13 +69,22 @@ public static class PublishDriveReportsEndpoint
         }
         catch (DriveApiException ex)
         {
-            return ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                ? Results.Json(new { error = "Google authorization expired or was revoked. Reconnect with Connect Google Drive." }, statusCode: StatusCodes.Status401Unauthorized)
-                : Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status502BadGateway);
+            return DriveApiFailure(ex);
+        }
+        catch (SaveCorruptionException ex)
+        {
+            return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
         }
         catch (InvalidOperationException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+    }
+
+    private static IResult DriveApiFailure(DriveApiException ex)
+    {
+        return ex.StatusCode == System.Net.HttpStatusCode.Unauthorized
+            ? Results.Json(new { error = "Google authorization expired or was revoked. Reconnect with Connect Google Drive." }, statusCode: StatusCodes.Status401Unauthorized)
+            : Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status502BadGateway);
     }
 }

@@ -6,6 +6,7 @@ using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 
 namespace MtgSoloSports.Features.Records;
@@ -180,12 +181,12 @@ public static class ScoreRecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Stage standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing references unknown season {row.SeasonId}.");
             }
 
             if (!leagues.TryGetValue(row.LeagueId, out LeagueInfo? league))
             {
-                throw new InvalidOperationException($"Stage standing references unknown league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Stage standing references unknown league {row.LeagueId}.");
             }
 
             string scope = ScoreRecordKey.LeagueScopeFor(league.Kind, league.SportingColor);
@@ -212,12 +213,12 @@ public static class ScoreRecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Season standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing references unknown season {row.SeasonId}.");
             }
 
             if (!leagues.TryGetValue(row.LeagueId, out LeagueInfo? league))
             {
-                throw new InvalidOperationException($"Season standing references unknown league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Season standing references unknown league {row.LeagueId}.");
             }
 
             string scope = ScoreRecordKey.LeagueScopeFor(league.Kind, league.SportingColor);
@@ -244,12 +245,12 @@ public static class ScoreRecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Round references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Round references unknown season {row.SeasonId}.");
             }
 
             if (!leagues.TryGetValue(row.LeagueId, out LeagueInfo? league))
             {
-                throw new InvalidOperationException($"Round references unknown league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Round references unknown league {row.LeagueId}.");
             }
 
             string scope = ScoreRecordKey.LeagueScopeFor(league.Kind, league.SportingColor);
@@ -258,9 +259,9 @@ public static class ScoreRecordLoader
             {
                 document = RoundPayloadCodec.DecodeRound(row.PayloadJson);
             }
-            catch (InvalidOperationException ex)
+            catch (SaveCorruptionException ex)
             {
-                throw new InvalidOperationException($"League round {row.StageNumber}/{row.RoundNumber} payload is corrupt.", ex);
+                throw new SaveCorruptionException($"League round {row.StageNumber}/{row.RoundNumber} payload is corrupt.", ex);
             }
 
             foreach (RoundPayloadEntry placement in document.Placements)
@@ -296,9 +297,9 @@ public static class ScoreRecordLoader
             {
                 document = ColorCupIndividualRoundPayloadDocument.FromStored(row.PayloadJson);
             }
-            catch (InvalidOperationException ex)
+            catch (SaveCorruptionException ex)
             {
-                throw new InvalidOperationException($"Colour Cup individual round {row.RoundNumber} payload is corrupt.", ex);
+                throw new SaveCorruptionException($"Colour Cup individual round {row.RoundNumber} payload is corrupt.", ex);
             }
 
             foreach (RoundPayloadEntry placement in document.Placements)
@@ -341,12 +342,12 @@ public static class ScoreRecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.FromSeasonId, out int fromNumber))
             {
-                throw new InvalidOperationException($"Qualifier round references unknown season {row.FromSeasonId}.");
+                throw new SaveCorruptionException($"Qualifier round references unknown season {row.FromSeasonId}.");
             }
 
             if (!seasonNumbers.TryGetValue(row.ToSeasonId, out int toNumber))
             {
-                throw new InvalidOperationException($"Qualifier round references unknown season {row.ToSeasonId}.");
+                throw new SaveCorruptionException($"Qualifier round references unknown season {row.ToSeasonId}.");
             }
 
             QualifierRoundPayloadDocument document;
@@ -355,9 +356,9 @@ public static class ScoreRecordLoader
                 string json = RoundPayloadCodec.DecodeToJson(row.PayloadJson);
                 document = QualifierRoundPayloadDocument.FromJson(json);
             }
-            catch (InvalidOperationException ex)
+            catch (SaveCorruptionException ex)
             {
-                throw new InvalidOperationException($"Qualifier round {row.RoundNumber} payload is corrupt.", ex);
+                throw new SaveCorruptionException($"Qualifier round {row.RoundNumber} payload is corrupt.", ex);
             }
 
             foreach (RoundPayloadEntry placement in document.Placements)
@@ -386,12 +387,12 @@ public static class ScoreRecordLoader
         {
             if (!seasonNumbers.TryGetValue(row.FromSeasonId, out int fromNumber))
             {
-                throw new InvalidOperationException($"Qualifier standing references unknown season {row.FromSeasonId}.");
+                throw new SaveCorruptionException($"Qualifier standing references unknown season {row.FromSeasonId}.");
             }
 
             if (!seasonNumbers.TryGetValue(row.ToSeasonId, out int toNumber))
             {
-                throw new InvalidOperationException($"Qualifier standing references unknown season {row.ToSeasonId}.");
+                throw new SaveCorruptionException($"Qualifier standing references unknown season {row.ToSeasonId}.");
             }
 
             occurrences.Add(new ScoreRecordCalculator.QualifierStageOccurrence(
@@ -434,9 +435,9 @@ public static class ScoreRecordLoader
         {
             document = ColorCupTeamRoundPayloadDocument.FromStored(row.PayloadJson);
         }
-        catch (InvalidOperationException ex)
+        catch (SaveCorruptionException ex)
         {
-            throw new InvalidOperationException($"Colour Cup team round {row.GroupNumber}/{row.RoundNumber} payload is corrupt.", ex);
+            throw new SaveCorruptionException($"Colour Cup team round {row.GroupNumber}/{row.RoundNumber} payload is corrupt.", ex);
         }
 
         foreach (RoundPayloadEntry placement in document.Placements)
@@ -460,12 +461,12 @@ public static class ScoreRecordLoader
     {
         if (!athleteColors.TryGetValue(athleteId, out int color))
         {
-            throw new InvalidOperationException($"Colour Cup team round references unknown athlete {athleteId}.");
+            throw new SaveCorruptionException($"Colour Cup team round references unknown athlete {athleteId}.");
         }
 
         if (!Enum.IsDefined(typeof(SportingColor), color))
         {
-            throw new InvalidOperationException($"Colour Cup team round references corrupt sporting color {color}.");
+            throw new SaveCorruptionException($"Colour Cup team round references corrupt sporting color {color}.");
         }
 
         return ((SportingColor)color).ToString();
@@ -505,7 +506,7 @@ public static class ScoreRecordLoader
         {
             if (!Enum.IsDefined(typeof(SportingColor), row.SportingColor))
             {
-                throw new InvalidOperationException($"Colour Cup leg standing has corrupt sporting color {row.SportingColor}.");
+                throw new SaveCorruptionException($"Colour Cup leg standing has corrupt sporting color {row.SportingColor}.");
             }
 
             string teamKey = ((SportingColor)row.SportingColor).ToString();
@@ -530,7 +531,7 @@ public static class ScoreRecordLoader
         {
             if (!Enum.IsDefined(typeof(SportingColor), row.SportingColor))
             {
-                throw new InvalidOperationException($"Colour Cup team standing has corrupt sporting color {row.SportingColor}.");
+                throw new SaveCorruptionException($"Colour Cup team standing has corrupt sporting color {row.SportingColor}.");
             }
 
             string teamKey = ((SportingColor)row.SportingColor).ToString();
@@ -554,7 +555,7 @@ public static class ScoreRecordLoader
         {
             if (string.IsNullOrWhiteSpace(row.CreatureType))
             {
-                throw new InvalidOperationException("Type Cup selection has corrupt empty creature type.");
+                throw new SaveCorruptionException("Type Cup selection has corrupt empty creature type.");
             }
 
             map[(row.SeasonId, row.AthleteId)] = row.CreatureType;
@@ -584,9 +585,9 @@ public static class ScoreRecordLoader
             {
                 document = TypeCupTeamRoundPayloadDocument.FromStored(row.PayloadJson);
             }
-            catch (InvalidOperationException ex)
+            catch (SaveCorruptionException ex)
             {
-                throw new InvalidOperationException($"Type Cup team round {row.GroupNumber}/{row.RoundNumber} payload is corrupt.", ex);
+                throw new SaveCorruptionException($"Type Cup team round {row.GroupNumber}/{row.RoundNumber} payload is corrupt.", ex);
             }
 
             foreach (RoundPayloadEntry placement in document.Placements)
@@ -594,7 +595,7 @@ public static class ScoreRecordLoader
                 if (!typeTeams.TryGetValue((row.SeasonId, placement.AthleteId), out string? teamKey) ||
                     string.IsNullOrWhiteSpace(teamKey))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Type Cup team round references athlete {placement.AthleteId} without a selection for season {row.SeasonNumber}.");
                 }
 
@@ -640,7 +641,7 @@ public static class ScoreRecordLoader
         {
             if (string.IsNullOrWhiteSpace(row.CreatureType))
             {
-                throw new InvalidOperationException("Type Cup leg standing has corrupt empty creature type.");
+                throw new SaveCorruptionException("Type Cup leg standing has corrupt empty creature type.");
             }
 
             occurrences.Add(new ScoreRecordCalculator.TeamLegStageOccurrence(
@@ -664,7 +665,7 @@ public static class ScoreRecordLoader
         {
             if (string.IsNullOrWhiteSpace(row.CreatureType))
             {
-                throw new InvalidOperationException("Type Cup team standing has corrupt empty creature type.");
+                throw new SaveCorruptionException("Type Cup team standing has corrupt empty creature type.");
             }
 
             occurrences.Add(new ScoreRecordCalculator.TeamTotalOccurrence(row.SeasonNumber, row.CreatureType, row.Score));

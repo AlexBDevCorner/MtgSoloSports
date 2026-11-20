@@ -6,6 +6,7 @@ using MtgSoloSports.Features.Cups.RunColorCupIndividual;
 using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
@@ -247,7 +248,7 @@ public sealed class GetAthleteProfileHandler
         int expectedCups = await CountExpectedCupPodiumsForAthleteAsync(context, athleteId, cancellationToken).ConfigureAwait(false);
         if (leaguePersisted > expectedLeague || cupPersisted > expectedCups)
         {
-            throw new InvalidOperationException($"Persisted honours for athlete {athleteId} exceed authoritative podiums; sporting state is corrupt.");
+            throw new SaveCorruptionException($"Persisted honours for athlete {athleteId} exceed authoritative podiums; sporting state is corrupt.");
         }
 
         if (leaguePersisted == expectedLeague && cupPersisted == expectedCups)
@@ -503,12 +504,12 @@ public sealed class GetAthleteProfileHandler
         {
             if (!seasons.TryGetValue(podium.SeasonId, out SeasonEntity? season))
             {
-                throw new InvalidOperationException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing {podium.Id} references unknown season {podium.SeasonId}.");
             }
 
             if (!leagues.TryGetValue(podium.LeagueId, out LeagueEntity? league))
             {
-                throw new InvalidOperationException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
+                throw new SaveCorruptionException($"Season standing {podium.Id} references unknown league {podium.LeagueId}.");
             }
 
             Records.HonourKind kind = Records.HonourKindMapper.FromLeagueRank(league.Kind, podium.SeasonRank);
@@ -850,12 +851,12 @@ public sealed class GetAthleteProfileHandler
         ArgumentNullException.ThrowIfNull(row);
         if (row.SourceSeasonNumber <= 0)
         {
-            throw new InvalidOperationException($"Color Cup individual standing {row.Id} references invalid season number {row.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Color Cup individual standing {row.Id} references invalid season number {row.SourceSeasonNumber}.");
         }
 
         if (row.CupRank <= 0)
         {
-            throw new InvalidOperationException($"Color Cup individual standing {row.Id} has invalid rank {row.CupRank}.");
+            throw new SaveCorruptionException($"Color Cup individual standing {row.Id} has invalid rank {row.CupRank}.");
         }
 
         SportingColor color = (SportingColor)row.SportingColor;
@@ -891,17 +892,17 @@ public sealed class GetAthleteProfileHandler
 
         if (leg.SourceSeasonNumber <= 0 || team.SourceSeasonNumber <= 0)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} references an invalid season number.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} references an invalid season number.");
         }
 
         if (team.TeamRank <= 0)
         {
-            throw new InvalidOperationException($"Color Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
+            throw new SaveCorruptionException($"Color Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
         }
 
         if (leg.SourceSeasonNumber != team.SourceSeasonNumber)
         {
-            throw new InvalidOperationException($"Color Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Color Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
         }
 
         SportingColor color = (SportingColor)leg.SportingColor;
@@ -943,22 +944,22 @@ public sealed class GetAthleteProfileHandler
 
         if (leg.SourceSeasonNumber <= 0 || team.SourceSeasonNumber <= 0)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} references an invalid season number.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} references an invalid season number.");
         }
 
         if (team.TeamRank <= 0)
         {
-            throw new InvalidOperationException($"Type Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
+            throw new SaveCorruptionException($"Type Cup team standing {team.Id} has invalid rank {team.TeamRank}.");
         }
 
         if (leg.SourceSeasonNumber != team.SourceSeasonNumber)
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} season number {leg.SourceSeasonNumber} disagrees with team standing {team.SourceSeasonNumber}.");
         }
 
         if (string.IsNullOrWhiteSpace(leg.CreatureType))
         {
-            throw new InvalidOperationException($"Type Cup team leg {leg.Id} has no creature type.");
+            throw new SaveCorruptionException($"Type Cup team leg {leg.Id} has no creature type.");
         }
 
         return new AthleteCupHistoryDto(
@@ -1113,17 +1114,17 @@ public sealed class GetAthleteProfileHandler
         ArgumentNullException.ThrowIfNull(entrant);
         if (entrant.SourceSeasonNumber <= 0)
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} references invalid season number {entrant.SourceSeasonNumber}.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} references invalid season number {entrant.SourceSeasonNumber}.");
         }
 
         if (!Enum.IsDefined((SportingColor)entrant.SportingColor))
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown sporting color {entrant.SportingColor}.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown sporting color {entrant.SportingColor}.");
         }
 
         if (entrant.IsPoolInvite != (entrant.SourceLeagueId is null))
         {
-            throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has inconsistent Pool invitation linkage.");
+            throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} has inconsistent Pool invitation linkage.");
         }
     }
 
@@ -1140,23 +1141,23 @@ public sealed class GetAthleteProfileHandler
                 || draw.SourceSeasonId != entrant.SourceSeasonId
                 || draw.SourceSeasonNumber != entrant.SourceSeasonNumber)
             {
-                throw new InvalidOperationException($"Chaos Cup draw for athlete {draw.SaveAthleteId} mismatches entrant linkage.");
+                throw new SaveCorruptionException($"Chaos Cup draw for athlete {draw.SaveAthleteId} mismatches entrant linkage.");
             }
 
             if (draw.StageIndex < 0 || draw.StageIndex >= ChaosCupFormat.StageCount)
             {
-                throw new InvalidOperationException($"Chaos Cup journey stage {draw.StageIndex} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup journey stage {draw.StageIndex} is out of range.");
             }
 
             int groupCount = ChaosCupFormat.GroupCountForStage(draw.StageIndex);
             if (draw.GroupNumber < 1 || draw.GroupNumber > groupCount)
             {
-                throw new InvalidOperationException($"Chaos Cup journey stage {draw.StageIndex} group {draw.GroupNumber} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup journey stage {draw.StageIndex} group {draw.GroupNumber} is out of range.");
             }
 
             if (!drawByStage.TryAdd(draw.StageIndex, draw))
             {
-                throw new InvalidOperationException($"Chaos Cup journey holds duplicate stage {draw.StageIndex} draw.");
+                throw new SaveCorruptionException($"Chaos Cup journey holds duplicate stage {draw.StageIndex} draw.");
             }
         }
 
@@ -1178,18 +1179,18 @@ public sealed class GetAthleteProfileHandler
                 || standing.SourceSeasonId != entrant.SourceSeasonId
                 || standing.SourceSeasonNumber != entrant.SourceSeasonNumber)
             {
-                throw new InvalidOperationException($"Chaos Cup standing for athlete {standing.SaveAthleteId} mismatches entrant linkage.");
+                throw new SaveCorruptionException($"Chaos Cup standing for athlete {standing.SaveAthleteId} mismatches entrant linkage.");
             }
 
             if (!drawByStage.TryGetValue(standing.StageIndex, out ChaosCupDrawEntity? draw))
             {
-                throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} ranks an undrawn athlete.");
+                throw new SaveCorruptionException($"Chaos Cup journey stage {standing.StageIndex} ranks an undrawn athlete.");
             }
 
             CheckChaosStandingLinkage(standing, draw);
             if (!standingByStage.TryAdd(standing.StageIndex, standing))
             {
-                throw new InvalidOperationException($"Chaos Cup journey holds duplicate stage {standing.StageIndex} standing.");
+                throw new SaveCorruptionException($"Chaos Cup journey holds duplicate stage {standing.StageIndex} standing.");
             }
         }
 
@@ -1202,19 +1203,19 @@ public sealed class GetAthleteProfileHandler
         ArgumentNullException.ThrowIfNull(draw);
         if (standing.GroupNumber != draw.GroupNumber)
         {
-            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} standing group {standing.GroupNumber} mismatches draw group {draw.GroupNumber}.");
+            throw new SaveCorruptionException($"Chaos Cup journey stage {standing.StageIndex} standing group {standing.GroupNumber} mismatches draw group {draw.GroupNumber}.");
         }
 
         if (standing.GroupRank < 1 || standing.GroupRank > ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} is out of range.");
+            throw new SaveCorruptionException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} is out of range.");
         }
 
         bool isFinal = ChaosCupFormat.IsFinalStage(standing.StageIndex);
         bool shouldAdvance = !isFinal && standing.GroupRank <= ChaosCupFormat.AdvancingPerGroup;
         if (standing.IsAdvanced != shouldAdvance)
         {
-            throw new InvalidOperationException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} has corrupt advancement flag.");
+            throw new SaveCorruptionException($"Chaos Cup journey stage {standing.StageIndex} rank {standing.GroupRank} has corrupt advancement flag.");
         }
     }
 
@@ -1257,7 +1258,7 @@ public sealed class GetAthleteProfileHandler
         int eliminated = eliminatedStage.Value;
         foreach (int later in drawByStage.Keys.Where(s => s > eliminated))
         {
-            throw new InvalidOperationException($"Chaos Cup journey draws stage {later} after elimination in stage {eliminated}.");
+            throw new SaveCorruptionException($"Chaos Cup journey draws stage {later} after elimination in stage {eliminated}.");
         }
     }
 

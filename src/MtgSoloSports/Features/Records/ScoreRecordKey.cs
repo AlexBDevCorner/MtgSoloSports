@@ -1,3 +1,5 @@
+using MtgSoloSports.Shared;
+
 namespace MtgSoloSports.Features.Records;
 
 /// <summary>
@@ -188,7 +190,7 @@ public static class ScoreRecordKey
             return MetricTeamRound;
         }
 
-        throw new InvalidOperationException($"Scoring record has corrupt unknown key {recordKey}.");
+        throw new SaveCorruptionException($"Scoring record has corrupt unknown key {recordKey}.");
     }
 
     public static string CategoryOf(string recordKey)
@@ -325,7 +327,7 @@ public static class ScoreRecordKey
             5 => ScopeMulticolor,
             6 => ScopeHybrid,
             7 => ScopeColorless,
-            _ => throw new InvalidOperationException($"League has corrupt sporting color {sportingColor}."),
+            _ => throw new SaveCorruptionException($"League has corrupt sporting color {sportingColor}."),
         };
     }
 

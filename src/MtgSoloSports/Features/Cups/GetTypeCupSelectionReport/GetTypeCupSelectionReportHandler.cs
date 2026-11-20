@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.GetTypeCupSelection;
 using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Cups.GetTypeCupSelectionReport;
@@ -128,7 +129,7 @@ public sealed class GetTypeCupSelectionReportHandler
         int members = report.Teams.Sum(t => t.Ranking.Count(c => c.SelectionRank > 0));
         if (members != rows.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Type Cup selection report lists {members} members but {rows.Count} athletes were selected.");
         }
 
@@ -141,7 +142,7 @@ public sealed class GetTypeCupSelectionReportHandler
                 || match.FinalRatingThousandths != row.FinalRatingThousandths
                 || !string.Equals(match.AssignedType, row.CreatureType, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Type Cup selection report for Season {row.SourceSeasonNumber} disagrees with the selected athlete {row.SaveAthleteId}.");
             }
         }
@@ -197,7 +198,7 @@ public sealed class GetTypeCupSelectionReportHandler
         ArgumentNullException.ThrowIfNull(athletes);
         if (!athletes.TryGetValue(candidate.AthleteId, out SaveAthleteEntity? athlete))
         {
-            throw new InvalidOperationException($"Type Cup selection report references unknown athlete {candidate.AthleteId}.");
+            throw new SaveCorruptionException($"Type Cup selection report references unknown athlete {candidate.AthleteId}.");
         }
 
         bool selected = candidate.SelectionRank > 0;

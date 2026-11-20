@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -158,14 +159,14 @@ public sealed class GetSeasonPlacementsHandler
         ArgumentNullException.ThrowIfNull(league);
         if (memberships.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must hold exactly 32 season members, was {memberships.Count}.");
         }
 
         HashSet<int> ids = memberships.Select(m => m.SaveAthleteId).ToHashSet();
         if (ids.Count != 32)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has duplicate season members.");
+            throw new SaveCorruptionException($"League '{league.Name}' has duplicate season members.");
         }
     }
 
@@ -180,27 +181,27 @@ public sealed class GetSeasonPlacementsHandler
         {
             if (group.Key < 1 || group.Key > 32)
             {
-                throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {group.Key}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {group.Key}.");
             }
 
             List<StageStandingEntity> rows = group.ToList();
             if (rows.Count != 32)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {group.Key} must hold exactly 32 standings, was {rows.Count}.");
             }
 
             HashSet<int> ranks = rows.Select(r => r.StageRank).ToHashSet();
             if (!ranks.SetEquals(Enumerable.Range(1, 32)))
             {
-                throw new InvalidOperationException($"League '{league.Name}' stage {group.Key} must cover ranks 1..32 exactly once.");
+                throw new SaveCorruptionException($"League '{league.Name}' stage {group.Key} must cover ranks 1..32 exactly once.");
             }
 
             foreach (StageStandingEntity row in rows)
             {
                 if (!roster.Contains(row.SaveAthleteId))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"League '{league.Name}' stage {group.Key} references athlete {row.SaveAthleteId} outside the season roster.");
                 }
             }
@@ -214,7 +215,7 @@ public sealed class GetSeasonPlacementsHandler
         {
             if (!query.Cards.TryGetValue(membership.SaveAthleteId, out SaveAthleteEntity? card))
             {
-                throw new InvalidOperationException($"Season roster references unknown athlete {membership.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Season roster references unknown athlete {membership.SaveAthleteId}.");
             }
 
             string colorName = Enum.IsDefined(typeof(SportingColor), card.SportingColor)

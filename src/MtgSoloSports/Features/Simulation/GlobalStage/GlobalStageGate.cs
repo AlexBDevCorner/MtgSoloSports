@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Simulation.GlobalStage;
@@ -56,7 +57,7 @@ public static class GlobalStageGate
             .ConfigureAwait(false);
         if (leagues.Count == 0)
         {
-            throw new InvalidOperationException($"Season {season.SeasonNumber} has no active leagues.");
+            throw new SaveCorruptionException($"Season {season.SeasonNumber} has no active leagues.");
         }
 
         List<StageEntity> stages = await context.Stages
@@ -85,7 +86,7 @@ public static class GlobalStageGate
 
         if (leagues.Count == 0)
         {
-            throw new InvalidOperationException("Season has no active leagues.");
+            throw new SaveCorruptionException("Season has no active leagues.");
         }
 
         List<LeagueStageStatus> statuses = new(leagues.Count);
@@ -130,18 +131,18 @@ public static class GlobalStageGate
         {
             if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
             {
-                throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
             }
 
             if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
             }
 
             if (stage.IsComplete && stage.CompletedRounds != rules.RoundsPerStage)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' stage {stage.StageNumber} is marked complete with {stage.CompletedRounds} rounds.");
             }
         }
@@ -149,7 +150,7 @@ public static class GlobalStageGate
         int distinct = leagueStages.Select(s => s.StageNumber).Distinct().Count();
         if (distinct != leagueStages.Count)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has duplicate stage rows.");
+            throw new SaveCorruptionException($"League '{league.Name}' has duplicate stage rows.");
         }
     }
 
@@ -160,7 +161,7 @@ public static class GlobalStageGate
         {
             if (ordered[i].StageNumber != i + 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' has non-contiguous stage rows; stages must advance in order.");
             }
         }
@@ -182,14 +183,14 @@ public static class GlobalStageGate
                 return new LeagueStageStatus(league.Id, league.Name, kind, division, levelName, null, rules.StagesPerSeason, true, league.SportingColor);
             }
 
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {max.StageNumber} is complete but stage {max.StageNumber + 1} is missing.");
         }
 
         int completed = ordered.Count(s => s.IsComplete);
         if (completed != max.StageNumber - 1)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' has non-contiguous completion; all stages before {max.StageNumber} must be complete.");
         }
 

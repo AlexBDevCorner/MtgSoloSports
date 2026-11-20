@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
@@ -37,31 +38,31 @@ public static class AutomaticMovementInvariants
 
         if (plan.Promotions.Count != rules.FeederAutoPromotedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must promote exactly {rules.FeederAutoPromotedCount} feeder champions, was {plan.Promotions.Count}.");
         }
 
         if (plan.Relegations.Count != rules.SuperleagueRelegatedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must relegate exactly {rules.SuperleagueRelegatedCount} Superleague athletes, was {plan.Relegations.Count}.");
         }
 
         if (plan.QualifierIncumbents.Count != rules.SuperleagueQualifierIncumbentCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must mark exactly {rules.SuperleagueQualifierIncumbentCount} qualifier incumbents, was {plan.QualifierIncumbents.Count}.");
         }
 
         if (plan.QualifierChallengers.Count != rules.FeederQualifierCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must mark exactly {rules.FeederQualifierCount} qualifier challengers, was {plan.QualifierChallengers.Count}.");
         }
 
         if (plan.All.Count != rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount + rules.SuperleagueQualifierIncumbentCount + rules.FeederQualifierCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly 48 movement records, was {plan.All.Count}.");
         }
 
@@ -70,12 +71,12 @@ public static class AutomaticMovementInvariants
         {
             if (pick.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Automatic movement contains invalid athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Automatic movement contains invalid athlete id {pick.SaveAthleteId}.");
             }
 
             if (!athleteIds.Add(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Automatic movement contains duplicate athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Automatic movement contains duplicate athlete id {pick.SaveAthleteId}.");
             }
         }
 
@@ -113,28 +114,28 @@ public static class AutomaticMovementInvariants
 
         if (!sourceSeason.HasSuperleague || !sourceSeason.IsComplete)
         {
-            throw new InvalidOperationException("Automatic movement requires a completed source season with a Superleague.");
+            throw new SaveCorruptionException("Automatic movement requires a completed source season with a Superleague.");
         }
 
         if (nextSeason.SeasonNumber != sourceSeason.SeasonNumber + 1 || !nextSeason.HasSuperleague || nextSeason.IsComplete)
         {
-            throw new InvalidOperationException("Next season must be the consecutive incomplete Superleague season.");
+            throw new SaveCorruptionException("Next season must be the consecutive incomplete Superleague season.");
         }
 
         if (nextSuperleague.SeasonId != nextSeason.Id || nextSuperleague.Kind != (int)LeagueKind.Superleague)
         {
-            throw new InvalidOperationException("Next Superleague league row is corrupt.");
+            throw new SaveCorruptionException("Next Superleague league row is corrupt.");
         }
 
         if (nextFeeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {nextFeeders.Count}.");
         }
 
         if (sourceMemberships.Count != rules.TotalAthletesInSave || nextMemberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Each season must carry exactly {rules.TotalAthletesInSave} memberships.");
         }
 
@@ -173,20 +174,20 @@ public static class AutomaticMovementInvariants
         {
             if (pick.FromLeagueId != superleague.Id)
             {
-                throw new InvalidOperationException($"Qualifier incumbent {pick.SaveAthleteId} must come from the Superleague.");
+                throw new SaveCorruptionException($"Qualifier incumbent {pick.SaveAthleteId} must come from the Superleague.");
             }
 
             int first = rules.SuperleagueSafeCount + 1;
             int last = rules.SuperleagueSafeCount + rules.SuperleagueQualifierIncumbentCount;
             if (pick.FromSeasonRank < first || pick.FromSeasonRank > last)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Qualifier incumbent rank {pick.FromSeasonRank} is outside places {first}-{last}.");
             }
 
             if (pick.Kind != MovementKind.QualifierIncumbent)
             {
-                throw new InvalidOperationException($"Qualifier incumbent {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
+                throw new SaveCorruptionException($"Qualifier incumbent {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
             }
         }
     }
@@ -200,19 +201,19 @@ public static class AutomaticMovementInvariants
         {
             if (pick.FromLeagueId != superleague.Id)
             {
-                throw new InvalidOperationException($"Relegated athlete {pick.SaveAthleteId} must come from the Superleague.");
+                throw new SaveCorruptionException($"Relegated athlete {pick.SaveAthleteId} must come from the Superleague.");
             }
 
             int first = rules.SuperleagueSafeCount + rules.SuperleagueQualifierIncumbentCount + 1;
             if (pick.FromSeasonRank < first || pick.FromSeasonRank > rules.SuperleagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Relegated rank {pick.FromSeasonRank} is outside places {first}-{rules.SuperleagueSize}.");
             }
 
             if (pick.Kind != MovementKind.AutomaticRelegation)
             {
-                throw new InvalidOperationException($"Relegated athlete {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
+                throw new SaveCorruptionException($"Relegated athlete {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
             }
         }
     }
@@ -223,13 +224,13 @@ public static class AutomaticMovementInvariants
         {
             if (pick.FromSeasonRank != 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Promoted athlete {pick.SaveAthleteId} must be a feeder champion (rank 1), was rank {pick.FromSeasonRank}.");
             }
 
             if (pick.Kind != MovementKind.AutomaticPromotion)
             {
-                throw new InvalidOperationException($"Promoted athlete {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
+                throw new SaveCorruptionException($"Promoted athlete {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
             }
         }
 
@@ -242,13 +243,13 @@ public static class AutomaticMovementInvariants
         {
             if (pick.FromSeasonRank is < 2 or > 4)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Qualifier challenger rank {pick.FromSeasonRank} is outside places 2-4.");
             }
 
             if (pick.Kind != MovementKind.QualifierChallenger)
             {
-                throw new InvalidOperationException($"Qualifier challenger {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
+                throw new SaveCorruptionException($"Qualifier challenger {pick.SaveAthleteId} has corrupt kind {pick.Kind}.");
             }
         }
     }
@@ -268,13 +269,13 @@ public static class AutomaticMovementInvariants
         {
             if (!promotionsPerLeague.TryGetValue(league.Id, out int promoted) || promoted != 1)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contribute exactly one automatic promotion, was {promoted}.");
             }
 
             if (!challengersPerLeague.TryGetValue(league.Id, out int challengers) || challengers != 3)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contribute exactly three qualifier challengers, was {challengers}.");
             }
         }
@@ -283,7 +284,7 @@ public static class AutomaticMovementInvariants
         {
             if (!feederIds.Contains(pick.FromLeagueId))
             {
-                throw new InvalidOperationException($"Feeder pick {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
+                throw new SaveCorruptionException($"Feeder pick {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
             }
         }
     }
@@ -329,14 +330,14 @@ public static class AutomaticMovementInvariants
             bool inFeeder = feederRankByAthlete.TryGetValue(pick.SaveAthleteId, out int feederRank);
             if (inSuper == inFeeder)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {pick.SaveAthleteId} must appear in exactly one source table.");
             }
 
             int actual = inSuper ? superRank : feederRank;
             if (actual != pick.FromSeasonRank)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {pick.SaveAthleteId} rank {pick.FromSeasonRank} does not match final standing rank {actual}.");
             }
         }
@@ -362,7 +363,7 @@ public static class AutomaticMovementInvariants
 
             if (!active.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues in Season {membership.SeasonId}.");
             }
         }
@@ -376,7 +377,7 @@ public static class AutomaticMovementInvariants
         int count = nextMemberships.Count(m => m.LeagueId == nextSuperleague.Id);
         if (count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next Superleague must provisionally contain exactly {rules.SuperleagueSize} athletes (16 safe + 8 promoted + 8 incumbents), was {count}.");
         }
     }
@@ -392,7 +393,7 @@ public static class AutomaticMovementInvariants
         int expectedFeeders = rules.TieredFeederLeagueCount * rules.LeagueSize - rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount;
         if (feederTotal != expectedFeeders)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next feeder leagues must hold exactly {expectedFeeders} athletes pending rebalancing, was {feederTotal}.");
         }
 
@@ -405,7 +406,7 @@ public static class AutomaticMovementInvariants
 
             if (!feederIds.Contains(membership.LeagueId.Value))
             {
-                throw new InvalidOperationException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
+                throw new SaveCorruptionException($"Membership {membership.Id} references unknown league {membership.LeagueId}.");
             }
         }
     }
@@ -424,7 +425,7 @@ public static class AutomaticMovementInvariants
             .ToHashSet();
         if (!poolSource.SetEquals(poolNext))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Next-season pool must be identical to the source-season pool; feeder vacancies fill only in rebalancing.");
         }
     }
@@ -438,12 +439,12 @@ public static class AutomaticMovementInvariants
         {
             if (!colorByAthlete.TryGetValue(membership.SaveAthleteId, out int sourceColor))
             {
-                throw new InvalidOperationException($"Next-season member {membership.SaveAthleteId} has no source membership.");
+                throw new SaveCorruptionException($"Next-season member {membership.SaveAthleteId} has no source membership.");
             }
 
             if (membership.SportingColor != sourceColor)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} changed sporting color {sourceColor} to {membership.SportingColor}; returning athletes keep their color.");
             }
         }
@@ -460,7 +461,7 @@ public static class AutomaticMovementInvariants
         int expected = rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount + rules.SuperleagueQualifierIncumbentCount + rules.FeederQualifierCount;
         if (movements.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly {expected} records, was {movements.Count}.");
         }
 
@@ -470,25 +471,25 @@ public static class AutomaticMovementInvariants
         int challengers = movements.Count(m => m.Kind == (int)MovementKind.QualifierChallenger);
         if (promotions != rules.FeederAutoPromotedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly {rules.FeederAutoPromotedCount} promotions, was {promotions}.");
         }
 
         if (relegations != rules.SuperleagueRelegatedCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly {rules.SuperleagueRelegatedCount} relegations, was {relegations}.");
         }
 
         if (incumbents != rules.SuperleagueQualifierIncumbentCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly {rules.SuperleagueQualifierIncumbentCount} qualifier incumbents, was {incumbents}.");
         }
 
         if (challengers != rules.FeederQualifierCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Automatic movement must persist exactly {rules.FeederQualifierCount} qualifier challengers, was {challengers}.");
         }
 
@@ -506,17 +507,17 @@ public static class AutomaticMovementInvariants
         {
             if (movement.FromSeasonId != sourceSeason.Id || movement.ToSeasonId != nextSeason.Id)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has corrupt season linkage.");
             }
 
             if (!athleteIds.Add(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Movement contains duplicate athlete id {movement.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Movement contains duplicate athlete id {movement.SaveAthleteId}.");
             }
 
             if (!Enum.IsDefined(typeof(MovementKind), movement.Kind))
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
             }
         }
     }
@@ -543,38 +544,38 @@ public static class AutomaticMovementInvariants
             case MovementKind.AutomaticPromotion:
                 if (movement.ToLeagueId != nextSuperleague.Id)
                 {
-                    throw new InvalidOperationException($"Promotion {movement.Id} must target the next Superleague.");
+                    throw new SaveCorruptionException($"Promotion {movement.Id} must target the next Superleague.");
                 }
 
                 if (movement.FromSeasonRank != 1)
                 {
-                    throw new InvalidOperationException($"Promotion {movement.Id} must carry source rank 1.");
+                    throw new SaveCorruptionException($"Promotion {movement.Id} must carry source rank 1.");
                 }
 
                 break;
             case MovementKind.AutomaticRelegation:
                 if (!feederIds.Contains(movement.ToLeagueId))
                 {
-                    throw new InvalidOperationException($"Relegation {movement.Id} must target a returning-color feeder.");
+                    throw new SaveCorruptionException($"Relegation {movement.Id} must target a returning-color feeder.");
                 }
 
                 break;
             case MovementKind.QualifierIncumbent:
                 if (movement.ToLeagueId != nextSuperleague.Id)
                 {
-                    throw new InvalidOperationException($"Qualifier incumbent {movement.Id} must provisionally remain in the Superleague.");
+                    throw new SaveCorruptionException($"Qualifier incumbent {movement.Id} must provisionally remain in the Superleague.");
                 }
 
                 break;
             case MovementKind.QualifierChallenger:
                 if (!feederIds.Contains(movement.ToLeagueId))
                 {
-                    throw new InvalidOperationException($"Qualifier challenger {movement.Id} must provisionally remain in its feeder.");
+                    throw new SaveCorruptionException($"Qualifier challenger {movement.Id} must provisionally remain in its feeder.");
                 }
 
                 break;
             default:
-                throw new InvalidOperationException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
         }
     }
 }

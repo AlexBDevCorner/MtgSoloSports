@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -107,7 +108,7 @@ public sealed class GetInauguralRosterHandler
 
         if (memberships.Count != RulesV1.CreateDefault().SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must contain exactly 32 athletes, was {memberships.Count}.");
         }
 
@@ -128,7 +129,7 @@ public sealed class GetInauguralRosterHandler
             .ConfigureAwait(false);
         if (movements.Count != memberships.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague roster has {memberships.Count} members but {movements.Count} movement records.");
         }
 
@@ -175,7 +176,7 @@ public sealed class GetInauguralRosterHandler
     {
         if (!movementByAthlete.TryGetValue(membership.SaveAthleteId, out MovementEntity? movement))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague member {membership.SaveAthleteId} has no movement record.");
         }
 

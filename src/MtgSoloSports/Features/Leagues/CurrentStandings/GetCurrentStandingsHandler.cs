@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Seasons;
@@ -129,10 +130,38 @@ public sealed class GetCurrentStandingsHandler
 
         List<List<SeasonStageEntry>> groups = GroupProvisional(stageRows, league, names);
         Pcg32V1 fork = await ForkRngAsync(context, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(groups, rules);
-        IReadOnlyList<SeasonRankedAthlete> ranked = SeasonCalculator.Rank(totals, fork, rules);
+        IReadOnlyList<SeasonRankedAthlete> ranked = AccumulateAndRankProvisional(groups, league, rules, fork);
         Dictionary<int, AthleteCardInfo> cards = await LoadCardsAsync(context, cancellationToken).ConfigureAwait(false);
         return MapProvisional(saveId, season, league, global, completedStages, ranked, cards);
+    }
+
+    /// <summary>
+    /// Accumulates and ranks the league's persisted stage standings through
+    /// the pure kernel with the same mathematics as season finalization. The
+    /// kernel's stage invariants (championship points matching the scoring
+    /// table, non-negative scores, rank/roster coverage, round-place shapes)
+    /// throw <see cref="InvalidOperationException"/>; here the inputs are
+    /// persisted stage standings, so an invariant failure means corrupted
+    /// saved rows and must surface in the 500 corruption class (MSS-144),
+    /// never as a client error.
+    /// </summary>
+    internal static IReadOnlyList<SeasonRankedAthlete> AccumulateAndRankProvisional(
+        List<List<SeasonStageEntry>> groups,
+        LeagueEntity league,
+        RulesV1 rules,
+        Pcg32V1 rng)
+    {
+        try
+        {
+            IReadOnlyList<SeasonAthleteTotals> totals = SeasonCalculator.Accumulate(groups, rules);
+            return SeasonCalculator.Rank(totals, rng, rules);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new SaveCorruptionException(
+                $"League '{league.Name}' has corrupt stage standings: {ex.Message}",
+                ex);
+        }
     }
 
     internal static GetCurrentStandingsResponse EmptyResponse(
@@ -192,13 +221,13 @@ public sealed class GetCurrentStandingsHandler
     {
         if (!names.TryGetValue(row.SaveAthleteId, out string? name))
         {
-            throw new InvalidOperationException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
+            throw new SaveCorruptionException($"League '{league.Name}' references unknown athlete {row.SaveAthleteId}.");
         }
 
         List<int>? roundCounts = JsonSerializer.Deserialize<List<int>>(row.RoundPlaceCountsJson);
         if (roundCounts is null)
         {
-            throw new InvalidOperationException($"League '{league.Name}' stage {row.StageNumber} has corrupt round counts.");
+            throw new SaveCorruptionException($"League '{league.Name}' stage {row.StageNumber} has corrupt round counts.");
         }
 
         return new SeasonStageEntry(

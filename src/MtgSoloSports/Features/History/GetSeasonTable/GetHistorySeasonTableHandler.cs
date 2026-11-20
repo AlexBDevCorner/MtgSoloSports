@@ -4,6 +4,7 @@ using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.History.GetSeasonTable;
 
@@ -80,14 +81,14 @@ public sealed class GetHistorySeasonTableHandler
         ArgumentNullException.ThrowIfNull(league);
         if (rows.Count != 32)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must hold exactly 32 final standings, was {rows.Count}.");
         }
 
         HashSet<int> ranks = rows.Select(r => r.SeasonRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, 32)))
         {
-            throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"League '{league.Name}' must cover ranks 1..32 exactly once.");
         }
     }
 

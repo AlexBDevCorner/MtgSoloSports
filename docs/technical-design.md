@@ -172,6 +172,8 @@ Cheap structural invariants run before mutation commit, including league sizes, 
 
 Invariant failure aborts. Never silently repair impossible sporting state.
 
+Corrupted sporting state has its own HTTP failure class (MSS-144): handlers/persistence throw `Shared/SaveCorruptionException` and every endpoint catch chain maps it to `500` with the corruption message, while argument validation stays `ArgumentException`->`400`, user-retryable lifecycle conflicts stay feature `ConflictException`->`409`, and a missing save stays `404`. Pure-kernel calls whose inputs are persisted rows (stage-round and season accumulation/ranking) are wrapped at the handler boundary so kernel invariant failures over saved data also surface as `SaveCorruptionException` instead of escaping as client errors. Legacy-save signals are typed rather than message-sniffed: an exact `no such table` condition on a pre-feature schema (for example `SavePredatesChaosActivationException`) keeps the legacy chain/defaults, while a missing-column defect on an already-migrated save propagates loudly and is never swallowed by an activation backfill. `SaveCorruptionException` deliberately does not derive from `InvalidOperationException` so an un-audited catch filter can never downgrade a corruption signal to a client error.
+
 ## 15. Superleague/rebalancing slices
 
 Keep postseason movement split into focused slices such as:

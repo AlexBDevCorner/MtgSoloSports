@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Cups.CupHistory;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Leagues;
@@ -218,7 +219,7 @@ internal sealed record ChaosDossierData(
             .ConfigureAwait(false);
         if (names.Count != distinct.Count)
         {
-            throw new InvalidOperationException("Chaos Cup dossier references unknown athletes.");
+            throw new SaveCorruptionException("Chaos Cup dossier references unknown athletes.");
         }
 
         return names;
@@ -238,18 +239,18 @@ internal sealed record ChaosDossierData(
             int drawCount = draws.Count(d => d.StageIndex == stage);
             if (drawCount != 0 && drawCount != expected)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stage} holds {drawCount} draws, expected {expected}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stage} holds {drawCount} draws, expected {expected}.");
             }
 
             int standingCount = standings.Count(s => s.StageIndex == stage);
             if (standingCount % ChaosCupFormat.GroupSize != 0)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stage} holds {standingCount} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stage} holds {standingCount} standings, expected multiples of {ChaosCupFormat.GroupSize}.");
             }
 
             if (standingCount > drawCount)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stage} holds {standingCount} standings for {drawCount} drawn athletes.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stage} holds {standingCount} standings for {drawCount} drawn athletes.");
             }
         }
 
@@ -257,7 +258,7 @@ internal sealed record ChaosDossierData(
         {
             if (draw.StageIndex < 0 || draw.StageIndex >= ChaosCupFormat.StageCount)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {draw.StageIndex} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup stage {draw.StageIndex} is out of range.");
             }
         }
 
@@ -265,7 +266,7 @@ internal sealed record ChaosDossierData(
         {
             if (standing.StageIndex < 0 || standing.StageIndex >= ChaosCupFormat.StageCount)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {standing.StageIndex} is out of range.");
+                throw new SaveCorruptionException($"Chaos Cup stage {standing.StageIndex} is out of range.");
             }
         }
     }
@@ -543,7 +544,7 @@ internal sealed record ChaosDossierData(
         List<ChaosCupGroupStandingEntity> ordered = groupStandings.OrderBy(s => s.GroupRank).ToList();
         if (ordered.Count != ChaosCupFormat.GroupSize)
         {
-            throw new InvalidOperationException("Chaos Cup dossier cutoff requires a complete 32-athlete group.");
+            throw new SaveCorruptionException("Chaos Cup dossier cutoff requires a complete 32-athlete group.");
         }
 
         ChaosCupGroupStandingEntity sixteenth = ordered[ChaosCupFormat.AdvancingPerGroup - 1];
@@ -551,7 +552,7 @@ internal sealed record ChaosDossierData(
         if (sixteenth.GroupRank != ChaosCupFormat.AdvancingPerGroup
             || seventeenth.GroupRank != ChaosCupFormat.AdvancingPerGroup + 1)
         {
-            throw new InvalidOperationException("Chaos Cup dossier cutoff requires official ranks 16 and 17.");
+            throw new SaveCorruptionException("Chaos Cup dossier cutoff requires official ranks 16 and 17.");
         }
 
         return new Cutoff(
@@ -632,7 +633,7 @@ internal sealed record ChaosDossierData(
         bool groupComplete = played == ChaosCupFormat.RoundsPerGroup && hasStanding;
         if (hasStanding && !groupComplete)
         {
-            throw new InvalidOperationException($"Chaos Cup dossier holds standings for incomplete group {stage}/{draw.GroupNumber}.");
+            throw new SaveCorruptionException($"Chaos Cup dossier holds standings for incomplete group {stage}/{draw.GroupNumber}.");
         }
 
         if (hasStanding && !ChaosCupFormat.IsFinalStage(stage) && !standing!.IsAdvanced && eliminatedStage is null)
@@ -665,7 +666,7 @@ internal sealed record ChaosDossierData(
         int? finalPlace = isFinalist ? stages.Single(s => s.IsFinal).GroupRank : null;
         if (isFinalist && eliminatedStage.HasValue)
         {
-            throw new InvalidOperationException($"Chaos Cup dossier draws stage {eliminatedStage.Value} elimination plus a Final for athlete {entrant.AthleteId}.");
+            throw new SaveCorruptionException($"Chaos Cup dossier draws stage {eliminatedStage.Value} elimination plus a Final for athlete {entrant.AthleteId}.");
         }
 
         if (eliminatedStage.HasValue)
@@ -699,7 +700,7 @@ internal sealed record ChaosDossierData(
         ArgumentNullException.ThrowIfNull(stages);
         foreach (PathStage later in stages.Where(s => s.StageIndex > eliminatedStage))
         {
-            throw new InvalidOperationException($"Chaos Cup dossier draws stage {later.StageIndex} after elimination in stage {eliminatedStage}.");
+            throw new SaveCorruptionException($"Chaos Cup dossier draws stage {later.StageIndex} after elimination in stage {eliminatedStage}.");
         }
     }
 
@@ -716,14 +717,14 @@ internal sealed record ChaosDossierData(
         List<Standing> ordered = final.Groups[0].Standings.OrderBy(s => s.GroupRank).ToList();
         if (ordered.Count != ChaosCupFormat.FinalFieldSize)
         {
-            throw new InvalidOperationException("Chaos Cup dossier Final must hold exactly 32 official places.");
+            throw new SaveCorruptionException("Chaos Cup dossier Final must hold exactly 32 official places.");
         }
 
         for (int rank = 1; rank <= ordered.Count; rank++)
         {
             if (ordered[rank - 1].GroupRank != rank)
             {
-                throw new InvalidOperationException("Chaos Cup dossier Final must cover places 1..32 exactly once.");
+                throw new SaveCorruptionException("Chaos Cup dossier Final must cover places 1..32 exactly once.");
             }
         }
 
@@ -741,7 +742,7 @@ internal sealed record ChaosDossierData(
         Standing winner = finalStandings.OrderBy(s => s.GroupRank).First();
         if (winner.GroupRank != 1)
         {
-            throw new InvalidOperationException("Chaos Cup dossier champion must hold Final place 1.");
+            throw new SaveCorruptionException("Chaos Cup dossier champion must hold Final place 1.");
         }
 
         return new ChampionRow(winner.AthleteId, winner.Name, 1, winner.GroupScoreThousandths, winner.RoundWins);
@@ -789,7 +790,7 @@ internal sealed record ChaosDossierData(
             LeagueLevel.Feeder1 => "Feeder1",
             LeagueLevel.Feeder2 => "Feeder2",
             LeagueLevel.Feeder3 => "Feeder3",
-            _ => throw new InvalidOperationException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
+            _ => throw new SaveCorruptionException($"Chaos Cup entrant {entrant.SaveAthleteId} has unknown division {entrant.SourceFeederDivision}."),
         };
     }
 

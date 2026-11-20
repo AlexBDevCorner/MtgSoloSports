@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.CreateInaugural;
@@ -42,18 +43,18 @@ public static class InauguralSuperleagueSelection
                 .ToList();
             if (leagueRows.Count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {leagueRows.Count}.");
             }
 
             for (int rank = 1; rank <= rules.InauguralQualifiedPerLeague; rank++)
             {
                 SeasonStandingEntity row = leagueRows.SingleOrDefault(r => r.SeasonRank == rank)
-                    ?? throw new InvalidOperationException(
+                    ?? throw new SaveCorruptionException(
                         $"League '{league.Name}' is missing final season rank {rank}.");
                 if (!leaguesById.ContainsKey(row.LeagueId))
                 {
-                    throw new InvalidOperationException(
+                    throw new SaveCorruptionException(
                         $"Standing for athlete {row.SaveAthleteId} references unknown league {row.LeagueId}.");
                 }
 
@@ -63,7 +64,7 @@ public static class InauguralSuperleagueSelection
 
         if (picks.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Inaugural Superleague must select exactly {rules.SuperleagueSize} athletes, was {picks.Count}.");
         }
 
@@ -79,7 +80,7 @@ public static class InauguralSuperleagueSelection
         {
             if (feederLeagues.Count != rules.RegularLeagueCount)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 1 must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
             }
 
@@ -88,7 +89,7 @@ public static class InauguralSuperleagueSelection
 
         if (feederLeagues.Count != rules.Season1FeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered Season 1 must have exactly {rules.Season1FeederLeagueCount} feeder leagues (F1/F2/F3), was {feederLeagues.Count}.");
         }
 
@@ -97,7 +98,7 @@ public static class InauguralSuperleagueSelection
             .ToList();
         if (first.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered Season 1 must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
         }
 

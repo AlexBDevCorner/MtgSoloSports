@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -168,7 +169,7 @@ public sealed class AdvanceChaosCupStageHandler
         Pcg32State rngAfter = rng.Snapshot();
         if (rngAfter.State == state.RngBefore.State && rngAfter.Stream == state.RngBefore.Stream)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {state.Target} draw must advance the save RNG.");
+            throw new SaveCorruptionException($"Chaos Cup stage {state.Target} draw must advance the save RNG.");
         }
 
         List<ChaosCupDrawEntity> draws = BuildDrawRows(state.Source, state.Rules, groups, state.Target, state.RngBefore, rngAfter);
@@ -244,12 +245,12 @@ public sealed class AdvanceChaosCupStageHandler
         int advanced = prevStandings.Count(s => s.IsAdvanced);
         if (advanced != expectedAdvancers)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {prev} must advance exactly {expectedAdvancers} athletes, was {advanced}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {prev} must advance exactly {expectedAdvancers} athletes, was {advanced}.");
         }
 
         if (expectedAdvancers != ChaosCupFormat.EntrantCountForStage(prev + 1))
         {
-            throw new InvalidOperationException($"Chaos Cup stage {prev} advancers {expectedAdvancers} do not fill stage {prev + 1}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {prev} advancers {expectedAdvancers} do not fill stage {prev + 1}.");
         }
     }
 
@@ -263,14 +264,14 @@ public sealed class AdvanceChaosCupStageHandler
             e => e.SourceSeasonId == source.Id && e.StageIndex == target, cancellationToken).ConfigureAwait(false);
         if (hasRounds)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {target} holds rounds without a persisted draw.");
+            throw new SaveCorruptionException($"Chaos Cup stage {target} holds rounds without a persisted draw.");
         }
 
         bool hasStandings = await context.ChaosCupGroupStandings.AnyAsync(
             e => e.SourceSeasonId == source.Id && e.StageIndex == target, cancellationToken).ConfigureAwait(false);
         if (hasStandings)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {target} holds standings without a persisted draw.");
+            throw new SaveCorruptionException($"Chaos Cup stage {target} holds standings without a persisted draw.");
         }
     }
 
@@ -287,7 +288,7 @@ public sealed class AdvanceChaosCupStageHandler
             .ConfigureAwait(false);
         if (names.Count != ids.Count)
         {
-            throw new InvalidOperationException("Chaos Cup advancers reference unknown athletes.");
+            throw new SaveCorruptionException("Chaos Cup advancers reference unknown athletes.");
         }
 
         List<AdvanceChaosCupStageSelection.StageAdvancer> advancers = new(ids.Count);
@@ -296,7 +297,7 @@ public sealed class AdvanceChaosCupStageHandler
             string name = names[id];
             if (string.IsNullOrWhiteSpace(name))
             {
-                throw new InvalidOperationException($"Save athlete {id} has an empty name.");
+                throw new SaveCorruptionException($"Save athlete {id} has an empty name.");
             }
 
             advancers.Add(new AdvanceChaosCupStageSelection.StageAdvancer(id, name));
@@ -319,7 +320,7 @@ public sealed class AdvanceChaosCupStageHandler
         int groupCount = ChaosCupFormat.GroupCountForStage(stageIndex);
         if (groups.Count != groupCount)
         {
-            throw new InvalidOperationException($"Chaos Cup stage {stageIndex} must hold exactly {groupCount} groups, was {groups.Count}.");
+            throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} must hold exactly {groupCount} groups, was {groups.Count}.");
         }
 
         List<ChaosCupDrawEntity> rows = new(ChaosCupFormat.EntrantCountForStage(stageIndex));
@@ -328,7 +329,7 @@ public sealed class AdvanceChaosCupStageHandler
             IReadOnlyList<AdvanceChaosCupStageSelection.StageAdvancer> group = groups[groupIndex];
             if (group.Count != ChaosCupFormat.GroupSize)
             {
-                throw new InvalidOperationException($"Chaos Cup stage {stageIndex} group {groupIndex + 1} must hold exactly {ChaosCupFormat.GroupSize} athletes, was {group.Count}.");
+                throw new SaveCorruptionException($"Chaos Cup stage {stageIndex} group {groupIndex + 1} must hold exactly {ChaosCupFormat.GroupSize} athletes, was {group.Count}.");
             }
 
             for (int drawIndex = 0; drawIndex < group.Count; drawIndex++)
@@ -463,7 +464,7 @@ public sealed class AdvanceChaosCupStageHandler
             .AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == latest.SourceSeasonId, cancellationToken)
             .ConfigureAwait(false);
-        return source ?? throw new InvalidOperationException("Chaos Cup edition references an unknown season.");
+        return source ?? throw new SaveCorruptionException("Chaos Cup edition references an unknown season.");
     }
 
     private static async Task<ChaosCupEditionEntity> LoadEditionAsync(
@@ -571,55 +572,55 @@ public sealed class AdvanceChaosCupStageHandler
         int stages = await context.StageStandings.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != before.StageStandings)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not create league stage standings.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not create league stage standings.");
         }
 
         int seasons = await context.SeasonStandings.CountAsync(cancellationToken).ConfigureAwait(false);
         if (seasons != before.SeasonStandings)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not create league season standings.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not create league season standings.");
         }
 
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (rounds != before.LeagueRounds)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not create league rounds.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not create league rounds.");
         }
 
         long lifetime = await context.AthleteCareers.SumAsync(e => (long)e.LifetimeEarnedBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (lifetime != before.LifetimeBonus)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not change career bonus.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not change career bonus.");
         }
 
         long effective = await context.AthleteCareers.SumAsync(e => (long)e.CurrentEffectiveBonusThousandths, cancellationToken).ConfigureAwait(false);
         if (effective != before.EffectiveBonus)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not change effective bonus projections.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not change effective bonus projections.");
         }
 
         long championship = await context.SeasonStandings.SumAsync(e => (long)e.TotalChampionshipPointsThousandths, cancellationToken).ConfigureAwait(false);
         if (championship != before.Championship)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not award league championship points.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not award league championship points.");
         }
 
         int chaosRounds = await context.ChaosCupRounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (chaosRounds != before.ChaosRounds)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not create Chaos rounds.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not create Chaos rounds.");
         }
 
         int chaosStandings = await context.ChaosCupGroupStandings.CountAsync(cancellationToken).ConfigureAwait(false);
         if (chaosStandings != before.ChaosStandings)
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must not create Chaos standings.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must not create Chaos standings.");
         }
 
         RngStateEntity rng = await context.RngStates.AsNoTracking().SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         if (rng.State != unchecked((long)rngAfter.State) || rng.Stream != unchecked((long)rngAfter.Stream))
         {
-            throw new InvalidOperationException("Chaos Cup stage draw must commit the save RNG exactly once.");
+            throw new SaveCorruptionException("Chaos Cup stage draw must commit the save RNG exactly once.");
         }
     }
 

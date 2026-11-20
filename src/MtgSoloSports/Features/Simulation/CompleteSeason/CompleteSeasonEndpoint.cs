@@ -2,6 +2,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Simulation.CompleteSeason;
 
@@ -44,6 +45,11 @@ public static class CompleteSeasonEndpoint
             catch (AdvanceRoundConflictException ex)
             {
                 return Results.Conflict(new { error = ex.Message });
+            }
+            catch (SaveCorruptionException ex)
+            {
+                // Corrupted sporting state is a server failure, never a client error (MSS-144).
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
             }
             catch (InvalidOperationException ex)
             {

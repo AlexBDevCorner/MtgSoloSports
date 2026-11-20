@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Cups.GetColorCupSelection;
 using MtgSoloSports.Features.Cups.SelectColorCupTeams;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -131,7 +132,7 @@ public sealed class GetColorCupSelectionReportHandler
             if (match is null || match.Rank != row.SelectionRank || match.Rank > rules.ColorCupTeamSize
                 || match.FinalRatingThousandths != row.FinalRatingThousandths)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Color Cup selection report for Season {row.SourceSeasonNumber} disagrees with the selected athlete {row.SaveAthleteId}.");
             }
         }
@@ -182,7 +183,7 @@ public sealed class GetColorCupSelectionReportHandler
         ArgumentNullException.ThrowIfNull(athletes);
         if (!athletes.TryGetValue(candidate.AthleteId, out SaveAthleteEntity? athlete))
         {
-            throw new InvalidOperationException($"Color Cup selection report references unknown athlete {candidate.AthleteId}.");
+            throw new SaveCorruptionException($"Color Cup selection report references unknown athlete {candidate.AthleteId}.");
         }
 
         bool selected = candidate.Rank <= rules.ColorCupTeamSize;

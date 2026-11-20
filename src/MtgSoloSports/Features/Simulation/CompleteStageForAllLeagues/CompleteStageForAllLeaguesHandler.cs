@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
@@ -142,7 +143,7 @@ public sealed class CompleteStageForAllLeaguesHandler
             CompleteStageResponse completed = await single.CompleteUnderLockAsync(saveId, leagueId, cancellationToken).ConfigureAwait(false);
             if (completed.StageNumber != plan.TargetStage)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Bulk completion expected stage {plan.TargetStage} for league {leagueId}, was {completed.StageNumber}.");
             }
 

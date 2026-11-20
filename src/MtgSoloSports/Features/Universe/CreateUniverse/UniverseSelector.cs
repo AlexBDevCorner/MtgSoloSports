@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -92,12 +93,12 @@ public static class UniverseSelector
         {
             if (candidate is null)
             {
-                throw new InvalidOperationException("Catalog candidate must not be null.");
+                throw new SaveCorruptionException("Catalog candidate must not be null.");
             }
 
             if (string.IsNullOrWhiteSpace(candidate.Name))
             {
-                throw new InvalidOperationException("Catalog candidate has an empty name.");
+                throw new SaveCorruptionException("Catalog candidate has an empty name.");
             }
 
             pools[candidate.SportingColor].Add(candidate);
@@ -125,7 +126,7 @@ public static class UniverseSelector
 
         if (deficits.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Catalog cannot supply a save universe: {string.Join("; ", deficits)}.");
         }
     }

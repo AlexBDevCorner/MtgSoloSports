@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -107,12 +108,12 @@ public static class InauguralDrawSelector
         {
             if (athlete is null)
             {
-                throw new InvalidOperationException("Save population must not contain null athletes.");
+                throw new SaveCorruptionException("Save population must not contain null athletes.");
             }
 
             if (string.IsNullOrWhiteSpace(athlete.Name))
             {
-                throw new InvalidOperationException("Save population contains an athlete with an empty name.");
+                throw new SaveCorruptionException("Save population contains an athlete with an empty name.");
             }
 
             pools[athlete.SportingColor].Add(athlete);
@@ -140,7 +141,7 @@ public static class InauguralDrawSelector
 
         if (deficits.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Save population cannot supply Season 1 leagues: {string.Join("; ", deficits)}.");
         }
     }

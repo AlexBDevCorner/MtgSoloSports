@@ -4,7 +4,7 @@ namespace MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 /// Thrown when automatic movement cannot be resolved: no completed Superleague
 /// season is ready, or the movement for the completed season already exists.
 /// Maps to 409. Corrupted sporting state throws
-/// <see cref="InvalidOperationException"/> instead.
+/// <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// </summary>
 public sealed class ResolveAutomaticMovementConflictException : Exception
 {

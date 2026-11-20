@@ -6,7 +6,7 @@ namespace MtgSoloSports.Features.Cups.CompleteChaosCup;
 /// current stage completes, or the tournament is already complete for a
 /// current-stage request. Retries of already-completed stages or tournaments
 /// are idempotent and return persisted progress instead of throwing; corrupted
-/// sporting state throws <see cref="InvalidOperationException"/> instead.
+/// sporting state throws <see cref="MtgSoloSports.Shared.SaveCorruptionException"/> instead (MSS-144: 500).
 /// Maps to 409.
 /// </summary>
 public sealed class CompleteChaosCupConflictException : Exception

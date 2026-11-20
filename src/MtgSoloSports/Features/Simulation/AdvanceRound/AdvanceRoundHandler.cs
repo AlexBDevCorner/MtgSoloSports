@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Simulation.GlobalStage;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
 using MtgSoloSports.SimulationKernel.Rules;
@@ -116,12 +117,12 @@ public sealed class AdvanceRoundHandler
         SaveMetadataEntity? metadata = await context.SaveMetadata.SingleOrDefaultAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         if (metadata is null)
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' is missing metadata.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' is missing metadata.");
         }
 
         if (metadata.SaveId != saveId)
         {
-            throw new InvalidOperationException($"Save '{saveId:D}' has mismatched identity.");
+            throw new SaveCorruptionException($"Save '{saveId:D}' has mismatched identity.");
         }
 
         return metadata;
@@ -133,7 +134,7 @@ public sealed class AdvanceRoundHandler
         RulesSnapshotEntity? row = await context.RulesSnapshots.SingleOrDefaultAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         if (row is null || string.IsNullOrWhiteSpace(row.RulesJson))
         {
-            throw new InvalidOperationException("Save is missing its rules snapshot.");
+            throw new SaveCorruptionException("Save is missing its rules snapshot.");
         }
 
         return RulesSnapshotCodec.Decode(row.RulesJson);
@@ -145,7 +146,7 @@ public sealed class AdvanceRoundHandler
         RngStateEntity? row = await context.RngStates.SingleOrDefaultAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         if (row is null)
         {
-            throw new InvalidOperationException("Save is missing its RNG state.");
+            throw new SaveCorruptionException("Save is missing its RNG state.");
         }
 
         _ = row.ToState();
@@ -159,7 +160,7 @@ public sealed class AdvanceRoundHandler
         SeasonEntity? season = await context.Seasons.SingleOrDefaultAsync(e => e.SeasonNumber == metadata.CurrentSeason, cancellationToken).ConfigureAwait(false);
         if (season is null)
         {
-            throw new InvalidOperationException($"Save has no season {metadata.CurrentSeason}.");
+            throw new SaveCorruptionException($"Save has no season {metadata.CurrentSeason}.");
         }
 
         return season;
@@ -210,7 +211,7 @@ public sealed class AdvanceRoundHandler
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         if (memberships.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException($"League '{league.Name}' must contain exactly {rules.LeagueSize} athletes, was {memberships.Count}.");
+            throw new SaveCorruptionException($"League '{league.Name}' must contain exactly {rules.LeagueSize} athletes, was {memberships.Count}.");
         }
 
         HashSet<int> athleteIds = new();
@@ -218,7 +219,7 @@ public sealed class AdvanceRoundHandler
         {
             if (!athleteIds.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException($"League '{league.Name}' contains duplicate athlete id {membership.SaveAthleteId}.");
+                throw new SaveCorruptionException($"League '{league.Name}' contains duplicate athlete id {membership.SaveAthleteId}.");
             }
         }
 
@@ -238,7 +239,7 @@ public sealed class AdvanceRoundHandler
             .ToDictionaryAsync(e => e.Id, cancellationToken).ConfigureAwait(false);
         if (athletes.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException($"League '{league.Name}' references {rules.LeagueSize - athletes.Count} unknown athletes.");
+            throw new SaveCorruptionException($"League '{league.Name}' references {rules.LeagueSize - athletes.Count} unknown athletes.");
         }
 
         return athletes;
@@ -265,12 +266,12 @@ public sealed class AdvanceRoundHandler
         {
             if (string.IsNullOrWhiteSpace(row.Name))
             {
-                throw new InvalidOperationException($"League '{league.Name}' contains an athlete with an empty name.");
+                throw new SaveCorruptionException($"League '{league.Name}' contains an athlete with an empty name.");
             }
 
             if (!names.Add(row.Name))
             {
-                throw new InvalidOperationException($"League '{league.Name}' contains duplicate athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"League '{league.Name}' contains duplicate athlete '{row.Name}'.");
             }
         }
 
@@ -280,7 +281,7 @@ public sealed class AdvanceRoundHandler
             {
                 if (row.SportingColor != league.SportingColor)
                 {
-                    throw new InvalidOperationException($"League '{league.Name}' contains athlete '{row.Name}' of a different sporting color.");
+                    throw new SaveCorruptionException($"League '{league.Name}' contains athlete '{row.Name}' of a different sporting color.");
                 }
             }
         }
@@ -321,12 +322,12 @@ public sealed class AdvanceRoundHandler
         {
             if (stage.StageNumber < 1 || stage.StageNumber > rules.StagesPerSeason)
             {
-                throw new InvalidOperationException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
+                throw new SaveCorruptionException($"League '{league.Name}' has corrupt stage {stage.StageNumber}.");
             }
 
             if (stage.CompletedRounds < 0 || stage.CompletedRounds > rules.RoundsPerStage)
             {
-                throw new InvalidOperationException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
+                throw new SaveCorruptionException($"League '{league.Name}' stage {stage.StageNumber} has corrupt completed-round count {stage.CompletedRounds}.");
             }
         }
 
@@ -345,7 +346,7 @@ public sealed class AdvanceRoundHandler
         int distinct = stages.Select(s => s.StageNumber).Distinct().Count();
         if (distinct != stages.Count)
         {
-            throw new InvalidOperationException($"League '{league.Name}' has duplicate stage rows.");
+            throw new SaveCorruptionException($"League '{league.Name}' has duplicate stage rows.");
         }
 
         return current;
@@ -436,7 +437,7 @@ public sealed class AdvanceRoundHandler
         RoundPayloadDocument document = RoundPayloadCodec.DecodeRound(previous.PayloadJson);
         if (document.StageNumber != stage.StageNumber || document.RoundNumber != roundNumber - 1)
         {
-            throw new InvalidOperationException($"Persisted round {previous.Id} has corrupt stage/round identity.");
+            throw new SaveCorruptionException($"Persisted round {previous.Id} has corrupt stage/round identity.");
         }
 
         foreach (RoundPayloadEntry entry in document.Placements)
@@ -505,7 +506,7 @@ public sealed class AdvanceRoundHandler
             .ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(season.Id, out int current))
         {
-            throw new InvalidOperationException($"Save has no season row for season {season.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {season.SeasonNumber}.");
         }
 
         return seasonNumbers;
@@ -548,7 +549,7 @@ public sealed class AdvanceRoundHandler
 
             if (!seasonNumbers.TryGetValue(standing.SeasonId, out int earnedSeason))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Stage standing {standing.Id} references unknown season {standing.SeasonId}.");
             }
 
@@ -606,7 +607,7 @@ public sealed class AdvanceRoundHandler
             Points before = cumulativeBefore.TryGetValue(row.AthleteId, out Points value) ? value : Points.Zero;
             if (!activeBonuses.TryGetValue(row.AthleteId, out Bonus bonus))
             {
-                throw new InvalidOperationException($"Missing stage-start bonus for athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Missing stage-start bonus for athlete '{row.Name}'.");
             }
 
             inputs.Add(new RoundAthleteInput(row.AthleteId, row.Name, bonus, before));
@@ -707,18 +708,18 @@ public sealed class AdvanceRoundHandler
         RoundEntity? stored = await context.Rounds.SingleOrDefaultAsync(e => e.Id == roundId, cancellationToken).ConfigureAwait(false);
         if (stored is null)
         {
-            throw new InvalidOperationException("Round row was not staged for commit.");
+            throw new SaveCorruptionException("Round row was not staged for commit.");
         }
 
         if (!string.Equals(stored.PayloadChecksum, payload.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Staged round checksum does not match the simulated result.");
+            throw new SaveCorruptionException("Staged round checksum does not match the simulated result.");
         }
 
         RoundPayloadDocument reparsed = RoundPayloadCodec.DecodeRound(stored.PayloadJson);
         if (!string.Equals(reparsed.Checksum, simulation.Checksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException("Staged round payload does not match the simulated result.");
+            throw new SaveCorruptionException("Staged round payload does not match the simulated result.");
         }
     }
 
@@ -798,7 +799,7 @@ public sealed class AdvanceRoundHandler
         RoundPayloadDocument payload = RoundPayloadCodec.DecodeRound(round.PayloadJson);
         if (!string.Equals(payload.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Persisted round {roundNumber} payload checksum mismatch.");
+            throw new SaveCorruptionException($"Persisted round {roundNumber} payload checksum mismatch.");
         }
 
         List<AdvanceRoundPlacement> placements = new(payload.Placements.Count);

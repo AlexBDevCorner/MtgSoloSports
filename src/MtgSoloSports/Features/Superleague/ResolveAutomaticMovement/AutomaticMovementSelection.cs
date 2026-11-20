@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
@@ -78,7 +79,7 @@ public static class AutomaticMovementSelection
         {
             if (feederLeagues.Count != rules.RegularLeagueCount)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season must have exactly {rules.RegularLeagueCount} feeder leagues, was {feederLeagues.Count}.");
             }
 
@@ -87,7 +88,7 @@ public static class AutomaticMovementSelection
 
         if (feederLeagues.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered season must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feederLeagues.Count}.");
         }
 
@@ -96,7 +97,7 @@ public static class AutomaticMovementSelection
             .ToList();
         if (first.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Tiered season must have exactly {rules.RegularLeagueCount} F1 leagues, was {first.Count}.");
         }
 
@@ -113,17 +114,17 @@ public static class AutomaticMovementSelection
         {
             if (!feederStandingsByLeague.TryGetValue(league.Id, out IReadOnlyList<SeasonStandingEntity>? rows))
             {
-                throw new InvalidOperationException($"League '{league.Name}' has no final standings.");
+                throw new SaveCorruptionException($"League '{league.Name}' has no final standings.");
             }
 
             if (rows.Count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
             }
 
             SeasonStandingEntity champion = rows.SingleOrDefault(r => r.SeasonRank == 1)
-                ?? throw new InvalidOperationException($"League '{league.Name}' is missing final season rank 1.");
+                ?? throw new SaveCorruptionException($"League '{league.Name}' is missing final season rank 1.");
             picks.Add(new AutomaticPick(champion.SaveAthleteId, league.Id, champion.SeasonRank, MovementKind.AutomaticPromotion));
         }
 
@@ -159,7 +160,7 @@ public static class AutomaticMovementSelection
     {
         if (superleagueStandings.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must have exactly {rules.SuperleagueSize} final standings, was {superleagueStandings.Count}.");
         }
 
@@ -167,10 +168,10 @@ public static class AutomaticMovementSelection
         for (int rank = firstRank; rank <= lastRank; rank++)
         {
             SeasonStandingEntity row = superleagueStandings.SingleOrDefault(r => r.SeasonRank == rank)
-                ?? throw new InvalidOperationException($"Superleague is missing final season rank {rank}.");
+                ?? throw new SaveCorruptionException($"Superleague is missing final season rank {rank}.");
             if (row.LeagueId != superleague.Id)
             {
-                throw new InvalidOperationException($"Superleague standing for rank {rank} references league {row.LeagueId}.");
+                throw new SaveCorruptionException($"Superleague standing for rank {rank} references league {row.LeagueId}.");
             }
 
             picks.Add(new AutomaticPick(row.SaveAthleteId, row.LeagueId, row.SeasonRank, kind));
@@ -189,13 +190,13 @@ public static class AutomaticMovementSelection
         {
             if (!feederStandingsByLeague.TryGetValue(league.Id, out IReadOnlyList<SeasonStandingEntity>? rows))
             {
-                throw new InvalidOperationException($"League '{league.Name}' has no final standings.");
+                throw new SaveCorruptionException($"League '{league.Name}' has no final standings.");
             }
 
             for (int rank = 2; rank <= 4; rank++)
             {
                 SeasonStandingEntity row = rows.SingleOrDefault(r => r.SeasonRank == rank)
-                    ?? throw new InvalidOperationException($"League '{league.Name}' is missing final season rank {rank}.");
+                    ?? throw new SaveCorruptionException($"League '{league.Name}' is missing final season rank {rank}.");
                 picks.Add(new AutomaticPick(row.SaveAthleteId, league.Id, row.SeasonRank, MovementKind.QualifierChallenger));
             }
         }

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.History;
 
@@ -45,7 +46,7 @@ public static class RoundPayloadCodec
         }
         catch (FormatException ex)
         {
-            throw new InvalidOperationException("Historical round payload has corrupt compressed encoding.", ex);
+            throw new SaveCorruptionException("Historical round payload has corrupt compressed encoding.", ex);
         }
 
         using MemoryStream input = new(compressed);
@@ -57,13 +58,13 @@ public static class RoundPayloadCodec
         }
         catch (InvalidDataException ex)
         {
-            throw new InvalidOperationException("Historical round payload failed to decompress.", ex);
+            throw new SaveCorruptionException("Historical round payload failed to decompress.", ex);
         }
 
         string json = Encoding.UTF8.GetString(output.ToArray());
         if (string.IsNullOrWhiteSpace(json))
         {
-            throw new InvalidOperationException("Historical round payload decompressed to empty content.");
+            throw new SaveCorruptionException("Historical round payload decompressed to empty content.");
         }
 
         return json;
@@ -79,7 +80,7 @@ public static class RoundPayloadCodec
         }
         catch (System.Text.Json.JsonException ex)
         {
-            throw new InvalidOperationException("Historical round payload is corrupt and cannot be replayed.", ex);
+            throw new SaveCorruptionException("Historical round payload is corrupt and cannot be replayed.", ex);
         }
     }
 }

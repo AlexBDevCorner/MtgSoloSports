@@ -6,6 +6,7 @@ using MtgSoloSports.Features.History;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.FixedPoint;
 using MtgSoloSports.SimulationKernel.Random;
@@ -162,7 +163,7 @@ public sealed class RunQualifierHandler
             PostseasonEvents.Qualifier,
             links,
             PostseasonEvents.Shape(PostseasonEvents.Qualifier, rules),
-            _ => throw new InvalidOperationException("The qualifier has a single stage."),
+            _ => throw new SaveCorruptionException("The qualifier has a single stage."),
             rngRow);
     }
 
@@ -326,7 +327,7 @@ public sealed class RunQualifierHandler
     {
         if (!picksByAthlete.TryGetValue(entry.AthleteId, out QualifierFieldSelection.QualifierPick? pick))
         {
-            throw new InvalidOperationException($"Qualifier standing for '{entry.Name}' has no field provenance.");
+            throw new SaveCorruptionException($"Qualifier standing for '{entry.Name}' has no field provenance.");
         }
 
         bool qualified = entry.StageRank <= rules.QualifierWinners;
@@ -452,7 +453,7 @@ public sealed class RunQualifierHandler
         {
             if (!names.Add(row.Name))
             {
-                throw new InvalidOperationException($"Qualifier field contains duplicate athlete '{row.Name}'.");
+                throw new SaveCorruptionException($"Qualifier field contains duplicate athlete '{row.Name}'.");
             }
         }
 
@@ -470,7 +471,7 @@ public sealed class RunQualifierHandler
         Dictionary<int, int> seasonNumbers = await AdvanceRoundHandler.LoadSeasonNumbersAsync(context, next, cancellationToken).ConfigureAwait(false);
         if (!seasonNumbers.TryGetValue(next.Id, out int nextSeasonNumber))
         {
-            throw new InvalidOperationException($"Save has no season row for season {next.SeasonNumber}.");
+            throw new SaveCorruptionException($"Save has no season row for season {next.SeasonNumber}.");
         }
 
         List<StageStandingEntity> standings = await AdvanceRoundHandler.LoadBonusStandingsAsync(
@@ -592,7 +593,7 @@ public sealed class RunQualifierHandler
         {
             if (!picksByAthlete.TryGetValue(entry.AthleteId, out QualifierFieldSelection.QualifierPick? pick))
             {
-                throw new InvalidOperationException($"Qualifier standing for '{entry.Name}' has no field provenance.");
+                throw new SaveCorruptionException($"Qualifier standing for '{entry.Name}' has no field provenance.");
             }
 
             context.QualifierStandings.Add(new QualifierStandingEntity
@@ -657,14 +658,14 @@ public sealed class RunQualifierHandler
     {
         LeagueEntity superleague = await context.Leagues.AsNoTracking().SingleOrDefaultAsync(
             e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Season {next.SeasonNumber} has no next Superleague.");
+            ?? throw new SaveCorruptionException($"Season {next.SeasonNumber} has no next Superleague.");
         List<LeagueEntity> feeders = await context.Leagues.AsNoTracking()
             .Where(e => e.SeasonId == next.Id && e.Kind == (int)LeagueKind.Feeder)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         if (feeders.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {feeders.Count}.");
         }
 
@@ -675,7 +676,7 @@ public sealed class RunQualifierHandler
             .ToList();
         if (f1.Count != rules.RegularLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {next.SeasonNumber} must have exactly {rules.RegularLeagueCount} F1 leagues, was {f1.Count}.");
         }
 
@@ -689,7 +690,7 @@ public sealed class RunQualifierHandler
         HashSet<int> fieldIds = simulation.Field.All.Select(p => p.SaveAthleteId).ToHashSet();
         if (fieldIds.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier field must hold exactly {rules.QualifierSize} athletes, was {fieldIds.Count}.");
         }
 
@@ -710,7 +711,7 @@ public sealed class RunQualifierHandler
             .ToHashSet();
         if (qualifiedIds.Count != rules.QualifierWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.QualifierWinners} successful qualifiers, was {qualifiedIds.Count}.");
         }
 
@@ -718,7 +719,7 @@ public sealed class RunQualifierHandler
         {
             if (!fieldIds.Contains(athleteId))
             {
-                throw new InvalidOperationException($"Qualifier winner {athleteId} is outside the qualifier field.");
+                throw new SaveCorruptionException($"Qualifier winner {athleteId} is outside the qualifier field.");
             }
         }
 
@@ -738,7 +739,7 @@ public sealed class RunQualifierHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season must hold exactly {rules.QualifierSize} qualifier memberships, was {memberships.Count}.");
         }
 
@@ -771,7 +772,7 @@ public sealed class RunQualifierHandler
         ArgumentNullException.ThrowIfNull(feederByColor);
         if (membership.LeagueId is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier athlete {membership.SaveAthleteId} has no provisional next-season league.");
         }
 
@@ -783,7 +784,7 @@ public sealed class RunQualifierHandler
 
         if (!feederByColor.TryGetValue(membership.SportingColor, out int feederId))
         {
-            throw new InvalidOperationException($"Unknown sporting color {membership.SportingColor}.");
+            throw new SaveCorruptionException($"Unknown sporting color {membership.SportingColor}.");
         }
 
         membership.LeagueId = feederId;
@@ -842,7 +843,7 @@ public sealed class RunQualifierHandler
         HashSet<int> fieldIds = ResolveFieldIds(simulation, rules);
         if (!fieldIds.SetEquals(standingByAthlete.Keys))
         {
-            throw new InvalidOperationException("Qualifier standings do not match the qualifier field.");
+            throw new SaveCorruptionException("Qualifier standings do not match the qualifier field.");
         }
 
         List<SeasonMembershipEntity> qualifierMemberships = await context.SeasonMemberships.AsNoTracking()
@@ -851,7 +852,7 @@ public sealed class RunQualifierHandler
             .ConfigureAwait(false);
         if (qualifierMemberships.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next season must hold exactly {rules.QualifierSize} qualifier memberships, was {qualifierMemberships.Count}.");
         }
 
@@ -868,7 +869,7 @@ public sealed class RunQualifierHandler
         Dictionary<int, QualifierStandingEntity> map = standings.ToDictionary(s => s.SaveAthleteId);
         if (map.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.QualifierSize} standings, was {map.Count}.");
         }
 
@@ -901,19 +902,19 @@ public sealed class RunQualifierHandler
         ArgumentNullException.ThrowIfNull(feederByColor);
         if (!standingByAthlete.TryGetValue(membership.SaveAthleteId, out QualifierStandingEntity? standing))
         {
-            throw new InvalidOperationException($"Qualifier athlete {membership.SaveAthleteId} has no standing.");
+            throw new SaveCorruptionException($"Qualifier athlete {membership.SaveAthleteId} has no standing.");
         }
 
         if (membership.LeagueId is null)
         {
-            throw new InvalidOperationException($"Qualifier athlete {membership.SaveAthleteId} is in the common pool.");
+            throw new SaveCorruptionException($"Qualifier athlete {membership.SaveAthleteId} is in the common pool.");
         }
 
         if (standing.IsQualified)
         {
             if (membership.LeagueId != superleagueId)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Qualified athlete {membership.SaveAthleteId} must occupy the next Superleague.");
             }
 
@@ -922,12 +923,12 @@ public sealed class RunQualifierHandler
 
         if (!feederByColor.TryGetValue(membership.SportingColor, out int expectedFeeder))
         {
-            throw new InvalidOperationException($"Unknown sporting color {membership.SportingColor}.");
+            throw new SaveCorruptionException($"Unknown sporting color {membership.SportingColor}.");
         }
 
         if (membership.LeagueId != expectedFeeder)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Failed qualifier {membership.SaveAthleteId} must occupy its returning-color feeder.");
         }
     }
@@ -943,7 +944,7 @@ public sealed class RunQualifierHandler
             e => e.SeasonId == next.Id && e.LeagueId == superleague.Id, cancellationToken).ConfigureAwait(false);
         if (superCount != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Next Superleague must contain exactly {rules.SuperleagueSize} athletes (16 safe + 8 promoted + 8 qualifier winners), was {superCount}.");
         }
     }
@@ -971,17 +972,17 @@ public sealed class RunQualifierHandler
         int rounds = await context.Rounds.CountAsync(cancellationToken).ConfigureAwait(false);
         if (stages != stageCountBefore)
         {
-            throw new InvalidOperationException("Qualifier must not create league stage standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Qualifier must not create league stage standings; championship totals are preserved.");
         }
 
         if (seasons != seasonCountBefore)
         {
-            throw new InvalidOperationException("Qualifier must not create league season standings; championship totals are preserved.");
+            throw new SaveCorruptionException("Qualifier must not create league season standings; championship totals are preserved.");
         }
 
         if (rounds != roundCountBefore)
         {
-            throw new InvalidOperationException("Qualifier must not create league rounds; qualifier history lives in qualifier tables only.");
+            throw new SaveCorruptionException("Qualifier must not create league rounds; qualifier history lives in qualifier tables only.");
         }
     }
 
@@ -1086,8 +1087,13 @@ public sealed class RunQualifierHandler
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new RunQualifierConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal; corruption passes through uncaught.
             throw new RunQualifierConflictException(ex.Message);
         }
     }
@@ -1102,7 +1108,7 @@ public sealed class RunQualifierHandler
             .ConfigureAwait(false);
         if (leagues.Count != rules.TieredFeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TieredFeederLeagueCount} feeder leagues, was {leagues.Count}.");
         }
 
@@ -1116,7 +1122,7 @@ public sealed class RunQualifierHandler
             e => e.SeasonId == source.Id && e.Kind == (int)LeagueKind.Superleague, cancellationToken).ConfigureAwait(false);
         if (league is null)
         {
-            throw new InvalidOperationException($"Season {source.SeasonNumber} has no Superleague.");
+            throw new SaveCorruptionException($"Season {source.SeasonNumber} has no Superleague.");
         }
 
         return league;
@@ -1136,14 +1142,14 @@ public sealed class RunQualifierHandler
             .ConfigureAwait(false);
         if (rows.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {rows.Count}.");
         }
 
         HashSet<int> ranks = rows.Select(r => r.SeasonRank).ToHashSet();
         if (!ranks.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
         {
-            throw new InvalidOperationException($"League '{league.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
+            throw new SaveCorruptionException($"League '{league.Name}' must cover ranks 1..{rules.LeagueSize} exactly once.");
         }
 
         return rows;
@@ -1175,7 +1181,7 @@ public sealed class RunQualifierHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season {source.SeasonNumber} must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -198,12 +199,12 @@ public sealed class CreateInauguralSuperleagueHandler
             .ConfigureAwait(false);
         if (season is null)
         {
-            throw new InvalidOperationException("Save has no Season 1.");
+            throw new SaveCorruptionException("Save has no Season 1.");
         }
 
         if (season.HasSuperleague)
         {
-            throw new InvalidOperationException("Season 1 must have no Superleague.");
+            throw new SaveCorruptionException("Season 1 must have no Superleague.");
         }
 
         return season;
@@ -250,8 +251,13 @@ public sealed class CreateInauguralSuperleagueHandler
         {
             await Features.Cups.ChaosCup.ChaosCupLifecycle.EnsureCompleteAsync(context, seasonOne, rules, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidOperationException ex)
+        catch (Features.Cups.ChaosCup.SavePredatesChaosActivationException ex)
         {
+            throw new CreateInauguralSuperleagueConflictException(ex.Message);
+        }
+        catch (Features.Cups.ChaosCup.ChaosCupIncompleteException ex)
+        {
+            // Genuine retryable postseason signal; corruption passes through uncaught.
             throw new CreateInauguralSuperleagueConflictException(ex.Message);
         }
     }
@@ -269,7 +275,7 @@ public sealed class CreateInauguralSuperleagueHandler
             .ConfigureAwait(false);
         if (leagues.Count != rules.Season1FeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {rules.Season1FeederLeagueCount} leagues, was {leagues.Count}.");
         }
 
@@ -277,7 +283,7 @@ public sealed class CreateInauguralSuperleagueHandler
         {
             if (league.Kind != (int)LeagueKind.Feeder)
             {
-                throw new InvalidOperationException($"Season 1 league '{league.Name}' must be a feeder league.");
+                throw new SaveCorruptionException($"Season 1 league '{league.Name}' must be a feeder league.");
             }
         }
 
@@ -299,7 +305,7 @@ public sealed class CreateInauguralSuperleagueHandler
         int expected = rules.Season1FeederLeagueCount * rules.LeagueSize;
         if (standings.Count != expected)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {expected} final standings, was {standings.Count}.");
         }
 
@@ -308,7 +314,7 @@ public sealed class CreateInauguralSuperleagueHandler
             int count = standings.Count(r => r.LeagueId == league.Id);
             if (count != rules.LeagueSize)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must have exactly {rules.LeagueSize} final standings, was {count}.");
             }
         }
@@ -328,7 +334,7 @@ public sealed class CreateInauguralSuperleagueHandler
             .ConfigureAwait(false);
         if (memberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 1 must have exactly {rules.TotalAthletesInSave} memberships, was {memberships.Count}.");
         }
 
@@ -514,7 +520,7 @@ public sealed class CreateInauguralSuperleagueHandler
         {
             if (!feederByColor.TryGetValue(source.SportingColor, out int feederId))
             {
-                throw new InvalidOperationException($"Unknown sporting color {source.SportingColor}.");
+                throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor}.");
             }
 
             return feederId;
@@ -522,7 +528,7 @@ public sealed class CreateInauguralSuperleagueHandler
 
         if (!sourceByAthlete.TryGetValue(source.SaveAthleteId, out SeasonMembershipEntity? original))
         {
-            throw new InvalidOperationException($"Athlete {source.SaveAthleteId} has no Season 1 membership.");
+            throw new SaveCorruptionException($"Athlete {source.SaveAthleteId} has no Season 1 membership.");
         }
 
         int division = original.DrawIndex < rules.LeagueSize
@@ -532,7 +538,7 @@ public sealed class CreateInauguralSuperleagueHandler
                 : (int)SimulationKernel.Leagues.FeederDivision.Third;
         if (!feederByColorDivision.TryGetValue((source.SportingColor, division), out int tieredFeederId))
         {
-            throw new InvalidOperationException($"Unknown sporting color {source.SportingColor} division {division}.");
+            throw new SaveCorruptionException($"Unknown sporting color {source.SportingColor} division {division}.");
         }
 
         return tieredFeederId;
@@ -550,7 +556,7 @@ public sealed class CreateInauguralSuperleagueHandler
         {
             if (!membershipByAthlete.TryGetValue(pick.SaveAthleteId, out SeasonMembershipEntity? source))
             {
-                throw new InvalidOperationException($"Promoted athlete {pick.SaveAthleteId} has no Season 1 membership.");
+                throw new SaveCorruptionException($"Promoted athlete {pick.SaveAthleteId} has no Season 1 membership.");
             }
 
             movements.Add(new MovementEntity

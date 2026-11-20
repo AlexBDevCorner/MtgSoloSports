@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Diagnostics.LongRunChecksum;
 
@@ -27,8 +28,10 @@ public sealed class GetLongRunChecksumHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        using SaveDbContext context = _store.OpenDbContext(saveId);
+        // Migration first, then the context: the migration-rollback path can
+        // replace the save file, so no context handle may predate it.
         await _store.EnsureMigratedAsync(saveId, cancellationToken).ConfigureAwait(false);
+        using SaveDbContext context = _store.OpenDbContext(saveId);
 
         Dictionary<int, int> seasonNumbers = await context.Seasons
             .AsNoTracking()
@@ -72,7 +75,7 @@ public sealed class GetLongRunChecksumHandler
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Round references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Round references unknown season {row.SeasonId}.");
             }
 
             inputs.Add(new LongRunChecksumCalculator.SeasonInput(
@@ -99,7 +102,7 @@ public sealed class GetLongRunChecksumHandler
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Stage standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Stage standing references unknown season {row.SeasonId}.");
             }
 
             inputs.Add(new LongRunChecksumCalculator.StageInput(
@@ -127,7 +130,7 @@ public sealed class GetLongRunChecksumHandler
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Season standing references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Season standing references unknown season {row.SeasonId}.");
             }
 
             inputs.Add(new LongRunChecksumCalculator.SeasonStandingInput(
@@ -153,7 +156,7 @@ public sealed class GetLongRunChecksumHandler
         {
             if (!seasonNumbers.TryGetValue(row.SeasonId, out int seasonNumber))
             {
-                throw new InvalidOperationException($"Membership references unknown season {row.SeasonId}.");
+                throw new SaveCorruptionException($"Membership references unknown season {row.SeasonId}.");
             }
 
             inputs.Add(new LongRunChecksumCalculator.MembershipInput(seasonNumber, row.SaveAthleteId, row.LeagueId));

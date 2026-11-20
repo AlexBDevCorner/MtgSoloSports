@@ -3,6 +3,7 @@ using MtgSoloSports.Features.History.ListCompetitions;
 using MtgSoloSports.Features.History.ListStages;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.History.GetRoundReplay;
@@ -146,24 +147,24 @@ public sealed class GetHistoryRoundReplayHandler
 
         if (document.StageNumber != round.StageNumber || document.RoundNumber != round.RoundNumber)
         {
-            throw new InvalidOperationException($"Persisted round {round.Id} has corrupt stage/round identity.");
+            throw new SaveCorruptionException($"Persisted round {round.Id} has corrupt stage/round identity.");
         }
 
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Persisted round {round.RoundNumber} payload checksum mismatch.");
+            throw new SaveCorruptionException($"Persisted round {round.RoundNumber} payload checksum mismatch.");
         }
 
         if (document.Placements.Count != rules.LeagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' stage {round.StageNumber} round {round.RoundNumber} must contain exactly {rules.LeagueSize} placements, was {document.Placements.Count}.");
         }
 
         HashSet<int> positions = document.Placements.Select(p => p.Position).ToHashSet();
         if (!positions.SetEquals(Enumerable.Range(1, rules.LeagueSize)))
         {
-            throw new InvalidOperationException($"Persisted round {round.RoundNumber} has corrupt finishing positions.");
+            throw new SaveCorruptionException($"Persisted round {round.RoundNumber} has corrupt finishing positions.");
         }
     }
 
@@ -197,7 +198,7 @@ public sealed class GetHistoryRoundReplayHandler
     {
         if (!cards.TryGetValue(placement.AthleteId, out SaveAthleteEntity? card))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"League '{league.Name}' round {roundNumber} references unknown athlete {placement.AthleteId}.");
         }
 

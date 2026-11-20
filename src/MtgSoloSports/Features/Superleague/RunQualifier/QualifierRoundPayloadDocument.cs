@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Superleague.RunQualifier;
 
@@ -39,6 +40,6 @@ public sealed record QualifierRoundPayloadDocument(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
         QualifierRoundPayloadDocument? document = JsonSerializer.Deserialize<QualifierRoundPayloadDocument>(json, JsonOptions);
-        return document ?? throw new InvalidOperationException("Qualifier round payload is empty.");
+        return document ?? throw new SaveCorruptionException("Qualifier round payload is empty.");
     }
 }

@@ -27,6 +27,14 @@ public sealed class CreateSaveHandler
     {
         ArgumentNullException.ThrowIfNull(request);
         IReadOnlyList<CatalogAthlete> candidates = await _catalog.ListAthletesAsync(cancellationToken).ConfigureAwait(false);
+        if (candidates.Count == 0)
+        {
+            // A missing catalog is a client-side prerequisite failure (400), never corruption (MSS-144):
+            // the save universe needs 256 athletes per sporting color.
+            throw new InvalidOperationException(
+                "A catalog must be imported before creating a save; the universe needs 256 athletes per sporting color.");
+        }
+
         SaveStore.CreationRecord created = await _store.CreateAsync(request.Name, request.Seed, request.Stream, candidates, cancellationToken).ConfigureAwait(false);
         _ = SavePhaseParser.Parse(created.Detail.Phase);
 

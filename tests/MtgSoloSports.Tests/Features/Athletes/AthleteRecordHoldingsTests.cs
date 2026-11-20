@@ -68,7 +68,7 @@ public sealed class AthleteRecordHoldingsTests
             after.Holdings.Select(h => h.RecordKey).ShouldBe(before.Holdings.Select(h => h.RecordKey));
 
             GetRecordsHandler recordsHandler = new(store);
-            await Should.ThrowAsync<InvalidOperationException>(
+            await Should.ThrowAsync<MtgSoloSports.Shared.SaveCorruptionException>(
                 () => recordsHandler.HandleAsync(saveId));
         }
         finally

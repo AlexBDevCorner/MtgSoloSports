@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
 
@@ -107,19 +108,19 @@ public static class QualifierInvariants
     {
         if (field.Incumbents.Count != rules.SuperleagueQualifierIncumbentCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.SuperleagueQualifierIncumbentCount} incumbents, was {field.Incumbents.Count}.");
         }
 
         if (field.Challengers.Count != rules.FeederQualifierCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.FeederQualifierCount} challengers, was {field.Challengers.Count}.");
         }
 
         if (field.All.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.QualifierSize} athletes, was {field.All.Count}.");
         }
     }
@@ -131,17 +132,17 @@ public static class QualifierInvariants
         {
             if (pick.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Qualifier contains invalid athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Qualifier contains invalid athlete id {pick.SaveAthleteId}.");
             }
 
             if (string.IsNullOrWhiteSpace(pick.Name))
             {
-                throw new InvalidOperationException($"Qualifier athlete {pick.SaveAthleteId} has an empty name.");
+                throw new SaveCorruptionException($"Qualifier athlete {pick.SaveAthleteId} has an empty name.");
             }
 
             if (!athleteIds.Add(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Qualifier contains duplicate athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Qualifier contains duplicate athlete id {pick.SaveAthleteId}.");
             }
         }
     }
@@ -150,32 +151,32 @@ public static class QualifierInvariants
     {
         if (payload.Version != QualifierRoundPayloadDocument.PayloadVersion)
         {
-            throw new InvalidOperationException($"Qualifier payload version must be {QualifierRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
+            throw new SaveCorruptionException($"Qualifier payload version must be {QualifierRoundPayloadDocument.PayloadVersion}, was {payload.Version}.");
         }
 
         if (payload.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Qualifier payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
+            throw new SaveCorruptionException($"Qualifier payload rules version must be {rules.Version}, was {payload.RulesVersion}.");
         }
 
         if (payload.FromSeasonNumber < 2)
         {
-            throw new InvalidOperationException($"Qualifier from-season must be >= 2, was {payload.FromSeasonNumber}.");
+            throw new SaveCorruptionException($"Qualifier from-season must be >= 2, was {payload.FromSeasonNumber}.");
         }
 
         if (payload.ToSeasonNumber != payload.FromSeasonNumber + 1)
         {
-            throw new InvalidOperationException("Qualifier seasons must be consecutive.");
+            throw new SaveCorruptionException("Qualifier seasons must be consecutive.");
         }
 
         if (payload.RoundNumber < 1 || payload.RoundNumber > rules.QualifierRounds)
         {
-            throw new InvalidOperationException($"Qualifier round must be 1..{rules.QualifierRounds}, was {payload.RoundNumber}.");
+            throw new SaveCorruptionException($"Qualifier round must be 1..{rules.QualifierRounds}, was {payload.RoundNumber}.");
         }
 
         if (payload.Placements.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier round must contain exactly {rules.QualifierSize} placements, was {payload.Placements.Count}.");
+            throw new SaveCorruptionException($"Qualifier round must contain exactly {rules.QualifierSize} placements, was {payload.Placements.Count}.");
         }
     }
 
@@ -183,12 +184,12 @@ public static class QualifierInvariants
     {
         if (payload.RngBeforeState != rngBeforeState || payload.RngBeforeStream != rngBeforeStream)
         {
-            throw new InvalidOperationException("Qualifier payload RNG-before does not match the persisted save RNG chain.");
+            throw new SaveCorruptionException("Qualifier payload RNG-before does not match the persisted save RNG chain.");
         }
 
         if (payload.RngAfterState == rngBeforeState && payload.RngAfterStream == rngBeforeStream)
         {
-            throw new InvalidOperationException("Qualifier round simulation must advance the save RNG.");
+            throw new SaveCorruptionException("Qualifier round simulation must advance the save RNG.");
         }
     }
 
@@ -199,13 +200,13 @@ public static class QualifierInvariants
     {
         if (ranked.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed qualifier must rank exactly {rules.QualifierSize} athletes, was {ranked.Count}.");
         }
 
         if (totals.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed qualifier must total exactly {rules.QualifierSize} athletes, was {totals.Count}.");
         }
     }
@@ -225,7 +226,7 @@ public static class QualifierInvariants
 
         if (!accumulator.Ranks.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new InvalidOperationException("Completed qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException("Completed qualifier must cover ranks 1..32 exactly once.");
         }
     }
 
@@ -242,32 +243,32 @@ public static class QualifierInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Completed qualifier contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed qualifier contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Completed qualifier contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Completed qualifier contains an athlete with an empty name.");
         }
 
         if (entry.StageRank < 1 || entry.StageRank > rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Completed qualifier rank {entry.StageRank} is out of range.");
+            throw new SaveCorruptionException($"Completed qualifier rank {entry.StageRank} is out of range.");
         }
 
         if (!accumulator.Ranks.Add(entry.StageRank))
         {
-            throw new InvalidOperationException($"Completed qualifier contains duplicate rank {entry.StageRank}.");
+            throw new SaveCorruptionException($"Completed qualifier contains duplicate rank {entry.StageRank}.");
         }
 
         if (!accumulator.AthleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Completed qualifier contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Completed qualifier contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!accumulator.Names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Completed qualifier contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Completed qualifier contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -278,22 +279,22 @@ public static class QualifierInvariants
     {
         if (!totalsById.TryGetValue(entry.AthleteId, out StageAthleteTotals? accumulated))
         {
-            throw new InvalidOperationException($"Completed qualifier standing for '{entry.Name}' has no accumulated totals.");
+            throw new SaveCorruptionException($"Completed qualifier standing for '{entry.Name}' has no accumulated totals.");
         }
 
         if (!string.Equals(accumulated.Name, entry.Name, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Completed qualifier standing for id {entry.AthleteId} has inconsistent names.");
+            throw new SaveCorruptionException($"Completed qualifier standing for id {entry.AthleteId} has inconsistent names.");
         }
 
         if (entry.StageScoreThousandths != accumulated.StageScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed qualifier score for '{entry.Name}' does not match accumulated round finals.");
+            throw new SaveCorruptionException($"Completed qualifier score for '{entry.Name}' does not match accumulated round finals.");
         }
 
         if (entry.BaseScoreThousandths != accumulated.BaseScoreThousandths)
         {
-            throw new InvalidOperationException($"Completed qualifier base score for '{entry.Name}' does not match accumulated round base points.");
+            throw new SaveCorruptionException($"Completed qualifier base score for '{entry.Name}' does not match accumulated round base points.");
         }
 
         CheckCompletedCountsRow(entry, rules);
@@ -303,7 +304,7 @@ public static class QualifierInvariants
     {
         if (entry.RoundPlaceCounts.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Completed qualifier round-place counts for '{entry.Name}' must cover 32 positions.");
+            throw new SaveCorruptionException($"Completed qualifier round-place counts for '{entry.Name}' must cover 32 positions.");
         }
 
         int sum = 0;
@@ -311,7 +312,7 @@ public static class QualifierInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Completed qualifier round-place counts for '{entry.Name}' cannot be negative.");
+                throw new SaveCorruptionException($"Completed qualifier round-place counts for '{entry.Name}' cannot be negative.");
             }
 
             checked
@@ -322,7 +323,7 @@ public static class QualifierInvariants
 
         if (sum != rules.QualifierRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Completed qualifier totals for '{entry.Name}' sum to {sum} round appearances, expected {rules.QualifierRounds}.");
         }
     }
@@ -331,12 +332,12 @@ public static class QualifierInvariants
     {
         if (!source.HasSuperleague || !source.IsComplete)
         {
-            throw new InvalidOperationException("Qualifier requires a completed source season with a Superleague.");
+            throw new SaveCorruptionException("Qualifier requires a completed source season with a Superleague.");
         }
 
         if (next.SeasonNumber != source.SeasonNumber + 1 || !next.HasSuperleague || next.IsComplete)
         {
-            throw new InvalidOperationException("Qualifier next season must be the consecutive incomplete Superleague season.");
+            throw new SaveCorruptionException("Qualifier next season must be the consecutive incomplete Superleague season.");
         }
     }
 
@@ -347,13 +348,13 @@ public static class QualifierInvariants
     {
         if (rounds.Count != rules.QualifierRounds)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must persist exactly {rules.QualifierRounds} rounds, was {rounds.Count}.");
         }
 
         if (standings.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must persist exactly {rules.QualifierSize} standings, was {standings.Count}.");
         }
     }
@@ -372,7 +373,7 @@ public static class QualifierInvariants
 
         if (!seenRounds.SetEquals(Enumerable.Range(1, rules.QualifierRounds)))
         {
-            throw new InvalidOperationException("Qualifier must cover rounds 1..16 exactly once.");
+            throw new SaveCorruptionException("Qualifier must cover rounds 1..16 exactly once.");
         }
     }
 
@@ -385,38 +386,38 @@ public static class QualifierInvariants
     {
         if (round.FromSeasonId != source.Id || round.ToSeasonId != next.Id)
         {
-            throw new InvalidOperationException($"Qualifier round {round.Id} has corrupt season linkage.");
+            throw new SaveCorruptionException($"Qualifier round {round.Id} has corrupt season linkage.");
         }
 
         if (round.RoundNumber < 1 || round.RoundNumber > rules.QualifierRounds)
         {
-            throw new InvalidOperationException($"Qualifier round number {round.RoundNumber} is out of range.");
+            throw new SaveCorruptionException($"Qualifier round number {round.RoundNumber} is out of range.");
         }
 
         if (!seenRounds.Add(round.RoundNumber))
         {
-            throw new InvalidOperationException($"Qualifier contains duplicate round {round.RoundNumber}.");
+            throw new SaveCorruptionException($"Qualifier contains duplicate round {round.RoundNumber}.");
         }
 
         if (round.RulesVersion != rules.Version)
         {
-            throw new InvalidOperationException($"Qualifier round {round.RoundNumber} has corrupt rules version.");
+            throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} has corrupt rules version.");
         }
 
         if (string.IsNullOrWhiteSpace(round.PayloadJson) || string.IsNullOrWhiteSpace(round.PayloadChecksum))
         {
-            throw new InvalidOperationException($"Qualifier round {round.RoundNumber} has an empty payload.");
+            throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} has an empty payload.");
         }
 
         QualifierRoundPayloadDocument document = QualifierRoundPayloadDocument.FromJson(round.PayloadJson);
         if (!string.Equals(document.Checksum, round.PayloadChecksum, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Qualifier round {round.RoundNumber} checksum does not match its payload.");
+            throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} checksum does not match its payload.");
         }
 
         if (document.RoundNumber != round.RoundNumber)
         {
-            throw new InvalidOperationException($"Qualifier round {round.RoundNumber} payload identity is corrupt.");
+            throw new SaveCorruptionException($"Qualifier round {round.RoundNumber} payload identity is corrupt.");
         }
     }
 
@@ -436,12 +437,12 @@ public static class QualifierInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new InvalidOperationException("Qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException("Qualifier must cover ranks 1..32 exactly once.");
         }
 
         if (qualified != rules.QualifierWinners)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.QualifierWinners} successful qualifiers, was {qualified}.");
         }
 
@@ -458,38 +459,38 @@ public static class QualifierInvariants
     {
         if (standing.FromSeasonId != source.Id || standing.ToSeasonId != next.Id)
         {
-            throw new InvalidOperationException($"Qualifier standing {standing.Id} has corrupt season linkage.");
+            throw new SaveCorruptionException($"Qualifier standing {standing.Id} has corrupt season linkage.");
         }
 
         if (standing.QualifierRank < 1 || standing.QualifierRank > rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier rank {standing.QualifierRank} is out of range.");
+            throw new SaveCorruptionException($"Qualifier rank {standing.QualifierRank} is out of range.");
         }
 
         if (!ranks.Add(standing.QualifierRank))
         {
-            throw new InvalidOperationException($"Qualifier contains duplicate rank {standing.QualifierRank}.");
+            throw new SaveCorruptionException($"Qualifier contains duplicate rank {standing.QualifierRank}.");
         }
 
         if (!athleteIds.Add(standing.SaveAthleteId))
         {
-            throw new InvalidOperationException($"Qualifier contains duplicate athlete id {standing.SaveAthleteId}.");
+            throw new SaveCorruptionException($"Qualifier contains duplicate athlete id {standing.SaveAthleteId}.");
         }
 
         bool expectedQualified = standing.QualifierRank <= rules.QualifierWinners;
         if (standing.IsQualified != expectedQualified)
         {
-            throw new InvalidOperationException($"Qualifier rank {standing.QualifierRank} has corrupt qualified flag.");
+            throw new SaveCorruptionException($"Qualifier rank {standing.QualifierRank} has corrupt qualified flag.");
         }
 
         if (!Enum.IsDefined(typeof(QualifierRole), standing.Role))
         {
-            throw new InvalidOperationException($"Qualifier standing {standing.Id} has unexpected role {standing.Role}.");
+            throw new SaveCorruptionException($"Qualifier standing {standing.Id} has unexpected role {standing.Role}.");
         }
 
         if (standing.FromLeagueId <= 0 || standing.FromSeasonRank < 1 || standing.FromSeasonRank > rules.LeagueSize)
         {
-            throw new InvalidOperationException($"Qualifier standing {standing.Id} has corrupt source provenance.");
+            throw new SaveCorruptionException($"Qualifier standing {standing.Id} has corrupt source provenance.");
         }
 
         CheckPersistedPlaceCounts(standing, rules);
@@ -501,7 +502,7 @@ public static class QualifierInvariants
         List<int>? counts = JsonSerializer.Deserialize<List<int>>(standing.RoundPlaceCountsJson);
         if (counts is null || counts.Count != rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier standing {standing.Id} has corrupt round-place counts.");
+            throw new SaveCorruptionException($"Qualifier standing {standing.Id} has corrupt round-place counts.");
         }
 
         int sum = 0;
@@ -509,7 +510,7 @@ public static class QualifierInvariants
         {
             if (count < 0)
             {
-                throw new InvalidOperationException($"Qualifier standing {standing.Id} has negative placement counts.");
+                throw new SaveCorruptionException($"Qualifier standing {standing.Id} has negative placement counts.");
             }
 
             checked
@@ -520,7 +521,7 @@ public static class QualifierInvariants
 
         if (sum != rules.QualifierRounds)
         {
-            throw new InvalidOperationException($"Qualifier standing {standing.Id} sums to {sum} rounds, expected {rules.QualifierRounds}.");
+            throw new SaveCorruptionException($"Qualifier standing {standing.Id} sums to {sum} rounds, expected {rules.QualifierRounds}.");
         }
     }
 
@@ -530,13 +531,13 @@ public static class QualifierInvariants
         int challengers = standings.Count(s => s.Role == (int)QualifierRole.Challenger);
         if (incumbents != rules.SuperleagueQualifierIncumbentCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.SuperleagueQualifierIncumbentCount} incumbents, was {incumbents}.");
         }
 
         if (challengers != rules.FeederQualifierCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier must hold exactly {rules.FeederQualifierCount} challengers, was {challengers}.");
         }
     }
@@ -562,18 +563,18 @@ public static class QualifierInvariants
     {
         if (pick.FromLeagueId != superleague.Id)
         {
-            throw new InvalidOperationException($"Qualifier incumbent {pick.SaveAthleteId} must come from the Superleague.");
+            throw new SaveCorruptionException($"Qualifier incumbent {pick.SaveAthleteId} must come from the Superleague.");
         }
 
         if (pick.FromSeasonRank < first || pick.FromSeasonRank > last)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier incumbent rank {pick.FromSeasonRank} is outside places {first}-{last}.");
         }
 
         if (pick.Role != QualifierRole.Incumbent)
         {
-            throw new InvalidOperationException($"Qualifier incumbent {pick.SaveAthleteId} has corrupt role {pick.Role}.");
+            throw new SaveCorruptionException($"Qualifier incumbent {pick.SaveAthleteId} has corrupt role {pick.Role}.");
         }
     }
 
@@ -592,7 +593,7 @@ public static class QualifierInvariants
         {
             if (!challengersPerLeague.TryGetValue(league.Id, out int count) || count != 3)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contribute exactly three qualifier challengers, was {count}.");
             }
         }
@@ -624,18 +625,18 @@ public static class QualifierInvariants
     {
         if (!feederIds.Contains(pick.FromLeagueId))
         {
-            throw new InvalidOperationException($"Qualifier challenger {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
+            throw new SaveCorruptionException($"Qualifier challenger {pick.SaveAthleteId} references unknown league {pick.FromLeagueId}.");
         }
 
         if (pick.FromSeasonRank is < 2 or > 4)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Qualifier challenger rank {pick.FromSeasonRank} is outside places 2-4.");
         }
 
         if (pick.Role != QualifierRole.Challenger)
         {
-            throw new InvalidOperationException($"Qualifier challenger {pick.SaveAthleteId} has corrupt role {pick.Role}.");
+            throw new SaveCorruptionException($"Qualifier challenger {pick.SaveAthleteId} has corrupt role {pick.Role}.");
         }
     }
 
@@ -676,14 +677,14 @@ public static class QualifierInvariants
         bool inFeeder = feederRankByAthlete.TryGetValue(pick.SaveAthleteId, out int feederRank);
         if (inSuper == inFeeder)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {pick.SaveAthleteId} must appear in exactly one source table.");
         }
 
         int actual = inSuper ? superRank : feederRank;
         if (actual != pick.FromSeasonRank)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Athlete {pick.SaveAthleteId} rank {pick.FromSeasonRank} does not match final standing rank {actual}.");
         }
     }
@@ -700,7 +701,7 @@ public static class QualifierInvariants
 
         if (!accumulator.Positions.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new InvalidOperationException("Qualifier payload must cover positions 1..32 exactly once.");
+            throw new SaveCorruptionException("Qualifier payload must cover positions 1..32 exactly once.");
         }
 
         EnsureRankConsistency(payload);
@@ -719,27 +720,27 @@ public static class QualifierInvariants
     {
         if (entry.AthleteId <= 0)
         {
-            throw new InvalidOperationException($"Qualifier payload contains invalid athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Qualifier payload contains invalid athlete id {entry.AthleteId}.");
         }
 
         if (string.IsNullOrWhiteSpace(entry.Name))
         {
-            throw new InvalidOperationException("Qualifier payload contains an athlete with an empty name.");
+            throw new SaveCorruptionException("Qualifier payload contains an athlete with an empty name.");
         }
 
         if (!accumulator.Positions.Add(entry.Position))
         {
-            throw new InvalidOperationException($"Qualifier payload contains duplicate position {entry.Position}.");
+            throw new SaveCorruptionException($"Qualifier payload contains duplicate position {entry.Position}.");
         }
 
         if (!accumulator.AthleteIds.Add(entry.AthleteId))
         {
-            throw new InvalidOperationException($"Qualifier payload contains duplicate athlete id {entry.AthleteId}.");
+            throw new SaveCorruptionException($"Qualifier payload contains duplicate athlete id {entry.AthleteId}.");
         }
 
         if (!accumulator.Names.Add(entry.Name))
         {
-            throw new InvalidOperationException($"Qualifier payload contains duplicate athlete '{entry.Name}'.");
+            throw new SaveCorruptionException($"Qualifier payload contains duplicate athlete '{entry.Name}'.");
         }
     }
 
@@ -747,30 +748,30 @@ public static class QualifierInvariants
     {
         if (entry.Position < 1 || entry.Position > rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier payload position {entry.Position} is out of range.");
+            throw new SaveCorruptionException($"Qualifier payload position {entry.Position} is out of range.");
         }
 
         int expectedBase = rules.ScoringTable[entry.Position - 1] * RulesV1.FixedScale;
         if (entry.BaseThousandths != expectedBase)
         {
-            throw new InvalidOperationException($"Qualifier payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
+            throw new SaveCorruptionException($"Qualifier payload base points for position {entry.Position} must be {expectedBase}, was {entry.BaseThousandths}.");
         }
 
         if (entry.ActiveBonusThousandths < 0)
         {
-            throw new InvalidOperationException($"Qualifier payload active bonus for '{entry.Name}' cannot be negative.");
+            throw new SaveCorruptionException($"Qualifier payload active bonus for '{entry.Name}' cannot be negative.");
         }
 
         long expectedFinal = (long)entry.BaseThousandths * (RulesV1.BonusPercentScale + entry.ActiveBonusThousandths) / RulesV1.BonusPercentScale;
         if (entry.FinalThousandths != expectedFinal)
         {
-            throw new InvalidOperationException($"Qualifier payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
+            throw new SaveCorruptionException($"Qualifier payload final points for '{entry.Name}' must be {expectedFinal}, was {entry.FinalThousandths}.");
         }
 
         long expectedAfter = (long)entry.CumulativeBeforeThousandths + entry.FinalThousandths;
         if (entry.CumulativeAfterThousandths != expectedAfter)
         {
-            throw new InvalidOperationException($"Qualifier payload cumulative total for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Qualifier payload cumulative total for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -778,17 +779,17 @@ public static class QualifierInvariants
     {
         if (entry.RankBefore < 1 || entry.RankBefore > rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier payload rank-before for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Qualifier payload rank-before for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankAfter < 1 || entry.RankAfter > rules.QualifierSize)
         {
-            throw new InvalidOperationException($"Qualifier payload rank-after for '{entry.Name}' is out of range.");
+            throw new SaveCorruptionException($"Qualifier payload rank-after for '{entry.Name}' is out of range.");
         }
 
         if (entry.RankMovement != entry.RankBefore - entry.RankAfter)
         {
-            throw new InvalidOperationException($"Qualifier payload rank movement for '{entry.Name}' is corrupt.");
+            throw new SaveCorruptionException($"Qualifier payload rank movement for '{entry.Name}' is corrupt.");
         }
     }
 
@@ -806,7 +807,7 @@ public static class QualifierInvariants
         {
             if (byBefore[i].RankBefore != i + 1)
             {
-                throw new InvalidOperationException("Qualifier payload rank-before sequence is corrupt.");
+                throw new SaveCorruptionException("Qualifier payload rank-before sequence is corrupt.");
             }
         }
 
@@ -814,7 +815,7 @@ public static class QualifierInvariants
         {
             if (byAfter[i].RankAfter != i + 1)
             {
-                throw new InvalidOperationException("Qualifier payload rank-after sequence is corrupt.");
+                throw new SaveCorruptionException("Qualifier payload rank-after sequence is corrupt.");
             }
         }
     }
@@ -828,7 +829,7 @@ public static class QualifierInvariants
                  string.Compare(byBefore[i - 1].Name, byBefore[i].Name, StringComparison.Ordinal) < 0);
             if (!ordered)
             {
-                throw new InvalidOperationException("Qualifier payload rank-before order contradicts cumulative-before totals.");
+                throw new SaveCorruptionException("Qualifier payload rank-before order contradicts cumulative-before totals.");
             }
         }
 
@@ -839,7 +840,7 @@ public static class QualifierInvariants
                  string.Compare(byAfter[i - 1].Name, byAfter[i].Name, StringComparison.Ordinal) < 0);
             if (!ordered)
             {
-                throw new InvalidOperationException("Qualifier payload rank-after order contradicts cumulative-after totals.");
+                throw new SaveCorruptionException("Qualifier payload rank-after order contradicts cumulative-after totals.");
             }
         }
     }

@@ -1,4 +1,5 @@
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.CreateInaugural;
@@ -29,7 +30,7 @@ public static class InauguralSuperleagueInvariants
 
         if (picks.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Inaugural Superleague must select exactly {rules.SuperleagueSize} athletes, was {picks.Count}.");
         }
 
@@ -38,17 +39,17 @@ public static class InauguralSuperleagueInvariants
         {
             if (pick.SaveAthleteId <= 0)
             {
-                throw new InvalidOperationException($"Inaugural selection contains invalid athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Inaugural selection contains invalid athlete id {pick.SaveAthleteId}.");
             }
 
             if (!athleteIds.Add(pick.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Inaugural selection contains duplicate athlete id {pick.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Inaugural selection contains duplicate athlete id {pick.SaveAthleteId}.");
             }
 
             if (pick.FromSeasonRank < 1 || pick.FromSeasonRank > rules.InauguralQualifiedPerLeague)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Inaugural selection rank {pick.FromSeasonRank} is outside places 1-{rules.InauguralQualifiedPerLeague}.");
             }
         }
@@ -59,14 +60,14 @@ public static class InauguralSuperleagueInvariants
         {
             if (!perLeague.TryGetValue(league.Id, out int count) || count != rules.InauguralQualifiedPerLeague)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{league.Name}' must contribute exactly {rules.InauguralQualifiedPerLeague} athletes, was {count}.");
             }
         }
 
         if (perLeague.Count != sources.Count)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Inaugural selection must draw from exactly {sources.Count} F1 leagues, was {perLeague.Count}.");
         }
     }
@@ -99,23 +100,23 @@ public static class InauguralSuperleagueInvariants
 
         if (seasonTwo.SeasonNumber != 2 || !seasonTwo.HasSuperleague || seasonTwo.IsComplete)
         {
-            throw new InvalidOperationException("Season 2 must exist with HasSuperleague and incomplete.");
+            throw new SaveCorruptionException("Season 2 must exist with HasSuperleague and incomplete.");
         }
 
         if (superleague.SeasonId != seasonTwo.Id || superleague.Kind != (int)LeagueKind.Superleague)
         {
-            throw new InvalidOperationException("Inaugural Superleague league row is corrupt.");
+            throw new SaveCorruptionException("Inaugural Superleague league row is corrupt.");
         }
 
         if (seasonTwoFeeders.Count != rules.Season1FeederLeagueCount)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 2 must have exactly {rules.Season1FeederLeagueCount} feeder leagues, was {seasonTwoFeeders.Count}.");
         }
 
         if (seasonOneMemberships.Count != rules.TotalAthletesInSave || seasonTwoMemberships.Count != rules.TotalAthletesInSave)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Each season must carry exactly {rules.TotalAthletesInSave} memberships.");
         }
 
@@ -138,7 +139,7 @@ public static class InauguralSuperleagueInvariants
 
             if (!active.Add(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues in Season 2.");
             }
         }
@@ -152,7 +153,7 @@ public static class InauguralSuperleagueInvariants
         int count = seasonTwoMemberships.Count(m => m.LeagueId == superleague.Id);
         if (count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Superleague must contain exactly {rules.SuperleagueSize} athletes, was {count}.");
         }
     }
@@ -193,7 +194,7 @@ public static class InauguralSuperleagueInvariants
             int expected = ExpectedRetention(feeder, rules, tiered);
             if (retained != expected)
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"League '{feeder.Name}' must retain exactly {expected} athletes pending rebalancing, was {retained}.");
             }
         }
@@ -231,13 +232,13 @@ public static class InauguralSuperleagueInvariants
 
             if (promoted.Contains(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Athlete {membership.SaveAthleteId} is active in two leagues in Season 2.");
             }
 
             if (!seasonOneLeagueByAthlete.ContainsKey(membership.SaveAthleteId))
             {
-                throw new InvalidOperationException(
+                throw new SaveCorruptionException(
                     $"Season 2 feeder member {membership.SaveAthleteId} was not active in Season 1; pool fills are reserved for rebalancing.");
             }
 
@@ -258,7 +259,7 @@ public static class InauguralSuperleagueInvariants
         LeagueEntity? expectedSingle = seasonTwoFeeders.SingleOrDefault(l => l.SportingColor == membership.SportingColor);
         if (expectedSingle is null || expectedSingle.Id != membership.LeagueId)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 2 feeder member {membership.SaveAthleteId} is in the wrong color league.");
         }
     }
@@ -272,7 +273,7 @@ public static class InauguralSuperleagueInvariants
         SeasonMembershipEntity? source = seasonOneMemberships.SingleOrDefault(m => m.SaveAthleteId == membership.SaveAthleteId);
         if (source?.LeagueId is null)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 2 feeder member {membership.SaveAthleteId} was not active in Season 1; pool fills are reserved for rebalancing.");
         }
 
@@ -286,7 +287,7 @@ public static class InauguralSuperleagueInvariants
         if (!feederByColorDivision.TryGetValue((membership.SportingColor, sourceDivision), out LeagueEntity? expectedFeeder)
             || expectedFeeder.Id != membership.LeagueId)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Season 2 feeder member {membership.SaveAthleteId} is in the wrong color/division league.");
         }
     }
@@ -305,7 +306,7 @@ public static class InauguralSuperleagueInvariants
             .ToHashSet();
         if (!poolOne.SetEquals(poolTwo))
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 "Season 2 pool must be identical to Season 1 pool; feeder vacancies fill only in rebalancing.");
         }
     }
@@ -319,7 +320,7 @@ public static class InauguralSuperleagueInvariants
     {
         if (movements.Count != rules.SuperleagueSize)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Inaugural movement must persist exactly {rules.SuperleagueSize} records, was {movements.Count}.");
         }
 
@@ -328,27 +329,27 @@ public static class InauguralSuperleagueInvariants
         {
             if (movement.Kind != (int)MovementKind.InauguralPromotion)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has unexpected kind {movement.Kind}.");
             }
 
             if (movement.FromSeasonId != seasonOne.Id || movement.ToSeasonId != seasonTwo.Id)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has corrupt season linkage.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has corrupt season linkage.");
             }
 
             if (movement.ToLeagueId != superleague.Id)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} must target the Superleague.");
+                throw new SaveCorruptionException($"Movement {movement.Id} must target the Superleague.");
             }
 
             if (movement.FromSeasonRank < 1 || movement.FromSeasonRank > rules.InauguralQualifiedPerLeague)
             {
-                throw new InvalidOperationException($"Movement {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
+                throw new SaveCorruptionException($"Movement {movement.Id} has corrupt source rank {movement.FromSeasonRank}.");
             }
 
             if (!athleteIds.Add(movement.SaveAthleteId))
             {
-                throw new InvalidOperationException($"Movement contains duplicate athlete id {movement.SaveAthleteId}.");
+                throw new SaveCorruptionException($"Movement contains duplicate athlete id {movement.SaveAthleteId}.");
             }
         }
     }

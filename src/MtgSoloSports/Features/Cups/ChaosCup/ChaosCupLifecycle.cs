@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Rules;
 
@@ -136,12 +137,12 @@ public static class ChaosCupLifecycle
         ArgumentNullException.ThrowIfNull(activation);
         if (activation.EffectiveFromSeasonNumber < 1)
         {
-            throw new InvalidOperationException("Chaos activation effective season must be positive.");
+            throw new SaveCorruptionException("Chaos activation effective season must be positive.");
         }
 
         if (activation.ChaosFormatVersion != ChaosCupFormat.ChaosFormatVersion)
         {
-            throw new InvalidOperationException(
+            throw new SaveCorruptionException(
                 $"Chaos activation format version must be {ChaosCupFormat.ChaosFormatVersion}, was {activation.ChaosFormatVersion}.");
         }
     }
@@ -152,13 +153,15 @@ public static class ChaosCupLifecycle
         ArgumentNullException.ThrowIfNull(context);
         // Pre-migration saves lack the table until EnsureMigrated runs; callers always run
         // EnsureMigrated first, so a missing row here means a legacy save needing backfill.
+        // Only the exact missing-table condition is a legacy signal; a missing-column
+        // defect on a migrated save propagates loudly as a schema failure.
         try
         {
             return await EnsureActivationAsync(context, cancellationToken).ConfigureAwait(false);
         }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (SqliteSchemaErrors.IsMissingTable(ex, "ChaosCupActivations"))
         {
-            throw new InvalidOperationException("Save schema predates Chaos activation; migrate the save first.", ex);
+            throw new SavePredatesChaosActivationException("Save schema predates Chaos activation; migrate the save first.", ex);
         }
     }
 
@@ -222,7 +225,7 @@ public static class ChaosCupLifecycle
         ChaosState state = await LoadStateAsync(context, source, rules, cancellationToken).ConfigureAwait(false);
         if (!state.Complete)
         {
-            throw new InvalidOperationException(
+            throw new ChaosCupIncompleteException(
                 $"Chaos Cup for Season {source.SeasonNumber} must be complete before promotion movement (selection {state.SelectionResolved}, complete {state.Complete}).");
         }
     }
