@@ -22,13 +22,6 @@ import {
 import type { RebalanceResult } from './rebalanceApi';
 import './RebalanceReveal.css';
 
-function detectReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 function TileArt({ step }: { step: RebalanceStep }) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = step.imageUrl;

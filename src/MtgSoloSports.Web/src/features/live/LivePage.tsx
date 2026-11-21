@@ -9,7 +9,7 @@ import {
 import type { SeasonProgress } from '../dashboard/dashboardApi';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { AthleteLink, Link } from '../routing/router';
-import { savesPath, dashboardPath, leaguePath, standingsLeaguePath, standingsPath } from '../routing/routes';
+import { savesPath, dashboardPath, standingsLeaguePath, standingsPath } from '../routing/routes';
 import { leagueKeyFor } from '../leagues/leagueKeys';
 import { LeagueLink } from '../leagues/LeagueLink';
 import { ColorTeamLink } from '../cups/ColorTeamLink';
@@ -573,7 +573,6 @@ export function LivePage({
           <>
             {(() => {
               const kind = league?.leagueKind ?? 'Feeder';
-              const level = league?.leagueLevel ?? null;
               const composition =
                 kind === 'Superleague' ? colorComposition(standings.standings) : [];
               return composition.length > 0 ? (

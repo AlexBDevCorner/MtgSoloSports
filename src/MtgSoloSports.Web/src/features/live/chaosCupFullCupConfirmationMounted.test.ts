@@ -208,11 +208,6 @@ async function flush(rounds = 14): Promise<void> {
   }
 }
 
-function renderedText(renderer: ReturnType<typeof create> | null): string {
-  assert.ok(renderer);
-  return JSON.stringify((renderer as unknown as { toJSON: () => unknown }).toJSON());
-}
-
 interface TestButton {
   props: Record<string, unknown>;
 }
