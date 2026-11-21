@@ -45,6 +45,7 @@ export function DrivePublishingCard({ saveId }: { saveId: string }) {
   const [libraryResult, setLibraryResult] = useState<DriveLibrarySyncResponse | null>(null);
   const [verifyResult, setVerifyResult] = useState<DriveVerifyResponse | null>(null);
   const destination = useDriveDestinationForm();
+  const applyDestinationStatus = destination.applyStatus;
   const adoptions = useDriveAdoptions();
 
   useEffect(() => {
@@ -69,7 +70,7 @@ export function DrivePublishingCard({ saveId }: { saveId: string }) {
           return;
         }
         setDriveStatus(status.saveId === saveId ? status : null);
-        destination.applyStatus(status);
+        applyDestinationStatus(status);
         setDriveLoading(false);
       })
       .catch((failure: unknown) => {
@@ -80,7 +81,10 @@ export function DrivePublishingCard({ saveId }: { saveId: string }) {
         setDriveLoading(false);
       });
     return () => controller.abort();
-  }, [saveId, destination.applyStatus]);
+    // applyDestinationStatus is the stable useCallback from
+    // useDriveDestinationForm; keying on it (not the per-render destination
+    // object) keeps this effect on the save identity alone.
+  }, [saveId, applyDestinationStatus]);
 
   async function refreshDriveStatus(): Promise<void> {
     try {

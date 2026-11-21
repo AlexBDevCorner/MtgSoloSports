@@ -202,6 +202,9 @@ export function AthleteSearchPage({
     return () => {
       controller.abort();
     };
+    // requestKey is the canonical serialized params: it changes exactly when
+    // the request changes, so the fetch stays keyed without re-running on
+    // params object identity.
   }, [saveId, requestKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function update(next: AthleteSearchParams, resetPage = true): void {

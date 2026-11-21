@@ -28,10 +28,6 @@ export function removeLastSelectedSave(): void {
   }
 }
 
-export function getCurrentRoute(): Route {
-  return parseRoute(window.location.pathname, window.location.search);
-}
-
 /**
  * MSS-124 Dashboard stage-completion interaction guard. While a stage
  * calculation and its authoritative refresh are pending, in-app SPA
@@ -78,11 +74,22 @@ function getLocationSnapshot(): string {
  * Current route, derived from the browser location. Backed by
  * `useSyncExternalStore` so a `navigate()` fired by a child effect before this
  * hook's subscription is attached (child effects run first) is still picked
- * up: React re-reads the snapshot after subscribing.
+ * up: React re-reads the snapshot after subscribing. The memo is a pure
+ * function of the location snapshot (MSS-156: it previously re-read
+ * window.location, so the rule rightly called the location dep unused) and
+ * keeps one stable route identity per location.
  */
 export function useBrowserRoute(): Route {
   const location = useSyncExternalStore(subscribeToLocation, getLocationSnapshot);
-  return useMemo(() => getCurrentRoute(), [location]);
+  return useMemo(() => {
+    // The snapshot is pathname + search, and '?' terminates a URL path, so
+    // splitting at the first '?' recovers the two parseRoute inputs.
+    const queryAt = location.indexOf('?');
+    return parseRoute(
+      queryAt === -1 ? location : location.slice(0, queryAt),
+      queryAt === -1 ? '' : location.slice(queryAt),
+    );
+  }, [location]);
 }
 
 export function useNavigate(): (to: string, options?: { replace?: boolean }) => void {
