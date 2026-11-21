@@ -70,6 +70,12 @@ jobs:
         run: npm run test --prefix src/MtgSoloSports.Web
       - name: Typecheck frontend
         run: npm run typecheck --prefix src/MtgSoloSports.Web
+      - name: Lint frontend
+        # MSS-156: pinned ESLint gate (TypeScript recommended plus React
+        # hooks rules). Zero-warning baseline: findings fail the job, and
+        # stale eslint-disable suppressions are reported as errors so no
+        # suppression survives unenforced.
+        run: npm run lint --prefix src/MtgSoloSports.Web
       - name: Build frontend
         run: npm run build --prefix src/MtgSoloSports.Web
       - name: Check exact-case paths and imports

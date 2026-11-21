@@ -54,6 +54,7 @@ dotnet test MtgSoloSports.slnx --configuration Release --no-build --no-restore
 dotnet format MtgSoloSports.slnx --verify-no-changes --no-restore
 npm ci --prefix src/MtgSoloSports.Web
 npm run typecheck --prefix src/MtgSoloSports.Web
+npm run lint --prefix src/MtgSoloSports.Web
 npm run build --prefix src/MtgSoloSports.Web
 ```
 
