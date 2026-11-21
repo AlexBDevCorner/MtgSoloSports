@@ -118,13 +118,20 @@ export function HistoryEventView({
   }, [saveId, season, event, team, isTypeTournamentHistory, isIndividualHistory]);
 
   const isTypeCup = event === 'type-cup-team';
-  const urlStage =
-    urlTournamentPhase !== null &&
-    urlTournamentPhase !== undefined &&
-    urlQualificationGroup !== null &&
-    urlQualificationGroup !== undefined
-      ? { tournamentPhase: urlTournamentPhase, qualificationGroup: urlQualificationGroup }
-      : null;
+  // Memoized so the fetch effect below can depend on the stage identity
+  // (MSS-156): a fresh object per render would re-run the fetch on every
+  // render, while the previous unmemoized literal never appeared in its
+  // dependencies, leaving the effect on a stale URL stage.
+  const urlStage = useMemo(
+    () =>
+      urlTournamentPhase !== null &&
+      urlTournamentPhase !== undefined &&
+      urlQualificationGroup !== null &&
+      urlQualificationGroup !== undefined
+        ? { tournamentPhase: urlTournamentPhase, qualificationGroup: urlQualificationGroup }
+        : null,
+    [urlTournamentPhase, urlQualificationGroup],
+  );
 
   const selected: PlayedRound | null = useMemo(() => {
     if (!rounds || rounds.length === 0) {
@@ -169,9 +176,7 @@ export function HistoryEventView({
       }
     }
     return rounds[rounds.length - 1]!;
-    // urlStage is derived from urlTournamentPhase/urlQualificationGroup.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rounds, urlRound, urlGroup, team, isTypeCup, urlTournamentPhase, urlQualificationGroup]);
+  }, [rounds, urlRound, urlGroup, team, isTypeCup, urlStage]);
 
   useEffect(() => {
     if (!selected) {
@@ -200,7 +205,7 @@ export function HistoryEventView({
         }
       });
     return () => controller.abort();
-  }, [saveId, season, event, selected]);
+  }, [saveId, season, event, selected, urlStage]);
 
   if (rounds === null) {
     return <Loading label="Loading event…" />;
