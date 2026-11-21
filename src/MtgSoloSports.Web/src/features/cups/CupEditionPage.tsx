@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { cupEditionReportUrl, downloadReport } from '../reports/reportApi';
@@ -187,7 +187,6 @@ function ColorTypeEditionPage({
     );
   const champion = team?.teams.find((entry) => entry.teamRank === 1) ?? null;
   const championSquad = champion ? squads.find((entry) => entry.teamKey === champion.teamKey) : undefined;
-  const individualPodium = individual ? individual.standings.filter((row) => row.cupRank <= 3) : [];
 
   return (
     <div className="dashboard">

@@ -367,7 +367,6 @@ function HallOfFameView({
   fame,
   fameLoading,
   fameError,
-  period,
   reconciled,
   seasons,
   periodInvalid,
@@ -377,7 +376,6 @@ function HallOfFameView({
   fame: HallOfFame | null;
   fameLoading: boolean;
   fameError: string | null;
-  period: PeriodSelection;
   reconciled: PeriodSelection;
   seasons: number[];
   periodInvalid: boolean;
@@ -960,6 +958,8 @@ export function RecordsPage({ saveId, urlView }: { saveId: string; urlView: Reco
     return () => {
       controller.abort();
     };
+    // periodInvalid derives from the same query bounds already listed, so it
+    // cannot flip without a listed dependency changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveId, needFame, query.fromSeason, query.toSeason]);
 
@@ -995,7 +995,6 @@ export function RecordsPage({ saveId, urlView }: { saveId: string; urlView: Reco
           fame={fame}
           fameLoading={fameLoading}
           fameError={fameError}
-          period={period}
           reconciled={reconciled}
           seasons={seasons}
           periodInvalid={periodInvalid}

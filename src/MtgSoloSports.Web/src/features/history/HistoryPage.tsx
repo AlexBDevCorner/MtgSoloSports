@@ -35,7 +35,7 @@ import { groupLeaguesByTier } from '../../shared/leagueTiers';
 import { RoundReveal } from '../reveal/RoundReveal';
 import { HistoryEventView } from './HistoryEventView';
 import { AthleteLink, Link } from '../routing/router';
-import { cupsPath, leaguePath, qualifiersPath, savesPath, standingsLeaguePath } from '../routing/routes';
+import { cupsPath, qualifiersPath, savesPath, standingsLeaguePath } from '../routing/routes';
 import { leagueKeyFor } from '../leagues/leagueKeys';
 import { LeagueLink } from '../leagues/LeagueLink';
 import { TeamBadge } from '../cups/TeamBadge';
@@ -83,28 +83,27 @@ export function HistoryPage({
   const [stageNumber, setStageNumber] = useState<number | null>(urlStage);
   const [roundNumber, setRoundNumber] = useState<number | null>(urlRound);
 
-  // Sync Back/Forward navigation of the shareable query into local selection.
+  // Sync Back/Forward navigation of the shareable query into local selection;
+  // saveId is a deliberate extra key so a save switch re-syncs from the URL.
   useEffect(() => {
     setSeasonNumber(urlSeason);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlSeason, saveId]);
   useEffect(() => {
     setLeagueId(urlCompetition);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlCompetition, saveId]);
   useEffect(() => {
     setStageNumber(urlStage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlStage, saveId]);
   useEffect(() => {
     setRoundNumber(urlRound);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlRound, saveId]);
 
   const seasonsState = useSaveData<HistorySeasons>(saveId, (signal) =>
     fetchHistorySeasons(saveId as string, signal),
   );
-  const seasons = seasonsState.data?.seasons ?? [];
+  // Memoized so the fallback `[]` keeps one identity across renders and the
+  // selection-sync effects below do not re-run on every render (MSS-156).
+  const seasons = useMemo(() => seasonsState.data?.seasons ?? [], [seasonsState.data]);
 
   useEffect(() => {
     if (seasons.length === 0) {
@@ -127,7 +126,7 @@ export function HistoryPage({
   const competitionsState = useSaveData<HistoryCompetitions>(competitionsKey, (signal) =>
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
-  const competitions = competitionsState.data?.competitions ?? [];
+  const competitions = useMemo(() => competitionsState.data?.competitions ?? [], [competitionsState.data]);
   const eventsState = useSaveData<SeasonEventSummary[]>(
     competitionsKey ? `${competitionsKey}/events` : null,
     (signal) => fetchSeasonEvents(saveId as string, seasonNumber as number, signal),
@@ -159,7 +158,7 @@ export function HistoryPage({
   const stagesState = useSaveData<HistoryStages>(stagesKey, (signal) =>
     fetchHistoryStages(saveId as string, seasonNumber as number, leagueId as number, signal),
   );
-  const stages = stagesState.data?.stages ?? [];
+  const stages = useMemo(() => stagesState.data?.stages ?? [], [stagesState.data]);
 
   useEffect(() => {
     if (stages.length === 0) {
@@ -189,7 +188,7 @@ export function HistoryPage({
       signal,
     ),
   );
-  const roundSummaries = roundsState.data?.rounds ?? [];
+  const roundSummaries = useMemo(() => roundsState.data?.rounds ?? [], [roundsState.data]);
 
   useEffect(() => {
     if (roundSummaries.length === 0) {

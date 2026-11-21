@@ -420,7 +420,7 @@ export function mergeLibraryAdoptionEntry(
     throw new Error('Picked file id is empty.');
   }
   const trimmedName = typeof fileName === 'string' && fileName.trim() !== '' ? fileName.trim() : null;
-  let current: Record<string, DriveLibraryAdoptionInput> = {};
+  const current: Record<string, DriveLibraryAdoptionInput> = {};
   const rawTrimmed = raw.trim();
   if (rawTrimmed !== '') {
     let parsed: unknown;

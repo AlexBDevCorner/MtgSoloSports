@@ -14,13 +14,6 @@ import {
 } from './movementModel';
 import './MovementReveal.css';
 
-function detectReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
 function TileArt({ step }: { step: MovementStep }) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = step.imageUrl;

@@ -4,7 +4,6 @@ import { AthleteLink, Link } from '../routing/router';
 import { historyPath, livePath, type CupKind } from '../routing/routes';
 import { teamEventKey } from './cupFormat';
 import { CupPodium } from './CupPodium';
-import { CardArt } from './SquadTiles';
 import { TeamBadge, TeamMark } from './TeamBadge';
 import { medalBadge } from './cupFormat';
 import type {
@@ -296,7 +295,7 @@ function QualificationResultCard({
         </Link>
       </p>
       {showLegs ? (
-        <QualificationLegs saveId={saveId} cup={cup} group={group} groupCount={groupCount} season={season} />
+        <QualificationLegs saveId={saveId} cup={cup} group={group} />
       ) : null}
     </Card>
   );
@@ -364,14 +363,10 @@ function QualificationLegs({
   saveId,
   cup,
   group,
-  groupCount,
-  season,
 }: {
   saveId: string;
   cup: CupKind;
   group: TypeCupTournamentQualificationGroup;
-  groupCount: number;
-  season: number;
 }) {
   const letter = qualificationGroupLetter(group.qualificationGroup);
   const byRank = legsByRankGroup(group.legs);
@@ -397,7 +392,7 @@ function QualificationLegs({
             </thead>
             <tbody>
               {rank.legs.map((leg) => (
-                <LegRow key={leg.saveAthleteId} saveId={saveId} cup={cup} leg={leg} season={season} />
+                <LegRow key={leg.saveAthleteId} saveId={saveId} cup={cup} leg={leg} />
               ))}
             </tbody>
           </table>
@@ -416,12 +411,10 @@ function LegRow({
   saveId,
   cup,
   leg,
-  season,
 }: {
   saveId: string;
   cup: CupKind;
   leg: TypeCupTournamentLeg;
-  season: number;
 }) {
   return (
     <tr>
@@ -570,7 +563,7 @@ function FinalSection({
                   </thead>
                   <tbody>
                     {rank.legs.map((leg) => (
-                      <LegRow key={leg.saveAthleteId} saveId={saveId} cup={cup} leg={leg} season={season} />
+                      <LegRow key={leg.saveAthleteId} saveId={saveId} cup={cup} leg={leg} />
                     ))}
                   </tbody>
                 </table>

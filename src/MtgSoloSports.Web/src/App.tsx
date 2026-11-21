@@ -111,6 +111,10 @@ export default function App() {
     }
   }, [routeSaveId]);
 
+  // localStorage is external state with no storage-event subscription by
+  // design; route is the deliberate re-read key, refreshing the entry
+  // fallback only when navigation happens (tabs never redirect each other).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const lastSelected = useMemo(() => readLastSelectedSave(), [route]);
   const dashboardSaveId = routeSaveId;
   const dashboard = useDashboard(dashboardSaveId);

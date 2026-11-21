@@ -283,7 +283,7 @@ describe('MSS-145 safe save deletion', () => {
       return Promise.resolve(errJson(404, 'not found'));
     };
 
-    let holder: { state: SavesState | null } = { state: null };
+    const holder: { state: SavesState | null } = { state: null };
     function HookProbe(): React.ReactElement {
       const state = useSaves();
       holder.state = state;
@@ -348,7 +348,7 @@ describe('MSS-145 safe save deletion', () => {
       return Promise.resolve(errJson(404, 'not found'));
     };
 
-    let holder: { state: SavesState | null } = { state: null };
+    const holder: { state: SavesState | null } = { state: null };
     function HookProbe(): React.ReactElement {
       const state = useSaves();
       holder.state = state;

@@ -151,13 +151,16 @@ export function StandingsPage({
     fetchHistorySeasons(saveId as string, signal),
   );
   // MSS-084: ignore stale seasons from the previous save while reloading.
-  const seasonsRaw = seasonsState.data?.seasons ?? [];
-  const seasons =
-    seasonsState.data !== null &&
-    seasonsState.data !== undefined &&
-    seasonsState.data.saveId === saveId
-      ? seasonsRaw
+  // Memoized so the guarded fallback keeps one identity across renders and
+  // the selection-sync effect below does not re-run on every render (MSS-156).
+  const seasons = useMemo(() => {
+    const raw = seasonsState.data?.seasons ?? [];
+    return seasonsState.data !== null &&
+      seasonsState.data !== undefined &&
+      seasonsState.data.saveId === saveId
+      ? raw
       : [];
+  }, [seasonsState.data, saveId]);
   const latestSeason = seasons.length > 0 ? seasons[seasons.length - 1]!.seasonNumber : null;
 
   const explicitSeasonInvalid =
@@ -284,6 +287,8 @@ export function StandingsPage({
       setLeagueId(fallback);
       pushSelection({ league: fallback, season: urlSeason, view }, { replace: true });
     }
+    // view/pushSelection only shape this one-shot corrective replace; the
+    // pending marker is consumed on first use, so re-running on them is wrong.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [competitions, urlSeason, urlLeagueId]);
 
@@ -398,13 +403,18 @@ export function StandingsPage({
             row.leagueLevel === 'Feeder3',
         )
       : null;
-  const zoneContext: ZoneContext = {
-    leagueKind,
-    leagueLevel,
-    feederDivision: leagueDivision,
-    seasonNumber: zoneSeasonNumber,
-    hasTieredPyramid: zoneHasTieredPyramid,
-  };
+  // Memoized so the zone-dependent memos below keep stable dependencies
+  // instead of re-running on every render (MSS-156).
+  const zoneContext: ZoneContext = useMemo(
+    () => ({
+      leagueKind,
+      leagueLevel,
+      feederDivision: leagueDivision,
+      seasonNumber: zoneSeasonNumber,
+      hasTieredPyramid: zoneHasTieredPyramid,
+    }),
+    [leagueKind, leagueLevel, leagueDivision, zoneSeasonNumber, zoneHasTieredPyramid],
+  );
   // MSS-085: deep link to the league's dedicated historical profile, derived
   // from backend tier identity (never parsed names). Null until competitions
   // load, so no fabricated URL ever renders.
