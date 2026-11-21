@@ -227,7 +227,7 @@ public static class QualifierInvariants
 
         if (!accumulator.Ranks.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new SaveCorruptionException("Completed qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"Completed qualifier must cover ranks 1..{rules.QualifierSize} exactly once.");
         }
     }
 
@@ -305,7 +305,7 @@ public static class QualifierInvariants
     {
         if (entry.RoundPlaceCounts.Count != rules.QualifierSize)
         {
-            throw new SaveCorruptionException($"Completed qualifier round-place counts for '{entry.Name}' must cover 32 positions.");
+            throw new SaveCorruptionException($"Completed qualifier round-place counts for '{entry.Name}' must cover {rules.QualifierSize} positions.");
         }
 
         int sum = 0;
@@ -374,7 +374,7 @@ public static class QualifierInvariants
 
         if (!seenRounds.SetEquals(Enumerable.Range(1, rules.QualifierRounds)))
         {
-            throw new SaveCorruptionException("Qualifier must cover rounds 1..16 exactly once.");
+            throw new SaveCorruptionException($"Qualifier must cover rounds 1..{rules.QualifierRounds} exactly once.");
         }
     }
 
@@ -438,7 +438,7 @@ public static class QualifierInvariants
 
         if (!ranks.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new SaveCorruptionException("Qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"Qualifier must cover ranks 1..{rules.QualifierSize} exactly once.");
         }
 
         if (qualified != rules.QualifierWinners)
@@ -702,7 +702,7 @@ public static class QualifierInvariants
 
         if (!accumulator.Positions.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new SaveCorruptionException("Qualifier payload must cover positions 1..32 exactly once.");
+            throw new SaveCorruptionException($"Qualifier payload must cover positions 1..{rules.QualifierSize} exactly once.");
         }
 
         EnsureRankConsistency(payload);

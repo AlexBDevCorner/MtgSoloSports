@@ -7,6 +7,7 @@ using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.SimulationKernel.Stages;
 
 namespace MtgSoloSports.Features.Superleague.GetQualifierResult;
@@ -128,9 +129,11 @@ public sealed class GetQualifierResultHandler
         SeasonEntity next,
         CancellationToken cancellationToken)
     {
+        RulesV1 rules = await Features.Simulation.AdvanceRound.AdvanceRoundHandler
+            .LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         List<QualifierStandingEntity> standings = await LoadStandingsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         List<QualifierRoundEntity> rounds = await LoadRoundsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
-        ValidateQualifier(standings, rounds);
+        ValidateQualifier(standings, rounds, rules);
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, LeagueEntity> leaguesById = await LoadLeaguesAsync(context, cancellationToken).ConfigureAwait(false);
         List<QualifierStandingMember> members = MapMembers(standings, names, leaguesById);
@@ -248,37 +251,40 @@ public sealed class GetQualifierResultHandler
             rounds.Count);
     }
 
-    internal static void ValidateQualifier(List<QualifierStandingEntity> standings, List<QualifierRoundEntity> rounds)
+    internal static void ValidateQualifier(List<QualifierStandingEntity> standings, List<QualifierRoundEntity> rounds, RulesV1 rules)
     {
-        if (standings.Count != 32)
+        ArgumentNullException.ThrowIfNull(standings);
+        ArgumentNullException.ThrowIfNull(rounds);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (standings.Count != rules.QualifierSize)
         {
             throw new SaveCorruptionException(
-                $"Qualifier must hold exactly 32 standings, was {standings.Count}.");
+                $"Qualifier must hold exactly {rules.QualifierSize} standings, was {standings.Count}.");
         }
 
-        if (rounds.Count != 16)
+        if (rounds.Count != rules.QualifierRounds)
         {
             throw new SaveCorruptionException(
-                $"Qualifier must hold exactly 16 rounds, was {rounds.Count}.");
+                $"Qualifier must hold exactly {rules.QualifierRounds} rounds, was {rounds.Count}.");
         }
 
         int qualified = standings.Count(s => s.IsQualified);
-        if (qualified != 8)
+        if (qualified != rules.QualifierWinners)
         {
             throw new SaveCorruptionException(
-                $"Qualifier must hold exactly 8 successful qualifiers, was {qualified}.");
+                $"Qualifier must hold exactly {rules.QualifierWinners} successful qualifiers, was {qualified}.");
         }
 
         HashSet<int> ranks = standings.Select(s => s.QualifierRank).ToHashSet();
-        if (!ranks.SetEquals(Enumerable.Range(1, 32)))
+        if (!ranks.SetEquals(Enumerable.Range(1, rules.QualifierSize)))
         {
-            throw new SaveCorruptionException("Qualifier must cover ranks 1..32 exactly once.");
+            throw new SaveCorruptionException($"Qualifier must cover ranks 1..{rules.QualifierSize} exactly once.");
         }
 
         HashSet<int> roundNumbers = rounds.Select(r => r.RoundNumber).ToHashSet();
-        if (!roundNumbers.SetEquals(Enumerable.Range(1, 16)))
+        if (!roundNumbers.SetEquals(Enumerable.Range(1, rules.QualifierRounds)))
         {
-            throw new SaveCorruptionException("Qualifier must cover rounds 1..16 exactly once.");
+            throw new SaveCorruptionException($"Qualifier must cover rounds 1..{rules.QualifierRounds} exactly once.");
         }
     }
 

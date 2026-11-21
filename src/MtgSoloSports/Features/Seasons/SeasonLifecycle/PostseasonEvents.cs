@@ -110,9 +110,8 @@ public static class PostseasonEvents
             return new EventShape(1, rules.QualifierRounds);
         }
 
-        int totalRounds = rules.QualifierRounds
-            + (8 * rules.FeederQualifierRounds)
-            + (8 * rules.FeederQualifierRounds);
+        int feederEvents = rules.OrdinaryQualifierEventCount - 1;
+        int totalRounds = rules.QualifierRounds + (feederEvents * rules.FeederQualifierRounds);
         return new EventShape(1, totalRounds);
     }
 

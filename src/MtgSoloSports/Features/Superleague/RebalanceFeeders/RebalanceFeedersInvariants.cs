@@ -159,7 +159,7 @@ public static class RebalanceFeedersInvariants
         if (f1Final != rules.LeagueSize || f2Final != rules.LeagueSize || f3Final != rules.LeagueSize)
         {
             throw new SaveCorruptionException(
-                $"League {colorPlan.Color} cascade must restore 32/32/32, was {f1Final}/{f2Final}/{f3Final}.");
+                $"League {colorPlan.Color} cascade must restore {rules.LeagueSize}/{rules.LeagueSize}/{rules.LeagueSize}, was {f1Final}/{f2Final}/{f3Final}.");
         }
 
         CheckTierDraws(colorPlan, input);

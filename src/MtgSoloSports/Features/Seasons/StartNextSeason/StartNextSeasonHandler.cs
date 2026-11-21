@@ -364,8 +364,9 @@ public sealed class StartNextSeasonHandler
             return (rules.QualifierSize, rules.QualifierRounds);
         }
 
-        int standings = rules.QualifierSize + (8 * rules.FeederQualifierSize) + (8 * rules.FeederQualifierSize);
-        int rounds = rules.QualifierRounds + (8 * rules.FeederQualifierRounds) + (8 * rules.FeederQualifierRounds);
+        int feederEvents = rules.OrdinaryQualifierEventCount - 1;
+        int standings = rules.QualifierSize + (feederEvents * rules.FeederQualifierSize);
+        int rounds = rules.QualifierRounds + (feederEvents * rules.FeederQualifierRounds);
         return (standings, rounds);
     }
 
@@ -508,7 +509,6 @@ public sealed class StartNextSeasonHandler
         CancellationToken cancellationToken)
     {
         using SaveDbContext context = store.OpenDbContext(saveId);
-        SaveMetadataEntity metadata = await context.SaveMetadata.AsNoTracking().SingleAsync(e => e.Id == 1, cancellationToken).ConfigureAwait(false);
         List<LeagueEntity> leagues = await context.Leagues.AsNoTracking()
             .Where(e => e.SeasonId == next.Id)
             .OrderBy(e => e.Kind)
@@ -535,7 +535,6 @@ public sealed class StartNextSeasonHandler
             e => e.SeasonId == next.Id && e.LeagueId == null, cancellationToken).ConfigureAwait(false);
         int movements = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id, cancellationToken).ConfigureAwait(false);
-        _ = metadata;
 
         return new StartNextSeasonResponse(
             saveId,

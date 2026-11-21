@@ -331,7 +331,8 @@ public sealed class ResolveAutomaticMovementHandler
             || f2ByColor.Count != rules.RegularLeagueCount
             || f3ByColor.Count != rules.RegularLeagueCount)
         {
-            throw new SaveCorruptionException("Tiered transition must have 8 F1, 8 F2 and 8 F3 leagues.");
+            throw new SaveCorruptionException(
+                $"Tiered transition must have {rules.RegularLeagueCount} F1, {rules.RegularLeagueCount} F2 and {rules.RegularLeagueCount} F3 leagues.");
         }
 
         return FeederMovementSelection.Select(leaguesById, feederMap, f1ByColor, f2ByColor, f3ByColor, rules);
@@ -478,7 +479,10 @@ public sealed class ResolveAutomaticMovementHandler
 
     private static void CheckFeederMovementCount(List<MovementEntity> feederMovements, RulesV1 rules)
     {
-        int expectedFeeder = rules.SportingColorCount * 8 * 8;
+        int boundaries = rules.FeederDivisionsPerColor - 1;
+        int expectedFeeder = rules.SportingColorCount * boundaries
+            * (rules.FeederAutoPromotionPerColor + rules.FeederAutoRelegationPerColor
+                + rules.FeederQualifierIncumbentPerColor + rules.FeederQualifierChallengerPerColor);
         if (feederMovements.Count != expectedFeeder)
         {
             throw new SaveCorruptionException(

@@ -428,7 +428,7 @@ public static class SeasonLifecycleEvaluator
         if (inaugural != rules.SuperleagueSize)
         {
             throw new SaveCorruptionException(
-                $"Season 2 exists but the inaugural Superleague is incomplete ({inaugural}/32 promotions); corrupted sporting state.");
+                $"Season 2 exists but the inaugural Superleague is incomplete ({inaugural}/{rules.SuperleagueSize} promotions); corrupted sporting state.");
         }
 
         int rebalance = await context.Movements.CountAsync(
@@ -583,7 +583,7 @@ public static class SeasonLifecycleEvaluator
             || counts.Challengers != rules.FeederQualifierCount)
         {
             throw new SaveCorruptionException(
-                $"Season {next.SeasonNumber} exists but automatic movement is incomplete ({counts.Promotions}/8 promotions, {counts.Relegations}/8 relegations, {counts.Incumbents}/8 incumbents, {counts.Challengers}/24 challengers); corrupted sporting state.");
+                $"Season {next.SeasonNumber} exists but automatic movement is incomplete ({counts.Promotions}/{rules.FeederAutoPromotedCount} promotions, {counts.Relegations}/{rules.SuperleagueRelegatedCount} relegations, {counts.Incumbents}/{rules.SuperleagueQualifierIncumbentCount} incumbents, {counts.Challengers}/{rules.FeederQualifierCount} challengers); corrupted sporting state.");
         }
 
         if (rules.FeederDivisionsPerColor == 3)
@@ -611,11 +611,16 @@ public static class SeasonLifecycleEvaluator
         int challengers = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.FeederQualifierChallenger,
             cancellationToken).ConfigureAwait(false);
-        int expectedEach = rules.SportingColorCount * 8 * 2;
-        if (promos != expectedEach || relegations != expectedEach || incumbents != expectedEach || challengers != expectedEach)
+        int boundaries = rules.FeederDivisionsPerColor - 1;
+        int expectedPromotions = rules.SportingColorCount * boundaries * rules.FeederAutoPromotionPerColor;
+        int expectedRelegations = rules.SportingColorCount * boundaries * rules.FeederAutoRelegationPerColor;
+        int expectedIncumbents = rules.SportingColorCount * boundaries * rules.FeederQualifierIncumbentPerColor;
+        int expectedChallengers = rules.SportingColorCount * boundaries * rules.FeederQualifierChallengerPerColor;
+        if (promos != expectedPromotions || relegations != expectedRelegations
+            || incumbents != expectedIncumbents || challengers != expectedChallengers)
         {
             throw new SaveCorruptionException(
-                $"Season {next.SeasonNumber} exists but feeder automatic movement is incomplete ({promos}/{expectedEach} promotions, {relegations}/{expectedEach} relegations, {incumbents}/{expectedEach} incumbents, {challengers}/{expectedEach} challengers); corrupted sporting state.");
+                $"Season {next.SeasonNumber} exists but feeder automatic movement is incomplete ({promos}/{expectedPromotions} promotions, {relegations}/{expectedRelegations} relegations, {incumbents}/{expectedIncumbents} incumbents, {challengers}/{expectedChallengers} challengers); corrupted sporting state.");
         }
     }
 

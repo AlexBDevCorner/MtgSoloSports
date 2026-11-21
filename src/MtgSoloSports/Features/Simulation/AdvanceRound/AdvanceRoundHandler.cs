@@ -703,8 +703,6 @@ public sealed class AdvanceRoundHandler
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
         RoundEntity? stored = await context.Rounds.SingleOrDefaultAsync(e => e.Id == roundId, cancellationToken).ConfigureAwait(false);
         if (stored is null)
         {
