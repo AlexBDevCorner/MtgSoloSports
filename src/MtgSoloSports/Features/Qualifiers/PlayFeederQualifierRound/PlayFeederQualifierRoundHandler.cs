@@ -1,8 +1,8 @@
 using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Leagues;
 using MtgSoloSports.SimulationKernel.Random;
 
@@ -49,7 +49,7 @@ public sealed class PlayFeederQualifierRoundHandler
             throw new ArgumentException($"Sporting color must be 0..7, was {sportingColor}.", nameof(sportingColor));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

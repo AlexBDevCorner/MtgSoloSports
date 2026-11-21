@@ -47,7 +47,7 @@ public sealed class RebalanceFeedersHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

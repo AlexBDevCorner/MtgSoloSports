@@ -57,7 +57,7 @@ public sealed class CompleteStageHandler
             throw new ArgumentException("League id must be positive.", nameof(leagueId));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         CompleteStageResponse response;
         try

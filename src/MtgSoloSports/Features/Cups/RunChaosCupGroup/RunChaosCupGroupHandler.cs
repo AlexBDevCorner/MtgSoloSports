@@ -44,7 +44,7 @@ public sealed class RunChaosCupGroupHandler
         CancellationToken cancellationToken = default)
     {
         ValidateRequest(saveId, stageIndex, groupNumber, sourceSeasonNumber);
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         RunChaosCupGroupResponse response;
         try
@@ -74,7 +74,7 @@ public sealed class RunChaosCupGroupHandler
         CancellationToken cancellationToken = default)
     {
         ValidateRequest(saveId, stageIndex, groupNumber, sourceSeasonNumber);
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         RunChaosCupGroupResponse response;
         try

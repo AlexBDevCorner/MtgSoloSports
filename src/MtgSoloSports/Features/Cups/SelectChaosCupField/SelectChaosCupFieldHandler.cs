@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.ChaosCup;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
@@ -43,7 +44,7 @@ public sealed partial class SelectChaosCupFieldHandler
             throw new ArgumentException("Season number must be positive.", nameof(sourceSeasonNumber));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

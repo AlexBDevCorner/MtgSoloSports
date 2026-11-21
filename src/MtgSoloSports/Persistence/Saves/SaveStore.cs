@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Catalog.ImportCatalog;
 using MtgSoloSports.Features.Leagues.InauguralDraw;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Universe.CreateUniverse;
 using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
@@ -66,7 +65,7 @@ public sealed class SaveStore
     /// pending-migration checks, checkpoint files, and SQLite schema writes.
     /// Static so every <see cref="SaveStore"/> instance (including a fresh
     /// store after an app restart in tests) shares the same per-save
-    /// serialization, matching <c>AdvanceRoundSaveLock</c> lifetime.
+    /// serialization, matching <c>SaveMutationLock</c> lifetime.
     /// </summary>
     private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> MigrationGates = new();
 
@@ -798,7 +797,9 @@ public sealed class SaveStore
     /// Destructive file removal holds the per-save mutation, migration and
     /// snapshot gates (in that order) so an active simulation write cannot
     /// retain an invalid handle or write into a removed database. Ordinary
-    /// queries never take the mutation gate and stay concurrent.
+    /// queries never take the mutation gate and stay concurrent. After the
+    /// gates are released, the save's uncontended mutation/migration/snapshot
+    /// entries are evicted so the maps stay bounded by live save ids.
     /// </summary>
     public async Task DeleteAsync(Guid saveId, CancellationToken cancellationToken = default)
     {
@@ -810,7 +811,7 @@ public sealed class SaveStore
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim mutationGate = SaveMutationLock.Acquire(saveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -839,21 +840,35 @@ public sealed class SaveStore
             mutationGate.Release();
         }
 
+        // The save is deleted; release its now-uncontended per-save entries.
+        // Contended entries stay and retry on the next delete (weak eviction
+        // documented on SaveMutationLock.EvictIfUncontended).
+        SaveMutationLock.EvictIfUncontended(saveId);
+        SaveMutationLock.EvictIfUncontended(MigrationGates, saveId);
+        SaveMutationLock.EvictIfUncontended(SnapshotGates, saveId);
+
+        DeleteCheckpointDirectory(root, saveId);
+    }
+
+    private void DeleteCheckpointDirectory(string root, Guid saveId)
+    {
         string checkpointDirectory = SaveCheckpointFiles.GetSaveCheckpointDirectory(root, saveId);
-        if (Directory.Exists(checkpointDirectory))
+        if (!Directory.Exists(checkpointDirectory))
         {
-            // Drop pooled handles to checkpoint databases before removing the
-            // directory; otherwise Windows directory deletion races open
-            // mappings. Only this save's checkpoint files are touched.
-            ClearCheckpointPools(checkpointDirectory);
-            try
-            {
-                Directory.Delete(checkpointDirectory, recursive: true);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
-            }
+            return;
+        }
+
+        // Drop pooled handles to checkpoint databases before removing the
+        // directory; otherwise Windows directory deletion races open
+        // mappings. Only this save's checkpoint files are touched.
+        ClearCheckpointPools(checkpointDirectory);
+        try
+        {
+            Directory.Delete(checkpointDirectory, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Could not remove checkpoint directory for deleted save {SaveId}.", saveId);
         }
     }
 
@@ -1037,7 +1052,7 @@ public sealed class SaveStore
         // mutation and migration gates so an active simulation write cannot
         // retain an invalid handle. Snapshot captures nest inside (gates are
         // always acquired Advance -> Migration -> Snapshot, never reverse).
-        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(staged.Manifest.SaveId);
+        SemaphoreSlim mutationGate = SaveMutationLock.Acquire(staged.Manifest.SaveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -1611,7 +1626,7 @@ public sealed class SaveStore
         await VerifyCheckpointForRestoreAsync(saveId, checkpointId, databasePath, sidecarPath, cancellationToken).ConfigureAwait(false);
 
         string livePath = GetSaveFilePath(saveId);
-        SemaphoreSlim mutationGate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim mutationGate = SaveMutationLock.Acquire(saveId);
         await mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

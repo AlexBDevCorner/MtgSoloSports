@@ -60,7 +60,7 @@ public sealed class RunColorCupIndividualHandler
             throw new ArgumentException("Season number must be positive.", nameof(sourceSeasonNumber));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         RunColorCupIndividualResponse response;
         try

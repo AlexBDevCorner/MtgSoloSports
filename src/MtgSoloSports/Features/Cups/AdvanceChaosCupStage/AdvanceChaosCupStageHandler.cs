@@ -51,7 +51,7 @@ public sealed class AdvanceChaosCupStageHandler
             throw new ArgumentException("Season number must be positive.", nameof(sourceSeasonNumber));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

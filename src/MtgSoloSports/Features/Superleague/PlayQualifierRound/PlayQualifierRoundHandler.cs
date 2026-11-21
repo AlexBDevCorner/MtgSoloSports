@@ -1,9 +1,9 @@
 using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Qualifiers.Engine;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Features.Superleague.PlayQualifierRound;
@@ -30,7 +30,7 @@ public sealed class PlayQualifierRoundHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {

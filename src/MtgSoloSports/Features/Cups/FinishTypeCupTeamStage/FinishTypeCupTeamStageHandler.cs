@@ -4,8 +4,8 @@ using MtgSoloSports.Features.Cups.RunTypeCupTeam;
 using MtgSoloSports.Features.History.EventRounds;
 using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 using MtgSoloSports.SimulationKernel.Random;
 
@@ -49,7 +49,7 @@ public sealed class FinishTypeCupTeamStageHandler
             throw new ArgumentException("A stage scope needs both tournamentPhase and qualificationGroup.", nameof(expectedTournamentPhase));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         FinishTypeCupTeamStageResponse response;
         try

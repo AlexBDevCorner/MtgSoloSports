@@ -55,7 +55,7 @@ public sealed class BoundaryQualifierRunner
             throw new ArgumentException($"Sporting color must be 0..7, was {sportingColor}.", nameof(sportingColor));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
