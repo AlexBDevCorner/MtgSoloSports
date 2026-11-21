@@ -1,4 +1,4 @@
-import { ApiError } from '../../shared/api/http';
+import { ApiError, isAbort } from '../../shared/api/http';
 
 /**
  * MSS-124: minimal shared description of an in-flight Dashboard stage
@@ -25,7 +25,7 @@ export function stageCompletionBusyLabel(info: Pick<StageCompletionInfo, 'stage'
  * response was lost (aborts, network loss, timeouts, 5xx) is uncertain.
  */
 export function isUncertainStageMutationError(error: unknown): boolean {
-  if (error instanceof DOMException && error.name === 'AbortError') {
+  if (isAbort(error)) {
     return true;
   }
   if (error instanceof TypeError) {

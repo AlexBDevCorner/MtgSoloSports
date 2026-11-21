@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { groupLeaguesByTier } from '../../shared/leagueTiers';
 import { fetchCurrentStandings, type CurrentStandingRow } from '../athletes/athleteApi';
 import { AthleteLink, Link } from '../routing/router';
 import { livePath, standingsLeaguePath } from '../routing/routes';
 import type { SeasonProgressLeague } from './dashboardApi';
-
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
+import { formatPoints } from '../../shared/format';
 
 interface DivisionOption {
   key: string;
@@ -90,7 +87,7 @@ export function FeederLeaders({
           const top = [...standings.standings].sort((a, b) => a.seasonRank - b.seasonRank)[0] ?? null;
           return { leagueId, leagueName: standings.leagueName || names.get(leagueId) || `League ${leagueId}`, leader: top };
         } catch (failure) {
-          if (failure instanceof DOMException && failure.name === 'AbortError') {
+          if (isAbort(failure)) {
             throw failure;
           }
           if (failure instanceof ApiError && failure.status === 404) {
@@ -105,7 +102,7 @@ export function FeederLeaders({
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));

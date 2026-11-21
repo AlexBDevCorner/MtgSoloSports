@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { cupTeamReportUrl, downloadReport } from '../reports/reportApi';
@@ -13,7 +13,6 @@ import {
 } from './cupHistoryApi';
 import {
   cupTitle,
-  formatPoints,
   medalBadge,
   ordinal,
   rankOf,
@@ -24,6 +23,7 @@ import {
 import { CardArt, SquadTiles } from './SquadTiles';
 import { TeamMark } from './TeamBadge';
 import './CupHistory.css';
+import { formatPoints } from '../../shared/format';
 
 /**
  * One Cup team across every edition it was selected for: honours, the squad
@@ -68,7 +68,7 @@ export function CupTeamPage({
     fetchCupTeamHistory(saveId, cup, teamKey, controller.signal)
       .then(setHistory)
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

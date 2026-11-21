@@ -3,7 +3,7 @@ import { Card } from '../../shared/ui/Card';
 import { Link } from '../routing/router';
 import { cupEditionPath } from '../routing/routes';
 import { TeamBadge } from '../cups/TeamBadge';
-import { formatPoints } from '../cups/cupFormat';
+import { formatPoints } from '../../shared/format';
 import type { TypeCupDraw, TypeCupTournament } from '../cups/typeCupTournamentApi';
 import { qualificationStageLabel } from '../cups/typeCupTournamentModel';
 import type { TypeCupStageInfo, TypeCupStageKey } from './typeCupLiveModel';

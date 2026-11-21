@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiErrorMessage, fetchJson } from '../../shared/api/http';
+import { apiErrorMessage, fetchJson, isAbort } from '../../shared/api/http';
 
 export interface CatalogStats {
   totalAthletes: number;
@@ -36,7 +36,7 @@ export function useCatalogStats(): CatalogState {
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));

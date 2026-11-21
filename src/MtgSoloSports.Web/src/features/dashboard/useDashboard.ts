@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import {
   fetchSaveDetail,
   fetchSeason1Leagues,
@@ -87,7 +87,7 @@ export function useDashboard(saveId: string | null): DashboardState {
       try {
         status = await fetchSeasonStatus(saveId, signal);
       } catch (failure) {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           throw failure;
         }
         // MSS-070: keep the failure visible. A null status with no error
@@ -103,7 +103,7 @@ export function useDashboard(saveId: string | null): DashboardState {
       } catch (failure) {
         if (failure instanceof ApiError && failure.status === 404) {
           rosters = null;
-        } else if (failure instanceof DOMException && failure.name === 'AbortError') {
+        } else if (isAbort(failure)) {
           throw failure;
         } else if (failure instanceof ApiError && failure.status === 400) {
           rosters = null;
@@ -123,7 +123,7 @@ export function useDashboard(saveId: string | null): DashboardState {
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {
@@ -157,7 +157,7 @@ async function loadStories(saveId: string, signal: AbortSignal): Promise<StoryEv
     const feed = await fetchRecentStories(saveId, 20, signal);
     return feed.stories;
   } catch (failure) {
-    if (failure instanceof DOMException && failure.name === 'AbortError') {
+    if (isAbort(failure)) {
       throw failure;
     }
     return [];
@@ -182,7 +182,7 @@ async function loadLeaders(
     const loaded = await fetchCurrentStandings(saveId, superleague.leagueId, signal);
     standings = loaded.standings;
   } catch (failure) {
-    if (failure instanceof DOMException && failure.name === 'AbortError') {
+    if (isAbort(failure)) {
       throw failure;
     }
     standings = [];
@@ -217,7 +217,7 @@ async function loadHonours(saveId: string, signal: AbortSignal): Promise<Honour[
       .sort((a, b) => b.seasonNumber - a.seasonNumber || a.leagueName.localeCompare(b.leagueName))
       .slice(0, 10);
   } catch (failure) {
-    if (failure instanceof DOMException && failure.name === 'AbortError') {
+    if (isAbort(failure)) {
       throw failure;
     }
     return [];
@@ -228,7 +228,7 @@ async function loadRecords(saveId: string, signal: AbortSignal): Promise<Records
   try {
     return await fetchRecords(saveId, signal);
   } catch (failure) {
-    if (failure instanceof DOMException && failure.name === 'AbortError') {
+    if (isAbort(failure)) {
       throw failure;
     }
     return null;
@@ -240,7 +240,7 @@ async function loadHallOfFame(saveId: string, signal: AbortSignal): Promise<Hall
     const fame = await fetchHallOfFame(saveId, 5, signal);
     return fame.leaders;
   } catch (failure) {
-    if (failure instanceof DOMException && failure.name === 'AbortError') {
+    if (isAbort(failure)) {
       throw failure;
     }
     return [];

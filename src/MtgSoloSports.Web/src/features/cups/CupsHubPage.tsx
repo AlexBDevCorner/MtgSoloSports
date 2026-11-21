@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { fetchSeasonStatus, type SeasonStatus } from '../dashboard/dashboardApi';
@@ -44,7 +44,7 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
     fetchCupEditions(saveId, controller.signal)
       .then(setData)
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));
@@ -55,7 +55,7 @@ export function CupsHubPage({ saveId }: { saveId: string }) {
         setStatusError(null);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         // Keep any previously loaded success from hiding this newer error.

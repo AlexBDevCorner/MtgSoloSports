@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import {
@@ -54,11 +54,7 @@ import { fetchSeasonProgress } from '../dashboard/dashboardApi';
 import { runRemainingQualifiers } from '../qualifiers/qualifierApi';
 import { nextQualifierLiveParam } from '../qualifiers/qualifierModel';
 import './LivePage.css';
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
+import { formatPoints } from '../../shared/format';
 
 /**
  * MSS-139 Cup team link for team standings rows. The event identity tells the
@@ -229,7 +225,7 @@ export function LiveEventView({
       .catch((failure: unknown) => {
         // A save/round switch aborted this load; the successor request owns
         // the loading/error state, so an abort never touches it (useSaves pattern).
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setLoadError(apiErrorMessage(failure));
@@ -460,7 +456,7 @@ export function LiveEventView({
         setRoundView(view);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (controller.signal.aborted) {

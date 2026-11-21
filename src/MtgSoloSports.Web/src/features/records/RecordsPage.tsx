@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
+import { useSaveData } from '../../shared/useSaveData';
 import { AthleteLink } from '../routing/router';
 import { Link } from '../routing/router';
 import { cupEditionPath, recordsPath, type CupKind, type RecordsView } from '../routing/routes';
@@ -359,51 +360,6 @@ function CupRecordsTable({ saveId, records }: { saveId: string; records: Scoring
       </table>
     </div>
   );
-}
-
-function useSaveData<T>(
-  saveId: string | null,
-  load: (id: string, signal: AbortSignal) => Promise<T>,
-): { data: T | null; loading: boolean; error: string | null } {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!saveId) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const controller = new AbortController();
-    const { signal } = controller;
-    setLoading(true);
-    setError(null);
-    load(saveId, signal)
-      .then((loaded) => {
-        setData(loaded);
-        setLoading(false);
-      })
-      .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          return;
-        }
-        if (failure instanceof ApiError && failure.status === 404) {
-          setData(null);
-          setError(null);
-        } else {
-          setError(apiErrorMessage(failure));
-        }
-        setLoading(false);
-      });
-    return () => {
-      controller.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saveId]);
-
-  return { data, loading, error };
 }
 
 function HallOfFameView({
@@ -915,11 +871,11 @@ export function RecordsPage({ saveId, urlView }: { saveId: string; urlView: Reco
   const needHonours = view === 'honours';
   const needFame = view === 'fame';
 
-  const recordsState = useSaveData<Records>(needRecords ? saveId : null, (id, signal) =>
-    fetchRecords(id, signal),
+  const recordsState = useSaveData<Records>(needRecords ? saveId : null, (signal) =>
+    fetchRecords(saveId, signal),
   );
-  const honoursState = useSaveData<Honours>(needHonours ? saveId : null, (id, signal) =>
-    fetchHonours(id, signal),
+  const honoursState = useSaveData<Honours>(needHonours ? saveId : null, (signal) =>
+    fetchHonours(saveId, signal),
   );
   const [period, setPeriod] = useState<PeriodSelection>(() => loadStoredPeriod(saveId));
   const [seasons, setSeasons] = useState<number[]>([]);
@@ -990,7 +946,7 @@ export function RecordsPage({ saveId, urlView }: { saveId: string; urlView: Reco
         setFameLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

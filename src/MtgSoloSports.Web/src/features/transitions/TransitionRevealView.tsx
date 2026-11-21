@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { TRANSITION_TITLES, type TransitionKey } from '../events/eventModel';
@@ -166,7 +166,7 @@ function MovementTransition({ saveId, season }: { saveId: string; season: number
         }
         setLoading(false);
       } catch (failure: unknown) {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {
@@ -275,7 +275,7 @@ function RebalanceTransition({ saveId, season }: { saveId: string; season: numbe
         setResult(resolved);
         setLoading(false);
       } catch (failure: unknown) {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

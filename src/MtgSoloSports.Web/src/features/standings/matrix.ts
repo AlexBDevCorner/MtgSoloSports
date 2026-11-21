@@ -5,6 +5,7 @@
  * align, sort and format for display.
  */
 
+import { formatPoints } from '../../shared/format';
 import type { SeasonPlacementCell } from './standingsApi';
 
 export type MatrixSortKey = 'rank' | 'wins' | 'points';
@@ -29,11 +30,6 @@ export interface CombinedMatrixRow {
   sportingColorName: string;
   imageUrl: string | null;
   currentEffectiveBonusThousandths: number;
-}
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-export function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
 }
 
 /** Display-only bonus with explicit sign (no sporting math). */

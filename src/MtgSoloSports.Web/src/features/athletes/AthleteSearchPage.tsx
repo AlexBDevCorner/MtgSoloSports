@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { leagueLevelLabel } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
 import { athletePath, dashboardPath } from '../routing/routes';
@@ -166,7 +166,7 @@ export function AthleteSearchPage({
         setOptions(loaded);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setOptionsError(apiErrorMessage(failure));
@@ -188,7 +188,7 @@ export function AthleteSearchPage({
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

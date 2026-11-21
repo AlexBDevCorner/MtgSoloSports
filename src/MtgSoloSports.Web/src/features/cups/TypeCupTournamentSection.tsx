@@ -6,7 +6,6 @@ import { teamEventKey } from './cupFormat';
 import { CupPodium } from './CupPodium';
 import { CardArt } from './SquadTiles';
 import { TeamBadge, TeamMark } from './TeamBadge';
-import { formatPoints } from './cupFormat';
 import { medalBadge } from './cupFormat';
 import type {
   TypeCupDraw,
@@ -27,6 +26,7 @@ import {
   rankGroupLabel,
   tournamentStateLabel,
 } from './typeCupTournamentModel';
+import { formatPoints } from '../../shared/format';
 
 /**
  * Tournament presentation for a completed Type Cup with qualification

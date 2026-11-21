@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { EVENT_TITLES, SELECTION_TITLES, type EventKey, type SelectionKey } from '../events/eventModel';
@@ -75,7 +75,7 @@ export function CupSelectionView({
         setRevealed(hidden ? {} : allRevealed(loaded));
         setActiveKey(loaded.teams[0]?.teamKey ?? null);
       } catch (failure: unknown) {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { Link, removeLastSelectedSave } from '../routing/router';
@@ -72,7 +72,7 @@ function DamagedCheckpointRestore({ save, onRestored }: { save: SaveSummary; onR
         setChecked(true);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));

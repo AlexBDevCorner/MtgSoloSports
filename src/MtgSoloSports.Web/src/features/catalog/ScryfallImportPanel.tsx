@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Notice } from '../../shared/ui/Notice';
 import { CatalogCounts } from './CatalogCounts';
 import type { CatalogStats } from './catalogApi';
@@ -60,7 +60,7 @@ export function ScryfallImportPanel({
       setPhase({ kind: 'success', result });
       onImported();
     } catch (failure) {
-      if (failure instanceof DOMException && failure.name === 'AbortError') {
+      if (isAbort(failure)) {
         setPhase({
           kind: 'error',
           message: 'Import was cancelled before saving. The existing catalog was left unchanged. Try again.',

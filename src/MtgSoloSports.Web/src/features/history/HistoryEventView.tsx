@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { optionalTournament } from '../cups/typeCupTournamentApi';
@@ -20,11 +20,7 @@ import { Link } from '../routing/router';
 import { cupEditionPath, qualifiersPath } from '../routing/routes';
 import { TeamBadge } from '../cups/TeamBadge';
 import { cupTeamKey } from '../cups/cupTeamKeys';
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
+import { formatPoints } from '../../shared/format';
 
 /**
  * MSS-139 Cup team link for team standings rows. The event identity tells the
@@ -92,7 +88,7 @@ export function HistoryEventView({
     fetchEventRounds(saveId, season, event, controller.signal)
       .then(setRounds)
       .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
+        if (!(isAbort(failure))) {
           setRounds([]);
           setError(apiErrorMessage(failure));
         }
@@ -194,7 +190,7 @@ export function HistoryEventView({
     fetchEventRound(saveId, season, event, selected.round, selected.group, controller.signal, stage)
       .then(setRoundView)
       .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
+        if (!(isAbort(failure))) {
           setError(apiErrorMessage(failure));
           // MSS-079 correction: an explicit but unpersisted stage+round must not
           // keep showing the previous stage's replay alongside the error.

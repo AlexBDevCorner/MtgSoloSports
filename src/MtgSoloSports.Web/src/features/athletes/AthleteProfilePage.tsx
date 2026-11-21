@@ -27,6 +27,7 @@ import { LeagueLink } from '../leagues/LeagueLink';
 import { summarizeCareer } from './athleteCareerSummary';
 import type { AthleteChaosHistory } from './athleteApi';
 import type { AthleteProfileState } from './useAthleteProfile';
+import { formatPoints } from '../../shared/format';
 
 /** Attained-stage wording for one Chaos edition (display only, no sporting math). */
 export function chaosAttainedLabel(edition: AthleteChaosHistory): string {
@@ -47,11 +48,6 @@ export function chaosAttainedLabel(edition: AthleteChaosHistory): string {
 /** Stage-cell wording for one Chaos trajectory row (display only). */
 export function chaosStageCell(stageIndex: number, isFinal: boolean): string {
   return isFinal ? 'Final' : `Stage ${stageIndex + 1}`;
-}
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
 }
 
 /** Adjacent-tier prefix for a movement endpoint ("[Feeder 1]", or nothing for the pool). */

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading } from '../../shared/ui/Notice';
 import { AthleteLink, Link } from '../routing/router';
@@ -48,7 +48,7 @@ export function ChaosRecordsPanel({ saveId }: { saveId: string }) {
         }
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (!controller.signal.aborted) {

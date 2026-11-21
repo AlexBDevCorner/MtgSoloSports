@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { formatMovement, formatPoints } from './format';
+import { formatMovement } from './format';
+import { formatPoints } from '../../shared/format';
 import { describeTile, tileMovementGlyph } from './revealBoardHelpers';
 import type { ProgressiveStandingRow } from './revealOrder';
 import { AthleteLink } from '../routing/router';

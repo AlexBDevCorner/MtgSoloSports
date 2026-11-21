@@ -19,13 +19,10 @@ import { FastForwardSeason } from './FastForwardSeason';
 import { FeederLeaders } from './FeederLeaders';
 import { SeasonFlow } from './SeasonFlow';
 import './DashboardPage.css';
+import { formatPoints } from '../../shared/format';
 
 function shortChecksum(value: string): string {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
-}
-
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
 }
 
 /** Non-empty trimmed text, or null when there is no reliable identity to link. */

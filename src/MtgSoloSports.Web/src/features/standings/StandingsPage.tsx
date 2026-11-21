@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage } from '../../shared/api/http';
+import { formatPoints } from '../../shared/format';
+import { useSaveData } from '../../shared/useSaveData';
 import {
   TIER_BONUS_SCALE_LINE,
   groupLeaguesByTier,
@@ -43,7 +45,6 @@ import {
   buildCellMap,
   cellTitle,
   formatBonus,
-  formatPoints,
   maxCompletedStage,
   placeLabel,
   podiumClass,
@@ -54,60 +55,6 @@ import {
   type StageWindow,
 } from './matrix';
 import './StandingsPage.css';
-
-function useAsync<T>(
-  key: string | null,
-  load: (signal: AbortSignal) => Promise<T>,
-): { data: T | null; loading: boolean; error: string | null } {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!key) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const controller = new AbortController();
-    const { signal } = controller;
-    setLoading(true);
-    setError(null);
-    load(signal)
-      .then((loaded) => {
-        // Ignore out-of-order resolves after a rapid key change; the cleanup
-        // aborts the previous request but an already-resolved fetch still runs.
-        if (signal.aborted) {
-          return;
-        }
-        setData(loaded);
-        setLoading(false);
-      })
-      .catch((failure: unknown) => {
-        if (signal.aborted) {
-          return;
-        }
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          return;
-        }
-        if (failure instanceof ApiError && failure.status === 404) {
-          setData(null);
-          setError(null);
-        } else {
-          setError(apiErrorMessage(failure));
-        }
-        setLoading(false);
-      });
-    return () => {
-      controller.abort();
-    };
-    // load is stable per key via inline closure over ids; re-run on key change only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
-  return { data, loading, error };
-}
 
 export interface StandingsSelection {
   league: number | null;
@@ -200,7 +147,7 @@ export function StandingsPage({
     setView(urlView ?? 'season');
   }, [urlView, saveId]);
 
-  const seasonsState = useAsync<HistorySeasons>(saveId, (signal) =>
+  const seasonsState = useSaveData<HistorySeasons>(saveId, (signal) =>
     fetchHistorySeasons(saveId as string, signal),
   );
   // MSS-084: ignore stale seasons from the previous save while reloading.
@@ -238,7 +185,7 @@ export function StandingsPage({
     saveId && seasonNumber !== null && !explicitSeasonInvalid
       ? `${saveId}/standings-s${seasonNumber}`
       : null;
-  const competitionsState = useAsync<HistoryCompetitions>(competitionsKey, (signal) =>
+  const competitionsState = useSaveData<HistoryCompetitions>(competitionsKey, (signal) =>
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
   // MSS-084: ignore stale competitions from the previous season/save while
@@ -350,7 +297,7 @@ export function StandingsPage({
     saveId && seasonNumber !== null && leagueId !== null && leagueKnown && !explicitSeasonInvalid
       ? `${saveId}/standings-stages-s${seasonNumber}-l${leagueId}`
       : null;
-  const stagesState = useAsync<HistoryStages>(stagesKey, (signal) =>
+  const stagesState = useSaveData<HistoryStages>(stagesKey, (signal) =>
     fetchHistoryStages(saveId as string, seasonNumber as number, leagueId as number, signal),
   );
 
@@ -358,7 +305,7 @@ export function StandingsPage({
     saveId && seasonNumber !== null && leagueId !== null && leagueKnown && !explicitSeasonInvalid
       ? `${saveId}/standings-placements-s${seasonNumber}-l${leagueId}`
       : null;
-  const placementsState = useAsync<SeasonPlacements>(placementsKey, (signal) =>
+  const placementsState = useSaveData<SeasonPlacements>(placementsKey, (signal) =>
     fetchSeasonPlacements(saveId as string, seasonNumber as number, leagueId as number, signal),
   );
 
@@ -372,7 +319,7 @@ export function StandingsPage({
     (seasonEntry.isComplete || !isLatestSeason)
       ? `${saveId}/standings-table-s${seasonNumber}-l${leagueId}`
       : null;
-  const historyTableState = useAsync<HistorySeasonTable>(historyTableKey, (signal) =>
+  const historyTableState = useSaveData<HistorySeasonTable>(historyTableKey, (signal) =>
     fetchHistorySeasonTable(saveId as string, seasonNumber as number, leagueId as number, signal),
   );
 
@@ -380,7 +327,7 @@ export function StandingsPage({
     saveId && useCurrentTotals && leagueId !== null
       ? `${saveId}/standings-current-l${leagueId}`
       : null;
-  const currentTotalsState = useAsync<CurrentStandings>(currentTotalsKey, (signal) =>
+  const currentTotalsState = useSaveData<CurrentStandings>(currentTotalsKey, (signal) =>
     fetchCurrentStandings(saveId as string, leagueId as number, signal),
   );
 
@@ -389,7 +336,7 @@ export function StandingsPage({
   }
 
   // MSS-084: only use payloads that match the current save/season/league
-  // request. Stale payloads from the previous key stay in useAsync state
+  // request. Stale payloads from the previous key stay in useSaveData state
   // while the new request loads; ignoring them prevents season/league/save
   // mismatched headings. Every guarded contract carries saveId, so a stale
   // payload from another save with matching numeric ids is also dropped.

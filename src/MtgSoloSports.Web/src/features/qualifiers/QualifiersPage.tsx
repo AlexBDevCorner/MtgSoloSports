@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage } from '../../shared/api/http';
+import { formatPoints } from '../../shared/format';
+import { useSaveData } from '../../shared/useSaveData';
 import { runEventRemaining } from '../events/eventsApi';
 import { fetchHistorySeasons, type HistorySeasons } from '../history/historyApi';
 import { AthleteLink, Link } from '../routing/router';
@@ -37,57 +39,6 @@ import {
 } from './qualifierApi';
 import { qualifierBoundarySegment } from '../../shared/leagueTiers';
 
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
-
-function useAsync<T>(
-  key: string | null,
-  load: (signal: AbortSignal) => Promise<T>,
-): { data: T | null; loading: boolean; error: string | null; refresh: () => void } {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
-
-  useEffect(() => {
-    if (!key) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const controller = new AbortController();
-    const { signal } = controller;
-    setLoading(true);
-    setError(null);
-    load(signal)
-      .then((loaded) => {
-        setData(loaded);
-        setLoading(false);
-      })
-      .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          return;
-        }
-        if (failure instanceof ApiError && failure.status === 404) {
-          setData(null);
-          setError(null);
-        } else {
-          setError(apiErrorMessage(failure));
-        }
-        setLoading(false);
-      });
-    return () => {
-      controller.abort();
-    };
-    // load is stable per key via inline closure over ids; re-run on key change only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, revision]);
-
-  return { data, loading, error, refresh: () => setRevision((value) => value + 1) };
-}
-
 export interface QualifiersSelection {
   season: number | null;
 }
@@ -119,11 +70,11 @@ export function QualifiersPage({
     setSeason(urlSeason);
   }, [urlSeason, saveId]);
 
-  const detailState = useAsync<SaveDetail>(saveId, (signal) => fetchSaveDetail(saveId, signal));
-  const statusState = useAsync<SeasonStatus>(saveId ? `${saveId}/status` : null, (signal) =>
+  const detailState = useSaveData<SaveDetail>(saveId, (signal) => fetchSaveDetail(saveId, signal));
+  const statusState = useSaveData<SeasonStatus>(saveId ? `${saveId}/status` : null, (signal) =>
     fetchSeasonStatus(saveId, signal),
   );
-  const seasonsState = useAsync<HistorySeasons>(saveId, (signal) => fetchHistorySeasons(saveId, signal));
+  const seasonsState = useSaveData<HistorySeasons>(saveId, (signal) => fetchHistorySeasons(saveId, signal));
 
   const currentSeason = detailState.data?.currentSeason ?? null;
   const status = statusState.data;
@@ -131,7 +82,7 @@ export function QualifiersPage({
 
   const progressKey =
     saveId && currentSeason !== null ? `${saveId}/progress-s${currentSeason}` : null;
-  const progressState = useAsync<SeasonProgress>(progressKey, (signal) =>
+  const progressState = useSaveData<SeasonProgress>(progressKey, (signal) =>
     fetchSeasonProgress(saveId, currentSeason as number, signal),
   );
 
@@ -141,7 +92,7 @@ export function QualifiersPage({
       : saveId
         ? `${saveId}/qualifiers-latest`
         : null;
-  const listState = useAsync<QualifierList>(listKey, (signal) =>
+  const listState = useSaveData<QualifierList>(listKey, (signal) =>
     fetchQualifierList(saveId, effectiveSeason, signal),
   );
 
@@ -457,7 +408,7 @@ export function QualifierDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const statusState = useAsync<SeasonStatus>(saveId ? `${saveId}/status` : null, (signal) =>
+  const statusState = useSaveData<SeasonStatus>(saveId ? `${saveId}/status` : null, (signal) =>
     fetchSeasonStatus(saveId, signal),
   );
   const status = statusState.data;
@@ -468,7 +419,7 @@ export function QualifierDetailPage({
       : saveId
         ? `${saveId}/qualifiers-latest`
         : null;
-  const listState = useAsync<QualifierList>(listKey, (signal) =>
+  const listState = useSaveData<QualifierList>(listKey, (signal) =>
     fetchQualifierList(saveId, effectiveSeason, signal),
   );
 
