@@ -6,7 +6,6 @@ using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.History.GetSeasonPlacements;
 using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStage;
-using MtgSoloSports.Features.Simulation.SimulateSeasons;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Rules;
 using MtgSoloSports.Tests.Features.Universe;
@@ -114,18 +113,19 @@ public sealed class SeasonPlacementsScoringBoundsTests
         }
     }
 
+    /// <summary>
+    /// MSS-157: the completed-season read model rides the shared Season 1
+    /// template instead of a from-scratch SimulateSeasons(1) run; the
+    /// full-season simulation keeps genuine from-scratch coverage in
+    /// <c>FastSimulationTests</c> and <c>CupLifecycleIntegrationTests</c>.
+    /// </summary>
     [Fact]
     public async Task Placements_CompleteSeason_ReportsFullStages_WithStableBounds()
     {
-        var (store, root) = CreateStore();
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-clinch-complete-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Clinch Final", 2401UL, 2402UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
             int leagueId = await FirstLeagueIdAsync(store, saveId);
-
-            SimulateSeasonsHandler bulk = new(store);
-            await bulk.HandleAsync(saveId, new SimulateSeasonsRequest(1));
 
             GetSeasonPlacementsHandler handler = new(store);
             GetSeasonPlacementsResponse response = await handler.HandleAsync(saveId, 1, leagueId);

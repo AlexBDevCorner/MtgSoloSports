@@ -8,7 +8,6 @@ using MtgSoloSports.Features.Leagues.CurrentStandings;
 using MtgSoloSports.Features.Leagues.SeasonProgress;
 using MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
-using MtgSoloSports.Features.Simulation.CompleteSeason;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.SimulationKernel.Catalog;
@@ -80,32 +79,22 @@ public sealed class DashboardPolishTests
         }
     }
 
+    /// <summary>
+    /// MSS-157: Season 1 completion is forked from the shared template (the
+    /// state this test used to build from scratch via CompleteSeasonHandler);
+    /// the full from-scratch season lifecycle keeps normal-suite coverage in
+    /// <c>CupLifecycleIntegrationTests</c> and <c>FastSimulationTests</c>. The
+    /// pre-completion profile state rides the thin from-scratch fact below.
+    /// </summary>
     [Fact]
     public async Task AthleteProfile_ExposesHonoursMovementsAndSelections()
     {
-        var (store, root) = CreateStore();
+        var (store, root, saveId) = await SharedSaveTemplates.ForkSeason1CompleteAsync("mtgsolosports-polish-profile-");
         try
         {
-            SaveStore.CreationRecord created = await store.CreateAsync("Profile Polish", 505UL, 606UL, UniverseTestCatalog.Build());
-            Guid saveId = created.Detail.SaveId;
-
-            List<int> leagueIds = await AllLeagueIdsAsync(store, saveId);
             GetAthleteProfileHandler profiles = new(store);
 
-            // Before any simulation the new lists are empty, not missing.
-            GetCurrentStandingsHandler standings = new(store);
-            CompleteStageForAllLeaguesHandler bulk = new(store);
-            await bulk.HandleAsync(saveId);
-            GetCurrentStandingsResponse provisional = await standings.HandleAsync(saveId, leagueIds[0]);
-            int sampleAthlete = provisional.Standings[0].AthleteId;
-            GetAthleteProfileResponse before = await profiles.HandleAsync(saveId, sampleAthlete);
-            before.Honours.ShouldBeEmpty();
-            before.Movements.ShouldBeEmpty();
-            before.CupSelections.ShouldBeEmpty();
-
-            // Complete Season 1: honours persist for the 24 feeder podiums (3 per league).
-            CompleteSeasonHandler completeSeason = new(store);
-            await completeSeason.HandleAsync(saveId);
+            // Completed Season 1: honours persist for the 24 feeder podiums (3 per league).
             List<HonourAthlete> honours = await LoadHonoursAsync(store, saveId);
             honours.Count.ShouldBe(72);
             int champion = honours.First(h => h.Kind == (int)MtgSoloSports.Features.Records.HonourKind.FeederTitle).AthleteId;
@@ -134,6 +123,40 @@ public sealed class DashboardPolishTests
             int selectedAthlete = await FirstSelectedAthleteAsync(store, saveId);
             GetAthleteProfileResponse withSelection = await profiles.HandleAsync(saveId, selectedAthlete);
             withSelection.CupSelections.Any(s => string.Equals(s.CupKind, "ColorCup", StringComparison.Ordinal)).ShouldBeTrue();
+        }
+        finally
+        {
+            TestSaveStores.DeleteRoot(root);
+        }
+    }
+
+    /// <summary>
+    /// MSS-157: thin from-scratch fact retained from the former single test.
+    /// No prepared template offers a pre-completion save, so the empty-lists
+    /// assertions keep executing here on genuine from-scratch state with a
+    /// single global stage (no full-season setup).
+    /// </summary>
+    [Fact]
+    public async Task AthleteProfile_BeforeSeasonCompletion_ListsAreEmptyNotMissing()
+    {
+        var (store, root) = CreateStore();
+        try
+        {
+            SaveStore.CreationRecord created = await store.CreateAsync("Profile Fresh", 505UL, 606UL, UniverseTestCatalog.Build());
+            Guid saveId = created.Detail.SaveId;
+
+            // Before any season completes the new lists are empty, not missing.
+            CompleteStageForAllLeaguesHandler bulk = new(store);
+            await bulk.HandleAsync(saveId);
+            List<int> leagueIds = await AllLeagueIdsAsync(store, saveId);
+            GetCurrentStandingsHandler standings = new(store);
+            GetCurrentStandingsResponse provisional = await standings.HandleAsync(saveId, leagueIds[0]);
+            int sampleAthlete = provisional.Standings[0].AthleteId;
+            GetAthleteProfileHandler profiles = new(store);
+            GetAthleteProfileResponse before = await profiles.HandleAsync(saveId, sampleAthlete);
+            before.Honours.ShouldBeEmpty();
+            before.Movements.ShouldBeEmpty();
+            before.CupSelections.ShouldBeEmpty();
         }
         finally
         {
