@@ -1,7 +1,3 @@
-using Microsoft.Extensions.FileProviders;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MtgSoloSports.Features.Diagnostics.LongRunChecksum;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Persistence.Saves;
@@ -22,13 +18,13 @@ public sealed class LongRunChecksumHandlerTests
     public async Task SameSeed_SameChecksum_DifferentSeed_Differs()
     {
         // MSS-067: same-seed copy forked instead of creating the same universe twice.
-        var (firstStore, firstRoot) = CreateStore();
+        var (firstStore, firstRoot) = TestSaveStores.CreateStore("mtgsolosports-ck-");
         try
         {
             var catalog = UniverseTestCatalog.Build();
             SaveStore.CreationRecord first = await firstStore.CreateAsync("Checksum A", 9001UL, 9002UL, catalog);
             var (secondStore, secondRoot, secondId) = await TestSaveStores.ForkAsync(firstStore, first.Detail.SaveId, "mtgsolosports-ck-");
-            var (thirdStore, thirdRoot) = CreateStore();
+            var (thirdStore, thirdRoot) = TestSaveStores.CreateStore("mtgsolosports-ck-");
             try
             {
                 SaveStore.CreationRecord third = await thirdStore.CreateAsync("Checksum C", 7001UL, 7002UL, catalog);
@@ -69,7 +65,7 @@ public sealed class LongRunChecksumHandlerTests
     public async Task FastSimulation_MatchesManual_Checksum()
     {
         // MSS-067: second save forked instead of creating the same universe twice.
-        var (firstStore, firstRoot) = CreateStore();
+        var (firstStore, firstRoot) = TestSaveStores.CreateStore("mtgsolosports-ck-");
         try
         {
             var catalog = UniverseTestCatalog.Build();
@@ -99,33 +95,5 @@ public sealed class LongRunChecksumHandlerTests
         {
             TestSaveStores.DeleteRoot(firstRoot);
         }
-    }
-
-    private static (SaveStore Store, string Root) CreateStore()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "mtgsolosports-ck-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        IOptions<SaveStorageOptions> options = Options.Create(new SaveStorageOptions { SavesRoot = root });
-        TestHostEnvironment environment = new(root);
-        SaveSqliteConnectionInterceptor interceptor = new();
-        SaveDbContextFactory factory = new(interceptor);
-        SaveStore store = new(options, environment, factory, TimeProvider.System, NullLogger<SaveStore>.Instance);
-        return (store, root);
-    }
-
-    private sealed class TestHostEnvironment : IHostEnvironment
-    {
-        public TestHostEnvironment(string contentRoot)
-        {
-            ContentRootPath = contentRoot;
-        }
-
-        public string EnvironmentName { get; set; } = "Test";
-
-        public string ApplicationName { get; set; } = "MtgSoloSports.Tests";
-
-        public string ContentRootPath { get; set; }
-
-        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }

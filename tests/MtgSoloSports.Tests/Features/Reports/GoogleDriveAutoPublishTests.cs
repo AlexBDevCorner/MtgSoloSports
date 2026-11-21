@@ -117,9 +117,9 @@ public sealed class GoogleDriveAutoPublishTests
 
             using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
             bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
-            await Task.Delay(TimeSpan.FromSeconds(3));
-
-            AutoState state = await GetAutoStateAsync(client, saveId);
+            // MSS-157: bounded poll for the settled status instead of a fixed
+            // sleep; with auto disabled the pump must leave everything untouched.
+            AutoState state = await WaitForAutoStatusAsync(client, saveId, ["Disabled"], timeoutSeconds: 30);
             state.Enabled.ShouldBeFalse();
             state.Status.ShouldBe("Disabled");
             drive.Files[dossierId].Content.ShouldBe(contentBefore);
@@ -158,9 +158,9 @@ public sealed class GoogleDriveAutoPublishTests
             using HttpResponseMessage round = await client.PostAsync(
                 $"/api/saves/{saveId:D}/leagues/{leagueId}/rounds/advance", null);
             round.StatusCode.ShouldBe(HttpStatusCode.OK);
-            await Task.Delay(TimeSpan.FromSeconds(3));
-
-            AutoState after = await GetAutoStateAsync(client, saveId);
+            // MSS-157: bounded poll instead of a fixed sleep; a completed round
+            // must leave the settled checkpoint untouched.
+            AutoState after = await WaitForAutoStatusAsync(client, saveId, ["UpToDate"], timeoutSeconds: 30);
             after.RequestedUtc.ShouldBe(requestedBefore);
             after.Status.ShouldBe("UpToDate");
             _ = drive;
@@ -192,11 +192,11 @@ public sealed class GoogleDriveAutoPublishTests
             using HttpResponseMessage completed = await client.PostAsync(
                 $"/api/saves/{saveId:D}/leagues/{leagueId}/stages/complete", null);
             completed.StatusCode.ShouldBe(HttpStatusCode.OK);
-            await Task.Delay(TimeSpan.FromSeconds(3));
 
             // One league of many: the global stage has not advanced, so the
-            // requested checkpoint must be unchanged.
-            AutoState after = await GetAutoStateAsync(client, saveId);
+            // requested checkpoint must be unchanged (MSS-157: bounded poll
+            // instead of a fixed sleep).
+            AutoState after = await WaitForAutoStatusAsync(client, saveId, ["UpToDate"], timeoutSeconds: 30);
             after.RequestedStage.ShouldBe(stageBefore);
             after.Status.ShouldBe("UpToDate");
         }
@@ -337,9 +337,9 @@ public sealed class GoogleDriveAutoPublishTests
 
             using HttpResponseMessage bulk = await client.PostAsync($"/api/saves/{saveId:D}/stages/complete-all", null);
             bulk.StatusCode.ShouldBe(HttpStatusCode.OK);
-            await Task.Delay(TimeSpan.FromSeconds(3));
-
-            AutoState after = await GetAutoStateAsync(client, saveId);
+            // MSS-157: bounded poll for the settled disabled status instead of
+            // a fixed sleep; disabling must cancel the pending request.
+            AutoState after = await WaitForAutoStatusAsync(client, saveId, ["Disabled"], timeoutSeconds: 30);
             after.Enabled.ShouldBeFalse();
             after.Status.ShouldBe("Disabled");
             after.RequestedSeason.ShouldBeNull();
