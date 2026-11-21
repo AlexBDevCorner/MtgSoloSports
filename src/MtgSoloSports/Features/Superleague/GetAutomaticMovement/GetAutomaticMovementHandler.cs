@@ -3,6 +3,7 @@ using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
+using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.GetAutomaticMovement;
 
@@ -150,8 +151,10 @@ public sealed class GetAutomaticMovementHandler
         LeagueEntity nextSuperleague,
         CancellationToken cancellationToken)
     {
+        RulesV1 rules = await Features.Simulation.AdvanceRound.AdvanceRoundHandler
+            .LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         List<MovementEntity> movements = await LoadSuperleagueMovementsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
-        ValidateMovements(movements);
+        ValidateMovements(movements, rules);
 
         Dictionary<int, string> names = await LoadNamesAsync(context, cancellationToken).ConfigureAwait(false);
         Dictionary<int, string?> images = await LoadImagesAsync(context, cancellationToken).ConfigureAwait(false);
@@ -161,7 +164,7 @@ public sealed class GetAutomaticMovementHandler
 
         int pool = await LoadPoolCountAsync(context, next, cancellationToken).ConfigureAwait(false);
 
-        return MapResponse(saveId, source, next, nextSuperleague, movements, names, images, leaguesById, nextByAthlete, sourceSuperleague, sourceSuperRows, pool);
+        return MapResponse(saveId, source, next, nextSuperleague, movements, names, images, leaguesById, nextByAthlete, sourceSuperleague, sourceSuperRows, pool, rules);
     }
 
     internal static async Task<List<MovementEntity>> LoadSuperleagueMovementsAsync(
@@ -267,9 +270,10 @@ public sealed class GetAutomaticMovementHandler
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         LeagueEntity sourceSuperleague,
         List<SeasonStandingEntity> sourceSuperRows,
-        int pool)
+        int pool,
+        RulesV1 rules)
     {
-        List<AutomaticMovementMember> safe = MapSafe(names, images, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows);
+        List<AutomaticMovementMember> safe = MapSafe(names, images, nextByAthlete, sourceSuperleague, nextSuperleague, sourceSuperRows, rules);
         List<AutomaticMovementMember> promoted = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticPromotion);
         List<AutomaticMovementMember> relegated = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.AutomaticRelegation);
         List<AutomaticMovementMember> incumbents = MapKind(names, images, leaguesById, nextByAthlete, movements, MovementKind.QualifierIncumbent);
@@ -290,22 +294,29 @@ public sealed class GetAutomaticMovementHandler
             movements.Count);
     }
 
-    internal static void ValidateMovements(List<MovementEntity> movements)
+    internal static void ValidateMovements(List<MovementEntity> movements, RulesV1 rules)
     {
+        ArgumentNullException.ThrowIfNull(movements);
+        ArgumentNullException.ThrowIfNull(rules);
         int promotions = movements.Count(m => m.Kind == (int)MovementKind.AutomaticPromotion);
         int relegations = movements.Count(m => m.Kind == (int)MovementKind.AutomaticRelegation);
         int incumbents = movements.Count(m => m.Kind == (int)MovementKind.QualifierIncumbent);
         int challengers = movements.Count(m => m.Kind == (int)MovementKind.QualifierChallenger);
-        if (promotions != 8 || relegations != 8 || incumbents != 8 || challengers != 24)
+        if (promotions != rules.FeederAutoPromotedCount
+            || relegations != rules.SuperleagueRelegatedCount
+            || incumbents != rules.SuperleagueQualifierIncumbentCount
+            || challengers != rules.FeederQualifierCount)
         {
             throw new SaveCorruptionException(
-                $"Automatic movement must hold 8 promotions, 8 relegations, 8 incumbents and 24 challengers, was {promotions}/{relegations}/{incumbents}/{challengers}.");
+                $"Automatic movement must hold {rules.FeederAutoPromotedCount} promotions, {rules.SuperleagueRelegatedCount} relegations, {rules.SuperleagueQualifierIncumbentCount} incumbents and {rules.FeederQualifierCount} challengers, was {promotions}/{relegations}/{incumbents}/{challengers}.");
         }
 
-        if (movements.Count != 48)
+        int expectedTotal = rules.FeederAutoPromotedCount + rules.SuperleagueRelegatedCount
+            + rules.SuperleagueQualifierIncumbentCount + rules.FeederQualifierCount;
+        if (movements.Count != expectedTotal)
         {
             throw new SaveCorruptionException(
-                $"Automatic movement must hold exactly 48 records, was {movements.Count}.");
+                $"Automatic movement must hold exactly {expectedTotal} records, was {movements.Count}.");
         }
     }
 
@@ -315,10 +326,13 @@ public sealed class GetAutomaticMovementHandler
         Dictionary<int, SeasonMembershipEntity> nextByAthlete,
         LeagueEntity sourceSuperleague,
         LeagueEntity nextSuperleague,
-        List<SeasonStandingEntity> sourceSuperRows)
+        List<SeasonStandingEntity> sourceSuperRows,
+        RulesV1 rules)
     {
-        List<AutomaticMovementMember> members = new(16);
-        foreach (SeasonStandingEntity row in sourceSuperRows.Where(r => r.SeasonRank >= 1 && r.SeasonRank <= 16).OrderBy(r => r.SeasonRank))
+        List<AutomaticMovementMember> members = new(rules.SuperleagueSafeCount);
+        foreach (SeasonStandingEntity row in sourceSuperRows
+            .Where(r => r.SeasonRank >= 1 && r.SeasonRank <= rules.SuperleagueSafeCount)
+            .OrderBy(r => r.SeasonRank))
         {
             names.TryGetValue(row.SaveAthleteId, out string? name);
             images.TryGetValue(row.SaveAthleteId, out string? imageUrl);
@@ -342,9 +356,9 @@ public sealed class GetAutomaticMovementHandler
                 BuildLeagueKey(nextSuperleague)));
         }
 
-        if (members.Count != 16)
+        if (members.Count != rules.SuperleagueSafeCount)
         {
-            throw new SaveCorruptionException($"Automatic movement must expose exactly 16 safe athletes, was {members.Count}.");
+            throw new SaveCorruptionException($"Automatic movement must expose exactly {rules.SuperleagueSafeCount} safe athletes, was {members.Count}.");
         }
 
         return members;

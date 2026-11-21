@@ -265,7 +265,7 @@ public static class RebalanceFeedersSelection
         if (f1.Count != rules.LeagueSize || f2.Count != rules.LeagueSize || f3.Count != rules.LeagueSize)
         {
             throw new SaveCorruptionException(
-                $"League {input.Color} cascade failed to restore 32/32/32, was {f1.Count}/{f2.Count}/{f3.Count}.");
+                $"League {input.Color} cascade failed to restore {rules.LeagueSize}/{rules.LeagueSize}/{rules.LeagueSize}, was {f1.Count}/{f2.Count}/{f3.Count}.");
         }
 
         return new TierColorPlan(

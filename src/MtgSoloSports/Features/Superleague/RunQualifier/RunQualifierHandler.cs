@@ -104,7 +104,7 @@ public sealed class RunQualifierHandler
         RngStateEntity rngRow = await AdvanceRoundHandler.LoadRngAsync(context, cancellationToken).ConfigureAwait(false);
 
         (SeasonEntity source, SeasonEntity next) = await LoadPendingTransitionAsync(context, cancellationToken).ConfigureAwait(false);
-        await EnsureAutomaticMovementResolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+        await EnsureAutomaticMovementResolvedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
         await QualifierEngine.EnsureChaosCompleteAsync(
             context, source, rules, static message => new RunQualifierConflictException(message), cancellationToken).ConfigureAwait(false);
         await EnsureQualifierUnresolvedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
@@ -702,7 +702,7 @@ public sealed class RunQualifierHandler
     }
 
     internal static async Task EnsureAutomaticMovementResolvedAsync(
-        SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
+        SaveDbContext context, SeasonEntity source, SeasonEntity next, RulesV1 rules, CancellationToken cancellationToken)
     {
         int promotions = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.AutomaticPromotion,
@@ -716,7 +716,10 @@ public sealed class RunQualifierHandler
         int challengers = await context.Movements.CountAsync(
             e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id && e.Kind == (int)MovementKind.QualifierChallenger,
             cancellationToken).ConfigureAwait(false);
-        if (promotions != 8 || relegations != 8 || incumbents != 8 || challengers != 24)
+        if (promotions != rules.FeederAutoPromotedCount
+            || relegations != rules.SuperleagueRelegatedCount
+            || incumbents != rules.SuperleagueQualifierIncumbentCount
+            || challengers != rules.FeederQualifierCount)
         {
             throw new RunQualifierConflictException(
                 "Automatic movement must be resolved before the Superleague qualifier can run.");

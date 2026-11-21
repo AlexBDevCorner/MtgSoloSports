@@ -41,12 +41,14 @@ public sealed class GetRebalanceResultHandler
         }
 
         using SaveDbContext context = _store.OpenDbContext(saveId);
-        (SeasonEntity source, SeasonEntity next) = await LoadSeasonsAsync(context, fromSeasonNumber, cancellationToken).ConfigureAwait(false);
-        return await BuildResponseAsync(context, saveId, source, next, cancellationToken).ConfigureAwait(false);
+        RulesV1 rules = await Features.Simulation.AdvanceRound.AdvanceRoundHandler
+            .LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
+        (SeasonEntity source, SeasonEntity next) = await LoadSeasonsAsync(context, fromSeasonNumber, rules, cancellationToken).ConfigureAwait(false);
+        return await BuildResponseAsync(context, saveId, source, next, rules, cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task<(SeasonEntity Source, SeasonEntity Next)> LoadSeasonsAsync(
-        SaveDbContext context, int? fromSeasonNumber, CancellationToken cancellationToken)
+        SaveDbContext context, int? fromSeasonNumber, RulesV1 rules, CancellationToken cancellationToken)
     {
         if (fromSeasonNumber.HasValue)
         {
@@ -70,7 +72,7 @@ public sealed class GetRebalanceResultHandler
                     $"Feeder rebalancing for Season {fromSeasonNumber.Value} has not been resolved yet.");
             }
 
-            await EnsureRebalancedAsync(context, source, next, cancellationToken).ConfigureAwait(false);
+            await EnsureRebalancedAsync(context, source, next, rules, cancellationToken).ConfigureAwait(false);
             return (source, next);
         }
 
@@ -104,7 +106,7 @@ public sealed class GetRebalanceResultHandler
     }
 
     internal static async Task EnsureRebalancedAsync(
-        SaveDbContext context, SeasonEntity source, SeasonEntity next, CancellationToken cancellationToken)
+        SaveDbContext context, SeasonEntity source, SeasonEntity next, RulesV1 rules, CancellationToken cancellationToken)
     {
         int count = await context.Movements
             .CountAsync(
@@ -132,7 +134,7 @@ public sealed class GetRebalanceResultHandler
                 int members = await context.SeasonMemberships
                     .CountAsync(e => e.SeasonId == next.Id && e.LeagueId == feeder.Id, cancellationToken)
                     .ConfigureAwait(false);
-                if (members != 32)
+                if (members != rules.LeagueSize)
                 {
                     allFull = false;
                     break;
@@ -152,9 +154,9 @@ public sealed class GetRebalanceResultHandler
         Guid saveId,
         SeasonEntity source,
         SeasonEntity next,
+        RulesV1 rules,
         CancellationToken cancellationToken)
     {
-        RulesV1 rules = await Features.Simulation.AdvanceRound.AdvanceRoundHandler.LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         List<LeagueEntity> nextFeeders = await LoadValidatedFeedersAsync(context, next, rules, cancellationToken).ConfigureAwait(false);
         List<MovementEntity> movements = await LoadRebalanceMovementsAsync(context, source, next, cancellationToken).ConfigureAwait(false);
         return await MapResponseAsync(context, saveId, source, next, nextFeeders, movements, rules, cancellationToken).ConfigureAwait(false);

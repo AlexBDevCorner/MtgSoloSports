@@ -4,6 +4,7 @@ using MtgSoloSports.Persistence.Saves;
 using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Catalog;
 using MtgSoloSports.SimulationKernel.Leagues;
+using MtgSoloSports.SimulationKernel.Rules;
 
 namespace MtgSoloSports.Features.Superleague.GetFeederMovements;
 
@@ -135,6 +136,8 @@ public sealed class GetFeederMovementsHandler
         SeasonEntity next,
         CancellationToken cancellationToken)
     {
+        RulesV1 rules = await Features.Simulation.AdvanceRound.AdvanceRoundHandler
+            .LoadRulesAsync(context, cancellationToken).ConfigureAwait(false);
         List<MovementEntity> movements = await context.Movements
             .AsNoTracking()
             .Where(e => e.FromSeasonId == source.Id && e.ToSeasonId == next.Id
@@ -144,7 +147,7 @@ public sealed class GetFeederMovementsHandler
                     || e.Kind == (int)MovementKind.FeederQualifierChallenger))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        ValidateMovements(movements);
+        ValidateMovements(movements, rules);
 
         // Reuse the Superleague movement read-model loaders: names, artwork,
         // league rows and next-season memberships. Read-only queries never lock.
@@ -157,30 +160,32 @@ public sealed class GetFeederMovementsHandler
         return new GetFeederMovementsResponse(saveId, source.SeasonNumber, next.SeasonNumber, members, movements.Count);
     }
 
-    internal static void ValidateMovements(List<MovementEntity> movements)
+    internal static void ValidateMovements(List<MovementEntity> movements, RulesV1 rules)
     {
         ArgumentNullException.ThrowIfNull(movements);
-        // 8 sporting colors x 2 boundaries x 4 kinds x 8 athletes.
-        const int expected = 8 * 2 * 4 * 8;
-        if (movements.Count != expected)
+        ArgumentNullException.ThrowIfNull(rules);
+        int boundaries = rules.FeederDivisionsPerColor - 1;
+        (MovementKind Kind, int Expected)[] kinds =
+        [
+            (MovementKind.FeederAutomaticPromotion, rules.SportingColorCount * boundaries * rules.FeederAutoPromotionPerColor),
+            (MovementKind.FeederAutomaticRelegation, rules.SportingColorCount * boundaries * rules.FeederAutoRelegationPerColor),
+            (MovementKind.FeederQualifierIncumbent, rules.SportingColorCount * boundaries * rules.FeederQualifierIncumbentPerColor),
+            (MovementKind.FeederQualifierChallenger, rules.SportingColorCount * boundaries * rules.FeederQualifierChallengerPerColor),
+        ];
+        int expectedTotal = kinds.Sum(k => k.Expected);
+        if (movements.Count != expectedTotal)
         {
             throw new SaveCorruptionException(
-                $"Feeder movement must hold exactly {expected} records, was {movements.Count}.");
+                $"Feeder movement must hold exactly {expectedTotal} records, was {movements.Count}.");
         }
 
-        foreach (MovementKind kind in new[]
-            {
-                MovementKind.FeederAutomaticPromotion,
-                MovementKind.FeederAutomaticRelegation,
-                MovementKind.FeederQualifierIncumbent,
-                MovementKind.FeederQualifierChallenger,
-            })
+        foreach ((MovementKind kind, int expectedKind) in kinds)
         {
             int count = movements.Count(m => m.Kind == (int)kind);
-            if (count != 8 * 2 * 8)
+            if (count != expectedKind)
             {
                 throw new SaveCorruptionException(
-                    $"Feeder movement kind {kind} must hold exactly {8 * 2 * 8} records, was {count}.");
+                    $"Feeder movement kind {kind} must hold exactly {expectedKind} records, was {count}.");
             }
         }
     }
