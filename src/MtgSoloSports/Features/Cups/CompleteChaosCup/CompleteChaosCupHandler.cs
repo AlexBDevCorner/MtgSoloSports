@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using MtgSoloSports.Features.Cups.AdvanceChaosCupStage;
 using MtgSoloSports.Features.Cups.RunChaosCupGroup;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Cups;
 
 namespace MtgSoloSports.Features.Cups.CompleteChaosCup;
@@ -37,7 +37,7 @@ public sealed class CompleteChaosCupHandler
         CancellationToken cancellationToken = default)
     {
         ValidateStageRequest(saveId, stageIndex, sourceSeasonNumber);
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         CompleteChaosCupStageResponse response;
         try
@@ -74,7 +74,7 @@ public sealed class CompleteChaosCupHandler
             throw new ArgumentException("Season number must be positive.", nameof(sourceSeasonNumber));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         CompleteChaosCupResponse response;
         try

@@ -7,13 +7,13 @@ using MtgSoloSports.Features.Reports.GoogleDrivePublishing;
 using MtgSoloSports.Features.Seasons.GetSeasonStatus;
 using MtgSoloSports.Features.Seasons.SeasonLifecycle;
 using MtgSoloSports.Features.Seasons.StartNextSeason;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Features.Simulation.CompleteStageForAllLeagues;
 using MtgSoloSports.Features.Superleague.CreateInaugural;
 using MtgSoloSports.Features.Superleague.RebalanceFeeders;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 
 namespace MtgSoloSports.Features.Seasons.AdvanceToNextEvent;
 
@@ -48,7 +48,7 @@ public sealed class AdvanceToNextEventHandler
             throw new ArgumentException("Save id must not be empty.", nameof(saveId));
         }
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         AdvanceToNextEventResponse response;
         try

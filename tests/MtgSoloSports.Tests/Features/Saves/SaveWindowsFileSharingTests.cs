@@ -7,8 +7,8 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using MtgSoloSports.Features.Simulation.AdvanceRound;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.Tests.Features.Universe;
 using Shouldly;
 using Xunit;
@@ -245,7 +245,7 @@ public sealed class SaveWindowsFileSharingTests
             await Should.ThrowAsync<OperationCanceledException>(() => deleteTask);
             migrationGate.Release();
             migrationHeld = false;
-            AdvanceRoundSaveLock.Acquire(saveId).CurrentCount.ShouldBe(1);
+            SaveMutationLock.Acquire(saveId).CurrentCount.ShouldBe(1);
             await store.DeleteAsync(saveId);
             File.Exists(store.GetSaveFilePath(saveId)).ShouldBeFalse();
         }
@@ -288,7 +288,7 @@ public sealed class SaveWindowsFileSharingTests
             await Should.ThrowAsync<OperationCanceledException>(() => deleteTask);
             snapshotGate.Release();
             snapshotHeld = false;
-            AdvanceRoundSaveLock.Acquire(saveId).CurrentCount.ShouldBe(1);
+            SaveMutationLock.Acquire(saveId).CurrentCount.ShouldBe(1);
             AcquirePrivateGate("MigrationGates", saveId).CurrentCount.ShouldBe(1);
             await store.DeleteAsync(saveId);
             File.Exists(store.GetSaveFilePath(saveId)).ShouldBeFalse();
@@ -336,7 +336,7 @@ public sealed class SaveWindowsFileSharingTests
     private static async Task WaitForMutationHeldAsync(Guid saveId, Task blocked)
     {
         await WaitUntilAsync(
-            () => AdvanceRoundSaveLock.Acquire(saveId).CurrentCount == 0 && !blocked.IsCompleted,
+            () => SaveMutationLock.Acquire(saveId).CurrentCount == 0 && !blocked.IsCompleted,
             TimeSpan.FromSeconds(5),
             "DeleteAsync did not acquire the mutation gate.").ConfigureAwait(false);
     }

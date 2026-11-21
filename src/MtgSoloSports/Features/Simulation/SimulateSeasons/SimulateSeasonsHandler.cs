@@ -16,6 +16,7 @@ using MtgSoloSports.Features.Superleague.RebalanceFeeders;
 using MtgSoloSports.Features.Superleague.ResolveAutomaticMovement;
 using MtgSoloSports.Features.Superleague.RunQualifier;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.SimulationKernel.Random;
 
 namespace MtgSoloSports.Features.Simulation.SimulateSeasons;
@@ -88,7 +89,7 @@ public sealed class SimulateSeasonsHandler
 
         ValidateSeasons(request.Seasons);
 
-        SemaphoreSlim gate = AdvanceRoundSaveLock.Acquire(saveId);
+        SemaphoreSlim gate = SaveMutationLock.Acquire(saveId);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         SimulateSeasonsResponse response;
         try
