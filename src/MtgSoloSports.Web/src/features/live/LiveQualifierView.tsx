@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { qualifierBoundaryLabel } from '../../shared/leagueTiers';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
@@ -110,7 +110,7 @@ export function LiveQualifierView({
       .catch((failure: unknown) => {
         // A save switch aborted this load; the successor request owns the
         // loading/error state, so an abort never touches it (useSaves pattern).
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setLoadError(apiErrorMessage(failure));
@@ -141,7 +141,7 @@ export function LiveQualifierView({
     fetchQualifierRound(saveId, apiBoundary, apiColor, selectedRoundNumber, season, controller.signal)
       .then(setRoundView)
       .catch((failure: unknown) => {
-        if (!(failure instanceof DOMException && failure.name === 'AbortError')) {
+        if (!(isAbort(failure))) {
           setError(apiErrorMessage(failure));
         }
       });

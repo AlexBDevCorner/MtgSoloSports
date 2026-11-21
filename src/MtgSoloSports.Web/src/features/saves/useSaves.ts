@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { apiErrorMessage } from '../../shared/api/http';
+import { apiErrorMessage, isAbort } from '../../shared/api/http';
 import { deleteSave, listSaves, type SaveSummary } from './savesApi';
 
 export interface SavesState {
@@ -34,7 +34,7 @@ export function useSaves(): SavesState {
         setLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));

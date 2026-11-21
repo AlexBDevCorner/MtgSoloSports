@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { cupEditionReportUrl, downloadReport } from '../reports/reportApi';
@@ -20,7 +20,7 @@ import {
   type ChaosCupGroup,
   type ChaosCupSurvival,
 } from './chaosCupApi';
-import { cupTitle, formatPoints, medalBadge, stateLabel } from './cupFormat';
+import { cupTitle, medalBadge, stateLabel } from './cupFormat';
 import { optional, type CupEdition } from './cupHistoryApi';
 import { fetchCupEditions } from './cupHistoryApi';
 import { cupKindOf } from './cupFormat';
@@ -35,6 +35,7 @@ import {
 } from './chaosEditionModel';
 import { ChaosRecordsPanel } from './ChaosRecordsPanel';
 import './CupHistory.css';
+import { formatPoints } from '../../shared/format';
 
 /**
  * Compact read-only Chaos Cup season page (MSS-112). Final standings plus
@@ -113,7 +114,7 @@ export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season
               }
             })
             .catch((failure: unknown) => {
-              if (failure instanceof DOMException && failure.name === 'AbortError') {
+              if (isAbort(failure)) {
                 return;
               }
               if (!controller.signal.aborted) {
@@ -123,7 +124,7 @@ export function ChaosCupEditionPage({ saveId, season }: { saveId: string; season
         }
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {
@@ -632,7 +633,7 @@ function GroupDetailToggle({
           setLoading(false);
           return;
         }
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           setLoading(false);
           return;
         }

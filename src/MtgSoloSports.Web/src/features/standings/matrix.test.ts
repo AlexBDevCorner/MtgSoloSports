@@ -1,12 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { formatPoints } from '../../shared/format';
 import {
   allStageColumns,
   buildCellMap,
   cellTitle,
   completedStageNumbers,
   formatBonus,
-  formatPoints,
   maxCompletedStage,
   placeLabel,
   podiumClass,

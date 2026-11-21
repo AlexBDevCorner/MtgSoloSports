@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import {
   fetchCurrentStandings,
   type CurrentStandings,
@@ -23,13 +23,9 @@ import {
   tierBonusLabel,
 } from '../../shared/leagueTiers';
 import './LivePage.css';
+import { formatPoints } from '../../shared/format';
 
 const LEAGUE_KEY_PREFIX = 'mtg-solo-sports:live-league:';
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
 
 function readStored(key: string): string | null {
   try {
@@ -188,7 +184,7 @@ export function LivePage({
         setStandingsLoading(false);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

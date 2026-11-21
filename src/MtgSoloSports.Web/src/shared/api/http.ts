@@ -27,6 +27,11 @@ export class ApiError extends Error {
   }
 }
 
+/** True when the failure is the DOMException a fetch rejects with on abort. */
+export function isAbort(failure: unknown): boolean {
+  return failure instanceof DOMException && failure.name === 'AbortError';
+}
+
 export function apiErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     // Prefer the server's own detail (structured JSON message, else a short

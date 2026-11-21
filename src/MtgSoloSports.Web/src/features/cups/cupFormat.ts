@@ -8,11 +8,6 @@ import type { CupKind } from '../routing/routes';
 
 const COLOR_KEYS = ['white', 'blue', 'black', 'red', 'green', 'multicolor', 'hybrid', 'colorless'];
 
-/** Display-only projection of fixed-point thousandths (no sporting math). */
-export function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
-
 export function medalBadge(medal: string | null | undefined): string {
   if (medal === 'Gold') {
     return '🥇 Gold';

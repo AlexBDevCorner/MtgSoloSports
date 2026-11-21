@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { InfoDisclosure } from '../../shared/ui/InfoDisclosure';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { formatPoints } from '../../shared/format';
+import { useSaveData } from '../../shared/useSaveData';
 import {
   fetchHistoryCompetitions,
   fetchHistoryRoundReplay,
@@ -39,57 +40,6 @@ import { leagueKeyFor } from '../leagues/leagueKeys';
 import { LeagueLink } from '../leagues/LeagueLink';
 import { TeamBadge } from '../cups/TeamBadge';
 import { cupTeamKey } from '../cups/cupTeamKeys';
-
-/** Display-only projection of a fixed-point thousandths value (no sporting math). */
-function formatPoints(thousandths: number): string {
-  return (thousandths / 1000).toFixed(3);
-}
-
-function useAsync<T>(
-  key: string | null,
-  load: (signal: AbortSignal) => Promise<T>,
-): { data: T | null; loading: boolean; error: string | null } {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!key) {
-      setData(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    const controller = new AbortController();
-    const { signal } = controller;
-    setLoading(true);
-    setError(null);
-    load(signal)
-      .then((loaded) => {
-        setData(loaded);
-        setLoading(false);
-      })
-      .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
-          return;
-        }
-        if (failure instanceof ApiError && failure.status === 404) {
-          setData(null);
-          setError(null);
-        } else {
-          setError(apiErrorMessage(failure));
-        }
-        setLoading(false);
-      });
-    return () => {
-      controller.abort();
-    };
-    // load is stable per key via inline closure over ids; re-run on key change only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-
-  return { data, loading, error };
-}
 
 export interface HistorySelection {
   season: number | null;
@@ -151,7 +101,7 @@ export function HistoryPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlRound, saveId]);
 
-  const seasonsState = useAsync<HistorySeasons>(saveId, (signal) =>
+  const seasonsState = useSaveData<HistorySeasons>(saveId, (signal) =>
     fetchHistorySeasons(saveId as string, signal),
   );
   const seasons = seasonsState.data?.seasons ?? [];
@@ -174,11 +124,11 @@ export function HistoryPage({
 
   const competitionsKey =
     saveId && seasonNumber !== null ? `${saveId}/s${seasonNumber}` : null;
-  const competitionsState = useAsync<HistoryCompetitions>(competitionsKey, (signal) =>
+  const competitionsState = useSaveData<HistoryCompetitions>(competitionsKey, (signal) =>
     fetchHistoryCompetitions(saveId as string, seasonNumber as number, signal),
   );
   const competitions = competitionsState.data?.competitions ?? [];
-  const eventsState = useAsync<SeasonEventSummary[]>(
+  const eventsState = useSaveData<SeasonEventSummary[]>(
     competitionsKey ? `${competitionsKey}/events` : null,
     (signal) => fetchSeasonEvents(saveId as string, seasonNumber as number, signal),
   );
@@ -206,7 +156,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && leagueId !== null
       ? `${saveId}/s${seasonNumber}/l${leagueId}`
       : null;
-  const stagesState = useAsync<HistoryStages>(stagesKey, (signal) =>
+  const stagesState = useSaveData<HistoryStages>(stagesKey, (signal) =>
     fetchHistoryStages(saveId as string, seasonNumber as number, leagueId as number, signal),
   );
   const stages = stagesState.data?.stages ?? [];
@@ -230,7 +180,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && leagueId !== null && stageNumber !== null
       ? `${saveId}/s${seasonNumber}/l${leagueId}/st${stageNumber}`
       : null;
-  const roundsState = useAsync<HistoryRounds>(roundsKey, (signal) =>
+  const roundsState = useSaveData<HistoryRounds>(roundsKey, (signal) =>
     fetchHistoryRounds(
       saveId as string,
       seasonNumber as number,
@@ -266,7 +216,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && leagueId !== null && stageNumber !== null && roundNumber !== null
       ? `${saveId}/s${seasonNumber}/l${leagueId}/st${stageNumber}/r${roundNumber}`
       : null;
-  const replayState = useAsync<HistoryRoundReplay>(replayKey, (signal) =>
+  const replayState = useSaveData<HistoryRoundReplay>(replayKey, (signal) =>
     fetchHistoryRoundReplay(
       saveId as string,
       seasonNumber as number,
@@ -281,7 +231,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && leagueId !== null && stageNumber !== null
       ? `${saveId}/s${seasonNumber}/l${leagueId}/st${stageNumber}/standings`
       : null;
-  const standingsState = useAsync<HistoryStageStandings>(standingsKey, (signal) =>
+  const standingsState = useSaveData<HistoryStageStandings>(standingsKey, (signal) =>
     fetchHistoryStageStandings(
       saveId as string,
       seasonNumber as number,
@@ -295,7 +245,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && leagueId !== null
       ? `${saveId}/s${seasonNumber}/l${leagueId}/table`
       : null;
-  const tableState = useAsync<HistorySeasonTable>(tableKey, (signal) =>
+  const tableState = useSaveData<HistorySeasonTable>(tableKey, (signal) =>
     fetchHistorySeasonTable(
       saveId as string,
       seasonNumber as number,
@@ -306,20 +256,20 @@ export function HistoryPage({
 
   const colorIndividualKey =
     saveId && seasonNumber !== null ? `${saveId}/cup-color-ind/s${seasonNumber}` : null;
-  const colorIndividualState = useAsync<ColorCupIndividualResult>(
+  const colorIndividualState = useSaveData<ColorCupIndividualResult>(
     colorIndividualKey,
     (signal) => fetchColorCupIndividual(saveId as string, seasonNumber as number, signal),
   );
 
   const colorTeamKey =
     saveId && seasonNumber !== null ? `${saveId}/cup-color-team/s${seasonNumber}` : null;
-  const colorTeamState = useAsync<ColorCupTeamResult>(colorTeamKey, (signal) =>
+  const colorTeamState = useSaveData<ColorCupTeamResult>(colorTeamKey, (signal) =>
     fetchColorCupTeam(saveId as string, seasonNumber as number, signal),
   );
 
   const typeTeamKey =
     saveId && seasonNumber !== null ? `${saveId}/cup-type-team/s${seasonNumber}` : null;
-  const typeTeamState = useAsync<TypeCupTeamResult>(typeTeamKey, (signal) =>
+  const typeTeamState = useSaveData<TypeCupTeamResult>(typeTeamKey, (signal) =>
     fetchTypeCupTeam(saveId as string, seasonNumber as number, signal),
   );
 
@@ -327,7 +277,7 @@ export function HistoryPage({
     saveId && seasonNumber !== null && seasonNumber % 2 === 0
       ? `${saveId}/cup-type-tournament/s${seasonNumber}`
       : null;
-  const typeTournamentState = useAsync<TypeCupTournament | null>(
+  const typeTournamentState = useSaveData<TypeCupTournament | null>(
     typeTournamentKey,
     (signal) => optionalTournament(saveId as string, seasonNumber as number, signal),
   );

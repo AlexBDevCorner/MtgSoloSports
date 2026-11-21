@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiErrorMessage, ApiError } from '../../shared/api/http';
+import { apiErrorMessage, ApiError, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { groupLeaguesByTier, leagueLevelLabel, pyramidSummary } from '../../shared/leagueTiers';
 import { AthleteLink, Link } from '../routing/router';
 import { leaguePath } from '../routing/routes';
-import { formatPoints } from '../standings/matrix';
+import { formatPoints } from '../../shared/format';
 import { fetchLeagueProfiles, type LeagueProfiles, type LeagueProfileSummary } from './leaguesApi';
 import './Leagues.css';
 
@@ -30,7 +30,7 @@ export function LeaguesOverviewPage({ saveId }: { saveId: string }) {
         setData(loaded);
       })
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         if (failure instanceof ApiError && failure.status === 404) {

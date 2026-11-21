@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
-import { ApiError, apiErrorMessage, fetchJson } from '../../shared/api/http';
+import { ApiError, apiErrorMessage } from '../../shared/api/http';
 import { downloadReport, seasonDossierReportUrl, universeAlmanacReportUrl } from '../reports/reportApi';
 import {
   describeAutoPublishStatus,
@@ -28,13 +28,9 @@ import {
   pickerDisabledHint,
   showDrivePicker,
 } from './drivePicker';
-import type { HistorySeasons } from '../history/historyApi';
+import { fetchHistorySeasons, type HistorySeasons } from '../history/historyApi';
 
 const JOURNALIST_PROMPT = `You are a longtime MtgSoloSports columnist. Use only facts from the attached season dossier (current season) and universe almanac (history). Distinguish official points (season championship points) from weighted career points; Type Cup qualification never awards titles; Color individual and team events are separate titles; provisional tables are not final. Call out defending champions, streaks, upsets, qualification cut lines, and historical firsts with season numbers. If a fact is not in the sources, say it is unavailable rather than guessing.`;
-
-async function fetchSeasons(saveId: string, signal: AbortSignal): Promise<HistorySeasons> {
-  return fetchJson<HistorySeasons>(`/api/saves/${saveId}/history/seasons`, { signal });
-}
 
 function mergeLibraryCategories(
   left: DriveLibrarySyncResponse['categories'],
@@ -153,7 +149,7 @@ export function ReportsPage({ saveId }: { saveId: string }) {
     const controller = new AbortController();
     setSeasonsLoading(true);
     setSeasonsError(null);
-    fetchSeasons(saveId, controller.signal)
+    fetchHistorySeasons(saveId, controller.signal)
       .then((loaded) => {
         if (controller.signal.aborted) {
           return;

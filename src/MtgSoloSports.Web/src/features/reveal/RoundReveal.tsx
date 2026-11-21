@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '../../shared/ui/Card';
-import { cardCaption, formatBonus, formatMovement, formatPoints } from './format';
+import { cardCaption, formatBonus, formatMovement } from './format';
+import { formatPoints } from '../../shared/format';
 import { RevealBoard } from './RevealBoard';
 import { AthleteLink } from '../routing/router';
 import type { RevealPlacement } from './types';

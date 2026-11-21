@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import {
   fetchAthleteProfile,
   fetchAthleteRecordHoldings,
@@ -21,10 +21,6 @@ export interface AthleteProfileState {
   holdingsLoading: boolean;
   holdingsError: string | null;
   refresh: () => void;
-}
-
-function isAbort(failure: unknown): boolean {
-  return failure instanceof DOMException && failure.name === 'AbortError';
 }
 
 /**

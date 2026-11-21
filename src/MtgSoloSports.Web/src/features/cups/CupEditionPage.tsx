@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, apiErrorMessage } from '../../shared/api/http';
+import { ApiError, apiErrorMessage, isAbort } from '../../shared/api/http';
 import { Card } from '../../shared/ui/Card';
 import { Loading, Notice } from '../../shared/ui/Notice';
 import { cupEditionReportUrl, downloadReport } from '../reports/reportApi';
@@ -19,7 +19,6 @@ import {
 import {
   cupKindOf,
   cupTitle,
-  formatPoints,
   medalBadge,
   selectionKeyFor,
   stateLabel,
@@ -35,6 +34,7 @@ import { CardArt, SquadTiles } from './SquadTiles';
 import { TeamBadge, TeamMark } from './TeamBadge';
 import { fetchTypeCupTeam } from './typeCupApi';
 import './CupHistory.css';
+import { formatPoints } from '../../shared/format';
 
 interface EditionData {
   editions: CupEdition[];
@@ -134,7 +134,7 @@ function ColorTypeEditionPage({
     loadEdition(saveId, cup, season, controller.signal)
       .then(setData)
       .catch((failure: unknown) => {
-        if (failure instanceof DOMException && failure.name === 'AbortError') {
+        if (isAbort(failure)) {
           return;
         }
         setError(apiErrorMessage(failure));
