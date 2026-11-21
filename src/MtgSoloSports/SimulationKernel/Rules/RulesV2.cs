@@ -34,109 +34,23 @@ public class RulesV2 : RulesV1
     public const int CupFeeder3StrengthPermilleDefault = 400;
 
     protected RulesV2(
-        int sportingColorCount,
-        int athletesPerSportingColor,
-        int totalAthletesInSave,
-        int regularLeagueCount,
-        int leagueSize,
-        int superleagueSize,
-        int stagesPerSeason,
-        int roundsPerStage,
-        int qualifierSize,
-        int qualifierRounds,
-        int qualifierWinners,
-        int superleagueSafeCount,
-        int superleagueRelegatedCount,
-        int superleagueQualifierIncumbentCount,
-        int feederAutoPromotedCount,
-        int feederQualifierCount,
-        int inauguralQualifiedPerLeague,
-        int colorCupColorCount,
-        int colorCupTeamSize,
-        int colorCupIndividualRounds,
-        int colorCupTeamGroupRounds,
-        int typeCupMinTeamSize,
-        int typeCupGroupRounds,
-        int typeCupTournamentFormatVersion,
-        int typeCupMaxDirectFinalTeams,
-        int typeCupFinalTeamCount,
-        int recentFormStageCount,
-        int cupBonusWeightPermille,
-        int cupPerformanceWeightPermille,
-        int cupFormWeightPermille,
-        int cupChaosWeightPermille,
-        int cupPrestigeWeightPermille,
-        ColorCupPrestigeConstants prestige,
-        int[] scoringTable,
-        int[] roundBonusThousandths,
-        int[] stageBonusThousandths,
-        int[] bonusAgeWeightsThousandths,
-        int[] recentFormWeights,
-        int superleagueBonusNumerator,
-        int superleagueBonusDenominator,
-        int feeder1BonusNumerator,
-        int feeder1BonusDenominator,
-        int feeder2BonusNumerator,
-        int feeder2BonusDenominator,
-        int feeder3BonusNumerator,
-        int feeder3BonusDenominator,
-        int cupSuperleagueStrengthPermille,
-        int cupFeeder1StrengthPermille,
-        int cupFeeder2StrengthPermille,
-        int cupFeeder3StrengthPermille)
-        : base(
-            sportingColorCount,
-            athletesPerSportingColor,
-            totalAthletesInSave,
-            regularLeagueCount,
-            leagueSize,
-            superleagueSize,
-            stagesPerSeason,
-            roundsPerStage,
-            qualifierSize,
-            qualifierRounds,
-            qualifierWinners,
-            superleagueSafeCount,
-            superleagueRelegatedCount,
-            superleagueQualifierIncumbentCount,
-            feederAutoPromotedCount,
-            feederQualifierCount,
-            inauguralQualifiedPerLeague,
-            superleagueBonusMultiplier: 2,
-            colorCupColorCount,
-            colorCupTeamSize,
-            colorCupIndividualRounds,
-            colorCupTeamGroupRounds,
-            typeCupMinTeamSize,
-            typeCupGroupRounds,
-            typeCupTournamentFormatVersion,
-            typeCupMaxDirectFinalTeams,
-            typeCupFinalTeamCount,
-            recentFormStageCount,
-            cupBonusWeightPermille,
-            cupPerformanceWeightPermille,
-            cupFormWeightPermille,
-            cupChaosWeightPermille,
-            cupPrestigeWeightPermille,
-            prestige,
-            scoringTable,
-            roundBonusThousandths,
-            stageBonusThousandths,
-            bonusAgeWeightsThousandths,
-            recentFormWeights)
+        RulesCoreSnapshot core,
+        RulesV2SportingSnapshot sporting)
+        : base(core)
     {
-        SuperleagueBonusNumerator = superleagueBonusNumerator;
-        SuperleagueBonusDenominator = superleagueBonusDenominator;
-        Feeder1BonusNumerator = feeder1BonusNumerator;
-        Feeder1BonusDenominator = feeder1BonusDenominator;
-        Feeder2BonusNumerator = feeder2BonusNumerator;
-        Feeder2BonusDenominator = feeder2BonusDenominator;
-        Feeder3BonusNumerator = feeder3BonusNumerator;
-        Feeder3BonusDenominator = feeder3BonusDenominator;
-        CupSuperleagueStrengthPermille = cupSuperleagueStrengthPermille;
-        CupFeeder1StrengthPermille = cupFeeder1StrengthPermille;
-        CupFeeder2StrengthPermille = cupFeeder2StrengthPermille;
-        CupFeeder3StrengthPermille = cupFeeder3StrengthPermille;
+        ArgumentNullException.ThrowIfNull(sporting);
+        SuperleagueBonusNumerator = sporting.SuperleagueBonusNumerator;
+        SuperleagueBonusDenominator = sporting.SuperleagueBonusDenominator;
+        Feeder1BonusNumerator = sporting.Feeder1BonusNumerator;
+        Feeder1BonusDenominator = sporting.Feeder1BonusDenominator;
+        Feeder2BonusNumerator = sporting.Feeder2BonusNumerator;
+        Feeder2BonusDenominator = sporting.Feeder2BonusDenominator;
+        Feeder3BonusNumerator = sporting.Feeder3BonusNumerator;
+        Feeder3BonusDenominator = sporting.Feeder3BonusDenominator;
+        CupSuperleagueStrengthPermille = sporting.CupSuperleagueStrengthPermille;
+        CupFeeder1StrengthPermille = sporting.CupFeeder1StrengthPermille;
+        CupFeeder2StrengthPermille = sporting.CupFeeder2StrengthPermille;
+        CupFeeder3StrengthPermille = sporting.CupFeeder3StrengthPermille;
     }
 
     public override int Version => RulesVersion;
@@ -209,48 +123,20 @@ public class RulesV2 : RulesV1
             return already;
         }
 
-        var candidate = new RulesV2(
-            v1.SportingColorCount,
-            v1.AthletesPerSportingColor,
-            v1.TotalAthletesInSave,
-            v1.RegularLeagueCount,
-            v1.LeagueSize,
-            v1.SuperleagueSize,
-            v1.StagesPerSeason,
-            v1.RoundsPerStage,
-            v1.QualifierSize,
-            v1.QualifierRounds,
-            v1.QualifierWinners,
-            v1.SuperleagueSafeCount,
-            v1.SuperleagueRelegatedCount,
-            v1.SuperleagueQualifierIncumbentCount,
-            v1.FeederAutoPromotedCount,
-            v1.FeederQualifierCount,
-            v1.InauguralQualifiedPerLeague,
-            v1.ColorCupColorCount,
-            v1.ColorCupTeamSize,
-            v1.ColorCupIndividualRounds,
-            v1.ColorCupTeamGroupRounds,
-            v1.TypeCupMinTeamSize,
-            v1.TypeCupGroupRounds,
-            v1.TypeCupTournamentFormatVersion,
-            v1.TypeCupMaxDirectFinalTeams,
-            v1.TypeCupFinalTeamCount,
-            v1.RecentFormStageCount,
-            v1.CupBonusWeightPermille,
-            v1.CupPerformanceWeightPermille,
-            v1.CupFormWeightPermille,
-            v1.CupChaosWeightPermille,
-            v1.CupPrestigeWeightPermille,
-            v1.Prestige,
-            [.. v1.ScoringTable], [.. v1.RoundBonusThousandths],
-            [.. v1.StageBonusThousandths], [.. v1.BonusAgeWeightsThousandths], [.. v1.RecentFormWeights],
-            SuperleagueBonusNumeratorDefault, SuperleagueBonusDenominatorDefault,
-            Feeder1BonusNumeratorDefault, Feeder1BonusDenominatorDefault,
-            Feeder2BonusNumeratorDefault, Feeder2BonusDenominatorDefault,
-            Feeder3BonusNumeratorDefault, Feeder3BonusDenominatorDefault,
-            CupSuperleagueStrengthPermilleDefault, CupFeeder1StrengthPermilleDefault,
-            CupFeeder2StrengthPermilleDefault, CupFeeder3StrengthPermilleDefault);
+        RulesV2SportingSnapshot sporting = new(
+            SuperleagueBonusNumerator: SuperleagueBonusNumeratorDefault,
+            SuperleagueBonusDenominator: SuperleagueBonusDenominatorDefault,
+            Feeder1BonusNumerator: Feeder1BonusNumeratorDefault,
+            Feeder1BonusDenominator: Feeder1BonusDenominatorDefault,
+            Feeder2BonusNumerator: Feeder2BonusNumeratorDefault,
+            Feeder2BonusDenominator: Feeder2BonusDenominatorDefault,
+            Feeder3BonusNumerator: Feeder3BonusNumeratorDefault,
+            Feeder3BonusDenominator: Feeder3BonusDenominatorDefault,
+            CupSuperleagueStrengthPermille: CupSuperleagueStrengthPermilleDefault,
+            CupFeeder1StrengthPermille: CupFeeder1StrengthPermilleDefault,
+            CupFeeder2StrengthPermille: CupFeeder2StrengthPermilleDefault,
+            CupFeeder3StrengthPermille: CupFeeder3StrengthPermilleDefault);
+        var candidate = new RulesV2(v1.ExtractCore(), sporting);
         candidate.Validate();
         return candidate;
     }
@@ -272,60 +158,42 @@ public class RulesV2 : RulesV1
     {
         RulesV1Overrides active = overrides ?? new RulesV1Overrides();
         RulesV1 core = RulesV1.Create(active);
-        var candidate = new RulesV2(
-            core.SportingColorCount,
-            core.AthletesPerSportingColor,
-            core.TotalAthletesInSave,
-            core.RegularLeagueCount,
-            core.LeagueSize,
-            core.SuperleagueSize,
-            core.StagesPerSeason,
-            core.RoundsPerStage,
-            core.QualifierSize,
-            core.QualifierRounds,
-            core.QualifierWinners,
-            core.SuperleagueSafeCount,
-            core.SuperleagueRelegatedCount,
-            core.SuperleagueQualifierIncumbentCount,
-            core.FeederAutoPromotedCount,
-            core.FeederQualifierCount,
-            core.InauguralQualifiedPerLeague,
-            core.ColorCupColorCount,
-            core.ColorCupTeamSize,
-            core.ColorCupIndividualRounds,
-            core.ColorCupTeamGroupRounds,
-            core.TypeCupMinTeamSize,
-            core.TypeCupGroupRounds,
-            core.TypeCupTournamentFormatVersion,
-            core.TypeCupMaxDirectFinalTeams,
-            core.TypeCupFinalTeamCount,
-            core.RecentFormStageCount,
-            core.CupBonusWeightPermille,
-            core.CupPerformanceWeightPermille,
-            core.CupFormWeightPermille,
-            core.CupChaosWeightPermille,
-            core.CupPrestigeWeightPermille,
-            core.Prestige,
-            [.. core.ScoringTable],
-            [.. core.RoundBonusThousandths],
-            [.. core.StageBonusThousandths],
-            [.. core.BonusAgeWeightsThousandths],
-            [.. core.RecentFormWeights],
-            superleagueNumerator,
-            superleagueDenominator,
-            feeder1Numerator,
-            feeder1Denominator,
-            feeder2Numerator,
-            feeder2Denominator,
-            feeder3Numerator,
-            feeder3Denominator,
-            cupSuperleagueStrengthPermille,
-            cupFeeder1StrengthPermille,
-            cupFeeder2StrengthPermille,
-            cupFeeder3StrengthPermille);
+        RulesV2SportingSnapshot sporting = new(
+            SuperleagueBonusNumerator: superleagueNumerator,
+            SuperleagueBonusDenominator: superleagueDenominator,
+            Feeder1BonusNumerator: feeder1Numerator,
+            Feeder1BonusDenominator: feeder1Denominator,
+            Feeder2BonusNumerator: feeder2Numerator,
+            Feeder2BonusDenominator: feeder2Denominator,
+            Feeder3BonusNumerator: feeder3Numerator,
+            Feeder3BonusDenominator: feeder3Denominator,
+            CupSuperleagueStrengthPermille: cupSuperleagueStrengthPermille,
+            CupFeeder1StrengthPermille: cupFeeder1StrengthPermille,
+            CupFeeder2StrengthPermille: cupFeeder2StrengthPermille,
+            CupFeeder3StrengthPermille: cupFeeder3StrengthPermille);
+        var candidate = new RulesV2(core.ExtractCore(), sporting);
         candidate.Validate();
         return candidate;
     }
+
+    /// <summary>
+    /// Builds the named v2 sporting-extras carrier from this snapshot's
+    /// properties (MSS-152); the single hand-checked copy path shared by
+    /// every RulesV3 construction.
+    /// </summary>
+    internal RulesV2SportingSnapshot ExtractSportingSnapshot() => new(
+        SuperleagueBonusNumerator: SuperleagueBonusNumerator,
+        SuperleagueBonusDenominator: SuperleagueBonusDenominator,
+        Feeder1BonusNumerator: Feeder1BonusNumerator,
+        Feeder1BonusDenominator: Feeder1BonusDenominator,
+        Feeder2BonusNumerator: Feeder2BonusNumerator,
+        Feeder2BonusDenominator: Feeder2BonusDenominator,
+        Feeder3BonusNumerator: Feeder3BonusNumerator,
+        Feeder3BonusDenominator: Feeder3BonusDenominator,
+        CupSuperleagueStrengthPermille: CupSuperleagueStrengthPermille,
+        CupFeeder1StrengthPermille: CupFeeder1StrengthPermille,
+        CupFeeder2StrengthPermille: CupFeeder2StrengthPermille,
+        CupFeeder3StrengthPermille: CupFeeder3StrengthPermille);
 
     public override void Validate()
     {

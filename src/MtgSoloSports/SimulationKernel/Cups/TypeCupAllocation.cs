@@ -15,7 +15,10 @@ namespace MtgSoloSports.SimulationKernel.Cups;
 /// deterministic global maximum: it maximizes the number of valid
 /// four-distinct-athlete teams via branch-and-bound over type subsets with
 /// max-flow feasibility (Edmonds-Karp, ordinal deterministic) and backtracking, so
-/// overlapping type sets never lose a feasible team to a greedy commitment. Type-name
+/// overlapping type sets never lose a feasible team to a greedy commitment; the
+/// search runs under a deterministic step budget
+/// (<see cref="MaxSubsetSearchSteps"/>, MSS-152) so a pathological athlete-type
+/// graph aborts loudly instead of hanging. Type-name
 /// ordinal breaks cardinality ties; within the optimal team set, a deterministic
 /// min-cost flow prefers the strongest legal squads first (global selection rating,
 /// then per-type rank), then relative type preference to resolve competing placements,
@@ -336,62 +339,6 @@ public static class TypeCupAllocation
         return preferences;
     }
 
-    internal static AllocationResult AllocateGreedy(
-        List<ScoredCandidate> scored,
-        Dictionary<string, List<ScoredCandidate>> viable,
-        Dictionary<int, List<string>> preferences,
-        RulesV1 rules)
-    {
-        ArgumentNullException.ThrowIfNull(scored);
-        ArgumentNullException.ThrowIfNull(viable);
-        ArgumentNullException.ThrowIfNull(preferences);
-        ArgumentNullException.ThrowIfNull(rules);
-
-        Dictionary<int, ScoredCandidate> byId = scored.ToDictionary(c => c.AthleteId);
-        Dictionary<string, int> rankLookup = BuildRankLookup(viable);
-        HashSet<int> remaining = scored.Select(c => c.AthleteId).ToHashSet();
-        foreach (ScoredCandidate candidate in scored)
-        {
-            if (candidate.EligibleTypes.Count == 0)
-            {
-                remaining.Remove(candidate.AthleteId);
-            }
-        }
-
-        HashSet<string> open = viable.Keys.ToHashSet(StringComparer.Ordinal);
-        int teamSize = rules.TypeCupMinTeamSize;
-        List<AllocatedTeam> teams = [];
-
-        while (true)
-        {
-            string? next = PickNextType(open, viable, remaining, rules);
-            if (next is null)
-            {
-                break;
-            }
-
-            List<ScoredCandidate> pool = viable[next]
-                .Where(c => remaining.Contains(c.AthleteId))
-                .ToList();
-            List<ScoredCandidate> picked = PickFour(next, pool, remaining, open, preferences, rankLookup, byId, teamSize);
-            List<AllocatedMember> members = OrderTeamMembers(next, picked, rankLookup, teamSize);
-            teams.Add(new AllocatedTeam(next, members));
-            foreach (AllocatedMember member in members)
-            {
-                remaining.Remove(member.AthleteId);
-            }
-
-            open.Remove(next);
-        }
-
-        teams.Sort(static (left, right) => string.Compare(left.CreatureType, right.CreatureType, StringComparison.Ordinal));
-        List<int> unassigned = scored
-            .Where(c => !teams.Any(t => t.Members.Any(m => m.AthleteId == c.AthleteId)))
-            .Select(c => c.AthleteId)
-            .ToList();
-        return new AllocationResult(teams, unassigned);
-    }
-
     internal static Dictionary<string, int> BuildRankLookup(Dictionary<string, List<ScoredCandidate>> viable)
     {
         ArgumentNullException.ThrowIfNull(viable);
@@ -414,99 +361,6 @@ public static class TypeCupAllocation
         return lookup.TryGetValue(type + "\u0000" + athleteId, out int rank) ? rank : int.MaxValue;
     }
 
-    internal static string? PickNextType(
-        HashSet<string> open,
-        Dictionary<string, List<ScoredCandidate>> viable,
-        HashSet<int> remaining,
-        RulesV1 rules)
-    {
-        ArgumentNullException.ThrowIfNull(open);
-        ArgumentNullException.ThrowIfNull(viable);
-        ArgumentNullException.ThrowIfNull(remaining);
-        ArgumentNullException.ThrowIfNull(rules);
-        string? best = null;
-        int bestCount = int.MaxValue;
-        foreach (string type in open)
-        {
-            int count = viable[type].Count(c => remaining.Contains(c.AthleteId));
-            if (count < rules.TypeCupMinTeamSize)
-            {
-                continue;
-            }
-
-            if (best is null || count < bestCount
-                || (count == bestCount && string.Compare(type, best, StringComparison.Ordinal) < 0))
-            {
-                best = type;
-                bestCount = count;
-            }
-        }
-
-        return best;
-    }
-
-    internal static List<ScoredCandidate> PickFour(
-        string type,
-        List<ScoredCandidate> pool,
-        HashSet<int> remaining,
-        HashSet<string> open,
-        Dictionary<int, List<string>> preferences,
-        Dictionary<string, int> rankLookup,
-        Dictionary<int, ScoredCandidate> byId,
-        int teamSize)
-    {
-        ArgumentNullException.ThrowIfNull(type);
-        ArgumentNullException.ThrowIfNull(pool);
-        ArgumentNullException.ThrowIfNull(remaining);
-        ArgumentNullException.ThrowIfNull(open);
-        ArgumentNullException.ThrowIfNull(preferences);
-        ArgumentNullException.ThrowIfNull(rankLookup);
-        ArgumentNullException.ThrowIfNull(byId);
-        if (pool.Count < teamSize)
-        {
-            throw new InvalidOperationException($"Type Cup type '{type}' has only {pool.Count} remaining candidates.");
-        }
-
-        // Legacy greedy helper kept consistent with AllocateOptimal: permanent
-        // nationality is eligibility only (expressed by the pool), so capped status
-        // grants no priority. Strongest selection ordering first, then relative
-        // preference, then fewest remaining alternatives, all ordinal deterministic.
-        List<ScoredCandidate> ordered = [.. pool];
-        ordered.Sort((left, right) =>
-        {
-            int quality = CompareScored(left, right);
-            if (quality != 0)
-            {
-                return quality;
-            }
-
-            int leftPref = PreferenceIndex(left.AthleteId, type, preferences);
-            int rightPref = PreferenceIndex(right.AthleteId, type, preferences);
-            if (leftPref != rightPref)
-            {
-                return leftPref.CompareTo(rightPref);
-            }
-
-            int leftAlt = RemainingAlternatives(left.AthleteId, open, remaining, byId);
-            int rightAlt = RemainingAlternatives(right.AthleteId, open, remaining, byId);
-            if (leftAlt != rightAlt)
-            {
-                return leftAlt.CompareTo(rightAlt);
-            }
-
-            int leftRank = TypeRankOf(type, left.AthleteId, rankLookup);
-            int rightRank = TypeRankOf(type, right.AthleteId, rankLookup);
-            if (leftRank != rightRank)
-            {
-                return leftRank.CompareTo(rightRank);
-            }
-
-            int name = string.Compare(left.Name, right.Name, StringComparison.Ordinal);
-            return name != 0 ? name : left.AthleteId.CompareTo(right.AthleteId);
-        });
-        return ordered.GetRange(0, teamSize);
-    }
-
     internal static int PreferenceIndex(int athleteId, string type, Dictionary<int, List<string>> preferences)
     {
         ArgumentNullException.ThrowIfNull(type);
@@ -525,35 +379,6 @@ public static class TypeCupAllocation
         }
 
         return int.MaxValue;
-    }
-
-    internal static int RemainingAlternatives(
-        int athleteId,
-        HashSet<string> open,
-        HashSet<int> remaining,
-        Dictionary<int, ScoredCandidate> byId)
-    {
-        ArgumentNullException.ThrowIfNull(open);
-        ArgumentNullException.ThrowIfNull(remaining);
-        ArgumentNullException.ThrowIfNull(byId);
-        if (!byId.TryGetValue(athleteId, out ScoredCandidate? candidate))
-        {
-            return int.MaxValue;
-        }
-
-        int count = 0;
-        foreach (string type in candidate.EligibleTypes)
-        {
-            if (open.Contains(type))
-            {
-                checked
-                {
-                    count++;
-                }
-            }
-        }
-
-        return count;
     }
 
     internal static bool IsEligibleFor(ScoredCandidate candidate, string type)
@@ -910,6 +735,19 @@ public static class TypeCupAllocation
         }
     }
 
+    /// <summary>
+    /// Deterministic step budget for the subset feasibility search (MSS-152).
+    /// One budget unit covers one branch-and-bound node including its at most
+    /// one max-flow feasibility check. Realistic athlete-type graphs complete
+    /// in the hundreds-to-low-thousands of nodes, so this leaves more than an
+    /// order of magnitude of headroom; a pathological connected component
+    /// aborts loudly at the same step every run (and within a few seconds
+    /// even on large pools) instead of hanging a synchronous mutation. No
+    /// wall clock is involved: the budget is a step count so the abort stays
+    /// reproducible (kernel purity).
+    /// </summary>
+    internal const int MaxSubsetSearchSteps = 20_000;
+
     internal static List<string> FindMaximumFeasibleSubset(
         List<string> ctypes,
         List<int> poolAthletes,
@@ -923,7 +761,8 @@ public static class TypeCupAllocation
         List<string> ordered = ctypes.OrderBy(t => t, StringComparer.Ordinal).ToList();
         List<string> best = [];
         List<string> chosen = [];
-        SearchSubset(0, ordered, poolAthletes, eligibleRemaining, rules, chosen, best);
+        int remainingSteps = MaxSubsetSearchSteps;
+        SearchSubset(0, ordered, poolAthletes, eligibleRemaining, rules, chosen, best, ref remainingSteps);
         return best;
     }
 
@@ -934,7 +773,8 @@ public static class TypeCupAllocation
         Dictionary<int, List<string>> eligibleRemaining,
         RulesV1 rules,
         List<string> chosen,
-        List<string> best)
+        List<string> best,
+        ref int remainingSteps)
     {
         ArgumentNullException.ThrowIfNull(ordered);
         ArgumentNullException.ThrowIfNull(poolAthletes);
@@ -942,6 +782,13 @@ public static class TypeCupAllocation
         ArgumentNullException.ThrowIfNull(rules);
         ArgumentNullException.ThrowIfNull(chosen);
         ArgumentNullException.ThrowIfNull(best);
+        if (--remainingSteps < 0)
+        {
+            throw new InvalidOperationException(
+                $"Type Cup feasibility search exceeded its deterministic step budget of {MaxSubsetSearchSteps} " +
+                $"with {ordered.Count} eligible types; the athlete-type graph is pathological and the mutation aborts.");
+        }
+
         if (chosen.Count + (ordered.Count - index) <= best.Count)
         {
             return;
@@ -968,11 +815,11 @@ public static class TypeCupAllocation
                 best.AddRange(chosen);
             }
 
-            SearchSubset(index + 1, ordered, poolAthletes, eligibleRemaining, rules, chosen, best);
+            SearchSubset(index + 1, ordered, poolAthletes, eligibleRemaining, rules, chosen, best, ref remainingSteps);
         }
 
         chosen.RemoveAt(chosen.Count - 1);
-        SearchSubset(index + 1, ordered, poolAthletes, eligibleRemaining, rules, chosen, best);
+        SearchSubset(index + 1, ordered, poolAthletes, eligibleRemaining, rules, chosen, best, ref remainingSteps);
     }
 
     internal static bool IsFeasibleSubset(

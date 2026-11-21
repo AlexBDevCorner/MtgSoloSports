@@ -578,4 +578,33 @@ public sealed class TypeCupAllocationTests
         wizard.Ranking[4].AssignedType.ShouldBeNull();
         wizard.Ranking[5].AssignedType.ShouldBeNull();
     }
+
+    [Fact]
+    public void PathologicalTypeGraph_AbortsAtTheSearchStepBudget_Deterministically()
+    {
+        RulesV1 rules = Rules();
+
+        // Every athlete is eligible for every type, so every subset of up to
+        // six types stays flow-feasible and the branch-and-bound subset search
+        // faces exponentially many feasible prefixes it cannot prune. This is
+        // the pathological shape the deterministic step budget exists for
+        // (MSS-152): it aborts loudly at the same step on every run instead
+        // of hanging the synchronous mutation.
+        string[] allTypes = [.. Enumerable.Range(0, 24).Select(i => $"Type {i:D2}")];
+        var candidates = new List<TypeCupAllocation.CandidateRaw>();
+        for (int i = 0; i < 24; i++)
+        {
+            candidates.Add(Candidate(100 + i, $"Athlete {i:D2}", [.. allTypes]));
+        }
+
+        InvalidOperationException first = Should.Throw<InvalidOperationException>(
+            () => TypeCupAllocation.Allocate(candidates, rules));
+        first.Message.ShouldContain("step budget");
+
+        // Deterministic: the identical pathological input aborts at the same
+        // step with the identical message every time.
+        InvalidOperationException second = Should.Throw<InvalidOperationException>(
+            () => TypeCupAllocation.Allocate(candidates, rules));
+        second.Message.ShouldBe(first.Message);
+    }
 }

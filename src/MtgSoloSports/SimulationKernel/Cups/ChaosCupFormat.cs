@@ -319,6 +319,9 @@ public static class ChaosCupFormat
     /// <summary>
     /// Validates first-stage groups: 32 groups of 32 covering the field
     /// exactly once, each group holding exactly 4 of every sporting color.
+    /// The per-group 4/color check runs inside
+    /// <see cref="ValidateStageGroups"/>, which this method delegates to for
+    /// stage 0 (MSS-152 removed a second, redundant copy of that loop here).
     /// </summary>
     public static void ValidateFirstStageGroups(
         IReadOnlyList<ChaosEntrant> entrants,
@@ -328,10 +331,6 @@ public static class ChaosCupFormat
         ArgumentNullException.ThrowIfNull(groups);
         ValidateEntrantField(entrants);
         ValidateStageGroups(0, entrants, groups);
-        for (int i = 0; i < groups.Count; i++)
-        {
-            ValidateSingleFirstStageGroup(groups[i], i);
-        }
     }
 
     /// <summary>

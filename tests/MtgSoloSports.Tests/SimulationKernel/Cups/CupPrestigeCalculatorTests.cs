@@ -379,4 +379,74 @@ public sealed class CupPrestigeCalculatorTests
             1, [new(1, 4, -3)], [], [], levels, rules);
         finalChampion.MajorCupRaw.ShouldBe(600);
     }
+
+    [Fact]
+    public void UnknownHonourKinds_Abort_KnownNeutralKindsStayNeutral()
+    {
+        RulesV3 rules = TieredRules();
+        var levels = Levels(10, 11, 12, 13);
+
+        // Known prestige-neutral kinds 5..17: league/Cup runner-up and third
+        // places plus the MSS-104 Chaos Cup individual podium keep today's
+        // zero-prestige behavior (MSS-152).
+        foreach (int kind in Enumerable.Range(5, 13))
+        {
+            CupPrestigeCalculator.PrestigeBreakdown neutral = CupPrestigeCalculator.ComputeForAthlete(
+                1, [new(1, kind, -3)], [], [], levels, rules);
+            neutral.TotalRaw.ShouldBe(0);
+        }
+
+        // Anything else is a corrupt kind int and aborts loudly.
+        foreach (int kind in new[] { -1, 18, 99 })
+        {
+            Should.Throw<InvalidOperationException>(() => CupPrestigeCalculator.ComputeForAthlete(
+                1, [new(1, kind, -3)], [], [], levels, rules))
+                .Message.ShouldContain($"unknown kind {kind}");
+        }
+    }
+
+    /// <summary>
+    /// V4-style subclass (MSS-152): derives from the unsealed RulesV3, keeps
+    /// the carrier-constructed tiered prestige model and overrides one accessor.
+    /// Documents that future RulesV4+ snapshots resolve prestige through the
+    /// virtual accessors instead of falling into a legacy version-cast path.
+    /// </summary>
+    private sealed class RulesV4Style : RulesV3
+    {
+        public const int OverriddenMajorCupPrestige = 1234;
+
+        public RulesV4Style(RulesV3 template)
+            : base(template.ExtractCore(), template.ExtractSportingSnapshot(), RulesV3PrestigeSnapshot.Defaults)
+        {
+        }
+
+        public override int GetMajorCupTitlePrestige() => OverriddenMajorCupPrestige;
+    }
+
+    [Fact]
+    public void V4StyleSubclass_ResolvesTieredPrestige_ThroughTheVirtualAccessors()
+    {
+        RulesV4Style rules = new(TieredRules());
+        var levels = Levels(10, 11, 12, 13);
+
+        // Inherited accessors keep the v3 tiered model, never the v1/v2
+        // legacy integers: Super title 1200 (not 300), F1 stage second 20
+        // (not 5), Super appearance 80 (not 20).
+        CupPrestigeCalculator.PrestigeBreakdown super = CupPrestigeCalculator.ComputeForAthlete(
+            1, [new(1, 1, 10)], [], [], levels, rules);
+        super.SuperTitleRaw.ShouldBe(1200);
+
+        CupPrestigeCalculator.PrestigeBreakdown stage = CupPrestigeCalculator.ComputeForAthlete(
+            2, [], [new(2, 11, 2)], [], levels, rules);
+        stage.Feeder1StageRaw.ShouldBe(20);
+
+        CupPrestigeCalculator.PrestigeBreakdown appearance = CupPrestigeCalculator.ComputeForAthlete(
+            3, [], [], [new(3, 10)], levels, rules);
+        appearance.AppearanceRaw.ShouldBe(80);
+
+        // The overridden accessor wins through virtual dispatch.
+        CupPrestigeCalculator.PrestigeBreakdown major = CupPrestigeCalculator.ComputeForAthlete(
+            4, [new(4, 4, -3)], [], [], levels, rules);
+        major.MajorCupRaw.ShouldBe(RulesV4Style.OverriddenMajorCupPrestige);
+    }
 }

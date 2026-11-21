@@ -122,7 +122,8 @@ public static class TeamEvent
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
+        // Rules validation happens once at snapshot load (RulesSnapshotCodec
+        // decode path); hot paths keep only cheap structural guards (MSS-152).
         if (groupSize < 2)
         {
             throw new InvalidOperationException($"Team group size must be at least 2, was {groupSize}.");
@@ -145,7 +146,6 @@ public static class TeamEvent
     {
         ArgumentNullException.ThrowIfNull(rounds);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
         if (expectedAthletes < 2)
         {
             throw new InvalidOperationException($"Team group must hold at least 2 athletes, was {expectedAthletes}.");
@@ -213,7 +213,6 @@ public static class TeamEvent
         ArgumentNullException.ThrowIfNull(totals);
         ArgumentNullException.ThrowIfNull(rng);
         ArgumentNullException.ThrowIfNull(rules);
-        rules.Validate();
         if (groupSize < 2)
         {
             throw new InvalidOperationException($"Team group size must be at least 2, was {groupSize}.");

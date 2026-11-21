@@ -99,86 +99,48 @@ public class RulesV1
 
     public const int DefaultCupPrestigeWeightPermille = 100;
 
-    protected RulesV1(
-        int sportingColorCount,
-        int athletesPerSportingColor,
-        int totalAthletesInSave,
-        int regularLeagueCount,
-        int leagueSize,
-        int superleagueSize,
-        int stagesPerSeason,
-        int roundsPerStage,
-        int qualifierSize,
-        int qualifierRounds,
-        int qualifierWinners,
-        int superleagueSafeCount,
-        int superleagueRelegatedCount,
-        int superleagueQualifierIncumbentCount,
-        int feederAutoPromotedCount,
-        int feederQualifierCount,
-        int inauguralQualifiedPerLeague,
-        int superleagueBonusMultiplier,
-        int colorCupColorCount,
-        int colorCupTeamSize,
-        int colorCupIndividualRounds,
-        int colorCupTeamGroupRounds,
-        int typeCupMinTeamSize,
-        int typeCupGroupRounds,
-        int typeCupTournamentFormatVersion,
-        int typeCupMaxDirectFinalTeams,
-        int typeCupFinalTeamCount,
-        int recentFormStageCount,
-        int cupBonusWeightPermille,
-        int cupPerformanceWeightPermille,
-        int cupFormWeightPermille,
-        int cupChaosWeightPermille,
-        int cupPrestigeWeightPermille,
-        ColorCupPrestigeConstants prestige,
-        int[] scoringTable,
-        int[] roundBonusThousandths,
-        int[] stageBonusThousandths,
-        int[] bonusAgeWeightsThousandths,
-        int[] recentFormWeights)
+    protected RulesV1(RulesCoreSnapshot core)
     {
-        SportingColorCount = sportingColorCount;
-        AthletesPerSportingColor = athletesPerSportingColor;
-        TotalAthletesInSave = totalAthletesInSave;
-        RegularLeagueCount = regularLeagueCount;
-        LeagueSize = leagueSize;
-        SuperleagueSize = superleagueSize;
-        StagesPerSeason = stagesPerSeason;
-        RoundsPerStage = roundsPerStage;
-        QualifierSize = qualifierSize;
-        QualifierRounds = qualifierRounds;
-        QualifierWinners = qualifierWinners;
-        SuperleagueSafeCount = superleagueSafeCount;
-        SuperleagueRelegatedCount = superleagueRelegatedCount;
-        SuperleagueQualifierIncumbentCount = superleagueQualifierIncumbentCount;
-        FeederAutoPromotedCount = feederAutoPromotedCount;
-        FeederQualifierCount = feederQualifierCount;
-        InauguralQualifiedPerLeague = inauguralQualifiedPerLeague;
-        SuperleagueBonusMultiplier = superleagueBonusMultiplier;
-        ColorCupColorCount = colorCupColorCount;
-        ColorCupTeamSize = colorCupTeamSize;
-        ColorCupIndividualRounds = colorCupIndividualRounds;
-        ColorCupTeamGroupRounds = colorCupTeamGroupRounds;
-        TypeCupMinTeamSize = typeCupMinTeamSize;
-        TypeCupGroupRounds = typeCupGroupRounds;
-        TypeCupTournamentFormatVersion = typeCupTournamentFormatVersion;
-        TypeCupMaxDirectFinalTeams = typeCupMaxDirectFinalTeams;
-        TypeCupFinalTeamCount = typeCupFinalTeamCount;
-        RecentFormStageCount = recentFormStageCount;
-        CupBonusWeightPermille = cupBonusWeightPermille;
-        CupPerformanceWeightPermille = cupPerformanceWeightPermille;
-        CupFormWeightPermille = cupFormWeightPermille;
-        CupChaosWeightPermille = cupChaosWeightPermille;
-        CupPrestigeWeightPermille = cupPrestigeWeightPermille;
-        Prestige = prestige ?? throw new ArgumentNullException(nameof(prestige));
-        ScoringTable = Array.AsReadOnly(scoringTable);
-        RoundBonusThousandths = Array.AsReadOnly(roundBonusThousandths);
-        StageBonusThousandths = Array.AsReadOnly(stageBonusThousandths);
-        BonusAgeWeightsThousandths = Array.AsReadOnly(bonusAgeWeightsThousandths);
-        RecentFormWeights = Array.AsReadOnly(recentFormWeights);
+        ArgumentNullException.ThrowIfNull(core);
+        SportingColorCount = core.SportingColorCount;
+        AthletesPerSportingColor = core.AthletesPerSportingColor;
+        TotalAthletesInSave = core.TotalAthletesInSave;
+        RegularLeagueCount = core.RegularLeagueCount;
+        LeagueSize = core.LeagueSize;
+        SuperleagueSize = core.SuperleagueSize;
+        StagesPerSeason = core.StagesPerSeason;
+        RoundsPerStage = core.RoundsPerStage;
+        QualifierSize = core.QualifierSize;
+        QualifierRounds = core.QualifierRounds;
+        QualifierWinners = core.QualifierWinners;
+        SuperleagueSafeCount = core.SuperleagueSafeCount;
+        SuperleagueRelegatedCount = core.SuperleagueRelegatedCount;
+        SuperleagueQualifierIncumbentCount = core.SuperleagueQualifierIncumbentCount;
+        FeederAutoPromotedCount = core.FeederAutoPromotedCount;
+        FeederQualifierCount = core.FeederQualifierCount;
+        InauguralQualifiedPerLeague = core.InauguralQualifiedPerLeague;
+        SuperleagueBonusMultiplier = core.SuperleagueBonusMultiplier;
+        ColorCupColorCount = core.ColorCupColorCount;
+        ColorCupTeamSize = core.ColorCupTeamSize;
+        ColorCupIndividualRounds = core.ColorCupIndividualRounds;
+        ColorCupTeamGroupRounds = core.ColorCupTeamGroupRounds;
+        TypeCupMinTeamSize = core.TypeCupMinTeamSize;
+        TypeCupGroupRounds = core.TypeCupGroupRounds;
+        TypeCupTournamentFormatVersion = core.TypeCupTournamentFormatVersion;
+        TypeCupMaxDirectFinalTeams = core.TypeCupMaxDirectFinalTeams;
+        TypeCupFinalTeamCount = core.TypeCupFinalTeamCount;
+        RecentFormStageCount = core.RecentFormStageCount;
+        CupBonusWeightPermille = core.CupBonusWeightPermille;
+        CupPerformanceWeightPermille = core.CupPerformanceWeightPermille;
+        CupFormWeightPermille = core.CupFormWeightPermille;
+        CupChaosWeightPermille = core.CupChaosWeightPermille;
+        CupPrestigeWeightPermille = core.CupPrestigeWeightPermille;
+        Prestige = core.Prestige ?? throw new ArgumentNullException(nameof(core));
+        ScoringTable = Array.AsReadOnly(core.ScoringTable);
+        RoundBonusThousandths = Array.AsReadOnly(core.RoundBonusThousandths);
+        StageBonusThousandths = Array.AsReadOnly(core.StageBonusThousandths);
+        BonusAgeWeightsThousandths = Array.AsReadOnly(core.BonusAgeWeightsThousandths);
+        RecentFormWeights = Array.AsReadOnly(core.RecentFormWeights);
     }
 
     public virtual int Version => RulesVersion;
@@ -358,6 +320,93 @@ public class RulesV1
         _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
     };
 
+    /// <summary>
+    /// Scaled career prestige for a league championship at an explicit level
+    /// (MSS-152). v1/v2 are level-blind for feeder titles (any feeder level
+    /// earns the flat feeder value) with the Superleague title earning its own
+    /// value; <see cref="RulesV3"/> overrides with the tiered model so future
+    /// RulesV4+ subclasses resolve through inheritance instead of version
+    /// casts. Podium ranks are out of scope here (see
+    /// <see cref="GetStagePrestige"/>).
+    /// </summary>
+    public virtual int GetLeagueTitlePrestige(LeagueLevel level) => level switch
+    {
+        LeagueLevel.Superleague => Prestige.SuperleagueTitlePoints,
+        LeagueLevel.Feeder1 or LeagueLevel.Feeder2 or LeagueLevel.Feeder3 => Prestige.FeederTitlePoints,
+        _ => throw new ArgumentOutOfRangeException(nameof(level), $"Unknown league level {(int)level}."),
+    };
+
+    /// <summary>
+    /// Scaled career prestige for one league stage podium (place 1..3).
+    /// v1/v2 are level-blind: every league pays the same flat win/second/third
+    /// values; <see cref="RulesV3"/> overrides with the tiered model so future
+    /// RulesV4+ subclasses resolve through inheritance.
+    /// </summary>
+    public virtual int GetStagePrestige(LeagueLevel level, int place) => place switch
+    {
+        1 => Prestige.StageWinPoints,
+        2 => Prestige.StageSecondPoints,
+        3 => Prestige.StageThirdPoints,
+        _ => throw new ArgumentOutOfRangeException(nameof(place), $"Stage place {place} is not a podium."),
+    };
+
+    /// <summary>
+    /// Scaled career prestige per completed Superleague season.
+    /// </summary>
+    public virtual int GetSuperleagueAppearancePrestige() => Prestige.SuperleagueAppearancePoints;
+
+    /// <summary>
+    /// Scaled career prestige per official major Cup championship.
+    /// </summary>
+    public virtual int GetMajorCupTitlePrestige() => Prestige.OtherMajorHonourPoints;
+
+    /// <summary>
+    /// Builds the named v1-core carrier from this snapshot's properties
+    /// (MSS-152). The single hand-checked copy path replaces the per-version
+    /// positional copy blocks; arrays are spread into fresh defensive copies
+    /// exactly like the blocks they replace.
+    /// </summary>
+    internal RulesCoreSnapshot ExtractCore() => new(
+        SportingColorCount: SportingColorCount,
+        AthletesPerSportingColor: AthletesPerSportingColor,
+        TotalAthletesInSave: TotalAthletesInSave,
+        RegularLeagueCount: RegularLeagueCount,
+        LeagueSize: LeagueSize,
+        SuperleagueSize: SuperleagueSize,
+        StagesPerSeason: StagesPerSeason,
+        RoundsPerStage: RoundsPerStage,
+        QualifierSize: QualifierSize,
+        QualifierRounds: QualifierRounds,
+        QualifierWinners: QualifierWinners,
+        SuperleagueSafeCount: SuperleagueSafeCount,
+        SuperleagueRelegatedCount: SuperleagueRelegatedCount,
+        SuperleagueQualifierIncumbentCount: SuperleagueQualifierIncumbentCount,
+        FeederAutoPromotedCount: FeederAutoPromotedCount,
+        FeederQualifierCount: FeederQualifierCount,
+        InauguralQualifiedPerLeague: InauguralQualifiedPerLeague,
+        SuperleagueBonusMultiplier: SuperleagueBonusMultiplier,
+        ColorCupColorCount: ColorCupColorCount,
+        ColorCupTeamSize: ColorCupTeamSize,
+        ColorCupIndividualRounds: ColorCupIndividualRounds,
+        ColorCupTeamGroupRounds: ColorCupTeamGroupRounds,
+        TypeCupMinTeamSize: TypeCupMinTeamSize,
+        TypeCupGroupRounds: TypeCupGroupRounds,
+        TypeCupTournamentFormatVersion: TypeCupTournamentFormatVersion,
+        TypeCupMaxDirectFinalTeams: TypeCupMaxDirectFinalTeams,
+        TypeCupFinalTeamCount: TypeCupFinalTeamCount,
+        RecentFormStageCount: RecentFormStageCount,
+        CupBonusWeightPermille: CupBonusWeightPermille,
+        CupPerformanceWeightPermille: CupPerformanceWeightPermille,
+        CupFormWeightPermille: CupFormWeightPermille,
+        CupChaosWeightPermille: CupChaosWeightPermille,
+        CupPrestigeWeightPermille: CupPrestigeWeightPermille,
+        Prestige: Prestige,
+        ScoringTable: [.. ScoringTable],
+        RoundBonusThousandths: [.. RoundBonusThousandths],
+        StageBonusThousandths: [.. StageBonusThousandths],
+        BonusAgeWeightsThousandths: [.. BonusAgeWeightsThousandths],
+        RecentFormWeights: [.. RecentFormWeights]);
+
     public int ColorCupColorCount { get; }
 
     public int ColorCupTeamSize { get; }
@@ -466,46 +515,49 @@ public class RulesV1
         int[] resolvedFormWeights = ResolveTable(active.RecentFormWeights, DefaultRecentFormWeights, nameof(active.RecentFormWeights));
         ColorCupPrestigeConstants prestige = ResolvePrestige(active);
 
-        var candidate = new RulesV1(
-            active.SportingColorCount ?? 8,
-            active.AthletesPerSportingColor ?? 256,
-            active.TotalAthletesInSave ?? 2048,
-            active.RegularLeagueCount ?? 8,
-            active.LeagueSize ?? 32,
-            active.SuperleagueSize ?? 32,
-            active.StagesPerSeason ?? 32,
-            active.RoundsPerStage ?? 16,
-            active.QualifierSize ?? 32,
-            active.QualifierRounds ?? 16,
-            active.QualifierWinners ?? 8,
-            active.SuperleagueSafeCount ?? 16,
-            active.SuperleagueRelegatedCount ?? 8,
-            active.SuperleagueQualifierIncumbentCount ?? 8,
-            active.FeederAutoPromotedCount ?? 8,
-            active.FeederQualifierCount ?? 24,
-            active.InauguralQualifiedPerLeague ?? 4,
-            active.SuperleagueBonusMultiplier ?? 2,
-            active.ColorCupColorCount ?? 8,
-            active.ColorCupTeamSize ?? 4,
-            active.ColorCupIndividualRounds ?? 16,
-            active.ColorCupTeamGroupRounds ?? 8,
-            active.TypeCupMinTeamSize ?? 4,
-            active.TypeCupGroupRounds ?? 8,
-            active.TypeCupTournamentFormatVersion ?? DefaultTypeCupTournamentFormatVersion,
-            active.TypeCupMaxDirectFinalTeams ?? DefaultTypeCupMaxDirectFinalTeams,
-            active.TypeCupFinalTeamCount ?? DefaultTypeCupFinalTeamCount,
-            active.RecentFormStageCount ?? 10,
-            active.CupBonusWeightPermille ?? DefaultCupBonusWeightPermille,
-            active.CupPerformanceWeightPermille ?? DefaultCupPerformanceWeightPermille,
-            active.CupFormWeightPermille ?? DefaultCupFormWeightPermille,
-            active.CupChaosWeightPermille ?? DefaultCupChaosWeightPermille,
-            active.CupPrestigeWeightPermille ?? DefaultCupPrestigeWeightPermille,
-            prestige,
-            resolvedScoring,
-            resolvedRoundBonus,
-            resolvedStageBonus,
-            resolvedAgeWeights,
-            resolvedFormWeights);
+        // Named carrier construction (MSS-152): every value is labelled at its
+        // single construction site so adjacent same-typed ints cannot transpose.
+        RulesCoreSnapshot core = new(
+            SportingColorCount: active.SportingColorCount ?? 8,
+            AthletesPerSportingColor: active.AthletesPerSportingColor ?? 256,
+            TotalAthletesInSave: active.TotalAthletesInSave ?? 2048,
+            RegularLeagueCount: active.RegularLeagueCount ?? 8,
+            LeagueSize: active.LeagueSize ?? 32,
+            SuperleagueSize: active.SuperleagueSize ?? 32,
+            StagesPerSeason: active.StagesPerSeason ?? 32,
+            RoundsPerStage: active.RoundsPerStage ?? 16,
+            QualifierSize: active.QualifierSize ?? 32,
+            QualifierRounds: active.QualifierRounds ?? 16,
+            QualifierWinners: active.QualifierWinners ?? 8,
+            SuperleagueSafeCount: active.SuperleagueSafeCount ?? 16,
+            SuperleagueRelegatedCount: active.SuperleagueRelegatedCount ?? 8,
+            SuperleagueQualifierIncumbentCount: active.SuperleagueQualifierIncumbentCount ?? 8,
+            FeederAutoPromotedCount: active.FeederAutoPromotedCount ?? 8,
+            FeederQualifierCount: active.FeederQualifierCount ?? 24,
+            InauguralQualifiedPerLeague: active.InauguralQualifiedPerLeague ?? 4,
+            SuperleagueBonusMultiplier: active.SuperleagueBonusMultiplier ?? 2,
+            ColorCupColorCount: active.ColorCupColorCount ?? 8,
+            ColorCupTeamSize: active.ColorCupTeamSize ?? 4,
+            ColorCupIndividualRounds: active.ColorCupIndividualRounds ?? 16,
+            ColorCupTeamGroupRounds: active.ColorCupTeamGroupRounds ?? 8,
+            TypeCupMinTeamSize: active.TypeCupMinTeamSize ?? 4,
+            TypeCupGroupRounds: active.TypeCupGroupRounds ?? 8,
+            TypeCupTournamentFormatVersion: active.TypeCupTournamentFormatVersion ?? DefaultTypeCupTournamentFormatVersion,
+            TypeCupMaxDirectFinalTeams: active.TypeCupMaxDirectFinalTeams ?? DefaultTypeCupMaxDirectFinalTeams,
+            TypeCupFinalTeamCount: active.TypeCupFinalTeamCount ?? DefaultTypeCupFinalTeamCount,
+            RecentFormStageCount: active.RecentFormStageCount ?? 10,
+            CupBonusWeightPermille: active.CupBonusWeightPermille ?? DefaultCupBonusWeightPermille,
+            CupPerformanceWeightPermille: active.CupPerformanceWeightPermille ?? DefaultCupPerformanceWeightPermille,
+            CupFormWeightPermille: active.CupFormWeightPermille ?? DefaultCupFormWeightPermille,
+            CupChaosWeightPermille: active.CupChaosWeightPermille ?? DefaultCupChaosWeightPermille,
+            CupPrestigeWeightPermille: active.CupPrestigeWeightPermille ?? DefaultCupPrestigeWeightPermille,
+            Prestige: prestige,
+            ScoringTable: resolvedScoring,
+            RoundBonusThousandths: resolvedRoundBonus,
+            StageBonusThousandths: resolvedStageBonus,
+            BonusAgeWeightsThousandths: resolvedAgeWeights,
+            RecentFormWeights: resolvedFormWeights);
+        var candidate = new RulesV1(core);
         candidate.Validate();
         return candidate;
     }

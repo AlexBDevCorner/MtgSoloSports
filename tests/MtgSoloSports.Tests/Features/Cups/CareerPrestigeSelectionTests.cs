@@ -4,6 +4,7 @@ using MtgSoloSports.Features.Cups.SelectTypeCupTeams;
 using MtgSoloSports.Features.Records;
 using MtgSoloSports.Features.Records.GetHallOfFame;
 using MtgSoloSports.Persistence.Saves;
+using MtgSoloSports.Shared;
 using MtgSoloSports.Shared.Careers;
 using MtgSoloSports.SimulationKernel.Careers;
 using MtgSoloSports.SimulationKernel.Cups;
@@ -206,6 +207,35 @@ public sealed class CareerPrestigeSelectionTests
             + legacyBack.PrestigeFeeder3StageRaw + legacyBack.PrestigeMajorCupRaw;
         legacySum.ShouldBe(legacyBack.PrestigeRaw);
         legacyBack.PrestigeCareerSuperleaguePoints.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Reports_WithUnknownCareerWeightsVersion_AreRejectedAtTheReadBoundary()
+    {
+        // Current-weights and legacy documents stay readable (MSS-152 boundary)...
+        var current = new ColorCupSelectionReportDocument(
+            ColorCupSelectionReportDocument.PayloadVersion, 350, 300, 200, 50, 100,
+            [],
+            CareerPerformanceScorer.WeightsVersion);
+        Should.NotThrow(() => ColorCupSelectionReportDocument.FromStored(current.ToStored()));
+        var legacy = current with { PrestigeWeightsVersion = "" };
+        Should.NotThrow(() => ColorCupSelectionReportDocument.FromStored(legacy.ToStored()));
+
+        // ...but a document scored under weights this build cannot reproduce
+        // aborts at the FromStored persistence boundary for both Cups, instead
+        // of silently misexplaining prestige with the wrong weights.
+        var corruptColor = current with { PrestigeWeightsVersion = "MSS-XXX-v9" };
+        SaveCorruptionException colorError = Should.Throw<SaveCorruptionException>(
+            () => ColorCupSelectionReportDocument.FromStored(corruptColor.ToStored()));
+        colorError.Message.ShouldContain("MSS-XXX-v9");
+        colorError.Message.ShouldContain(CareerPerformanceScorer.WeightsVersion);
+
+        var corruptType = new TypeCupSelectionReportDocument(
+            TypeCupSelectionReportDocument.PayloadVersion, 0, 350, 300, 200, 50, 100, [], [],
+            "MSS-XXX-v9");
+        SaveCorruptionException typeError = Should.Throw<SaveCorruptionException>(
+            () => TypeCupSelectionReportDocument.FromStored(corruptType.ToStored()));
+        typeError.Message.ShouldContain("career-prestige weights");
     }
 
     private static ColorCupSelectionReportDocument.Candidate BuildV4Candidate() => new(

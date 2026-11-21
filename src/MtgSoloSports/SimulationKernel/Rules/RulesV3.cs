@@ -14,8 +14,11 @@ namespace MtgSoloSports.SimulationKernel.Rules;
 /// compatibility path and are never reinterpreted as tiered prestige.
 /// Historical v1 feeder achievements map to Feeder 1 via
 /// <see cref="LeagueHierarchy.LevelForDivision"/> when evaluated under v3.
+/// Unsealed with a protected carrier constructor (MSS-152) so future RulesV4+
+/// subclasses inherit the tiered prestige accessors instead of falling into a
+/// legacy version-cast path.
 /// </summary>
-public sealed class RulesV3 : RulesV2
+public class RulesV3 : RulesV2
 {
     public new const int RulesVersion = 3;
 
@@ -62,145 +65,31 @@ public sealed class RulesV3 : RulesV2
 
     public const int PrestigeFeeder3StageThirdPointsDefault = 2;
 
-    private RulesV3(
-        int sportingColorCount,
-        int athletesPerSportingColor,
-        int totalAthletesInSave,
-        int regularLeagueCount,
-        int leagueSize,
-        int superleagueSize,
-        int stagesPerSeason,
-        int roundsPerStage,
-        int qualifierSize,
-        int qualifierRounds,
-        int qualifierWinners,
-        int superleagueSafeCount,
-        int superleagueRelegatedCount,
-        int superleagueQualifierIncumbentCount,
-        int feederAutoPromotedCount,
-        int feederQualifierCount,
-        int inauguralQualifiedPerLeague,
-        int colorCupColorCount,
-        int colorCupTeamSize,
-        int colorCupIndividualRounds,
-        int colorCupTeamGroupRounds,
-        int typeCupMinTeamSize,
-        int typeCupGroupRounds,
-        int typeCupTournamentFormatVersion,
-        int typeCupMaxDirectFinalTeams,
-        int typeCupFinalTeamCount,
-        int recentFormStageCount,
-        int cupBonusWeightPermille,
-        int cupPerformanceWeightPermille,
-        int cupFormWeightPermille,
-        int cupChaosWeightPermille,
-        int cupPrestigeWeightPermille,
-        ColorCupPrestigeConstants prestige,
-        int[] scoringTable,
-        int[] roundBonusThousandths,
-        int[] stageBonusThousandths,
-        int[] bonusAgeWeightsThousandths,
-        int[] recentFormWeights,
-        int superleagueBonusNumerator,
-        int superleagueBonusDenominator,
-        int feeder1BonusNumerator,
-        int feeder1BonusDenominator,
-        int feeder2BonusNumerator,
-        int feeder2BonusDenominator,
-        int feeder3BonusNumerator,
-        int feeder3BonusDenominator,
-        int cupSuperleagueStrengthPermille,
-        int cupFeeder1StrengthPermille,
-        int cupFeeder2StrengthPermille,
-        int cupFeeder3StrengthPermille,
-        int prestigeSuperTitlePoints,
-        int prestigeFeeder1TitlePoints,
-        int prestigeFeeder2TitlePoints,
-        int prestigeFeeder3TitlePoints,
-        int prestigeSuperAppearancePoints,
-        int prestigeMajorCupTitlePoints,
-        int prestigeSuperStageWinPoints,
-        int prestigeSuperStageSecondPoints,
-        int prestigeSuperStageThirdPoints,
-        int prestigeFeeder1StageWinPoints,
-        int prestigeFeeder1StageSecondPoints,
-        int prestigeFeeder1StageThirdPoints,
-        int prestigeFeeder2StageWinPoints,
-        int prestigeFeeder2StageSecondPoints,
-        int prestigeFeeder2StageThirdPoints,
-        int prestigeFeeder3StageWinPoints,
-        int prestigeFeeder3StageSecondPoints,
-        int prestigeFeeder3StageThirdPoints)
-        : base(
-            sportingColorCount,
-            athletesPerSportingColor,
-            totalAthletesInSave,
-            regularLeagueCount,
-            leagueSize,
-            superleagueSize,
-            stagesPerSeason,
-            roundsPerStage,
-            qualifierSize,
-            qualifierRounds,
-            qualifierWinners,
-            superleagueSafeCount,
-            superleagueRelegatedCount,
-            superleagueQualifierIncumbentCount,
-            feederAutoPromotedCount,
-            feederQualifierCount,
-            inauguralQualifiedPerLeague,
-            colorCupColorCount,
-            colorCupTeamSize,
-            colorCupIndividualRounds,
-            colorCupTeamGroupRounds,
-            typeCupMinTeamSize,
-            typeCupGroupRounds,
-            typeCupTournamentFormatVersion,
-            typeCupMaxDirectFinalTeams,
-            typeCupFinalTeamCount,
-            recentFormStageCount,
-            cupBonusWeightPermille,
-            cupPerformanceWeightPermille,
-            cupFormWeightPermille,
-            cupChaosWeightPermille,
-            cupPrestigeWeightPermille,
-            prestige,
-            scoringTable,
-            roundBonusThousandths,
-            stageBonusThousandths,
-            bonusAgeWeightsThousandths,
-            recentFormWeights,
-            superleagueBonusNumerator,
-            superleagueBonusDenominator,
-            feeder1BonusNumerator,
-            feeder1BonusDenominator,
-            feeder2BonusNumerator,
-            feeder2BonusDenominator,
-            feeder3BonusNumerator,
-            feeder3BonusDenominator,
-            cupSuperleagueStrengthPermille,
-            cupFeeder1StrengthPermille,
-            cupFeeder2StrengthPermille,
-            cupFeeder3StrengthPermille)
+    protected RulesV3(
+        RulesCoreSnapshot core,
+        RulesV2SportingSnapshot sporting,
+        RulesV3PrestigeSnapshot prestige)
+        : base(core, sporting)
     {
-        PrestigeSuperTitlePoints = prestigeSuperTitlePoints;
-        PrestigeFeeder1TitlePoints = prestigeFeeder1TitlePoints;
-        PrestigeFeeder2TitlePoints = prestigeFeeder2TitlePoints;
-        PrestigeFeeder3TitlePoints = prestigeFeeder3TitlePoints;
-        PrestigeSuperAppearancePoints = prestigeSuperAppearancePoints;
-        PrestigeMajorCupTitlePoints = prestigeMajorCupTitlePoints;
-        PrestigeSuperStageWinPoints = prestigeSuperStageWinPoints;
-        PrestigeSuperStageSecondPoints = prestigeSuperStageSecondPoints;
-        PrestigeSuperStageThirdPoints = prestigeSuperStageThirdPoints;
-        PrestigeFeeder1StageWinPoints = prestigeFeeder1StageWinPoints;
-        PrestigeFeeder1StageSecondPoints = prestigeFeeder1StageSecondPoints;
-        PrestigeFeeder1StageThirdPoints = prestigeFeeder1StageThirdPoints;
-        PrestigeFeeder2StageWinPoints = prestigeFeeder2StageWinPoints;
-        PrestigeFeeder2StageSecondPoints = prestigeFeeder2StageSecondPoints;
-        PrestigeFeeder2StageThirdPoints = prestigeFeeder2StageThirdPoints;
-        PrestigeFeeder3StageWinPoints = prestigeFeeder3StageWinPoints;
-        PrestigeFeeder3StageSecondPoints = prestigeFeeder3StageSecondPoints;
-        PrestigeFeeder3StageThirdPoints = prestigeFeeder3StageThirdPoints;
+        ArgumentNullException.ThrowIfNull(prestige);
+        PrestigeSuperTitlePoints = prestige.SuperTitlePoints;
+        PrestigeFeeder1TitlePoints = prestige.Feeder1TitlePoints;
+        PrestigeFeeder2TitlePoints = prestige.Feeder2TitlePoints;
+        PrestigeFeeder3TitlePoints = prestige.Feeder3TitlePoints;
+        PrestigeSuperAppearancePoints = prestige.SuperAppearancePoints;
+        PrestigeMajorCupTitlePoints = prestige.MajorCupTitlePoints;
+        PrestigeSuperStageWinPoints = prestige.SuperStageWinPoints;
+        PrestigeSuperStageSecondPoints = prestige.SuperStageSecondPoints;
+        PrestigeSuperStageThirdPoints = prestige.SuperStageThirdPoints;
+        PrestigeFeeder1StageWinPoints = prestige.Feeder1StageWinPoints;
+        PrestigeFeeder1StageSecondPoints = prestige.Feeder1StageSecondPoints;
+        PrestigeFeeder1StageThirdPoints = prestige.Feeder1StageThirdPoints;
+        PrestigeFeeder2StageWinPoints = prestige.Feeder2StageWinPoints;
+        PrestigeFeeder2StageSecondPoints = prestige.Feeder2StageSecondPoints;
+        PrestigeFeeder2StageThirdPoints = prestige.Feeder2StageThirdPoints;
+        PrestigeFeeder3StageWinPoints = prestige.Feeder3StageWinPoints;
+        PrestigeFeeder3StageSecondPoints = prestige.Feeder3StageSecondPoints;
+        PrestigeFeeder3StageThirdPoints = prestige.Feeder3StageThirdPoints;
     }
 
     public override int Version => RulesVersion;
@@ -283,6 +172,22 @@ public sealed class RulesV3 : RulesV2
         _ => throw new ArgumentOutOfRangeException(nameof(place), $"Stage place {place} is not a podium."),
     };
 
+    /// <summary>
+    /// Tiered league-title prestige (MSS-152): overrides the level-blind v1/v2
+    /// legacy values so RulesV4+ subclasses resolve through inheritance instead
+    /// of <c>is RulesV3</c> version casts.
+    /// </summary>
+    public override int GetLeagueTitlePrestige(LeagueLevel level) => GetTieredTitlePrestige(level);
+
+    /// <summary>Tiered stage-podium prestige (MSS-152); see <see cref="GetLeagueTitlePrestige"/>.</summary>
+    public override int GetStagePrestige(LeagueLevel level, int place) => GetTieredStagePrestige(level, place);
+
+    /// <summary>Tiered Superleague appearance prestige (MSS-152).</summary>
+    public override int GetSuperleagueAppearancePrestige() => PrestigeSuperAppearancePoints;
+
+    /// <summary>Tiered major Cup title prestige (MSS-152).</summary>
+    public override int GetMajorCupTitlePrestige() => PrestigeMajorCupTitlePoints;
+
     public static new RulesV3 CreateDefault() => Create(null);
 
     /// <summary>
@@ -319,34 +224,9 @@ public sealed class RulesV3 : RulesV2
         }
 
         var candidate = new RulesV3(
-            v2.SportingColorCount, v2.AthletesPerSportingColor, v2.TotalAthletesInSave,
-            v2.RegularLeagueCount, v2.LeagueSize, v2.SuperleagueSize,
-            v2.StagesPerSeason, v2.RoundsPerStage, v2.QualifierSize,
-            v2.QualifierRounds, v2.QualifierWinners, v2.SuperleagueSafeCount,
-            v2.SuperleagueRelegatedCount, v2.SuperleagueQualifierIncumbentCount,
-            v2.FeederAutoPromotedCount, v2.FeederQualifierCount, v2.InauguralQualifiedPerLeague,
-            v2.ColorCupColorCount, v2.ColorCupTeamSize, v2.ColorCupIndividualRounds,
-            v2.ColorCupTeamGroupRounds, v2.TypeCupMinTeamSize, v2.TypeCupGroupRounds,
-            v2.TypeCupTournamentFormatVersion, v2.TypeCupMaxDirectFinalTeams, v2.TypeCupFinalTeamCount,
-            v2.RecentFormStageCount, v2.CupBonusWeightPermille, v2.CupPerformanceWeightPermille,
-            v2.CupFormWeightPermille, v2.CupChaosWeightPermille, v2.CupPrestigeWeightPermille, v2.Prestige,
-            [.. v2.ScoringTable], [.. v2.RoundBonusThousandths], [.. v2.StageBonusThousandths],
-            [.. v2.BonusAgeWeightsThousandths], [.. v2.RecentFormWeights],
-            v2.SuperleagueBonusNumerator, v2.SuperleagueBonusDenominator,
-            v2.Feeder1BonusNumerator, v2.Feeder1BonusDenominator,
-            v2.Feeder2BonusNumerator, v2.Feeder2BonusDenominator,
-            v2.Feeder3BonusNumerator, v2.Feeder3BonusDenominator,
-            v2.CupSuperleagueStrengthPermille, v2.CupFeeder1StrengthPermille,
-            v2.CupFeeder2StrengthPermille, v2.CupFeeder3StrengthPermille,
-            PrestigeSuperTitlePointsDefault, PrestigeFeeder1TitlePointsDefault,
-            PrestigeFeeder2TitlePointsDefault, PrestigeFeeder3TitlePointsDefault,
-            PrestigeSuperAppearancePointsDefault, PrestigeMajorCupTitlePointsDefault,
-            PrestigeSuperStageWinPointsDefault, PrestigeSuperStageSecondPointsDefault,
-            PrestigeSuperStageThirdPointsDefault, PrestigeFeeder1StageWinPointsDefault,
-            PrestigeFeeder1StageSecondPointsDefault, PrestigeFeeder1StageThirdPointsDefault,
-            PrestigeFeeder2StageWinPointsDefault, PrestigeFeeder2StageSecondPointsDefault,
-            PrestigeFeeder2StageThirdPointsDefault, PrestigeFeeder3StageWinPointsDefault,
-            PrestigeFeeder3StageSecondPointsDefault, PrestigeFeeder3StageThirdPointsDefault);
+            v2.ExtractCore(),
+            v2.ExtractSportingSnapshot(),
+            RulesV3PrestigeSnapshot.Defaults);
         candidate.Validate();
         return candidate;
     }
@@ -398,35 +278,29 @@ public sealed class RulesV3 : RulesV2
             cupFeeder1StrengthPermille,
             cupFeeder2StrengthPermille,
             cupFeeder3StrengthPermille);
+        RulesV3PrestigeSnapshot prestige = new(
+            SuperTitlePoints: prestigeSuperTitlePoints,
+            Feeder1TitlePoints: prestigeFeeder1TitlePoints,
+            Feeder2TitlePoints: prestigeFeeder2TitlePoints,
+            Feeder3TitlePoints: prestigeFeeder3TitlePoints,
+            SuperAppearancePoints: prestigeSuperAppearancePoints,
+            MajorCupTitlePoints: prestigeMajorCupTitlePoints,
+            SuperStageWinPoints: prestigeSuperStageWinPoints,
+            SuperStageSecondPoints: prestigeSuperStageSecondPoints,
+            SuperStageThirdPoints: prestigeSuperStageThirdPoints,
+            Feeder1StageWinPoints: prestigeFeeder1StageWinPoints,
+            Feeder1StageSecondPoints: prestigeFeeder1StageSecondPoints,
+            Feeder1StageThirdPoints: prestigeFeeder1StageThirdPoints,
+            Feeder2StageWinPoints: prestigeFeeder2StageWinPoints,
+            Feeder2StageSecondPoints: prestigeFeeder2StageSecondPoints,
+            Feeder2StageThirdPoints: prestigeFeeder2StageThirdPoints,
+            Feeder3StageWinPoints: prestigeFeeder3StageWinPoints,
+            Feeder3StageSecondPoints: prestigeFeeder3StageSecondPoints,
+            Feeder3StageThirdPoints: prestigeFeeder3StageThirdPoints);
         var candidate = new RulesV3(
-            core.SportingColorCount, core.AthletesPerSportingColor, core.TotalAthletesInSave,
-            core.RegularLeagueCount, core.LeagueSize, core.SuperleagueSize,
-            core.StagesPerSeason, core.RoundsPerStage, core.QualifierSize,
-            core.QualifierRounds, core.QualifierWinners, core.SuperleagueSafeCount,
-            core.SuperleagueRelegatedCount, core.SuperleagueQualifierIncumbentCount,
-            core.FeederAutoPromotedCount, core.FeederQualifierCount, core.InauguralQualifiedPerLeague,
-            core.ColorCupColorCount, core.ColorCupTeamSize, core.ColorCupIndividualRounds,
-            core.ColorCupTeamGroupRounds, core.TypeCupMinTeamSize, core.TypeCupGroupRounds,
-            core.TypeCupTournamentFormatVersion, core.TypeCupMaxDirectFinalTeams, core.TypeCupFinalTeamCount,
-            core.RecentFormStageCount, core.CupBonusWeightPermille, core.CupPerformanceWeightPermille,
-            core.CupFormWeightPermille, core.CupChaosWeightPermille, core.CupPrestigeWeightPermille, core.Prestige,
-            [.. core.ScoringTable], [.. core.RoundBonusThousandths], [.. core.StageBonusThousandths],
-            [.. core.BonusAgeWeightsThousandths], [.. core.RecentFormWeights],
-            core.SuperleagueBonusNumerator, core.SuperleagueBonusDenominator,
-            core.Feeder1BonusNumerator, core.Feeder1BonusDenominator,
-            core.Feeder2BonusNumerator, core.Feeder2BonusDenominator,
-            core.Feeder3BonusNumerator, core.Feeder3BonusDenominator,
-            core.CupSuperleagueStrengthPermille, core.CupFeeder1StrengthPermille,
-            core.CupFeeder2StrengthPermille, core.CupFeeder3StrengthPermille,
-            prestigeSuperTitlePoints, prestigeFeeder1TitlePoints,
-            prestigeFeeder2TitlePoints, prestigeFeeder3TitlePoints,
-            prestigeSuperAppearancePoints, prestigeMajorCupTitlePoints,
-            prestigeSuperStageWinPoints, prestigeSuperStageSecondPoints,
-            prestigeSuperStageThirdPoints, prestigeFeeder1StageWinPoints,
-            prestigeFeeder1StageSecondPoints, prestigeFeeder1StageThirdPoints,
-            prestigeFeeder2StageWinPoints, prestigeFeeder2StageSecondPoints,
-            prestigeFeeder2StageThirdPoints, prestigeFeeder3StageWinPoints,
-            prestigeFeeder3StageSecondPoints, prestigeFeeder3StageThirdPoints);
+            core.ExtractCore(),
+            core.ExtractSportingSnapshot(),
+            prestige);
         candidate.Validate();
         return candidate;
     }
